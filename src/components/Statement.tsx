@@ -1,7 +1,6 @@
 import { FaArrowRightLong, FaArrowTurnUp, FaEquals } from "react-icons/fa6";
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import {
-  isTypeCompatible,
   getStatementResult,
   createVariableName,
   applyTypeNarrowing,
@@ -83,30 +82,16 @@ export function Statement({
   ) {
     // eslint-disable-next-line prefer-const
     let operations = [...statement.operations];
-    if (remove) {
-      const data = getStatementResult(statement, index);
-      if (
-        !operation.value.result ||
-        !isTypeCompatible(operation.value.result.type, data.type)
-      ) {
-        operations.splice(index);
-      } else {
-        operations.splice(index, 1);
-      }
-    } else {
-      if (
-        !operation.value.result ||
-        !operations[index].value.result ||
-        !isTypeCompatible(
-          operation.value.result.type,
-          operations[index].value.result.type
-        )
-      ) {
-        operations.splice(index + 1);
-      }
-      operations[index] = operation;
-    }
+    if (remove) operations.splice(index, 1);
+    else operations[index] = operation;
     handleStatement({ ...statement, operations });
+    const params = operation.value.parameters;
+    setUiConfig({
+      navigation: {
+        id: params.length > 0 ? params[0].data.id : operation.id,
+        direction: "right",
+      },
+    });
   }
 
   return (

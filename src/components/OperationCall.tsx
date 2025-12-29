@@ -3,7 +3,6 @@ import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
-  executeOperation,
   getFilteredOperations,
   getSkipExecution,
 } from "../lib/operation";
@@ -55,46 +54,20 @@ export function OperationCall({
     );
   }
 
-  function handleParameter(
-    item: IStatement,
-    index: number,
-    variables: Context["variables"]
-  ) {
-    // eslint-disable-next-line prefer-const
-    let parameters = [...operation.value.parameters];
-    parameters[index] = item;
-
-    const foundOperation = filteredOperations.find(
-      (op) => op.name === operation.value.name
+  function handleParameter(item: IStatement, index: number) {
+    const parameters = operation.value.parameters.map((param, i) =>
+      i === index ? item : param
     );
-    const result = foundOperation
-      ? executeOperation(foundOperation, data, parameters, {
-          ...context,
-          variables,
-        })
-      : operation.value.result;
-
-    // Update parameter types while preserving the result type from the operation definition
-    const updatedType: OperationType = {
-      ...operation.type,
-      parameters: parameters.map((param) => ({
-        name: param.name,
-        type: param.data.type,
-      })),
-    };
-
     handleOperationCall({
       ...operation,
-      type: updatedType,
-      value: {
-        ...operation.value,
-        parameters,
-        result: result && {
-          ...result,
-          id: (operation.value.result || result).id,
-          isTypeEditable: data.isTypeEditable,
-        },
+      type: {
+        ...operation.type,
+        parameters: parameters.map((param) => ({
+          name: param.name,
+          type: param.data.type,
+        })),
       },
+      value: { ...operation.value, parameters },
     });
   }
 
@@ -130,9 +103,7 @@ export function OperationCall({
           <span key={paramIndex} className="flex">
             <Statement
               statement={item}
-              handleStatement={(val) =>
-                val && handleParameter(val, paramIndex, variables)
-              }
+              handleStatement={(val) => val && handleParameter(val, paramIndex)}
               options={{ disableDelete: true }}
               context={{
                 ...context,

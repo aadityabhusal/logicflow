@@ -82,7 +82,6 @@ export function Dropdown({
     onDropdownClose: () => {
       handleSearch(options?.withSearch ? "" : value || "");
       combobox.resetSelectedOption();
-      setUiConfig({ navigation: { id } });
     },
     onDropdownOpen: () => {
       if (options?.withSearch) combobox.focusSearchInput();

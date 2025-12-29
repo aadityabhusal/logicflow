@@ -35,7 +35,8 @@ export function updateOperationCalls(
 ): IData<OperationType>[] {
   return statement.operations.reduce(
     (acc, operation, operationIndex) => {
-      const data = getStatementResult(statement, operationIndex, true);
+      const updatedStatement = { ...statement, operations: acc.operations };
+      const data = getStatementResult(updatedStatement, operationIndex, true);
       acc.narrowedTypes = applyTypeNarrowing(
         _context,
         acc.narrowedTypes,
@@ -228,9 +229,9 @@ export function updateFiles(
       return [...prevFiles, changedFile];
     }
     const context = {
-      variables: createFileVariables(updatedFiles, currentFile.id),
+      variables: createFileVariables(updatedFiles, fileToProcess.id),
     };
-    const operation = createOperationFromFile(currentFile);
+    const operation = createOperationFromFile(fileToProcess);
     if (operation) {
       const value = updateOperationValue(operation, context);
       if (!isEqual(value, operation.value)) {
