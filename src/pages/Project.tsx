@@ -1,12 +1,16 @@
 import { Operation } from "@/components/Operation";
-import { uiConfigStore, useProjectStore } from "@/lib/store";
+import {
+  fileHistoryActions,
+  uiConfigStore,
+  useProjectStore,
+} from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
 import { useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "@mantine/hooks";
 import { FocusInfo } from "@/components/FocusInfo";
-import { useSearchParams, Navigate } from "react-router";
+import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { IData, OperationType } from "@/lib/types";
 import {
@@ -18,18 +22,17 @@ import { getOperationEntities } from "@/lib/navigation";
 import { updateFiles } from "@/lib/update";
 
 export default function Project() {
-  const [searchParams] = useSearchParams();
-  const { getCurrentProject, deleteFile, updateProject } = useProjectStore();
+  const { getCurrentProject, deleteFile, updateProject, currentFileId } =
+    useProjectStore();
   const { hideSidebar, hideFocusInfo, setUiConfig } = uiConfigStore();
 
   const currentProject = getCurrentProject();
-  const fileName = searchParams.get("file");
   const currentOperation = useMemo(
     () =>
       createOperationFromFile(
-        currentProject?.files.find((file) => file.name === fileName)
+        currentProject?.files.find((file) => file.id === currentFileId)
       ),
-    [currentProject?.files, fileName]
+    [currentProject?.files, currentFileId]
   );
 
   const handleOperationChange = useCallback(
@@ -40,6 +43,7 @@ export default function Project() {
         updateProject(currentProject.id, {
           files: updateFiles(
             currentProject.files,
+            fileHistoryActions.pushState,
             createFileFromOperation(operation)
           ),
         });

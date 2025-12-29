@@ -61,7 +61,7 @@ export function Dropdown({
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
 }) {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [, setSearchParams] = useSearchParams();
   const { highlightOperation, navigation, setUiConfig } = uiConfigStore();
   const result = useMemo(
     () =>
@@ -150,7 +150,7 @@ export function Dropdown({
               textInput?.blur();
               setUiConfig((p) => {
                 const operation = createOperationFromFile(
-                  useProjectStore.getState().getFile(searchParams.get("file"))
+                  useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
                 const newEntities = getOperationEntities(operation, 0);

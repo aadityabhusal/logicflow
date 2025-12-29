@@ -183,7 +183,9 @@ export function createProjectFile(
   const type = props.type || "operation";
   return {
     id: nanoid(),
-    name: props.name ?? createVariableName({ prefix: "operation", prev }),
+    name:
+      props.name ??
+      createVariableName({ prefix: "operation", prev, indexOffset: 1 }),
     createdAt: Date.now(),
     tags: props.tags,
     type: type,

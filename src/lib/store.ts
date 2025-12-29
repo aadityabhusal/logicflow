@@ -1,5 +1,4 @@
 import { StateCreator } from "zustand";
-import { temporal } from "zundo";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   Context,
@@ -52,22 +51,61 @@ const createIDbStorage = <T>(storeName: string) =>
     { reviver: jsonParseReviver, replacer: jsonStringifyReplacer }
   );
 
+interface FileHistory {
+  past: ProjectFile["content"][];
+  future: ProjectFile["content"][];
+}
+
+export const fileHistories = new Map<string, FileHistory>();
+const MAX_HISTORY = 50;
+
+export const fileHistoryActions = {
+  pushState: (fileId: string, content: ProjectFile["content"]) => {
+    if (!fileHistories.has(fileId)) {
+      fileHistories.set(fileId, { past: [], future: [] });
+    }
+    const history = fileHistories.get(fileId)!;
+    history.past.push(structuredClone(content));
+    if (history.past.length > MAX_HISTORY) history.past.shift();
+    history.future = [];
+  },
+  canUndo: (fileId?: string): boolean => {
+    if (!fileId) return false;
+    return (fileHistories.get(fileId)?.past.length ?? 0) > 0;
+  },
+  canRedo: (fileId?: string): boolean => {
+    if (!fileId) return false;
+    return (fileHistories.get(fileId)?.future.length ?? 0) > 0;
+  },
+  clearHistory: (fileId: string) => {
+    fileHistories.delete(fileId);
+  },
+  clearAllHistories: () => {
+    fileHistories.clear();
+  },
+};
+
 export interface IProjectsStore {
   projects: Record<string, Project>;
   createProject: () => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   getProject: (id?: string) => Project | undefined;
+  getCurrentProject: () => Project | undefined;
 }
 
 export interface ICurrentProjectStore {
   currentProjectId?: string;
+  currentFileId?: string;
   setCurrentProjectId: (projectId?: string) => void;
-  getCurrentProject: () => Project | undefined;
+  setCurrentFileId: (fileName?: string) => void;
+  getCurrentFile: () => ProjectFile | undefined;
   addFile: (file: ProjectFile) => ProjectFile | undefined;
   updateFile: (fileId: string, updates: Partial<ProjectFile>) => void;
   deleteFile: (fileId: string) => void;
   getFile: (fileId?: string | null) => ProjectFile | undefined;
+  undo: () => void;
+  redo: () => void;
 }
 
 type ProjectStore = IProjectsStore & ICurrentProjectStore;
@@ -111,6 +149,10 @@ const createProjectsSlice: StateCreator<
     });
   },
   getProject: (id) => (id ? get().projects[id] : undefined),
+  getCurrentProject: () => {
+    const { currentProjectId, projects } = get();
+    return currentProjectId ? projects[currentProjectId] : undefined;
+  },
 });
 
 const createCurrentProjectSlice: StateCreator<
@@ -120,12 +162,15 @@ const createCurrentProjectSlice: StateCreator<
   ICurrentProjectStore
 > = (set, get) => ({
   setCurrentProjectId: (projectId) => {
-    useProjectStore.temporal.getState().clear();
-    set({ currentProjectId: projectId });
+    if (projectId === get().currentProjectId) return;
+    fileHistoryActions.clearAllHistories();
+    set({ currentProjectId: projectId, currentFileId: undefined });
   },
-  getCurrentProject: () => {
-    const { currentProjectId, projects } = get();
-    return currentProjectId ? projects[currentProjectId] : undefined;
+  setCurrentFileId: (fileName) => {
+    if (fileName === get().currentFileId) return;
+    const currentProject = get().getCurrentProject();
+    const file = currentProject?.files.find((f) => f.name === fileName);
+    if (file) set({ currentFileId: file.id });
   },
   addFile: (file) => {
     const currentProject = get().getCurrentProject();
@@ -160,6 +205,7 @@ const createCurrentProjectSlice: StateCreator<
   deleteFile: (fileId) => {
     const currentProject = get().getCurrentProject();
     if (!currentProject) return;
+    fileHistoryActions.clearHistory(fileId);
     const updatedProject = {
       ...currentProject,
       files: currentProject.files.filter((file) => file.id !== fileId),
@@ -167,34 +213,52 @@ const createCurrentProjectSlice: StateCreator<
     };
     set((state) => ({
       projects: { ...state.projects, [currentProject.id]: updatedProject },
+      currentFileId:
+        state.currentFileId === fileId ? undefined : state.currentFileId,
     }));
   },
   getFile: (fileId) => {
     const currentProject = get().getCurrentProject();
     return currentProject?.files.find((file) => file.id === fileId);
   },
+  getCurrentFile: () => {
+    const { currentFileId } = get();
+    return currentFileId ? get().getFile(currentFileId) : undefined;
+  },
+
+  undo: () => {
+    const { getCurrentFile, updateFile } = get();
+    const currentFile = getCurrentFile();
+    if (!currentFile) return;
+    const history = fileHistories.get(currentFile.id);
+    if (!history || history.past.length === 0) return;
+    history.future.push(structuredClone(currentFile.content));
+    const content = history.past.pop()!;
+    updateFile(currentFile.id, { content } as Partial<ProjectFile>);
+  },
+
+  redo: () => {
+    const { getCurrentFile, updateFile } = get();
+    const currentFile = getCurrentFile();
+    if (!currentFile) return;
+    const history = fileHistories.get(currentFile.id);
+    if (!history || history.future.length === 0) return;
+    history.past.push(structuredClone(currentFile.content));
+    const content = history.future.pop()!;
+    updateFile(currentFile.id, { content } as Partial<ProjectFile>);
+  },
 });
 
 export const useProjectStore = createWithEqualityFn(
-  persist(
-    temporal<ProjectStore>(
-      (...a) => ({
-        ...createProjectsSlice(...a),
-        ...createCurrentProjectSlice(...a),
-      }),
-      {
-        partialize: (state) => {
-          if (!state.currentProjectId) return {} as ProjectStore;
-          return {
-            projects: { [state.currentProjectId]: state.getCurrentProject() },
-          } as ProjectStore;
-        },
-      }
-    ),
+  persist<ProjectStore>(
+    (...a) => ({
+      ...createProjectsSlice(...a),
+      ...createCurrentProjectSlice(...a),
+    }),
     {
       name: "projects",
       storage: createIDbStorage("projects"),
-      partialize: (state) => ({ projects: state.projects }),
+      partialize: (state) => ({ projects: state.projects } as ProjectStore),
     }
   ),
   shallow

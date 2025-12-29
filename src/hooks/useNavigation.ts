@@ -12,7 +12,7 @@ import { useMemo } from "react";
 export function useCustomHotkeys(
   currentOperation?: IData<OperationType>
 ): HotkeyItem[] {
-  const { undo, redo } = useProjectStore.temporal.getState();
+  const { undo, redo } = useProjectStore();
 
   const { navigation, setUiConfig } = uiConfigStore();
   const entities = useMemo(

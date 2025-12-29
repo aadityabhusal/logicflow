@@ -1,5 +1,5 @@
 import { FaPencil, FaPlus, FaX } from "react-icons/fa6";
-import { useProjectStore } from "../lib/store";
+import { fileHistoryActions, useProjectStore } from "../lib/store";
 import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
@@ -65,10 +65,11 @@ export function Sidebar() {
                   const file = getFile(item.id);
                   if (target.value && currentProject && file) {
                     updateProject(currentProject.id, {
-                      files: updateFiles(currentProject.files, {
-                        ...file,
-                        name: target.value,
-                      }),
+                      files: updateFiles(
+                        currentProject.files,
+                        fileHistoryActions.pushState,
+                        { ...file, name: target.value }
+                      ),
                     });
                     if (searchParams.get("file") === item.name) {
                       setSearchParams(
@@ -115,25 +116,26 @@ export function Sidebar() {
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-4 p-2 border-t">
+      <div className="flex flex-col gap-2 p-2 border-t">
         <a
           href="https://www.youtube.com/watch?v=AOfOhNwQL64"
           target="_blank"
           rel="noreferrer"
-          className="flex items-center select-none decoration-0"
+          className="flex items-center gap-1"
           title="Demo video"
         >
-          <span className="p-px mr-1 text-white">Demo</span>
           <SiYoutube size={20} />
+          <span className="p-px mr-1 text-white">Demo</span>
         </a>
         <a
           href="https://github.com/aadityabhusal/logicflow"
           target="_blank"
           rel="noreferrer"
-          style={{ display: "flex", userSelect: "none" }}
+          className="flex items-center gap-1"
           title="Source code"
         >
           <SiGithub size={20} />
+          <span className="p-px mr-1 text-white">Source code</span>
         </a>
       </div>
     </div>

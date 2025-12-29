@@ -27,6 +27,7 @@ import {
   getInverseTypes,
   mergeNarrowedTypes,
 } from "./utils";
+import isEqual from "fast-deep-equal";
 
 export function updateOperationCalls(
   statement: IStatement,
@@ -214,20 +215,25 @@ function updateOperationValue(
 
 export function updateFiles(
   files: ProjectFile[],
+  pushHistory: (fileId: string, content: ProjectFile["content"]) => void,
   changedFile?: ProjectFile
 ): ProjectFile[] {
-  return files
-    .map((file) => (file.id === changedFile?.id ? changedFile : file))
-    .reduce((prevFile, currentFile, _, fileList) => {
-      let fileToProcess = currentFile;
-      if (fileToProcess.id === changedFile?.id)
-        return [...prevFile, changedFile];
-      const context = {
-        variables: createFileVariables(fileList, currentFile.id),
-      };
-      const operation = createOperationFromFile(currentFile);
-      if (operation) {
-        const value = updateOperationValue(operation, context);
+  const updatedFiles = files.map((file) =>
+    file.id === changedFile?.id ? changedFile : file
+  );
+  return files.reduce((prevFiles, currentFile) => {
+    let fileToProcess = currentFile;
+    if (fileToProcess.id === changedFile?.id) {
+      pushHistory(fileToProcess.id, fileToProcess.content);
+      return [...prevFiles, changedFile];
+    }
+    const context = {
+      variables: createFileVariables(updatedFiles, currentFile.id),
+    };
+    const operation = createOperationFromFile(currentFile);
+    if (operation) {
+      const value = updateOperationValue(operation, context);
+      if (!isEqual(value, operation.value)) {
         const operationFile = createFileFromOperation({
           ...operation,
           type: inferTypeFromValue(value),
@@ -235,6 +241,7 @@ export function updateFiles(
         });
         fileToProcess = { ...operationFile, updatedAt: Date.now() };
       }
-      return [...prevFile, fileToProcess];
-    }, [] as ProjectFile[]);
+    }
+    return [...prevFiles, fileToProcess];
+  }, [] as ProjectFile[]);
 }
