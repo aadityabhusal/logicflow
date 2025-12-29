@@ -20,6 +20,7 @@ import {
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { updateFiles } from "@/lib/update";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export default function Project() {
   const { getCurrentProject, deleteFile, updateProject, currentFileId } =
@@ -82,21 +83,29 @@ export default function Project() {
             }
           }}
         >
-          {currentProject && currentOperation ? (
-            <Operation
-              operation={currentOperation}
-              handleChange={handleOperationChange}
-              context={{
-                variables: createFileVariables(
-                  currentProject?.files,
-                  currentOperation?.id
-                ),
-              }}
-              options={{ isTopLevel: true, disableDropdown: true }}
-            />
-          ) : (
-            <NoteText>Select an operation</NoteText>
-          )}
+          <ErrorBoundary
+            fallback={
+              <p className="text-error p-1">
+                Something went wrong. Please refresh or delete the operation.
+              </p>
+            }
+          >
+            {currentProject && currentOperation ? (
+              <Operation
+                operation={currentOperation}
+                handleChange={handleOperationChange}
+                context={{
+                  variables: createFileVariables(
+                    currentProject?.files,
+                    currentOperation?.id
+                  ),
+                }}
+                options={{ isTopLevel: true, disableDropdown: true }}
+              />
+            ) : (
+              <NoteText>Select an operation</NoteText>
+            )}
+          </ErrorBoundary>
           {!hideFocusInfo && <FocusInfo />}
         </div>
       </div>

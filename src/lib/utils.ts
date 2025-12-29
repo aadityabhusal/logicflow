@@ -541,6 +541,7 @@ export function resolveReference(data: IData, context: Context): IData {
   const variable = context.variables.get(data.value.name);
   if (!variable) {
     return createData({
+      id: data.id,
       type: { kind: "error", errorType: "reference_error" },
       value: { reason: `'${data.value.name}' not found` },
     });
@@ -668,7 +669,7 @@ export function getStatementResult(
   // TODO: Make use of the data type to create a better type for result e.g. a union type
 ): IData {
   let result = statement.data;
-  if (isDataOfType(result, "error")) return { ...result, id: nanoid() };
+  if (isDataOfType(result, "error")) return { ...result, id: statement.id };
   const lastOperation = statement.operations[statement.operations.length - 1];
   if (index) {
     const statementResult = statement.operations[index - 1]?.value.result;
@@ -678,7 +679,7 @@ export function getStatementResult(
   } else if (isDataOfType(result, "condition")) {
     result = result.value.result ?? getConditionResult(result.value);
   }
-  return { ...result, id: nanoid() };
+  return { ...result, id: statement.id };
 }
 
 export function getConditionResult(condition: DataValue<ConditionType>): IData {

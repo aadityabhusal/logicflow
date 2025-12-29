@@ -1,5 +1,12 @@
 import { Combobox, Tooltip, useCombobox } from "@mantine/core";
-import { HTMLAttributes, ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  HTMLAttributes,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { BaseInput } from "./Input/BaseInput";
 import { IconButton } from "../ui/IconButton";
 import {
@@ -21,11 +28,20 @@ import {
   resolveReference,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
+import isEqual from "react-fast-compare";
 
 export interface IDropdownTargetProps
   extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
   value?: string;
   onChange?: (value: string) => void;
+}
+
+function useDeepCompareMemoize<T>(value: T): T {
+  const ref = useRef<T | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/refs
+  if (!ref.current || !isEqual(ref.current, value)) ref.current = value;
+  // eslint-disable-next-line react-hooks/refs
+  return ref.current as T;
 }
 
 export function Dropdown({
@@ -62,8 +78,9 @@ export function Dropdown({
   context: Context;
 }) {
   const [, setSearchParams] = useSearchParams();
-  const { highlightOperation, navigation, setUiConfig } = uiConfigStore();
-  const result = useMemo(
+  const { highlightOperation, navigation, setUiConfig, showPopup } =
+    uiConfigStore();
+  const _result = useMemo(
     () =>
       operationResult
         ? resolveReference(operationResult, context)
@@ -72,6 +89,8 @@ export function Dropdown({
         : undefined,
     [operationResult, data, context]
   );
+  const result = useDeepCompareMemoize(_result);
+
   const forceDisplayBorder =
     highlightOperation && isDataOfType(data, "operation");
   const [isHovered, setHovered] = useState(false);
@@ -89,6 +108,8 @@ export function Dropdown({
     },
   });
   const { getCurrentProject } = useProjectStore();
+
+  if (isFocused) console.log(result);
 
   const dropdownOptions = useMemo(
     () =>
@@ -129,7 +150,6 @@ export function Dropdown({
   function handleSearch(val: string) {
     if (!combobox.dropdownOpened) combobox.openDropdown();
     setSearch(val);
-    setUiConfig({ result, skipExecution: context.skipExecution });
   }
 
   useHotkeys(
@@ -189,11 +209,15 @@ export function Dropdown({
   }, [combobox.dropdownOpened]);
 
   useEffect(() => {
+    if (isFocused && result && showPopup) {
+      setUiConfig({ result });
+    }
+  }, [isFocused, result, setUiConfig, showPopup]);
+
+  useEffect(() => {
     if (!isFocused) return;
     if (combobox.targetRef.current instanceof HTMLInputElement) {
       combobox.targetRef.current.focus();
-    } else {
-      setUiConfig({ result, skipExecution: context.skipExecution });
     }
 
     const textInput = isTextInput(combobox.targetRef.current);
@@ -212,7 +236,6 @@ export function Dropdown({
     combobox.targetRef,
     navigation?.direction,
     navigation?.modifier,
-    setUiConfig,
   ]);
 
   return (
@@ -268,7 +291,6 @@ export function Dropdown({
                   if (e.target === e.currentTarget) {
                     setUiConfig({
                       navigation: { id },
-                      result,
                       showPopup: true,
                       skipExecution: context.skipExecution,
                     });
@@ -278,7 +300,6 @@ export function Dropdown({
               onFocus: () =>
                 setUiConfig({
                   navigation: { id },
-                  result,
                   showPopup: true,
                   skipExecution: context.skipExecution,
                 }),
