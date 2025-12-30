@@ -2,10 +2,10 @@ import { IconButton } from "../ui/IconButton";
 import { FaPlus } from "react-icons/fa6";
 import { Context, IStatement } from "../lib/types";
 import { createData, createStatement } from "../lib/utils";
-import { ComponentPropsWithoutRef } from "react";
+import { ComponentPropsWithoutRef, memo } from "react";
 import { uiConfigStore } from "@/lib/store";
 
-export function AddStatement({
+const AddStatementComponent = ({
   id,
   onSelect,
   iconProps,
@@ -16,9 +16,10 @@ export function AddStatement({
   iconProps?: Partial<ComponentPropsWithoutRef<typeof IconButton>>;
   context: Context;
   className?: string;
-}) {
-  const { navigation, setUiConfig } = uiConfigStore();
-  const isFocused = navigation?.id === `${id}_add`;
+}) => {
+  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const isFocused = navigationId === `${id}_add`;
 
   return (
     <div className="w-max">
@@ -40,4 +41,6 @@ export function AddStatement({
       />
     </div>
   );
-}
+};
+
+export const AddStatement = memo(AddStatementComponent);

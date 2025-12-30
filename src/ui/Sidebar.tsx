@@ -5,12 +5,15 @@ import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
 import { SiGithub, SiYoutube } from "react-icons/si";
 import { useSearchParams } from "react-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
 
-export function Sidebar() {
-  const { addFile, updateProject, deleteFile, getFile, getCurrentProject } =
-    useProjectStore();
+function SidebarComponent() {
+  const addFile = useProjectStore((s) => s.addFile);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const deleteFile = useProjectStore((s) => s.deleteFile);
+  const getFile = useProjectStore((s) => s.getFile);
+  const getCurrentProject = useProjectStore((s) => s.getCurrentProject);
   const [searchParams, setSearchParams] = useSearchParams();
   const [editingId, setEditingId] = useState<string>();
   const [hoveringId, setHoveringId] = useState<string>();
@@ -141,3 +144,5 @@ export function Sidebar() {
     </div>
   );
 }
+
+export const Sidebar = memo(SidebarComponent);

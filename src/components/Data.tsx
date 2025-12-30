@@ -8,7 +8,7 @@ import {
   getDataDropdownList,
   isDataOfType,
 } from "../lib/utils";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { BaseInput } from "./Input/BaseInput";
 import { isNumberLike } from "@mantine/core";
 import { DataTypes } from "../lib/data";
@@ -16,6 +16,7 @@ import { ConditionInput } from "./Input/ConditionInput";
 import { UnionInput } from "./Input/UnionInput";
 import { Operation } from "./Operation";
 import { ErrorInput } from "./Input/ErrorInput";
+import { uiConfigStore } from "@/lib/store";
 
 interface IProps {
   data: IData;
@@ -25,26 +26,34 @@ interface IProps {
   context: Context;
 }
 
-export function Data({
+const DataComponent = ({
   data,
   disableDelete,
   addOperationCall,
   handleChange,
   context,
-}: IProps) {
+}: IProps) => {
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
   const dropdownItems = useMemo(
     () => getDataDropdownList({ data, onSelect: handleChange, context }),
     [data, handleChange, context]
   );
 
-  const showDropdownIcon =
-    isDataOfType(data, "array") ||
-    isDataOfType(data, "object") ||
-    isDataOfType(data, "boolean") ||
-    isDataOfType(data, "union") ||
-    isDataOfType(data, "condition") ||
-    isDataOfType(data, "operation") ||
-    isDataOfType(data, "error");
+  const dropdownOptions = useMemo(() => {
+    const showDropdownIcon =
+      isDataOfType(data, "array") ||
+      isDataOfType(data, "object") ||
+      isDataOfType(data, "boolean") ||
+      isDataOfType(data, "union") ||
+      isDataOfType(data, "condition") ||
+      isDataOfType(data, "operation") ||
+      isDataOfType(data, "error");
+    return {
+      withDropdownIcon: showDropdownIcon,
+      withSearch: showDropdownIcon,
+      focusOnClick: showDropdownIcon,
+    };
+  }, [data]);
 
   return (
     <Dropdown
@@ -53,11 +62,7 @@ export function Data({
       items={dropdownItems}
       handleDelete={!disableDelete ? () => handleChange(data, true) : undefined}
       addOperationCall={addOperationCall}
-      options={{
-        withDropdownIcon: showDropdownIcon,
-        withSearch: showDropdownIcon,
-        focusOnClick: showDropdownIcon,
-      }}
+      options={dropdownOptions}
       context={context}
       value={isDataOfType(data, "reference") ? data.value.name : data.type.kind}
       isInputTarget={
@@ -168,10 +173,19 @@ export function Data({
                 type: DataTypes[transform.type as DataType["kind"]].type,
                 value: transform.value,
               });
+              if (Array.isArray(transform.value)) {
+                setUiConfig({ navigation: { id: transform.value[0].data.id } });
+              } else if (transform.value instanceof Map) {
+                setUiConfig({
+                  navigation: { id: transform.value.get("key")?.data.id },
+                });
+              }
             }}
           />
         )
       }
     />
   );
-}
+};
+
+export const Data = memo(DataComponent);

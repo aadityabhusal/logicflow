@@ -77,7 +77,7 @@ function ParseObject({
     <span className="gap-1">
       <span className="text-method">{"{"}</span>
       {val.map(([key, val], i, arr) => (
-        <Fragment key={i}>
+        <Fragment key={val.id}>
           <span className="text-property">{key}</span>
           {": "}
           <ParseStatement statement={val} showData={showData} nest={nest} />
@@ -102,7 +102,7 @@ function ParseArray({
     <span className="gap-1">
       <span className="text-method">{"["}</span>
       {data.value.map((item, i, arr) => (
-        <Fragment key={i}>
+        <Fragment key={item.id}>
           <ParseStatement statement={item} showData={showData} nest={nest} />
           {i + 1 < arr.length && ", "}
         </Fragment>

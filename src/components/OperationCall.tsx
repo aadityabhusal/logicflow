@@ -8,9 +8,10 @@ import {
 } from "../lib/operation";
 import { getInverseTypes, mergeNarrowedTypes } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
+import { uiConfigStore } from "@/lib/store";
 
-export function OperationCall({
+const OperationCallComponent = ({
   data,
   operation,
   handleOperationCall,
@@ -27,7 +28,9 @@ export function OperationCall({
   addOperationCall?: () => void;
   context: Context;
   narrowedTypes: Context["variables"];
-}) {
+}) => {
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+
   const updatedVariables = useMemo(
     () =>
       mergeNarrowedTypes(
@@ -44,14 +47,20 @@ export function OperationCall({
 
   function handleDropdown(name: string) {
     if (operation.value.name === name) return;
-    handleOperationCall(
-      createOperationCall({
-        data,
-        name,
-        parameters: operation.value.parameters,
-        context,
-      })
-    );
+    const operationCall = createOperationCall({
+      data,
+      name,
+      parameters: operation.value.parameters,
+      context,
+    });
+    handleOperationCall(operationCall);
+    const params = operationCall.value.parameters;
+    setUiConfig({
+      navigation: {
+        id: params.length > 0 ? params[0].data.id : operation.id,
+        direction: "right",
+      },
+    });
   }
 
   function handleParameter(item: IStatement, index: number) {
@@ -100,7 +109,7 @@ export function OperationCall({
             ? getInverseTypes(context.variables, narrowedTypes)
             : updatedVariables;
         return (
-          <span key={paramIndex} className="flex">
+          <span key={item.id} className="flex">
             <Statement
               statement={item}
               handleStatement={(val) => val && handleParameter(val, paramIndex)}
@@ -123,4 +132,6 @@ export function OperationCall({
       <span className="self-end">{")"}</span>
     </Dropdown>
   );
-}
+};
+
+export const OperationCall = memo(OperationCallComponent);

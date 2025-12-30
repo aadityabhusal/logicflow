@@ -11,7 +11,9 @@ dayjs.extend(relativeTime);
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { projects, createProject, deleteProject } = useProjectStore();
+  const projects = useProjectStore((s) => s.projects);
+  const createProject = useProjectStore((s) => s.createProject);
+  const deleteProject = useProjectStore((s) => s.deleteProject);
 
   const sortedProjects = useMemo(
     () =>

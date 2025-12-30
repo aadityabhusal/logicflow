@@ -18,12 +18,12 @@ import { AddStatement } from "./AddStatement";
 import { getHotkeyHandler, useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { DataTypes } from "../lib/data";
-import { useMemo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { uiConfigStore } from "@/lib/store";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-export function Statement({
+const StatementComponent = ({
   statement,
   handleStatement,
   context,
@@ -40,9 +40,10 @@ export function Statement({
     disableDelete?: boolean;
     disableOperationCall?: boolean;
   };
-}) {
+}) => {
   const hasName = statement.name !== undefined;
-  const { navigation, setUiConfig } = uiConfigStore();
+  const navigationId = uiConfigStore((state) => state.navigation?.id);
+  const setUiConfig = uiConfigStore((state) => state.setUiConfig);
   const customHotKeys = useCustomHotkeys();
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
@@ -54,8 +55,9 @@ export function Statement({
   const PipeArrow =
     statement.operations.length > 1 ? FaArrowTurnUp : FaArrowRightLong;
 
-  const isEqualsFocused = navigation?.id === `${statement.id}_equals`;
-  const isNameFocused = navigation?.id === `${statement.id}_name`;
+  const isEqualsFocused = navigationId === `${statement.id}_equals`;
+  const isNameFocused = navigationId === `${statement.id}_name`;
+
   const hoverEvents = useMemo(
     () => ({
       onMouseEnter: openDropdown,
@@ -85,13 +87,6 @@ export function Statement({
     if (remove) operations.splice(index, 1);
     else operations[index] = operation;
     handleStatement({ ...statement, operations });
-    const params = operation.value.parameters;
-    setUiConfig({
-      navigation: {
-        id: params.length > 0 ? params[0].data.id : operation.id,
-        direction: "right",
-      },
-    });
   }
 
   return (
@@ -128,7 +123,7 @@ export function Statement({
             />
           ) : null}
           <Popover
-            opened={hoverOpened || navigation?.id === `${statement.id}_add`}
+            opened={hoverOpened || navigationId === `${statement.id}_add`}
             offset={4}
             position="left"
             withinPortal={false}
@@ -269,4 +264,6 @@ export function Statement({
       </div>
     </div>
   );
-}
+};
+
+export const Statement = memo(StatementComponent);

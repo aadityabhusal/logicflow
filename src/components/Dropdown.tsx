@@ -1,6 +1,7 @@
 import { Combobox, Tooltip, useCombobox } from "@mantine/core";
 import {
   HTMLAttributes,
+  memo,
   ReactNode,
   useEffect,
   useMemo,
@@ -44,7 +45,7 @@ function useDeepCompareMemoize<T>(value: T): T {
   return ref.current as T;
 }
 
-export function Dropdown({
+const DropdownComponent = ({
   id,
   value,
   data,
@@ -76,10 +77,16 @@ export function Dropdown({
   isInputTarget?: boolean;
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
-}) {
+}) => {
   const [, setSearchParams] = useSearchParams();
-  const { highlightOperation, navigation, setUiConfig, showPopup } =
-    uiConfigStore();
+  const highlightOperation = uiConfigStore((s) => s.highlightOperation);
+  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const navigationDirection = uiConfigStore((s) => s.navigation?.direction);
+  const navigationModifier = uiConfigStore((s) => s.navigation?.modifier);
+  const showPopup = uiConfigStore((s) => s.showPopup);
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
+
   const _result = useMemo(
     () =>
       operationResult
@@ -94,7 +101,7 @@ export function Dropdown({
   const forceDisplayBorder =
     highlightOperation && isDataOfType(data, "operation");
   const [isHovered, setHovered] = useState(false);
-  const isFocused = navigation?.id === id;
+  const isFocused = navigationId === id;
   const [search, setSearch] = useState("");
   const combobox = useCombobox({
     loop: true,
@@ -107,9 +114,6 @@ export function Dropdown({
       setUiConfig({ navigation: { id, disable: true } });
     },
   });
-  const { getCurrentProject } = useProjectStore();
-
-  if (isFocused) console.log(result);
 
   const dropdownOptions = useMemo(
     () =>
@@ -224,19 +228,14 @@ export function Dropdown({
     if (textInput && textInput !== document.activeElement) {
       let caretPosition = 0;
       if (
-        (navigation.direction === "right" && navigation.modifier) ||
-        (navigation.direction === "left" && !navigation.modifier)
+        (navigationDirection === "right" && navigationModifier) ||
+        (navigationDirection === "left" && !navigationModifier)
       ) {
         caretPosition = textInput.value.length;
       }
       textInput.setSelectionRange(caretPosition, caretPosition);
     }
-  }, [
-    isFocused,
-    combobox.targetRef,
-    navigation?.direction,
-    navigation?.modifier,
-  ]);
+  }, [isFocused, combobox.targetRef, navigationDirection, navigationModifier]);
 
   return (
     <Combobox
@@ -306,9 +305,7 @@ export function Dropdown({
             })}
           </Combobox.EventsTarget>
           {isDataOfType(data, "reference") &&
-            getCurrentProject()?.files.find(
-              (f) => f.name === data.value.name
-            ) && (
+            currentProject?.files.find((f) => f.name === data.value.name) && (
               <IconButton
                 tabIndex={-1}
                 size={8}
@@ -392,4 +389,6 @@ export function Dropdown({
       ) : null}
     </Combobox>
   );
-}
+};
+
+export const Dropdown = memo(DropdownComponent);

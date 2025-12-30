@@ -23,11 +23,12 @@ import { updateFiles } from "@/lib/update";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export default function Project() {
-  const { getCurrentProject, deleteFile, updateProject, currentFileId } =
-    useProjectStore();
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
+  const deleteFile = useProjectStore((s) => s.deleteFile);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const currentFileId = useProjectStore((s) => s.currentFileId);
   const { hideSidebar, hideFocusInfo, setUiConfig } = uiConfigStore();
 
-  const currentProject = getCurrentProject();
   const currentOperation = useMemo(
     () =>
       createOperationFromFile(
@@ -63,6 +64,20 @@ export default function Project() {
 
   useHotkeys(useCustomHotkeys(currentOperation), []);
 
+  const operationOptions = useMemo(
+    () => ({ isTopLevel: true, disableDropdown: true }),
+    []
+  );
+  const context = useMemo(
+    () => ({
+      variables: createFileVariables(
+        currentProject?.files,
+        currentOperation?.id
+      ),
+    }),
+    [currentProject?.files, currentOperation?.id]
+  );
+
   if (!currentProject) return <Navigate to="/" replace />;
 
   return (
@@ -94,13 +109,8 @@ export default function Project() {
               <Operation
                 operation={currentOperation}
                 handleChange={handleOperationChange}
-                context={{
-                  variables: createFileVariables(
-                    currentProject?.files,
-                    currentOperation?.id
-                  ),
-                }}
-                options={{ isTopLevel: true, disableDropdown: true }}
+                context={context}
+                options={operationOptions}
               />
             ) : (
               <NoteText>Select an operation</NoteText>

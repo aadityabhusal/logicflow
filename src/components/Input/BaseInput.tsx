@@ -5,7 +5,7 @@ import {
   TextInputProps,
 } from "@mantine/core";
 import { useUncontrolled } from "@mantine/hooks";
-import { forwardRef, useState } from "react";
+import { forwardRef, memo, useState } from "react";
 
 interface BaseInputProps<T extends string | number>
   extends Omit<
@@ -81,7 +81,7 @@ function BaseInputInner<T extends string | number>(
   );
 }
 
-export const BaseInput = forwardRef(BaseInputInner) as <
+export const BaseInput = memo(forwardRef(BaseInputInner)) as <
   T extends string | number
 >(
   props: BaseInputProps<T> & { ref?: React.ForwardedRef<HTMLInputElement> }

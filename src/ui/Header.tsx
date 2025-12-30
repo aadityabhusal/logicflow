@@ -36,8 +36,15 @@ export function Header({
   currentOperation?: IData<OperationType>;
   currentProject?: Project;
 }) {
-  const { setUiConfig, ...uiConfig } = uiConfigStore();
-  const { undo, redo, updateProject, currentFileId } = useProjectStore();
+  const uiConfig = uiConfigStore((s) => ({
+    highlightOperation: s.highlightOperation,
+    hideFocusInfo: s.hideFocusInfo,
+  }));
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const undo = useProjectStore((s) => s.undo);
+  const redo = useProjectStore((s) => s.redo);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const currentFileId = useProjectStore((s) => s.currentFileId);
   const canUndo = fileHistoryActions.canUndo(currentFileId);
   const canRedo = fileHistoryActions.canRedo(currentFileId);
   const clipboard = useClipboard({ timeout: 500 });

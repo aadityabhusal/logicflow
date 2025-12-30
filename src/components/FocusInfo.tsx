@@ -7,7 +7,10 @@ import { useHotkeys } from "@mantine/hooks";
 import { getTypeSignature } from "@/lib/utils";
 
 export function FocusInfo() {
-  const { showPopup, result, skipExecution, setUiConfig } = uiConfigStore();
+  const showPopup = uiConfigStore((s) => s.showPopup);
+  const result = uiConfigStore((s) => s.result);
+  const skipExecution = uiConfigStore((s) => s.skipExecution);
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
 
   useHotkeys([
     ["Escape", () => setUiConfig({ showPopup: false, result: undefined })],
