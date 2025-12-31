@@ -13,7 +13,6 @@ import {
   Parameter,
   ProjectFile,
 } from "./types";
-import { ErrorValueSchema, ReferenceValueSchema } from "./schemas";
 
 /* Create */
 
@@ -265,10 +264,6 @@ export function createFileVariables(
 /* Types */
 
 export function isTypeCompatible(first: DataType, second: DataType): boolean {
-  // Error types are compatible with each other (regardless of category)
-  if (first.kind === "error" && second.kind === "error") {
-    return true;
-  }
   if (first.kind === "operation" && second.kind === "operation") {
     if (first.parameters.length !== second.parameters.length) return false;
     if (!isTypeCompatible(first.result, second.result)) return false;
@@ -327,6 +322,17 @@ export function isDataOfType<K extends DataType["kind"]>(
   kind: K
 ): data is IData<Extract<DataType, { kind: K }>> {
   return data?.type.kind === kind;
+}
+
+export function isObject<const K extends readonly string[]>(
+  data: unknown,
+  keys?: K
+): data is { [P in K[number]]: unknown } {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return false;
+  }
+  if (keys) return keys.every((key) => key in data);
+  return true;
 }
 
 export function isFileOfType<T extends ProjectFile["type"]>(
@@ -574,22 +580,13 @@ export function inferTypeFromValue<T extends DataType>(
     } as T;
   }
   if (
-    value &&
-    typeof value === "object" &&
-    "parameters" in value &&
-    "statements" in value &&
+    isObject(value, ["parameters", "statements"]) &&
     Array.isArray(value.parameters) &&
     Array.isArray(value.statements)
   ) {
     return getOperationType(value.parameters, value.statements) as T;
   }
-  if (
-    value &&
-    typeof value === "object" &&
-    "condition" in value &&
-    "true" in value &&
-    "false" in value
-  ) {
+  if (isObject(value, ["condition", "true", "false"])) {
     const trueType = getStatementResult(value.true as IStatement).type;
     const falseType = getStatementResult(value.false as IStatement).type;
     const unionType = resolveUnionType(
@@ -597,14 +594,13 @@ export function inferTypeFromValue<T extends DataType>(
     );
     return { kind: "condition", resultType: unionType } as T;
   }
-  const referenceValue = ReferenceValueSchema.safeParse(value);
-  if (referenceValue.success && context) {
-    const type = context.variables.get(referenceValue.data.name)?.data.type;
+  if (isObject(value, ["name"]) && typeof value.name === "string" && context) {
+    const type = context.variables.get(value.name)?.data.type;
     return { kind: "reference", dataType: type ?? { kind: "unknown" } } as T;
   }
-  const errorValue = ErrorValueSchema.safeParse(value);
-  if (errorValue.success) {
-    return { kind: "error", errorType: "runtime_error" } as T;
+
+  if (isObject(value, ["reason"]) && typeof value.reason === "string") {
+    return { kind: "error", errorType: "custom_error" } as T;
   }
   return { kind: "unknown" } as T;
 }
@@ -750,12 +746,7 @@ export function getDataDropdownList({
 }
 
 export function jsonParseReviver(_: string, value: unknown) {
-  if (
-    value &&
-    typeof value === "object" &&
-    "_map_" in value &&
-    Array.isArray(value._map_)
-  ) {
+  if (isObject(value, ["_map_"]) && Array.isArray(value._map_)) {
     return new Map(value._map_);
   }
   return value;

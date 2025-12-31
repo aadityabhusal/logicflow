@@ -87,9 +87,6 @@ const UnionInputComponent = (
     });
   }
 
-  const menuItemClassNames =
-    "hover:bg-dropdown-hover focus:bg-dropdown-hover focus:outline-none";
-
   return (
     <div
       {...props}
@@ -145,7 +142,7 @@ const UnionInputComponent = (
               onClick={() => handleTypeSwitch(i)}
               classNames={{
                 item: [
-                  menuItemClassNames,
+                  "menu-item",
                   i === activeType.index ? "bg-dropdown-selected" : "",
                 ].join(" "),
               }}
@@ -172,10 +169,7 @@ const UnionInputComponent = (
               <Menu.Sub.Target>
                 <Menu.Sub.Item
                   classNames={{
-                    item: [
-                      "flex items-center justify-between",
-                      menuItemClassNames,
-                    ].join(" "),
+                    item: "flex items-center justify-between menu-item",
                     itemSection: "size-4 -rotate-90",
                   }}
                 >
@@ -195,9 +189,7 @@ const UnionInputComponent = (
                   )
                   .map(([name, { type }]) => (
                     <Menu.Item
-                      classNames={{
-                        item: ["text-left", menuItemClassNames].join(" "),
-                      }}
+                      classNames={{ item: "text-left menu-item" }}
                       key={name}
                       onClick={() => handleTypeAdd(type)}
                     >

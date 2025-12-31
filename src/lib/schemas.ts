@@ -137,7 +137,12 @@ export const ReferenceValueSchema: z.ZodType<DataValue<ReferenceType>> =
 
 const ErrorTypeSchema: z.ZodType<ErrorType> = z.object({
   kind: z.literal("error"),
-  errorType: z.enum(["reference_error", "type_error", "runtime_error"]),
+  errorType: z.enum([
+    "reference_error",
+    "type_error",
+    "runtime_error",
+    "custom_error",
+  ]),
 });
 export const ErrorValueSchema: z.ZodType<DataValue<ErrorType>> = z.object({
   reason: z.string(),

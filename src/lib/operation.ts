@@ -140,8 +140,8 @@ const booleanOperations: OperationListItem[] = [
       falseBranch: IStatement
     ) => {
       const resultType = resolveUnionType([
-        getStatementResult(trueBranch).type,
-        getStatementResult(falseBranch).type,
+        executeStatement(trueBranch, context).type,
+        executeStatement(falseBranch, context).type,
       ]);
       const selectedBranch = data.value ? trueBranch : falseBranch;
       const executedResult = executeStatement(selectedBranch, context);
@@ -821,7 +821,8 @@ export function getSkipExecution({
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
   const data = resolveReference(_data, context);
-  if (isDataOfType(data, "error")) return { reason: data.value.reason };
+  if (isDataOfType(data, "error"))
+    return { reason: data.value.reason, kind: "error" };
   if (!operation) return undefined;
 
   if (paramIndex !== undefined && isDataOfType(data, "boolean")) {
@@ -830,24 +831,16 @@ export function getSkipExecution({
       operationName === "thenElse" &&
       data.value === (paramIndex === 0 ? false : true)
     ) {
-      return { reason: "Unreachable branch" };
+      return { reason: "Unreachable branch", kind: "unreachable" };
     } else if (
       (operationName === "or" || operationName === "and") &&
       data.value === (operationName === "or" ? true : false)
     ) {
-      return { reason: `${operationName} operation is unreachable` };
+      return {
+        reason: `${operationName} operation is unreachable`,
+        kind: "unreachable",
+      };
     }
-  }
-
-  if (
-    paramIndex === undefined &&
-    !getFilteredOperations(data, context.variables).find(
-      (op) => op.name === operation.value.name
-    )
-  ) {
-    return {
-      reason: `Operation '${operation.value.name}' cannot be chained after '${data.type.kind}' type`,
-    };
   }
 
   return undefined;

@@ -258,7 +258,10 @@ const DropdownComponent = ({
             forceDisplayBorder || isFocused || isHovered
               ? "outline outline-border"
               : "",
-            context.skipExecution ? "opacity-50 " : "",
+            context.skipExecution && context.skipExecution.kind !== "error"
+              ? "opacity-50 "
+              : "",
+            result?.type.kind === "error" ? "bg-error/25" : "",
           ].join(" ")}
           onMouseOver={(e) => {
             e.stopPropagation();

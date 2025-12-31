@@ -80,7 +80,12 @@ export function updateOperationCalls(
             ...(currentResult && { id: currentResult?.id }),
             isTypeEditable: data.isTypeEditable,
           }
-        : currentResult;
+        : createData({
+            type: { kind: "error", errorType: "type_error" },
+            value: {
+              reason: `Cannot chain '${operation.value.name}' after '${data.type.kind}' type`,
+            },
+          });
 
       acc.operations = [
         ...acc.operations,

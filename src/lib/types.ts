@@ -23,7 +23,11 @@ export type ReferenceType = {
 };
 export type ErrorType = {
   kind: "error";
-  errorType: "reference_error" | "type_error" | "runtime_error";
+  errorType:
+    | "reference_error"
+    | "type_error"
+    | "runtime_error"
+    | "custom_error";
 };
 
 export type DataType =
@@ -116,7 +120,7 @@ export type Context = {
     { data: IData; reference?: { name: string; id: string } }
   >;
   currentStatementId?: string;
-  skipExecution?: { reason: string };
+  skipExecution?: { reason: string; kind: "unreachable" | "error" };
 };
 
 export type Parameter = {
