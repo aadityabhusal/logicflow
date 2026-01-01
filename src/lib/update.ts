@@ -26,6 +26,7 @@ import {
   applyTypeNarrowing,
   getInverseTypes,
   mergeNarrowedTypes,
+  resolveReference,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
@@ -61,8 +62,8 @@ export function updateOperationCalls(
           ...context,
           variables,
           skipExecution: getSkipExecution({
-            context: { ...context, variables },
-            data: param.data,
+            context,
+            data,
             operation,
             paramIndex: paramIndex,
           }),
@@ -83,7 +84,9 @@ export function updateOperationCalls(
         : createData({
             type: { kind: "error", errorType: "type_error" },
             value: {
-              reason: `Cannot chain '${operation.value.name}' after '${data.type.kind}' type`,
+              reason: `Cannot chain '${operation.value.name}' after '${
+                resolveReference(data, context).type.kind
+              }' type`,
             },
           });
 

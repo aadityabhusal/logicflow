@@ -379,6 +379,19 @@ const arrayOperations: OperationListItem[] = [
     },
   },
   {
+    name: "concat",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+    ],
+    handler: (_, data: IData<ArrayType>, p1: IData<ArrayType>) => {
+      return createData({
+        type: { kind: "array", elementType: { kind: "unknown" } },
+        value: data.value.concat(p1.value),
+      });
+    },
+  },
+  {
     name: "map",
     parameters: getArrayCallbackParameters,
     handler: (
@@ -420,6 +433,40 @@ const arrayOperations: OperationListItem[] = [
       const results = executeArrayOperation(data, operation, context);
       const filtered = data.value.filter((_, i) => Boolean(results[i].value));
       return createData({ type: data.type, value: filtered });
+    },
+  },
+  {
+    name: "sort",
+    parameters: (data) => [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      {
+        type: {
+          kind: "operation",
+          parameters: isDataOfType(data, "array")
+            ? [
+                { name: "first", type: data.type.elementType },
+                { name: "second", type: data.type.elementType },
+              ]
+            : [],
+          result: data.type,
+        },
+      },
+    ],
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const sorted = data.value.toSorted((a, b) => {
+        const result = executeOperation(
+          operationToListItem(operation),
+          getStatementResult(a),
+          [b],
+          context
+        );
+        return result.value ? -1 : 1;
+      });
+      return createData({ type: data.type, value: sorted });
     },
   },
 ];
@@ -559,7 +606,7 @@ function getArrayCallbackParameters(data: IData) {
           { name: "index", type: { kind: "number" } },
           { name: "arr", type: { kind: "array", elementType } },
         ],
-        result: { kind: "string" },
+        result: { kind: "undefined" },
       },
     },
   ] as Parameter[];

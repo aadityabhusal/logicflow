@@ -94,9 +94,7 @@ const OperationCallComponent = ({
       context={context}
       value={operation.value.name}
       addOperationCall={
-        filteredOperations.length && !context.skipExecution
-          ? addOperationCall
-          : undefined
+        filteredOperations.length ? addOperationCall : undefined
       }
       handleDelete={() => handleOperationCall(operation, true)}
       isInputTarget

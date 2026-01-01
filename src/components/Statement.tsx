@@ -69,10 +69,10 @@ const StatementComponent = ({
   );
 
   // TODO: should context be passed as a parameter?
-  function addOperationCall() {
-    const data = getStatementResult(statement);
+  function addOperationCall(data: IData, index: number) {
     const operation = createOperationCall({ data, context });
-    const operations = [...statement.operations, operation];
+    const operations = [...statement.operations];
+    operations.splice(index, 0, operation);
     handleStatement({ ...statement, operations });
     setUiConfig({ navigation: { id: operation.id, direction: "right" } });
   }
@@ -193,10 +193,9 @@ const StatementComponent = ({
             disableDelete={options?.disableDelete}
             addOperationCall={
               !options?.disableOperationCall &&
-              statement.operations.length === 0 &&
               !context.skipExecution &&
               getFilteredOperations(statement.data, context.variables).length
-                ? addOperationCall
+                ? () => addOperationCall(statement.data, 0)
                 : undefined
             }
             context={context}
@@ -215,6 +214,11 @@ const StatementComponent = ({
                 data,
                 operation
               );
+              const skipExecution = getSkipExecution({
+                context,
+                data,
+                operation,
+              });
 
               acc.elements.push(
                 <div key={operation.id} className="flex items-start gap-1 ml-2">
@@ -237,19 +241,15 @@ const StatementComponent = ({
                         handleOperationCall(op, i, remove)
                       }
                       // passing context and narrowedTypes separately to handle inverse type narrowing
-                      context={{
-                        ...context,
-                        skipExecution: getSkipExecution({
-                          context,
-                          data,
-                          operation,
-                        }),
-                      }}
+                      context={{ ...context, skipExecution }}
                       narrowedTypes={acc.narrowedTypes}
                       addOperationCall={
-                        !options?.disableOperationCall &&
-                        i + 1 === operationsList.length
-                          ? addOperationCall
+                        !options?.disableOperationCall && !skipExecution
+                          ? () =>
+                              addOperationCall(
+                                operation.value.result ?? data,
+                                i + 1
+                              )
                           : undefined
                       }
                     />
