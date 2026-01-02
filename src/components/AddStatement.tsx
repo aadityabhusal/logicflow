@@ -1,6 +1,6 @@
 import { IconButton } from "../ui/IconButton";
 import { FaPlus } from "react-icons/fa6";
-import { Context, IStatement } from "../lib/types";
+import { Context, DataType, IStatement } from "../lib/types";
 import { createData, createStatement } from "../lib/utils";
 import { ComponentPropsWithoutRef, memo } from "react";
 import { uiConfigStore } from "@/lib/store";
@@ -10,12 +10,14 @@ const AddStatementComponent = ({
   onSelect,
   iconProps,
   className,
+  dataType,
 }: {
   id: string;
   onSelect: (statement: IStatement) => void;
   iconProps?: Partial<ComponentPropsWithoutRef<typeof IconButton>>;
   context: Context;
   className?: string;
+  dataType?: DataType;
 }) => {
   const navigationId = uiConfigStore((s) => s.navigation?.id);
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
@@ -33,7 +35,7 @@ const AddStatementComponent = ({
           className || "",
         ].join(" ")}
         onClick={() => {
-          const data = createData({ isTypeEditable: true });
+          const data = createData({ type: dataType });
           setUiConfig({ navigation: { id: data.id } });
           onSelect(createStatement({ data }));
         }}

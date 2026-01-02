@@ -147,13 +147,17 @@ const OperationComponent = (
               context={{
                 variables: new Map(),
                 currentStatementId: parameter.id,
+                ...(context.expectedType && {
+                  expectedType: parameter.data.type,
+                  forceExpectedType: true,
+                }),
               }}
               addStatement={addParameter}
             />
             {i + 1 < paramList.length && <span>,</span>}
           </Fragment>
         ))}
-        {operation.isTypeEditable && (
+        {!context.expectedType && (
           <AddStatement
             id={`${operation.id}_parameter`}
             onSelect={addParameter}
@@ -199,7 +203,7 @@ const OperationComponent = (
             {
               elements: [] as ReactNode[],
               variables: createContextVariables(
-                operation.value.parameters,
+                operation.value.parameters.toReversed(),
                 context.variables
               ),
             }

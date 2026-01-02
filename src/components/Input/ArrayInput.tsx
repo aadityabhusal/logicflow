@@ -46,7 +46,10 @@ const ArrayInputComponent = (
             <Statement
               statement={item}
               handleStatement={(val, remove) => handleUpdate(val, i, remove)}
-              context={context}
+              context={{
+                ...context,
+                expectedType: context.expectedType && data.type.elementType,
+              }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
@@ -63,6 +66,7 @@ const ArrayInputComponent = (
           });
         }}
         iconProps={{ title: "Add array item" }}
+        dataType={context.expectedType && data.type.elementType}
         context={context}
       />
       <span>{"]"}</span>

@@ -79,7 +79,6 @@ export function updateOperationCalls(
         ? {
             ...executeOperation(foundOperation, data, parameters, context),
             ...(currentResult && { id: currentResult?.id }),
-            isTypeEditable: data.isTypeEditable,
           }
         : createData({
             type: { kind: "error", errorType: "type_error" },

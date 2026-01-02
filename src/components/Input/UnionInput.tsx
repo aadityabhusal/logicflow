@@ -39,11 +39,10 @@ const UnionInputComponent = (
         id: `${data.id}_data`,
         type: index === -1 ? data.type.types[0] : type,
         value: data.value,
-        isTypeEditable: data.isTypeEditable,
       }),
       index: index === -1 ? 0 : index,
     };
-  }, [context, data.id, data.isTypeEditable, data.type.types, data.value]);
+  }, [context, data.id, data.type.types, data.value]);
 
   function handleTypeAdd(newType: DataType) {
     handleData({
@@ -100,7 +99,10 @@ const UnionInputComponent = (
             ? handleTypeRemove(activeType.index)
             : handleActiveTypeChange(newData)
         }
-        context={context}
+        context={{
+          ...context,
+          expectedType: context.expectedType && activeType.data.type,
+        }}
       />
       <Menu
         width={200}
@@ -150,7 +152,7 @@ const UnionInputComponent = (
               <Tooltip label={getTypeSignature(type)} position="right">
                 <div className={"flex items-center gap-1 justify-between"}>
                   {type.kind}
-                  {data.type.types.length > 1 ? (
+                  {data.type.types.length > 1 && !context.expectedType ? (
                     <FaX
                       size={16}
                       className="p-1 hover:outline hover:outline-border"
@@ -164,7 +166,7 @@ const UnionInputComponent = (
               </Tooltip>
             </Menu.Item>
           ))}
-          {data.isTypeEditable ? (
+          {!context.expectedType ? (
             <Menu.Sub>
               <Menu.Sub.Target>
                 <Menu.Sub.Item

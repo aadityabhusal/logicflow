@@ -87,7 +87,10 @@ const ObjectInputComponent = (
               handleStatement={(val, remove) =>
                 handleUpdate(arr, i, val, remove)
               }
-              context={context}
+              context={{
+                ...context,
+                expectedType: context.expectedType && data.type.properties[key],
+              }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>

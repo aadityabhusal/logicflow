@@ -165,11 +165,7 @@ export const DataTypeSchema: z.ZodType<DataType> = z.union([
 ]);
 
 export const IDataSchema: z.ZodType<IData> = z
-  .object({
-    id: z.string(),
-    entityType: z.literal("data"),
-    isTypeEditable: z.boolean().optional(),
-  })
+  .object({ id: z.string(), entityType: z.literal("data") })
   .and(
     // Note: We use z.union instead of z.discriminatedUnion because the discriminator (kind) is nested inside the type object.
     z.union([

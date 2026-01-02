@@ -92,7 +92,6 @@ export interface IData<T extends DataType = DataType> {
   entityType: "data";
   type: T;
   value: DataValue<T>;
-  isTypeEditable?: boolean;
 }
 
 export interface IStatement {
@@ -120,13 +119,14 @@ export type Context = {
     { data: IData; reference?: { name: string; id: string } }
   >;
   currentStatementId?: string;
+  expectedType?: DataType;
+  forceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
 };
 
 export type Parameter = {
   type: DataType;
   name?: string;
-  isTypeEditable?: boolean;
 };
 export type OperationListItem = {
   name: string;

@@ -4,6 +4,7 @@ import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
   getFilteredOperations,
+  getOperationListItemParameters,
   getSkipExecution,
 } from "../lib/operation";
 import { getInverseTypes, mergeNarrowedTypes } from "../lib/utils";
@@ -41,7 +42,7 @@ const OperationCallComponent = ({
     [context.variables, narrowedTypes, operation.value.name]
   );
   const filteredOperations = useMemo(
-    () => getFilteredOperations(data, context.variables),
+    () => getFilteredOperations(data, context.variables, true),
     [data, context.variables]
   );
 
@@ -84,13 +85,16 @@ const OperationCallComponent = ({
     <Dropdown
       id={operation.id}
       operationResult={operation.value.result}
-      items={filteredOperations.map((item) => ({
-        label: item.name,
-        value: item.name,
-        color: "method",
-        entityType: "operationCall",
-        onClick: () => handleDropdown(item.name),
-      }))}
+      items={filteredOperations.map(([groupName, groupItems]) => [
+        groupName,
+        groupItems.map((item) => ({
+          label: item.name,
+          value: item.name,
+          color: "method",
+          entityType: "operationCall",
+          onClick: () => handleDropdown(item.name),
+        })),
+      ])}
       context={context}
       value={operation.value.name}
       addOperationCall={
@@ -102,10 +106,10 @@ const OperationCallComponent = ({
     >
       <span>{"("}</span>
       {operation.value.parameters.map((item, paramIndex, arr) => {
-        const variables =
-          operation.value.name === "thenElse" && paramIndex === 1
-            ? getInverseTypes(context.variables, narrowedTypes)
-            : updatedVariables;
+        const originalOperation = filteredOperations
+          .flatMap(([_, items]) => items)
+          .find((item) => item.name === operation.value.name);
+
         return (
           <span key={item.id} className="flex">
             <Statement
@@ -114,7 +118,15 @@ const OperationCallComponent = ({
               options={{ disableDelete: true }}
               context={{
                 ...context,
-                variables,
+                variables:
+                  operation.value.name === "thenElse" && paramIndex === 1
+                    ? getInverseTypes(context.variables, narrowedTypes)
+                    : updatedVariables,
+                expectedType: originalOperation
+                  ? getOperationListItemParameters(originalOperation, data)[
+                      paramIndex + 1
+                    ]?.type
+                  : undefined,
                 skipExecution: getSkipExecution({
                   context,
                   data,

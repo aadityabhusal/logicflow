@@ -64,7 +64,7 @@ const DropdownComponent = ({
   data?: IData;
   operationResult?: IData;
   value?: string;
-  items?: IDropdownItem[];
+  items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
   addOperationCall?: () => void;
   children?: ReactNode;
@@ -115,41 +115,19 @@ const DropdownComponent = ({
     },
   });
 
-  const dropdownOptions = useMemo(
-    () =>
-      items
-        ?.filter(
-          (option) =>
-            search === value ||
-            option.label?.toLowerCase().includes(search.toLowerCase().trim()) ||
-            option.value.toLowerCase().includes(search.toLowerCase().trim())
-        )
-        ?.map((option) => (
-          <Combobox.Option
-            value={option.value}
-            key={option.value}
-            className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
-            active={option.value === value}
-          >
-            <span className="text-sm max-w-32 truncate">
-              {option.label || option.value}
-            </span>
-            <Tooltip
-              position="right"
-              label={
-                <span className="text-xs">
-                  {option.variableType
-                    ? getTypeSignature(option.variableType)
-                    : null}
-                </span>
-              }
-            >
-              <span className="text-xs">{option.secondaryLabel}</span>
-            </Tooltip>
-          </Combobox.Option>
-        )),
-    [items, search, value]
-  );
+  const dropdownOptions = useMemo(() => {
+    return items?.reduce((acc, [groupName, groupItems]) => {
+      const filteredItem = groupItems.filter((item) => {
+        return (
+          search === value ||
+          item.label?.toLowerCase().includes(search.toLowerCase().trim()) ||
+          item.value.toLowerCase().includes(search.toLowerCase().trim())
+        );
+      });
+      if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
+      return acc;
+    }, [] as [string, IDropdownItem[]][]);
+  }, [items, search, value]);
 
   function handleSearch(val: string) {
     if (!combobox.dropdownOpened) combobox.openDropdown();
@@ -241,7 +219,10 @@ const DropdownComponent = ({
     <Combobox
       onOptionSubmit={(optionValue) => {
         if (value !== optionValue) {
-          items?.find((i) => i.value === optionValue)?.onClick?.();
+          items
+            ?.flatMap(([, groupItems]) => groupItems)
+            .find((item) => item.value === optionValue)
+            ?.onClick?.();
           handleSearch("");
         }
         combobox.closeDropdown();
@@ -350,17 +331,18 @@ const DropdownComponent = ({
               hidden={!isFocused && !isHovered}
             />
           )}
-          {options?.withDropdownIcon && !!items?.length && (
-            <IconButton
-              size={12}
-              className="absolute -bottom-1.5 -right-1 text-border bg-white rounded-full z-10"
-              icon={FaCircleChevronDown}
-              onClick={() => {
-                combobox?.openDropdown();
-              }}
-              hidden={!isFocused && !isHovered}
-            />
-          )}
+          {options?.withDropdownIcon &&
+            !!dropdownOptions?.flatMap(([, i]) => i).length && (
+              <IconButton
+                size={12}
+                className="absolute -bottom-1.5 -right-1 text-border bg-white rounded-full z-10"
+                icon={FaCircleChevronDown}
+                onClick={() => {
+                  combobox?.openDropdown();
+                }}
+                hidden={!isFocused && !isHovered}
+              />
+            )}
           {children}
         </div>
       </Combobox.DropdownTarget>
@@ -385,7 +367,40 @@ const DropdownComponent = ({
           ) : null}
           {dropdownOptions?.length === 0 ? null : (
             <Combobox.Options className="overflow-y-auto max-h-32 dropdown-scrollbar">
-              {dropdownOptions}
+              {dropdownOptions?.map(([groupName, groupItems]) => (
+                <Combobox.Group
+                  key={groupName}
+                  label={groupName}
+                  classNames={{
+                    groupLabel: "text-[11px] bg-dropdown-scrollbar",
+                  }}
+                >
+                  {groupItems.map((option) => (
+                    <Combobox.Option
+                      value={option.value}
+                      key={option.value}
+                      className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
+                      active={option.value === value}
+                    >
+                      <span className="text-sm max-w-32 truncate">
+                        {option.label || option.value}
+                      </span>
+                      <Tooltip
+                        position="right"
+                        label={
+                          <span className="text-xs">
+                            {option.variableType
+                              ? getTypeSignature(option.variableType)
+                              : null}
+                          </span>
+                        }
+                      >
+                        <span className="text-xs">{option.secondaryLabel}</span>
+                      </Tooltip>
+                    </Combobox.Option>
+                  ))}
+                </Combobox.Group>
+              ))}
             </Combobox.Options>
           )}
         </Combobox.Dropdown>

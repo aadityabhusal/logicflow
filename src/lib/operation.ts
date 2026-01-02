@@ -77,10 +77,7 @@ const undefinedOperations: OperationListItem[] = [];
 const booleanOperations: OperationListItem[] = [
   {
     name: "and",
-    parameters: [
-      { type: { kind: "boolean" } },
-      { type: { kind: "undefined" }, isTypeEditable: true },
-    ],
+    parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
     lazyHandler: (
       context,
       data: IData<BooleanType>,
@@ -99,10 +96,7 @@ const booleanOperations: OperationListItem[] = [
   },
   {
     name: "or",
-    parameters: [
-      { type: { kind: "boolean" } },
-      { type: { kind: "undefined" }, isTypeEditable: true },
-    ],
+    parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
     lazyHandler: (
       context,
       data: IData<BooleanType>,
@@ -130,8 +124,8 @@ const booleanOperations: OperationListItem[] = [
     name: "thenElse",
     parameters: [
       { type: { kind: "boolean" } },
-      { type: { kind: "undefined" }, isTypeEditable: true },
-      { type: { kind: "undefined" }, isTypeEditable: true },
+      { type: { kind: "unknown" } },
+      { type: { kind: "unknown" } },
     ],
     lazyHandler: (
       context,
@@ -448,7 +442,7 @@ const arrayOperations: OperationListItem[] = [
                 { name: "second", type: data.type.elementType },
               ]
             : [],
-          result: data.type,
+          result: { kind: "unknown" },
         },
       },
     ],
@@ -606,7 +600,7 @@ function getArrayCallbackParameters(data: IData) {
           { name: "index", type: { kind: "number" } },
           { name: "arr", type: { kind: "array", elementType } },
         ],
-        result: { kind: "undefined" },
+        result: { kind: "unknown" },
       },
     },
   ] as Parameter[];
@@ -637,10 +631,14 @@ const dataSupportsOperation = (
     : data.type.kind === firstParam.kind || firstParam.kind === "unknown";
 };
 
-export function getFilteredOperations(
+type FilteredOperationsReturn<T extends boolean> = T extends true
+  ? [string, OperationListItem[]][]
+  : OperationListItem[];
+export function getFilteredOperations<T extends boolean = false>(
   _data: IData,
-  variables: Context["variables"]
-) {
+  variables: Context["variables"],
+  grouped?: T
+): FilteredOperationsReturn<T> {
   const data = resolveReference(_data, { variables });
   const builtInOps = builtInOperations.filter((operation) => {
     return dataSupportsOperation(data, operation);
@@ -654,7 +652,12 @@ export function getFilteredOperations(
     return acc;
   }, [] as OperationListItem[]);
 
-  return [...builtInOps, ...userDefinedOps];
+  return grouped
+    ? ([
+        ["Built-in", builtInOps],
+        ["User-defined", userDefinedOps],
+      ] as FilteredOperationsReturn<T>)
+    : (builtInOps.concat(userDefinedOps) as FilteredOperationsReturn<T>);
 }
 
 export function getOperationListItemParameters(
@@ -713,7 +716,7 @@ export function createOperationCall({
       name: newOperation.name,
       parameters: newParameters,
       statements: [],
-      result: { ...result, isTypeEditable: data.isTypeEditable },
+      result,
     },
   };
 }
@@ -820,8 +823,23 @@ export function executeOperation(
   }
 
   const parameters = _parameters.map((p) => executeStatement(p, prevContext));
-  const errorParam = parameters.find((p) => isDataOfType(p, "error"));
-  if (errorParam) return errorParam;
+  const operationParams = getOperationListItemParameters(operation, data);
+  const errorParamIndex = operationParams.slice(1).findIndex((p, i) => {
+    return (
+      isDataOfType(parameters[i], "error") ||
+      !isTypeCompatible(parameters[i].type, p.type)
+    );
+  });
+  if (errorParamIndex !== -1) {
+    return createData({
+      type: { kind: "error", errorType: "type_error" },
+      value: {
+        reason: `Parameter #${errorParamIndex + 1} should be of type '${
+          operationParams[errorParamIndex + 1].type.kind
+        }'`,
+      },
+    });
+  }
 
   if ("handler" in operation) {
     try {

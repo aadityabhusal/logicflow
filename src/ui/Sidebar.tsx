@@ -13,7 +13,7 @@ function SidebarComponent() {
   const updateProject = useProjectStore((s) => s.updateProject);
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const getFile = useProjectStore((s) => s.getFile);
-  const getCurrentProject = useProjectStore((s) => s.getCurrentProject);
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
   const [searchParams, setSearchParams] = useSearchParams();
   const [editingId, setEditingId] = useState<string>();
   const [hoveringId, setHoveringId] = useState<string>();
@@ -28,10 +28,7 @@ function SidebarComponent() {
           title="Add operation"
           onClick={() =>
             addFile(
-              createProjectFile(
-                { type: "operation" },
-                getCurrentProject()?.files
-              )
+              createProjectFile({ type: "operation" }, currentProject?.files)
             )
           }
         >
@@ -39,10 +36,10 @@ function SidebarComponent() {
         </IconButton>
       </div>
       <ul className="flex-1 p-1 overflow-y-auto dropdown-scrollbar list-none m-0">
-        {!getCurrentProject()?.files.length && (
+        {!currentProject?.files.length && (
           <NoteText center>Add an operation</NoteText>
         )}
-        {getCurrentProject()?.files.map((item) => (
+        {currentProject?.files.map((item) => (
           <li
             className={
               "flex items-center gap-1 justify-between p-1 hover:bg-dropdown-hover " +
@@ -64,7 +61,6 @@ function SidebarComponent() {
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={({ target }) => {
-                  const currentProject = getCurrentProject();
                   const file = getFile(item.id);
                   if (target.value && currentProject && file) {
                     updateProject(currentProject.id, {

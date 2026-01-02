@@ -25,12 +25,11 @@ export function createData<T extends DataType>(
     entityType: "data",
     type,
     value: props?.value ?? createDefaultValue(type),
-    isTypeEditable: props?.isTypeEditable,
   };
 }
 
 export function createStatement(props?: Partial<IStatement>): IStatement {
-  const newData = props?.data || createData({ isTypeEditable: true });
+  const newData = props?.data || createData();
   const newId = props?.id || nanoid();
   return {
     id: newId,
@@ -53,7 +52,7 @@ export function createVariableName({
   const index = prev
     .map((s) => (typeof s === "string" ? s : s.name))
     .reduce((acc, cur) => {
-      const match = cur?.match(new RegExp(`^${prefix}(\\d)?$`));
+      const match = cur?.match(new RegExp(`^${prefix}(\\d+)?$`));
       if (!match) return acc;
       return match[1] ? Math.max(acc, Number(match[1]) + 1) : Math.max(acc, 1);
     }, indexOffset);
@@ -62,7 +61,7 @@ export function createVariableName({
 
 function createStatementFromType(type: DataType, name?: string) {
   const value = createDefaultValue(type);
-  const data = createData({ type, value, isTypeEditable: true });
+  const data = createData({ type, value });
   return createStatement({ data, name });
 }
 
@@ -87,11 +86,6 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
         type.elementType.kind === "never"
       )
         return [] as DataValue<T>;
-      if (type.elementType.kind === "union") {
-        return type.elementType.types.map((type) =>
-          createStatementFromType(type)
-        ) as DataValue<T>;
-      }
       return [createStatementFromType(type.elementType)] as DataValue<T>;
     }
 
@@ -123,7 +117,7 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
         id: nanoid(),
         entityType: "statement",
         operations: [],
-        data: createData({ isTypeEditable: true }),
+        data: createData(),
       });
 
       return {
@@ -149,10 +143,7 @@ export function createParamData(
   data: IData
 ): IStatement["data"] {
   if (item.type.kind !== "operation") {
-    return createData({
-      type: item.type || data.type,
-      isTypeEditable: item.isTypeEditable,
-    });
+    return createData({ type: item.type || data.type });
   }
 
   const parameters = item.type.parameters.reduce((prev, paramSpec) => {
@@ -212,7 +203,6 @@ export function createOperationFromFile(file?: ProjectFile) {
     entityType: "data",
     type: file.content.type,
     value: { ...file.content.value, name: file.name },
-    isTypeEditable: true,
   } as IData<OperationType>;
 }
 
@@ -264,6 +254,8 @@ export function createFileVariables(
 /* Types */
 
 export function isTypeCompatible(first: DataType, second: DataType): boolean {
+  if (first.kind === "unknown" || second.kind === "unknown") return true;
+
   if (first.kind === "operation" && second.kind === "operation") {
     if (first.parameters.length !== second.parameters.length) return false;
     if (!isTypeCompatible(first.result, second.result)) return false;
@@ -696,53 +688,60 @@ export function getDataDropdownList({
   onSelect: (operation: IStatement["data"], remove?: boolean) => void;
   context: Context;
 }) {
+  const allowedOptions: IDropdownItem[] = [];
+  const dataTypeOptions: IDropdownItem[] = [];
+  const variableOptions: IDropdownItem[] = [];
+
+  (Object.keys(DataTypes) as DataType["kind"][]).forEach((kind) => {
+    if (
+      DataTypes[kind].hideFromDropdown ||
+      (!isDataOfType(data, "reference") && kind === data.type.kind)
+    ) {
+      return;
+    }
+    const option: IDropdownItem = {
+      entityType: "data",
+      value: kind,
+      onClick: () => {
+        onSelect(createData({ id: data.id, type: DataTypes[kind].type }));
+      },
+    };
+    if (!context.expectedType || kind === context.expectedType.kind) {
+      allowedOptions.push(option);
+    } else if (!context.forceExpectedType) {
+      dataTypeOptions.push(option);
+    }
+  });
+
+  context.variables.entries().forEach(([name, variable]) => {
+    const option: IDropdownItem = {
+      value: name,
+      secondaryLabel: variable.data.type.kind,
+      variableType: variable.data.type,
+      entityType: "data",
+      onClick: () =>
+        onSelect({
+          ...variable.data,
+          id: nanoid(),
+          type: { kind: "reference", dataType: variable.data.type },
+          value: { name, id: variable.data.id },
+        }),
+    };
+    if (
+      !context.expectedType ||
+      isTypeCompatible(variable.data.type, context.expectedType)
+    ) {
+      allowedOptions.unshift(option);
+    } else if (!context.forceExpectedType) {
+      variableOptions.unshift(option);
+    }
+  });
+
   return [
-    ...(Object.keys(DataTypes) as DataType["kind"][]).reduce((acc, kind) => {
-      if (DataTypes[kind].hideFromDropdown) return acc;
-      if (
-        data.isTypeEditable ||
-        (isDataOfType(data, "reference") && kind === data.type.dataType.kind)
-      ) {
-        acc.push({
-          entityType: "data",
-          value: kind,
-          onClick: () => {
-            onSelect(
-              createData({
-                id: data.id,
-                type: DataTypes[kind].type,
-                isTypeEditable: data.isTypeEditable,
-              })
-            );
-          },
-        });
-      }
-      return acc;
-    }, [] as IDropdownItem[]),
-    ...context.variables.entries().reduce((acc, [name, variable]) => {
-      if (
-        !data.isTypeEditable &&
-        !isTypeCompatible(variable.data.type, data.type)
-      ) {
-        return acc;
-      }
-      acc.push({
-        value: name,
-        secondaryLabel: variable.data.type.kind,
-        variableType: variable.data.type,
-        entityType: "data",
-        onClick: () =>
-          onSelect({
-            ...variable.data,
-            id: nanoid(),
-            type: { kind: "reference", dataType: variable.data.type },
-            value: { name, id: variable.data.id },
-            isTypeEditable: data.isTypeEditable,
-          }),
-      });
-      return acc;
-    }, [] as IDropdownItem[]),
-  ];
+    ["Allowed", allowedOptions],
+    ["Data Types", dataTypeOptions],
+    ["Variables", variableOptions],
+  ] as [string, IDropdownItem[]][];
 }
 
 export function jsonParseReviver(_: string, value: unknown) {
