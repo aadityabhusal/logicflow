@@ -1,4 +1,4 @@
-import { forwardRef, HTMLAttributes } from "react";
+import { forwardRef, HTMLAttributes, memo } from "react";
 import { ConditionType, Context, IData, IStatement } from "../../lib/types";
 import {
   getConditionResult,
@@ -14,59 +14,55 @@ export interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   context: Context;
 }
 
-export const ConditionInput = forwardRef<HTMLDivElement, ConditionInputProps>(
-  ({ data, handleData, context, ...props }, ref) => {
-    function handleUpdate(
-      key: "condition" | "true" | "false",
-      val: IStatement
-    ) {
-      const value = { ...data.value, [key]: val };
-      const trueType = getStatementResult(value.true).type;
-      const falseType = getStatementResult(value.false).type;
-      const unionType = resolveUnionType(
-        isTypeCompatible(trueType, falseType)
-          ? [trueType]
-          : [trueType, falseType]
-      );
-      handleData({
-        ...data,
-        type: { kind: "condition", resultType: unionType },
-        value: { ...value, result: getConditionResult(value) },
-      });
-    }
-
-    return (
-      <div
-        {...props}
-        ref={ref}
-        className={[
-          "flex items-start gap-1 [&>span]:text-method",
-          props?.className,
-        ].join(" ")}
-      >
-        <Statement
-          statement={data.value.condition}
-          handleStatement={(val) => handleUpdate("condition", val)}
-          context={context}
-          options={{ disableDelete: true }}
-        />
-        <span>{"?"}</span>
-        <Statement
-          statement={data.value.true}
-          handleStatement={(val) => handleUpdate("true", val)}
-          options={{ disableDelete: true }}
-          context={context}
-        />
-        <span>{":"}</span>
-        <Statement
-          statement={data.value.false}
-          handleStatement={(val) => handleUpdate("false", val)}
-          context={context}
-          options={{ disableDelete: true }}
-        />
-      </div>
+const ConditionInputComponent = (
+  { data, handleData, context, ...props }: ConditionInputProps,
+  ref: React.ForwardedRef<HTMLDivElement>
+) => {
+  function handleUpdate(key: "condition" | "true" | "false", val: IStatement) {
+    const value = { ...data.value, [key]: val };
+    const trueType = getStatementResult(value.true).type;
+    const falseType = getStatementResult(value.false).type;
+    const unionType = resolveUnionType(
+      isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
     );
+    handleData({
+      ...data,
+      type: { kind: "condition", resultType: unionType },
+      value: { ...value, result: getConditionResult(value) },
+    });
   }
-);
 
-ConditionInput.displayName = "ConditionInput";
+  return (
+    <div
+      {...props}
+      ref={ref}
+      className={[
+        "flex items-start gap-1 [&>span]:text-method",
+        props?.className,
+      ].join(" ")}
+    >
+      <Statement
+        statement={data.value.condition}
+        handleStatement={(val) => handleUpdate("condition", val)}
+        context={context}
+        options={{ disableDelete: true }}
+      />
+      <span>{"?"}</span>
+      <Statement
+        statement={data.value.true}
+        handleStatement={(val) => handleUpdate("true", val)}
+        options={{ disableDelete: true }}
+        context={context}
+      />
+      <span>{":"}</span>
+      <Statement
+        statement={data.value.false}
+        handleStatement={(val) => handleUpdate("false", val)}
+        context={context}
+        options={{ disableDelete: true }}
+      />
+    </div>
+  );
+};
+
+export const ConditionInput = memo(forwardRef(ConditionInputComponent));

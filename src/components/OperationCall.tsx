@@ -3,15 +3,20 @@ import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
-  executeOperation,
   getFilteredOperations,
+  getOperationListItemParameters,
   getSkipExecution,
 } from "../lib/operation";
-import { getInverseTypes, mergeNarrowedTypes } from "../lib/utils";
+import {
+  getInverseTypes,
+  mergeNarrowedTypes,
+  resolveReference,
+} from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
+import { uiConfigStore } from "@/lib/store";
 
-export function OperationCall({
+const OperationCallComponent = ({
   data,
   operation,
   handleOperationCall,
@@ -28,7 +33,9 @@ export function OperationCall({
   addOperationCall?: () => void;
   context: Context;
   narrowedTypes: Context["variables"];
-}) {
+}) => {
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+
   const updatedVariables = useMemo(
     () =>
       mergeNarrowedTypes(
@@ -39,62 +46,42 @@ export function OperationCall({
     [context.variables, narrowedTypes, operation.value.name]
   );
   const filteredOperations = useMemo(
-    () => getFilteredOperations(data, context.variables),
+    () => getFilteredOperations(data, context.variables, true),
     [data, context.variables]
   );
 
   function handleDropdown(name: string) {
     if (operation.value.name === name) return;
-    handleOperationCall(
-      createOperationCall({
-        data,
-        name,
-        parameters: operation.value.parameters,
-        context,
-      })
-    );
+    const operationCall = createOperationCall({
+      data,
+      name,
+      parameters: operation.value.parameters,
+      context,
+    });
+    handleOperationCall(operationCall);
+    const params = operationCall.value.parameters;
+    setUiConfig({
+      navigation: {
+        id: params.length > 0 ? params[0].data.id : operation.id,
+        direction: "right",
+      },
+    });
   }
 
-  function handleParameter(
-    item: IStatement,
-    index: number,
-    variables: Context["variables"]
-  ) {
-    // eslint-disable-next-line prefer-const
-    let parameters = [...operation.value.parameters];
-    parameters[index] = item;
-
-    const foundOperation = filteredOperations.find(
-      (op) => op.name === operation.value.name
+  function handleParameter(item: IStatement, index: number) {
+    const parameters = operation.value.parameters.map((param, i) =>
+      i === index ? item : param
     );
-    const result = foundOperation
-      ? executeOperation(foundOperation, data, parameters, {
-          ...context,
-          variables,
-        })
-      : operation.value.result;
-
-    // Update parameter types while preserving the result type from the operation definition
-    const updatedType: OperationType = {
-      ...operation.type,
-      parameters: parameters.map((param) => ({
-        name: param.name,
-        type: param.data.type,
-      })),
-    };
-
     handleOperationCall({
       ...operation,
-      type: updatedType,
-      value: {
-        ...operation.value,
-        parameters,
-        result: result && {
-          ...result,
-          id: (operation.value.result || result).id,
-          isTypeEditable: data.isTypeEditable,
-        },
+      type: {
+        ...operation.type,
+        parameters: parameters.map((param) => ({
+          name: param.name,
+          type: param.data.type,
+        })),
       },
+      value: { ...operation.value, parameters },
     });
   }
 
@@ -102,19 +89,20 @@ export function OperationCall({
     <Dropdown
       id={operation.id}
       operationResult={operation.value.result}
-      items={filteredOperations.map((item) => ({
-        label: item.name,
-        value: item.name,
-        color: "method",
-        entityType: "operationCall",
-        onClick: () => handleDropdown(item.name),
-      }))}
+      items={filteredOperations.map(([groupName, groupItems]) => [
+        groupName,
+        groupItems.map((item) => ({
+          label: item.name,
+          value: item.name,
+          color: "method",
+          entityType: "operationCall",
+          onClick: () => handleDropdown(item.name),
+        })),
+      ])}
       context={context}
       value={operation.value.name}
       addOperationCall={
-        filteredOperations.length && !context.skipExecution
-          ? addOperationCall
-          : undefined
+        filteredOperations.length ? addOperationCall : undefined
       }
       handleDelete={() => handleOperationCall(operation, true)}
       isInputTarget
@@ -122,21 +110,28 @@ export function OperationCall({
     >
       <span>{"("}</span>
       {operation.value.parameters.map((item, paramIndex, arr) => {
-        const variables =
-          operation.value.name === "thenElse" && paramIndex === 1
-            ? getInverseTypes(context.variables, narrowedTypes)
-            : updatedVariables;
+        const originalOperation = filteredOperations
+          .flatMap(([_, items]) => items)
+          .find((item) => item.name === operation.value.name);
+
         return (
-          <span key={paramIndex} className="flex">
+          <span key={item.id} className="flex">
             <Statement
               statement={item}
-              handleStatement={(val) =>
-                val && handleParameter(val, paramIndex, variables)
-              }
+              handleStatement={(val) => val && handleParameter(val, paramIndex)}
               options={{ disableDelete: true }}
               context={{
                 ...context,
-                variables,
+                variables:
+                  operation.value.name === "thenElse" && paramIndex === 1
+                    ? getInverseTypes(context.variables, narrowedTypes)
+                    : updatedVariables,
+                expectedType: originalOperation
+                  ? getOperationListItemParameters(
+                      originalOperation,
+                      resolveReference(data, context)
+                    )?.[paramIndex + 1]?.type
+                  : undefined,
                 skipExecution: getSkipExecution({
                   context,
                   data,
@@ -152,4 +147,6 @@ export function OperationCall({
       <span className="self-end">{")"}</span>
     </Dropdown>
   );
-}
+};
+
+export const OperationCall = memo(OperationCallComponent);

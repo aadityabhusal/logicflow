@@ -1,5 +1,13 @@
 import { Combobox, Tooltip, useCombobox } from "@mantine/core";
-import { HTMLAttributes, ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  HTMLAttributes,
+  memo,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { BaseInput } from "./Input/BaseInput";
 import { IconButton } from "../ui/IconButton";
 import {
@@ -21,6 +29,7 @@ import {
   resolveReference,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
+import isEqual from "react-fast-compare";
 
 export interface IDropdownTargetProps
   extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
@@ -28,7 +37,15 @@ export interface IDropdownTargetProps
   onChange?: (value: string) => void;
 }
 
-export function Dropdown({
+function useDeepCompareMemoize<T>(value: T): T {
+  const ref = useRef<T | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/refs
+  if (!ref.current || !isEqual(ref.current, value)) ref.current = value;
+  // eslint-disable-next-line react-hooks/refs
+  return ref.current as T;
+}
+
+const DropdownComponent = ({
   id,
   value,
   data,
@@ -47,7 +64,7 @@ export function Dropdown({
   data?: IData;
   operationResult?: IData;
   value?: string;
-  items?: IDropdownItem[];
+  items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
   addOperationCall?: () => void;
   children?: ReactNode;
@@ -60,10 +77,17 @@ export function Dropdown({
   isInputTarget?: boolean;
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
-}) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { highlightOperation, navigation, setUiConfig } = uiConfigStore();
-  const result = useMemo(
+}) => {
+  const [, setSearchParams] = useSearchParams();
+  const highlightOperation = uiConfigStore((s) => s.highlightOperation);
+  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const navigationDirection = uiConfigStore((s) => s.navigation?.direction);
+  const navigationModifier = uiConfigStore((s) => s.navigation?.modifier);
+  const showPopup = uiConfigStore((s) => s.showPopup);
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
+
+  const _result = useMemo(
     () =>
       operationResult
         ? resolveReference(operationResult, context)
@@ -72,65 +96,42 @@ export function Dropdown({
         : undefined,
     [operationResult, data, context]
   );
+  const result = useDeepCompareMemoize(_result);
+
   const forceDisplayBorder =
     highlightOperation && isDataOfType(data, "operation");
   const [isHovered, setHovered] = useState(false);
-  const isFocused = navigation?.id === id;
+  const isFocused = navigationId === id;
   const [search, setSearch] = useState("");
   const combobox = useCombobox({
     loop: true,
     onDropdownClose: () => {
       handleSearch(options?.withSearch ? "" : value || "");
       combobox.resetSelectedOption();
-      setUiConfig({ navigation: { id } });
     },
     onDropdownOpen: () => {
       if (options?.withSearch) combobox.focusSearchInput();
       setUiConfig({ navigation: { id, disable: true } });
     },
   });
-  const { getCurrentProject } = useProjectStore();
 
-  const dropdownOptions = useMemo(
-    () =>
-      items
-        ?.filter(
-          (option) =>
-            search === value ||
-            option.label?.toLowerCase().includes(search.toLowerCase().trim()) ||
-            option.value.toLowerCase().includes(search.toLowerCase().trim())
-        )
-        ?.map((option) => (
-          <Combobox.Option
-            value={option.value}
-            key={option.value}
-            className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
-            active={option.value === value}
-          >
-            <span className="text-sm max-w-32 truncate">
-              {option.label || option.value}
-            </span>
-            <Tooltip
-              position="right"
-              label={
-                <span className="text-xs">
-                  {option.variableType
-                    ? getTypeSignature(option.variableType)
-                    : null}
-                </span>
-              }
-            >
-              <span className="text-xs">{option.secondaryLabel}</span>
-            </Tooltip>
-          </Combobox.Option>
-        )),
-    [items, search, value]
-  );
+  const dropdownOptions = useMemo(() => {
+    return items?.reduce((acc, [groupName, groupItems]) => {
+      const filteredItem = groupItems.filter((item) => {
+        return (
+          search === value ||
+          item.label?.toLowerCase().includes(search.toLowerCase().trim()) ||
+          item.value.toLowerCase().includes(search.toLowerCase().trim())
+        );
+      });
+      if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
+      return acc;
+    }, [] as [string, IDropdownItem[]][]);
+  }, [items, search, value]);
 
   function handleSearch(val: string) {
     if (!combobox.dropdownOpened) combobox.openDropdown();
     setSearch(val);
-    setUiConfig({ result, skipExecution: context.skipExecution });
   }
 
   useHotkeys(
@@ -150,7 +151,7 @@ export function Dropdown({
               textInput?.blur();
               setUiConfig((p) => {
                 const operation = createOperationFromFile(
-                  useProjectStore.getState().getFile(searchParams.get("file"))
+                  useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
                 const newEntities = getOperationEntities(operation, 0);
@@ -190,37 +191,38 @@ export function Dropdown({
   }, [combobox.dropdownOpened]);
 
   useEffect(() => {
+    if (isFocused && result && showPopup) {
+      setUiConfig({ result });
+    }
+  }, [isFocused, result, setUiConfig, showPopup]);
+
+  useEffect(() => {
     if (!isFocused) return;
     if (combobox.targetRef.current instanceof HTMLInputElement) {
       combobox.targetRef.current.focus();
-    } else {
-      setUiConfig({ result, skipExecution: context.skipExecution });
     }
 
     const textInput = isTextInput(combobox.targetRef.current);
     if (textInput && textInput !== document.activeElement) {
       let caretPosition = 0;
       if (
-        (navigation.direction === "right" && navigation.modifier) ||
-        (navigation.direction === "left" && !navigation.modifier)
+        (navigationDirection === "right" && navigationModifier) ||
+        (navigationDirection === "left" && !navigationModifier)
       ) {
         caretPosition = textInput.value.length;
       }
       textInput.setSelectionRange(caretPosition, caretPosition);
     }
-  }, [
-    isFocused,
-    combobox.targetRef,
-    navigation?.direction,
-    navigation?.modifier,
-    setUiConfig,
-  ]);
+  }, [isFocused, combobox.targetRef, navigationDirection, navigationModifier]);
 
   return (
     <Combobox
       onOptionSubmit={(optionValue) => {
         if (value !== optionValue) {
-          items?.find((i) => i.value === optionValue)?.onClick?.();
+          items
+            ?.flatMap(([, groupItems]) => groupItems)
+            .find((item) => item.value === optionValue)
+            ?.onClick?.();
           handleSearch("");
         }
         combobox.closeDropdown();
@@ -237,7 +239,10 @@ export function Dropdown({
             forceDisplayBorder || isFocused || isHovered
               ? "outline outline-border"
               : "",
-            context.skipExecution ? "opacity-50 " : "",
+            context.skipExecution && context.skipExecution.kind !== "error"
+              ? "opacity-50 "
+              : "",
+            result?.type.kind === "error" ? "bg-error/25" : "",
           ].join(" ")}
           onMouseOver={(e) => {
             e.stopPropagation();
@@ -269,7 +274,6 @@ export function Dropdown({
                   if (e.target === e.currentTarget) {
                     setUiConfig({
                       navigation: { id },
-                      result,
                       showPopup: true,
                       skipExecution: context.skipExecution,
                     });
@@ -279,16 +283,13 @@ export function Dropdown({
               onFocus: () =>
                 setUiConfig({
                   navigation: { id },
-                  result,
                   showPopup: true,
                   skipExecution: context.skipExecution,
                 }),
             })}
           </Combobox.EventsTarget>
           {isDataOfType(data, "reference") &&
-            getCurrentProject()?.files.find(
-              (f) => f.name === data.value.name
-            ) && (
+            currentProject?.files.find((f) => f.name === data.value.name) && (
               <IconButton
                 tabIndex={-1}
                 size={8}
@@ -300,7 +301,7 @@ export function Dropdown({
                   )
                 }
                 hidden={!isFocused && !isHovered}
-                title="Go to reference"
+                title="Go to operation file"
               />
             )}
           {handleDelete && (
@@ -330,17 +331,18 @@ export function Dropdown({
               hidden={!isFocused && !isHovered}
             />
           )}
-          {options?.withDropdownIcon && !!items?.length && (
-            <IconButton
-              size={12}
-              className="absolute -bottom-1.5 -right-1 text-border bg-white rounded-full z-10"
-              icon={FaCircleChevronDown}
-              onClick={() => {
-                combobox?.openDropdown();
-              }}
-              hidden={!isFocused && !isHovered}
-            />
-          )}
+          {options?.withDropdownIcon &&
+            !!dropdownOptions?.flatMap(([, i]) => i).length && (
+              <IconButton
+                size={12}
+                className="absolute -bottom-1.5 -right-1 text-border bg-white rounded-full z-10"
+                icon={FaCircleChevronDown}
+                onClick={() => {
+                  combobox?.openDropdown();
+                }}
+                hidden={!isFocused && !isHovered}
+              />
+            )}
           {children}
         </div>
       </Combobox.DropdownTarget>
@@ -365,11 +367,46 @@ export function Dropdown({
           ) : null}
           {dropdownOptions?.length === 0 ? null : (
             <Combobox.Options className="overflow-y-auto max-h-32 dropdown-scrollbar">
-              {dropdownOptions}
+              {dropdownOptions?.map(([groupName, groupItems]) => (
+                <Combobox.Group
+                  key={groupName}
+                  label={groupName}
+                  classNames={{
+                    groupLabel: "text-[11px] bg-dropdown-scrollbar",
+                  }}
+                >
+                  {groupItems.map((option) => (
+                    <Combobox.Option
+                      value={option.value}
+                      key={option.value}
+                      className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
+                      active={option.value === value}
+                    >
+                      <span className="text-sm max-w-32 truncate">
+                        {option.label || option.value}
+                      </span>
+                      <Tooltip
+                        position="right"
+                        label={
+                          <span className="text-xs">
+                            {option.variableType
+                              ? getTypeSignature(option.variableType)
+                              : null}
+                          </span>
+                        }
+                      >
+                        <span className="text-xs">{option.secondaryLabel}</span>
+                      </Tooltip>
+                    </Combobox.Option>
+                  ))}
+                </Combobox.Group>
+              ))}
             </Combobox.Options>
           )}
         </Combobox.Dropdown>
       ) : null}
     </Combobox>
   );
-}
+};
+
+export const Dropdown = memo(DropdownComponent);

@@ -28,8 +28,8 @@ export function ParseStatement({
   );
 
   return statement.operations.reduce(
-    (prev, operation, i) => (
-      <span key={i}>
+    (prev, operation) => (
+      <span key={operation.id}>
         <span className="text-type">_</span>
         {"."}
         <span className="text-method">{operation.value.name}</span>
@@ -37,7 +37,7 @@ export function ParseStatement({
         {prev}
         {operation.value.parameters.length ? ", " : ""}
         {operation.value.parameters.map((param, i, arr) => (
-          <span key={i}>
+          <span key={param.id}>
             <ParseStatement nest={nest + 1} statement={param} />
             {i + 1 < arr.length && ", "}
           </span>

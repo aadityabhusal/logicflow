@@ -20,7 +20,7 @@ export function ParseOperation({
         <span className="text-variable">{operation.value.name}</span>
         {`(`}
         {operation.value.parameters.map((parameter, i, arr) => (
-          <Fragment key={i}>
+          <Fragment key={parameter.id}>
             <span className="text-variable">{parameter.name}</span>
             {i + 1 < arr.length && <span>{","}</span>}
           </Fragment>
@@ -29,14 +29,14 @@ export function ParseOperation({
       </span>
       <span>
         {operation.value.statements.map((statement, i, statements) => (
-          <span key={i}>
+          <span key={statement.id}>
             {getTabs(nest + 1)}
             {i + 1 === statements.length ? (
               <span className="text-reserved">return </span>
             ) : (
               <ParseVariable name={statement.name} />
             )}
-            <ParseStatement key={i} statement={statement} nest={nest} />
+            <ParseStatement statement={statement} nest={nest} />
             {";\n"}
           </span>
         ))}

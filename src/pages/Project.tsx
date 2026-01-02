@@ -1,14 +1,18 @@
 import { Operation } from "@/components/Operation";
-import { uiConfigStore, useProjectStore } from "@/lib/store";
+import {
+  fileHistoryActions,
+  uiConfigStore,
+  useProjectStore,
+} from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
 import { useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "@mantine/hooks";
 import { FocusInfo } from "@/components/FocusInfo";
-import { useSearchParams, Navigate } from "react-router";
+import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
-import { IData, OperationType } from "@/lib/types";
+import { Context, IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
   createFileVariables,
@@ -16,20 +20,22 @@ import {
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { updateFiles } from "@/lib/update";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { DataTypes } from "@/lib/data";
 
 export default function Project() {
-  const [searchParams] = useSearchParams();
-  const { getCurrentProject, deleteFile, updateProject } = useProjectStore();
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
+  const deleteFile = useProjectStore((s) => s.deleteFile);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const currentFileId = useProjectStore((s) => s.currentFileId);
   const { hideSidebar, hideFocusInfo, setUiConfig } = uiConfigStore();
 
-  const currentProject = getCurrentProject();
-  const fileName = searchParams.get("file");
   const currentOperation = useMemo(
     () =>
       createOperationFromFile(
-        currentProject?.files.find((file) => file.name === fileName)
+        currentProject?.files.find((file) => file.id === currentFileId)
       ),
-    [currentProject?.files, fileName]
+    [currentProject?.files, currentFileId]
   );
 
   const handleOperationChange = useCallback(
@@ -40,6 +46,7 @@ export default function Project() {
         updateProject(currentProject.id, {
           files: updateFiles(
             currentProject.files,
+            fileHistoryActions.pushState,
             createFileFromOperation(operation)
           ),
         });
@@ -57,6 +64,24 @@ export default function Project() {
   }, [currentOperation, setUiConfig]);
 
   useHotkeys(useCustomHotkeys(currentOperation), []);
+
+  const operationOptions = useMemo(
+    () => ({ isTopLevel: true, disableDropdown: true }),
+    []
+  );
+  const context = useMemo(() => {
+    return {
+      variables: createFileVariables(
+        currentProject?.files,
+        currentOperation?.id
+      ),
+      reservedNames: new Set(
+        (currentProject?.files ?? [])
+          .map((file) => file.name)
+          .concat(Object.keys(DataTypes))
+      ),
+    } as Context;
+  }, [currentProject?.files, currentOperation?.id]);
 
   if (!currentProject) return <Navigate to="/" replace />;
 
@@ -78,21 +103,24 @@ export default function Project() {
             }
           }}
         >
-          {currentProject && currentOperation ? (
-            <Operation
-              operation={currentOperation}
-              handleChange={handleOperationChange}
-              context={{
-                variables: createFileVariables(
-                  currentProject?.files,
-                  currentOperation?.id
-                ),
-              }}
-              options={{ isTopLevel: true, disableDropdown: true }}
-            />
-          ) : (
-            <NoteText>Select an operation</NoteText>
-          )}
+          <ErrorBoundary
+            fallback={
+              <p className="text-error p-1">
+                Something went wrong. Please refresh or delete the operation.
+              </p>
+            }
+          >
+            {currentProject && currentOperation ? (
+              <Operation
+                operation={currentOperation}
+                handleChange={handleOperationChange}
+                context={context}
+                options={operationOptions}
+              />
+            ) : (
+              <NoteText>Select an operation</NoteText>
+            )}
+          </ErrorBoundary>
           {!hideFocusInfo && <FocusInfo />}
         </div>
       </div>

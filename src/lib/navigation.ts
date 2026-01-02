@@ -83,7 +83,7 @@ export function handleNavigation({
 }: {
   event: KeyboardEvent;
   direction: NavigationDirection;
-  navigation?: INavigation;
+  navigation?: { id?: string; disable?: boolean };
   setUiConfig: (config: {
     navigationEntities?: NavigationEntity[];
     navigation?: INavigation;

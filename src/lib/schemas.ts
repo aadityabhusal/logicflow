@@ -137,7 +137,12 @@ export const ReferenceValueSchema: z.ZodType<DataValue<ReferenceType>> =
 
 const ErrorTypeSchema: z.ZodType<ErrorType> = z.object({
   kind: z.literal("error"),
-  errorType: z.enum(["reference_error", "type_error", "runtime_error"]),
+  errorType: z.enum([
+    "reference_error",
+    "type_error",
+    "runtime_error",
+    "custom_error",
+  ]),
 });
 export const ErrorValueSchema: z.ZodType<DataValue<ErrorType>> = z.object({
   reason: z.string(),
@@ -160,11 +165,7 @@ export const DataTypeSchema: z.ZodType<DataType> = z.union([
 ]);
 
 export const IDataSchema: z.ZodType<IData> = z
-  .object({
-    id: z.string(),
-    entityType: z.literal("data"),
-    isTypeEditable: z.boolean().optional(),
-  })
+  .object({ id: z.string(), entityType: z.literal("data") })
   .and(
     // Note: We use z.union instead of z.discriminatedUnion because the discriminator (kind) is nested inside the type object.
     z.union([

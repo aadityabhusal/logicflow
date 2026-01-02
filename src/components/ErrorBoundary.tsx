@@ -6,6 +6,7 @@ export class ErrorBoundary extends React.Component<{
   displayError?: boolean;
   children?: ReactNode;
   onRemove?: () => void;
+  fallback?: ReactNode;
 }> {
   state = { errorMessage: "" };
 
@@ -14,8 +15,10 @@ export class ErrorBoundary extends React.Component<{
   }
 
   render() {
-    if (this.state.errorMessage && this.props.displayError) {
-      return (
+    if (this.state.errorMessage) {
+      return this.props.fallback ? (
+        this.props.fallback
+      ) : this.props.displayError ? (
         <div className="flex items-start gap-1 outline outline-border relative">
           <span className="text-error">{this.state.errorMessage}</span>
           {this.props.onRemove && (
@@ -28,7 +31,7 @@ export class ErrorBoundary extends React.Component<{
             />
           )}
         </div>
-      );
+      ) : null;
     }
     return this.props.children;
   }

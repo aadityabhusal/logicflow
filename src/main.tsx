@@ -50,9 +50,12 @@ const router = createBrowserRouter([
     path: "/project/:id",
     lazy: () =>
       import("@/pages/Project").then((m) => ({ Component: m.default })),
-    loader: async ({ params }: LoaderFunctionArgs) => {
+    loader: async ({ params, request }: LoaderFunctionArgs) => {
+      const url = new URL(request.url);
+      const fileName = url.searchParams.get("file");
       await waitForHydration();
       useProjectStore.getState().setCurrentProjectId(params.id!);
+      useProjectStore.getState().setCurrentFileId(fileName ?? undefined);
       return null;
     },
     HydrateFallback: LoadingFallback,

@@ -4,10 +4,10 @@ import {
   Tooltip,
   TooltipProps,
 } from "@mantine/core";
-import { forwardRef, HTMLAttributes } from "react";
+import { forwardRef, HTMLAttributes, memo } from "react";
 import { IconType } from "react-icons";
 
-export const IconButton = forwardRef<
+const IconButtonComponent = forwardRef<
   HTMLButtonElement,
   ActionIconProps &
     HTMLAttributes<HTMLButtonElement> & {
@@ -28,4 +28,5 @@ export const IconButton = forwardRef<
   );
 });
 
-IconButton.displayName = "IconButton";
+IconButtonComponent.displayName = "IconButton";
+export const IconButton = memo(IconButtonComponent);

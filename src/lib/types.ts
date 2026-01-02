@@ -23,7 +23,11 @@ export type ReferenceType = {
 };
 export type ErrorType = {
   kind: "error";
-  errorType: "reference_error" | "type_error" | "runtime_error";
+  errorType:
+    | "reference_error"
+    | "type_error"
+    | "runtime_error"
+    | "custom_error";
 };
 
 export type DataType =
@@ -88,7 +92,6 @@ export interface IData<T extends DataType = DataType> {
   entityType: "data";
   type: T;
   value: DataValue<T>;
-  isTypeEditable?: boolean;
 }
 
 export interface IStatement {
@@ -115,18 +118,18 @@ export type Context = {
     string,
     { data: IData; reference?: { name: string; id: string } }
   >;
+  reservedNames?: Set<string>;
   currentStatementId?: string;
-  skipExecution?: { reason: string };
+  expectedType?: DataType;
+  enforceExpectedType?: boolean;
+  skipExecution?: { reason: string; kind: "unreachable" | "error" };
 };
 
-export type Parameter = {
-  type: DataType;
-  name?: string;
-  isTypeEditable?: boolean;
-};
 export type OperationListItem = {
   name: string;
-  parameters: ((data: IData) => Parameter[]) | Parameter[];
+  parameters:
+    | ((data: IData) => OperationType["parameters"])
+    | OperationType["parameters"];
   isResultTypeFixed?: boolean; // TODO: Show error when type mismatches in the UI
 } & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | { handler: (...args: [Context, ...IData<any>[]]) => IData }

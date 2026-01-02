@@ -2,7 +2,7 @@ import { Context, IData, IStatement, ObjectType } from "../../lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes } from "react";
+import { forwardRef, HTMLAttributes, memo, useState } from "react";
 import { createVariableName, inferTypeFromValue } from "../../lib/utils";
 import { uiConfigStore } from "@/lib/store";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
@@ -13,20 +13,38 @@ export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   handleData: (data: IData<ObjectType>) => void;
   context: Context;
 }
-export const ObjectInput = forwardRef<HTMLDivElement, ObjectInputProps>(
-  ({ data, handleData, context, ...props }, ref) => {
-    const isMultiline = data.value.size > 2;
-    const { navigation } = uiConfigStore();
-    const customHotKeys = useCustomHotkeys();
+const ObjectInputComponent = (
+  { data, handleData, context, ...props }: ObjectInputProps,
+  ref: React.ForwardedRef<HTMLDivElement>
+) => {
+  const isMultiline = data.value.size > 2;
+  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const customHotKeys = useCustomHotkeys();
+  const [showAddButton, setShowAddButton] = useState(false);
 
-    function handleUpdate(
-      dataArray: [string, IStatement][],
-      index: number,
-      result: IStatement,
-      remove?: boolean
-    ) {
-      if (remove) dataArray.splice(index, 1);
-      else dataArray[index] = [dataArray[index][0], result];
+  function handleUpdate(
+    dataArray: [string, IStatement][],
+    index: number,
+    result: IStatement,
+    remove?: boolean
+  ) {
+    if (remove) dataArray.splice(index, 1);
+    else dataArray[index] = [dataArray[index][0], result];
+    const newValue = new Map(dataArray);
+    handleData({
+      ...data,
+      type: inferTypeFromValue(newValue),
+      value: newValue,
+    });
+  }
+
+  function handleKeyUpdate(
+    dataArray: [string, IStatement][],
+    index: number,
+    value: string
+  ) {
+    if (typeof value === "string" && !data.value.has(value)) {
+      dataArray[index] = [value, dataArray[index][1]];
       const newValue = new Map(dataArray);
       handleData({
         ...data,
@@ -34,63 +52,57 @@ export const ObjectInput = forwardRef<HTMLDivElement, ObjectInputProps>(
         value: newValue,
       });
     }
+  }
 
-    function handleKeyUpdate(
-      dataArray: [string, IStatement][],
-      index: number,
-      value: string
-    ) {
-      if (typeof value === "string" && !data.value.has(value)) {
-        dataArray[index] = [value, dataArray[index][1]];
-        const newValue = new Map(dataArray);
-        handleData({
-          ...data,
-          type: inferTypeFromValue(newValue),
-          value: newValue,
-        });
-      }
-    }
-
-    return (
-      <div
-        {...props}
-        ref={ref}
-        className={[
-          "flex items-start gap-1 [&>span]:text-method",
-          isMultiline ? "flex-col" : "flex-row",
-          props?.className,
-        ].join(" ")}
-      >
-        <span>{"{"}</span>
-        {Array.from(data.value).map(([key, value], i, arr) => {
-          const isNameFocused = navigation?.id === `${value.id}_name`;
-          return (
-            <div
-              key={i}
-              style={{ display: "flex", marginLeft: isMultiline ? 8 : 0 }}
-            >
-              <BaseInput
-                ref={(elem) => isNameFocused && elem?.focus()}
-                className={[
-                  "text-property",
-                  isNameFocused ? "outline outline-border" : "",
-                ].join(" ")}
-                value={key}
-                onChange={(value) => handleKeyUpdate(arr, i, value)}
-                onKeyDown={getHotkeyHandler(customHotKeys)}
-              />
-              <span style={{ marginRight: 4 }}>:</span>
-              <Statement
-                statement={value}
-                handleStatement={(val, remove) =>
-                  handleUpdate(arr, i, val, remove)
-                }
-                context={context}
-              />
-              {i < arr.length - 1 ? <span>{","}</span> : null}
-            </div>
-          );
-        })}
+  return (
+    <div
+      {...props}
+      ref={ref}
+      className={[
+        "flex items-start gap-1 [&>span]:text-method",
+        isMultiline ? "flex-col" : "flex-row",
+        props?.className,
+      ].join(" ")}
+      onMouseEnter={() => setShowAddButton(true)}
+      onMouseLeave={() => setShowAddButton(false)}
+    >
+      <span>{"{"}</span>
+      {Array.from(data.value).map(([key, value], i, arr) => {
+        const isNameFocused = navigationId === `${value.id}_name`;
+        return (
+          <div
+            key={value.id}
+            style={{ display: "flex", marginLeft: isMultiline ? 8 : 0 }}
+          >
+            <BaseInput
+              ref={(elem) => isNameFocused && elem?.focus()}
+              className={[
+                "text-property",
+                isNameFocused ? "outline outline-border" : "",
+              ].join(" ")}
+              value={key}
+              onChange={(value) => handleKeyUpdate(arr, i, value)}
+              onKeyDown={getHotkeyHandler(customHotKeys)}
+            />
+            <span style={{ marginRight: 4 }}>:</span>
+            <Statement
+              statement={value}
+              handleStatement={(val, remove) =>
+                handleUpdate(arr, i, val, remove)
+              }
+              context={{
+                ...context,
+                expectedType:
+                  context.expectedType?.kind === "object"
+                    ? context.expectedType.properties[key]
+                    : undefined,
+              }}
+            />
+            {i < arr.length - 1 ? <span>{","}</span> : null}
+          </div>
+        );
+      })}
+      {!context.expectedType && showAddButton && (
         <AddStatement
           id={data.id}
           onSelect={(value) => {
@@ -111,12 +123,11 @@ export const ObjectInput = forwardRef<HTMLDivElement, ObjectInputProps>(
             }
           }}
           iconProps={{ title: "Add object item" }}
-          context={context}
         />
-        <span>{"}"}</span>
-      </div>
-    );
-  }
-);
+      )}
+      <span>{"}"}</span>
+    </div>
+  );
+};
 
-ObjectInput.displayName = "ObjectInput";
+export const ObjectInput = memo(forwardRef(ObjectInputComponent));

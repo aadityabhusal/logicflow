@@ -8,17 +8,26 @@ import {
   FaHouse,
   FaGear,
 } from "react-icons/fa6";
-import { uiConfigStore, useProjectStore } from "../lib/store";
+import {
+  fileHistoryActions,
+  uiConfigStore,
+  useProjectStore,
+} from "../lib/store";
 import { IconButton } from "./IconButton";
 import { useClipboard, useTimeout } from "@mantine/hooks";
-import { jsonParseReviver, jsonStringifyReplacer } from "../lib/utils";
+import {
+  createFileFromOperation,
+  jsonParseReviver,
+  jsonStringifyReplacer,
+} from "../lib/utils";
 import { useState } from "react";
 import { IData, OperationType, Project } from "../lib/types";
-import { IDataSchema } from "../lib/schemas";
+import { OperationValueSchema } from "../lib/schemas";
 import { Link } from "react-router";
 import { Popover, Tooltip } from "@mantine/core";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { preferenceOptions } from "@/lib/data";
+import { updateFiles } from "@/lib/update";
 
 export function Header({
   currentProject,
@@ -27,10 +36,17 @@ export function Header({
   currentOperation?: IData<OperationType>;
   currentProject?: Project;
 }) {
-  const { setUiConfig, ...uiConfig } = uiConfigStore();
-  const { undo, redo, pastStates, futureStates } =
-    useProjectStore.temporal.getState();
-  const { updateFile, updateProject } = useProjectStore();
+  const uiConfig = uiConfigStore((s) => ({
+    highlightOperation: s.highlightOperation,
+    hideFocusInfo: s.hideFocusInfo,
+  }));
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const undo = useProjectStore((s) => s.undo);
+  const redo = useProjectStore((s) => s.redo);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const currentFileId = useProjectStore((s) => s.currentFileId);
+  const canUndo = fileHistoryActions.canUndo(currentFileId);
+  const canRedo = fileHistoryActions.canRedo(currentFileId);
   const clipboard = useClipboard({ timeout: 500 });
   const [isOperationPasted, setIsOperationPasted] = useState(false);
   const pasteAnimation = useTimeout(() => setIsOperationPasted(false), 500);
@@ -96,11 +112,11 @@ export function Header({
           title="Copy"
           icon={clipboard.copied ? FaCheck : FaRegCopy}
           size={16}
-          onClick={() =>
-            clipboard.copy(
-              JSON.stringify(currentOperation, jsonStringifyReplacer)
-            )
-          }
+          onClick={() => {
+            if (!currentOperation) return;
+            const { name: _, ...value } = currentOperation.value;
+            clipboard.copy(JSON.stringify(value, jsonStringifyReplacer));
+          }}
           disabled={!currentOperation}
           className={!currentOperation ? "cursor-not-allowed" : ""}
         />
@@ -110,23 +126,21 @@ export function Header({
           size={16}
           onClick={async () => {
             try {
-              if (!currentOperation) return;
+              if (!currentOperation || !currentProject) return;
               const copied = await navigator.clipboard.readText();
-              const parsedOperation = JSON.parse(copied, jsonParseReviver);
-              const validatedOperation = IDataSchema.safeParse(parsedOperation);
-              if (validatedOperation.error) {
-                throw new Error(validatedOperation.error.message);
-              }
-              // Ensure it's an operation type
-              if (parsedOperation.type?.kind !== "operation") {
-                throw new Error("Pasted data is not an operation");
-              }
-              updateFile(currentOperation.id, {
-                content: {
-                  ...parsedOperation,
-                  id: currentOperation?.id,
-                  name: currentOperation?.value.name,
-                },
+              const parsed = OperationValueSchema.safeParse(
+                JSON.parse(copied, jsonParseReviver)
+              );
+              if (parsed.error) throw new Error(parsed.error.message);
+              updateProject(currentProject.id, {
+                files: updateFiles(
+                  currentProject.files,
+                  fileHistoryActions.pushState,
+                  createFileFromOperation({
+                    ...currentOperation,
+                    value: { ...currentOperation.value, ...parsed.data },
+                  })
+                ),
               });
               setIsOperationPasted(true);
               pasteAnimation.start();
@@ -143,16 +157,16 @@ export function Header({
           icon={FaArrowRotateLeft}
           size={16}
           onClick={() => undo()}
-          disabled={!pastStates.length}
-          className={!pastStates.length ? "cursor-not-allowed" : ""}
+          disabled={!canUndo}
+          className={!canUndo ? "cursor-not-allowed" : ""}
         />
         <IconButton
           title="Redo"
           icon={FaArrowRotateRight}
           size={16}
           onClick={() => redo()}
-          disabled={!futureStates.length}
-          className={!futureStates.length ? "cursor-not-allowed" : ""}
+          disabled={!canRedo}
+          className={!canRedo ? "cursor-not-allowed" : ""}
         />
       </div>
     </div>

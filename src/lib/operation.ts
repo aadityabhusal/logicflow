@@ -10,7 +10,6 @@ import {
   BooleanType,
   ObjectType,
   OperationListItem,
-  Parameter,
 } from "./types";
 import {
   createData,
@@ -77,10 +76,7 @@ const undefinedOperations: OperationListItem[] = [];
 const booleanOperations: OperationListItem[] = [
   {
     name: "and",
-    parameters: [
-      { type: { kind: "boolean" } },
-      { type: { kind: "undefined" }, isTypeEditable: true },
-    ],
+    parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
     lazyHandler: (
       context,
       data: IData<BooleanType>,
@@ -99,10 +95,7 @@ const booleanOperations: OperationListItem[] = [
   },
   {
     name: "or",
-    parameters: [
-      { type: { kind: "boolean" } },
-      { type: { kind: "undefined" }, isTypeEditable: true },
-    ],
+    parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
     lazyHandler: (
       context,
       data: IData<BooleanType>,
@@ -130,8 +123,8 @@ const booleanOperations: OperationListItem[] = [
     name: "thenElse",
     parameters: [
       { type: { kind: "boolean" } },
-      { type: { kind: "undefined" }, isTypeEditable: true },
-      { type: { kind: "undefined" }, isTypeEditable: true },
+      { type: { kind: "unknown" } },
+      { type: { kind: "unknown" } },
     ],
     lazyHandler: (
       context,
@@ -140,8 +133,8 @@ const booleanOperations: OperationListItem[] = [
       falseBranch: IStatement
     ) => {
       const resultType = resolveUnionType([
-        getStatementResult(trueBranch).type,
-        getStatementResult(falseBranch).type,
+        executeStatement(trueBranch, context).type,
+        executeStatement(falseBranch, context).type,
       ]);
       const selectedBranch = data.value ? trueBranch : falseBranch;
       const executedResult = executeStatement(selectedBranch, context);
@@ -379,6 +372,19 @@ const arrayOperations: OperationListItem[] = [
     },
   },
   {
+    name: "concat",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+    ],
+    handler: (_, data: IData<ArrayType>, p1: IData<ArrayType>) => {
+      return createData({
+        type: { kind: "array", elementType: { kind: "unknown" } },
+        value: data.value.concat(p1.value),
+      });
+    },
+  },
+  {
     name: "map",
     parameters: getArrayCallbackParameters,
     handler: (
@@ -420,6 +426,40 @@ const arrayOperations: OperationListItem[] = [
       const results = executeArrayOperation(data, operation, context);
       const filtered = data.value.filter((_, i) => Boolean(results[i].value));
       return createData({ type: data.type, value: filtered });
+    },
+  },
+  {
+    name: "sort",
+    parameters: (data) => [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      {
+        type: {
+          kind: "operation",
+          parameters: isDataOfType(data, "array")
+            ? [
+                { name: "first", type: data.type.elementType },
+                { name: "second", type: data.type.elementType },
+              ]
+            : [],
+          result: { kind: "unknown" },
+        },
+      },
+    ],
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const sorted = data.value.toSorted((a, b) => {
+        const result = executeOperation(
+          operationToListItem(operation),
+          getStatementResult(a),
+          [b],
+          context
+        );
+        return result.value ? -1 : 1;
+      });
+      return createData({ type: data.type, value: sorted });
     },
   },
 ];
@@ -495,8 +535,8 @@ const operationOperations: OperationListItem[] = [
       {
         type: {
           kind: "operation",
-          parameters: [{ type: { kind: "string" } }],
-          result: { kind: "string" },
+          parameters: [{ type: { kind: "unknown" } }],
+          result: { kind: "unknown" },
         },
       },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
@@ -559,10 +599,10 @@ function getArrayCallbackParameters(data: IData) {
           { name: "index", type: { kind: "number" } },
           { name: "arr", type: { kind: "array", elementType } },
         ],
-        result: { kind: "string" },
+        result: { kind: "unknown" },
       },
     },
-  ] as Parameter[];
+  ] as OperationType["parameters"];
 }
 
 /* Operation List */
@@ -590,10 +630,14 @@ const dataSupportsOperation = (
     : data.type.kind === firstParam.kind || firstParam.kind === "unknown";
 };
 
-export function getFilteredOperations(
+type FilteredOperationsReturn<T extends boolean> = T extends true
+  ? [string, OperationListItem[]][]
+  : OperationListItem[];
+export function getFilteredOperations<T extends boolean = false>(
   _data: IData,
-  variables: Context["variables"]
-) {
+  variables: Context["variables"],
+  grouped?: T
+): FilteredOperationsReturn<T> {
   const data = resolveReference(_data, { variables });
   const builtInOps = builtInOperations.filter((operation) => {
     return dataSupportsOperation(data, operation);
@@ -607,7 +651,12 @@ export function getFilteredOperations(
     return acc;
   }, [] as OperationListItem[]);
 
-  return [...builtInOps, ...userDefinedOps];
+  return grouped
+    ? ([
+        ["Built-in", builtInOps],
+        ["User-defined", userDefinedOps],
+      ] as FilteredOperationsReturn<T>)
+    : (builtInOps.concat(userDefinedOps) as FilteredOperationsReturn<T>);
 }
 
 export function getOperationListItemParameters(
@@ -666,7 +715,7 @@ export function createOperationCall({
       name: newOperation.name,
       parameters: newParameters,
       statements: [],
-      result: { ...result, isTypeEditable: data.isTypeEditable },
+      result,
     },
   };
 }
@@ -773,8 +822,23 @@ export function executeOperation(
   }
 
   const parameters = _parameters.map((p) => executeStatement(p, prevContext));
-  const errorParam = parameters.find((p) => isDataOfType(p, "error"));
-  if (errorParam) return errorParam;
+  const operationParams = getOperationListItemParameters(operation, data);
+  const errorParamIndex = operationParams.slice(1).findIndex((p, i) => {
+    return (
+      isDataOfType(parameters[i], "error") ||
+      !isTypeCompatible(parameters[i].type, p.type)
+    );
+  });
+  if (errorParamIndex !== -1) {
+    return createData({
+      type: { kind: "error", errorType: "type_error" },
+      value: {
+        reason: `Parameter #${errorParamIndex + 1} should be of type '${
+          operationParams[errorParamIndex + 1].type.kind
+        }'`,
+      },
+    });
+  }
 
   if ("handler" in operation) {
     try {
@@ -821,7 +885,8 @@ export function getSkipExecution({
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
   const data = resolveReference(_data, context);
-  if (isDataOfType(data, "error")) return { reason: data.value.reason };
+  if (isDataOfType(data, "error"))
+    return { reason: data.value.reason, kind: "error" };
   if (!operation) return undefined;
 
   if (paramIndex !== undefined && isDataOfType(data, "boolean")) {
@@ -830,24 +895,16 @@ export function getSkipExecution({
       operationName === "thenElse" &&
       data.value === (paramIndex === 0 ? false : true)
     ) {
-      return { reason: "Unreachable branch" };
+      return { reason: "Unreachable branch", kind: "unreachable" };
     } else if (
       (operationName === "or" || operationName === "and") &&
       data.value === (operationName === "or" ? true : false)
     ) {
-      return { reason: `${operationName} operation is unreachable` };
+      return {
+        reason: `${operationName} operation is unreachable`,
+        kind: "unreachable",
+      };
     }
-  }
-
-  if (
-    paramIndex === undefined &&
-    !getFilteredOperations(data, context.variables).find(
-      (op) => op.name === operation.value.name
-    )
-  ) {
-    return {
-      reason: `Operation '${operation.value.name}' cannot be chained after '${data.type.kind}' type`,
-    };
   }
 
   return undefined;

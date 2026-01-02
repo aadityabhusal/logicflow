@@ -26,7 +26,9 @@ import {
   applyTypeNarrowing,
   getInverseTypes,
   mergeNarrowedTypes,
+  resolveReference,
 } from "./utils";
+import isEqual from "react-fast-compare";
 
 export function updateOperationCalls(
   statement: IStatement,
@@ -34,7 +36,8 @@ export function updateOperationCalls(
 ): IData<OperationType>[] {
   return statement.operations.reduce(
     (acc, operation, operationIndex) => {
-      const data = getStatementResult(statement, operationIndex, true);
+      const updatedStatement = { ...statement, operations: acc.operations };
+      const data = getStatementResult(updatedStatement, operationIndex, true);
       acc.narrowedTypes = applyTypeNarrowing(
         _context,
         acc.narrowedTypes,
@@ -59,8 +62,8 @@ export function updateOperationCalls(
           ...context,
           variables,
           skipExecution: getSkipExecution({
-            context: { ...context, variables },
-            data: param.data,
+            context,
+            data,
             operation,
             paramIndex: paramIndex,
           }),
@@ -76,9 +79,15 @@ export function updateOperationCalls(
         ? {
             ...executeOperation(foundOperation, data, parameters, context),
             ...(currentResult && { id: currentResult?.id }),
-            isTypeEditable: data.isTypeEditable,
           }
-        : currentResult;
+        : createData({
+            type: { kind: "error", errorType: "type_error" },
+            value: {
+              reason: `Cannot chain '${operation.value.name}' after '${
+                resolveReference(data, context).type.kind
+              }' type`,
+            },
+          });
 
       acc.operations = [
         ...acc.operations,
@@ -214,20 +223,25 @@ function updateOperationValue(
 
 export function updateFiles(
   files: ProjectFile[],
+  pushHistory: (fileId: string, content: ProjectFile["content"]) => void,
   changedFile?: ProjectFile
 ): ProjectFile[] {
-  return files
-    .map((file) => (file.id === changedFile?.id ? changedFile : file))
-    .reduce((prevFile, currentFile, _, fileList) => {
-      let fileToProcess = currentFile;
-      if (fileToProcess.id === changedFile?.id)
-        return [...prevFile, changedFile];
-      const context = {
-        variables: createFileVariables(fileList, currentFile.id),
-      };
-      const operation = createOperationFromFile(currentFile);
-      if (operation) {
-        const value = updateOperationValue(operation, context);
+  const updatedFiles = files.map((file) =>
+    file.id === changedFile?.id ? changedFile : file
+  );
+  return files.reduce((prevFiles, currentFile) => {
+    let fileToProcess = currentFile;
+    if (fileToProcess.id === changedFile?.id) {
+      pushHistory(fileToProcess.id, fileToProcess.content);
+      return [...prevFiles, changedFile];
+    }
+    const context = {
+      variables: createFileVariables(updatedFiles, fileToProcess.id),
+    };
+    const operation = createOperationFromFile(fileToProcess);
+    if (operation) {
+      const value = updateOperationValue(operation, context);
+      if (!isEqual(value, operation.value)) {
         const operationFile = createFileFromOperation({
           ...operation,
           type: inferTypeFromValue(value),
@@ -235,6 +249,7 @@ export function updateFiles(
         });
         fileToProcess = { ...operationFile, updatedAt: Date.now() };
       }
-      return [...prevFile, fileToProcess];
-    }, [] as ProjectFile[]);
+    }
+    return [...prevFiles, fileToProcess];
+  }, [] as ProjectFile[]);
 }

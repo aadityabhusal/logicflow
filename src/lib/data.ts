@@ -54,7 +54,7 @@ export const DataTypes: {
     hideFromDropdown: true,
   },
   error: {
-    type: { kind: "error", errorType: "runtime_error" },
+    type: { kind: "error", errorType: "custom_error" },
     // hideFromDropdown: true,
   },
 };
@@ -65,6 +65,7 @@ export const ErrorTypesData: {
   reference_error: { name: "Reference Error" },
   type_error: { name: "Type Error" },
   runtime_error: { name: "Runtime Error" },
+  custom_error: { name: "Error" },
 };
 
 export const preferenceOptions = [

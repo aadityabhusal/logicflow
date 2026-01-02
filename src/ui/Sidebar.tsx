@@ -1,16 +1,19 @@
 import { FaPencil, FaPlus, FaX } from "react-icons/fa6";
-import { useProjectStore } from "../lib/store";
+import { fileHistoryActions, useProjectStore } from "../lib/store";
 import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
 import { SiGithub, SiYoutube } from "react-icons/si";
 import { useSearchParams } from "react-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
 
-export function Sidebar() {
-  const { addFile, updateProject, deleteFile, getFile, getCurrentProject } =
-    useProjectStore();
+function SidebarComponent() {
+  const addFile = useProjectStore((s) => s.addFile);
+  const updateProject = useProjectStore((s) => s.updateProject);
+  const deleteFile = useProjectStore((s) => s.deleteFile);
+  const getFile = useProjectStore((s) => s.getFile);
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
   const [searchParams, setSearchParams] = useSearchParams();
   const [editingId, setEditingId] = useState<string>();
   const [hoveringId, setHoveringId] = useState<string>();
@@ -25,10 +28,7 @@ export function Sidebar() {
           title="Add operation"
           onClick={() =>
             addFile(
-              createProjectFile(
-                { type: "operation" },
-                getCurrentProject()?.files
-              )
+              createProjectFile({ type: "operation" }, currentProject?.files)
             )
           }
         >
@@ -36,10 +36,10 @@ export function Sidebar() {
         </IconButton>
       </div>
       <ul className="flex-1 p-1 overflow-y-auto dropdown-scrollbar list-none m-0">
-        {!getCurrentProject()?.files.length && (
+        {!currentProject?.files.length && (
           <NoteText center>Add an operation</NoteText>
         )}
-        {getCurrentProject()?.files.map((item) => (
+        {currentProject?.files.map((item) => (
           <li
             className={
               "flex items-center gap-1 justify-between p-1 hover:bg-dropdown-hover " +
@@ -61,14 +61,14 @@ export function Sidebar() {
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={({ target }) => {
-                  const currentProject = getCurrentProject();
                   const file = getFile(item.id);
                   if (target.value && currentProject && file) {
                     updateProject(currentProject.id, {
-                      files: updateFiles(currentProject.files, {
-                        ...file,
-                        name: target.value,
-                      }),
+                      files: updateFiles(
+                        currentProject.files,
+                        fileHistoryActions.pushState,
+                        { ...file, name: target.value }
+                      ),
                     });
                     if (searchParams.get("file") === item.name) {
                       setSearchParams(
@@ -115,27 +115,30 @@ export function Sidebar() {
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-4 p-2 border-t">
+      <div className="flex flex-col gap-2 p-2 border-t">
         <a
           href="https://www.youtube.com/watch?v=AOfOhNwQL64"
           target="_blank"
           rel="noreferrer"
-          className="flex items-center select-none decoration-0"
+          className="flex items-center gap-1"
           title="Demo video"
         >
-          <span className="p-px mr-1 text-white">Demo</span>
           <SiYoutube size={20} />
+          <span className="p-px mr-1 text-white">Demo</span>
         </a>
         <a
           href="https://github.com/aadityabhusal/logicflow"
           target="_blank"
           rel="noreferrer"
-          style={{ display: "flex", userSelect: "none" }}
+          className="flex items-center gap-1"
           title="Source code"
         >
           <SiGithub size={20} />
+          <span className="p-px mr-1 text-white">Source code</span>
         </a>
       </div>
     </div>
   );
 }
+
+export const Sidebar = memo(SidebarComponent);

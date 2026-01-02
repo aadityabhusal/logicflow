@@ -1,7 +1,6 @@
 import { FaArrowRightLong, FaArrowTurnUp, FaEquals } from "react-icons/fa6";
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import {
-  isTypeCompatible,
   getStatementResult,
   createVariableName,
   applyTypeNarrowing,
@@ -19,12 +18,12 @@ import { AddStatement } from "./AddStatement";
 import { getHotkeyHandler, useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { DataTypes } from "../lib/data";
-import { useMemo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { uiConfigStore } from "@/lib/store";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-export function Statement({
+const StatementComponent = ({
   statement,
   handleStatement,
   context,
@@ -41,9 +40,10 @@ export function Statement({
     disableDelete?: boolean;
     disableOperationCall?: boolean;
   };
-}) {
+}) => {
   const hasName = statement.name !== undefined;
-  const { navigation, setUiConfig } = uiConfigStore();
+  const navigationId = uiConfigStore((state) => state.navigation?.id);
+  const setUiConfig = uiConfigStore((state) => state.setUiConfig);
   const customHotKeys = useCustomHotkeys();
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
@@ -55,8 +55,9 @@ export function Statement({
   const PipeArrow =
     statement.operations.length > 1 ? FaArrowTurnUp : FaArrowRightLong;
 
-  const isEqualsFocused = navigation?.id === `${statement.id}_equals`;
-  const isNameFocused = navigation?.id === `${statement.id}_name`;
+  const isEqualsFocused = navigationId === `${statement.id}_equals`;
+  const isNameFocused = navigationId === `${statement.id}_name`;
+
   const hoverEvents = useMemo(
     () => ({
       onMouseEnter: openDropdown,
@@ -68,10 +69,10 @@ export function Statement({
   );
 
   // TODO: should context be passed as a parameter?
-  function addOperationCall() {
-    const data = getStatementResult(statement);
+  function addOperationCall(data: IData, index: number) {
     const operation = createOperationCall({ data, context });
-    const operations = [...statement.operations, operation];
+    const operations = [...statement.operations];
+    operations.splice(index, 0, operation);
     handleStatement({ ...statement, operations });
     setUiConfig({ navigation: { id: operation.id, direction: "right" } });
   }
@@ -83,29 +84,8 @@ export function Statement({
   ) {
     // eslint-disable-next-line prefer-const
     let operations = [...statement.operations];
-    if (remove) {
-      const data = getStatementResult(statement, index);
-      if (
-        !operation.value.result ||
-        !isTypeCompatible(operation.value.result.type, data.type)
-      ) {
-        operations.splice(index);
-      } else {
-        operations.splice(index, 1);
-      }
-    } else {
-      if (
-        !operation.value.result ||
-        !operations[index].value.result ||
-        !isTypeCompatible(
-          operation.value.result.type,
-          operations[index].value.result.type
-        )
-      ) {
-        operations.splice(index + 1);
-      }
-      operations[index] = operation;
-    }
+    if (remove) operations.splice(index, 1);
+    else operations[index] = operation;
     handleStatement({ ...statement, operations });
   }
 
@@ -124,11 +104,9 @@ export function Statement({
               onChange={(value) => {
                 const name = value || statement.name || "";
                 if (
-                  [
-                    ...Object.keys(DataTypes),
-                    ...context.variables.keys(),
-                    "operation",
-                  ].includes(name)
+                  Object.keys(DataTypes)
+                    .concat(Array.from(context.reservedNames ?? []))
+                    .includes(name)
                 ) {
                   return;
                 }
@@ -143,7 +121,7 @@ export function Statement({
             />
           ) : null}
           <Popover
-            opened={hoverOpened || navigation?.id === `${statement.id}_add`}
+            opened={hoverOpened || navigationId === `${statement.id}_add`}
             offset={4}
             position="left"
             withinPortal={false}
@@ -166,7 +144,7 @@ export function Statement({
                       ? undefined
                       : createVariableName({
                           prefix: "var",
-                          prev: [...context.variables.keys()],
+                          prev: Array.from(context.reservedNames ?? []),
                         }),
                   });
                   setUiConfig(() => ({
@@ -188,7 +166,6 @@ export function Statement({
                 }}
                 iconProps={{ title: "Add before" }}
                 className="bg-editor"
-                context={context}
               />
             </Popover.Dropdown>
           </Popover>
@@ -213,10 +190,9 @@ export function Statement({
             disableDelete={options?.disableDelete}
             addOperationCall={
               !options?.disableOperationCall &&
-              statement.operations.length === 0 &&
               !context.skipExecution &&
               getFilteredOperations(statement.data, context.variables).length
-                ? addOperationCall
+                ? () => addOperationCall(statement.data, 0)
                 : undefined
             }
             context={context}
@@ -235,6 +211,11 @@ export function Statement({
                 data,
                 operation
               );
+              const skipExecution = getSkipExecution({
+                context,
+                data,
+                operation,
+              });
 
               acc.elements.push(
                 <div key={operation.id} className="flex items-start gap-1 ml-2">
@@ -257,19 +238,15 @@ export function Statement({
                         handleOperationCall(op, i, remove)
                       }
                       // passing context and narrowedTypes separately to handle inverse type narrowing
-                      context={{
-                        ...context,
-                        skipExecution: getSkipExecution({
-                          context,
-                          data,
-                          operation,
-                        }),
-                      }}
+                      context={{ ...context, skipExecution }}
                       narrowedTypes={acc.narrowedTypes}
                       addOperationCall={
-                        !options?.disableOperationCall &&
-                        i + 1 === operationsList.length
-                          ? addOperationCall
+                        !options?.disableOperationCall && !skipExecution
+                          ? () =>
+                              addOperationCall(
+                                operation.value.result ?? data,
+                                i + 1
+                              )
                           : undefined
                       }
                     />
@@ -284,4 +261,6 @@ export function Statement({
       </div>
     </div>
   );
-}
+};
+
+export const Statement = memo(StatementComponent);
