@@ -101,7 +101,12 @@ const UnionInputComponent = (
         }
         context={{
           ...context,
-          expectedType: context.expectedType && activeType.data.type,
+          ...(context.expectedType?.kind === "union"
+            ? {
+                enforceExpectedType: true,
+                expectedType: context.expectedType.types[activeType.index],
+              }
+            : { expectedType: undefined }),
         }}
       />
       <Menu

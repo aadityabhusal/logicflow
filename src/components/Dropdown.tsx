@@ -301,7 +301,7 @@ const DropdownComponent = ({
                   )
                 }
                 hidden={!isFocused && !isHovered}
-                title="Go to reference"
+                title="Go to operation file"
               />
             )}
           {handleDelete && (

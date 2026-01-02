@@ -43,7 +43,7 @@ export function FocusInfo() {
       <div className="border-b p-1 flex items-center gap-1">
         <span className="text-type">Type: </span>
         <Tooltip label={typeSignature}>
-          <div className="truncate max-w-80">{typeSignature}</div>
+          <div className="truncate max-w-64">{typeSignature}</div>
         </Tooltip>
       </div>
       {result?.type.kind !== "operation" ? (

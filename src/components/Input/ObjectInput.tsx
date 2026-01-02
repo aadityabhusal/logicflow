@@ -2,7 +2,7 @@ import { Context, IData, IStatement, ObjectType } from "../../lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo } from "react";
+import { forwardRef, HTMLAttributes, memo, useState } from "react";
 import { createVariableName, inferTypeFromValue } from "../../lib/utils";
 import { uiConfigStore } from "@/lib/store";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
@@ -20,6 +20,7 @@ const ObjectInputComponent = (
   const isMultiline = data.value.size > 2;
   const navigationId = uiConfigStore((s) => s.navigation?.id);
   const customHotKeys = useCustomHotkeys();
+  const [showAddButton, setShowAddButton] = useState(false);
 
   function handleUpdate(
     dataArray: [string, IStatement][],
@@ -62,6 +63,8 @@ const ObjectInputComponent = (
         isMultiline ? "flex-col" : "flex-row",
         props?.className,
       ].join(" ")}
+      onMouseEnter={() => setShowAddButton(true)}
+      onMouseLeave={() => setShowAddButton(false)}
     >
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
@@ -89,35 +92,39 @@ const ObjectInputComponent = (
               }
               context={{
                 ...context,
-                expectedType: context.expectedType && data.type.properties[key],
+                expectedType:
+                  context.expectedType?.kind === "object"
+                    ? context.expectedType.properties[key]
+                    : undefined,
               }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
-      <AddStatement
-        id={data.id}
-        onSelect={(value) => {
-          if (!data.value.has("")) {
-            const newMap = new Map(data.value);
-            newMap.set(
-              createVariableName({
-                prefix: "key",
-                prev: Array.from(data.value.keys()),
-              }),
-              value
-            );
-            handleData({
-              ...data,
-              type: inferTypeFromValue(newMap),
-              value: newMap,
-            });
-          }
-        }}
-        iconProps={{ title: "Add object item" }}
-        context={context}
-      />
+      {!context.expectedType && showAddButton && (
+        <AddStatement
+          id={data.id}
+          onSelect={(value) => {
+            if (!data.value.has("")) {
+              const newMap = new Map(data.value);
+              newMap.set(
+                createVariableName({
+                  prefix: "key",
+                  prev: Array.from(data.value.keys()),
+                }),
+                value
+              );
+              handleData({
+                ...data,
+                type: inferTypeFromValue(newMap),
+                value: newMap,
+              });
+            }
+          }}
+          iconProps={{ title: "Add object item" }}
+        />
+      )}
       <span>{"}"}</span>
     </div>
   );

@@ -5,6 +5,7 @@ import {
   ReactNode,
   useCallback,
   memo,
+  useMemo,
 } from "react";
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import { updateStatements } from "@/lib/update";
@@ -32,6 +33,24 @@ const OperationComponent = (
   { operation, handleChange, context, options, ...props }: OperationInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
+  const reservedNames = useMemo(
+    () =>
+      new Set(
+        operation.value.parameters
+          .concat(operation.value.statements)
+          .reduce((acc, s) => {
+            if (s.name) acc.push(s.name);
+            return acc;
+          }, [] as string[])
+          .concat(Array.from(context.reservedNames ?? []))
+      ),
+    [
+      context.reservedNames,
+      operation.value.parameters,
+      operation.value.statements,
+    ]
+  );
+
   const handleStatement = useCallback(
     ({
       statement,
@@ -80,11 +99,10 @@ const OperationComponent = (
         ...operation,
         value: {
           ...operation.value,
-          statements: [
-            ...operation.value.statements.slice(0, _index),
-            statement,
-            ...operation.value.statements.slice(_index),
-          ],
+          statements: operation.value.statements
+            .slice(0, _index)
+            .concat(statement)
+            .concat(operation.value.statements.slice(_index)),
         },
       });
     },
@@ -93,21 +111,19 @@ const OperationComponent = (
 
   const addParameter = useCallback(
     (statement: IStatement) => {
-      const parameters = [...operation.value.parameters];
-      const statements = [...operation.value.statements];
       const newParameter = {
         ...statement,
         name: createVariableName({
           prefix: "param",
-          prev: [...parameters, ...context.variables.keys()],
+          prev: Array.from(context.reservedNames ?? []),
         }),
       };
-      const updatedParameters = [...parameters, newParameter];
+      const updatedParameters = operation.value.parameters.concat(newParameter);
       handleChange({
         ...operation,
         type: inferTypeFromValue({
           parameters: updatedParameters,
-          statements: statements,
+          statements: operation.value.statements,
         }),
         value: {
           ...operation.value,
@@ -115,7 +131,7 @@ const OperationComponent = (
         },
       });
     },
-    [context.variables, handleChange, operation]
+    [context.reservedNames, handleChange, operation]
   );
 
   return (
@@ -146,10 +162,11 @@ const OperationComponent = (
               }}
               context={{
                 variables: new Map(),
+                reservedNames,
                 currentStatementId: parameter.id,
-                ...(context.expectedType && {
-                  expectedType: parameter.data.type,
-                  forceExpectedType: true,
+                ...(context.expectedType?.kind === "operation" && {
+                  expectedType: context.expectedType.parameters[i]?.type,
+                  enforceExpectedType: true,
                 }),
               }}
               addStatement={addParameter}
@@ -162,7 +179,6 @@ const OperationComponent = (
             id={`${operation.id}_parameter`}
             onSelect={addParameter}
             iconProps={{ title: "Add parameter" }}
-            context={{ variables: new Map() }}
           />
         )}
         <span>{")"}</span>
@@ -173,6 +189,7 @@ const OperationComponent = (
             (acc, statement, i) => {
               const _context: Context = {
                 currentStatementId: statement.id,
+                reservedNames,
                 variables: acc.variables,
                 skipExecution: getSkipExecution({
                   context: { ...context, variables: acc.variables },
@@ -216,7 +233,6 @@ const OperationComponent = (
             addStatement(statement, "after", lastStatement);
           }}
           iconProps={{ title: "Add statement" }}
-          context={{ variables: new Map() }}
         />
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { IconButton } from "../ui/IconButton";
 import { FaPlus } from "react-icons/fa6";
-import { Context, DataType, IStatement } from "../lib/types";
+import { DataType, IStatement } from "../lib/types";
 import { createData, createStatement } from "../lib/utils";
 import { ComponentPropsWithoutRef, memo } from "react";
 import { uiConfigStore } from "@/lib/store";
@@ -15,7 +15,6 @@ const AddStatementComponent = ({
   id: string;
   onSelect: (statement: IStatement) => void;
   iconProps?: Partial<ComponentPropsWithoutRef<typeof IconButton>>;
-  context: Context;
   className?: string;
   dataType?: DataType;
 }) => {

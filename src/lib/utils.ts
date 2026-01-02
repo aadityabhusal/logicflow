@@ -10,7 +10,6 @@ import {
   ConditionType,
   Context,
   UnionType,
-  Parameter,
   ProjectFile,
 } from "./types";
 
@@ -139,7 +138,7 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
 }
 
 export function createParamData(
-  item: Parameter,
+  item: OperationType["parameters"][number],
   data: IData
 ): IStatement["data"] {
   if (item.type.kind !== "operation") {
@@ -708,7 +707,7 @@ export function getDataDropdownList({
     };
     if (!context.expectedType || kind === context.expectedType.kind) {
       allowedOptions.push(option);
-    } else if (!context.forceExpectedType) {
+    } else if (!context.enforceExpectedType) {
       dataTypeOptions.push(option);
     }
   });
@@ -732,7 +731,7 @@ export function getDataDropdownList({
       isTypeCompatible(variable.data.type, context.expectedType)
     ) {
       allowedOptions.unshift(option);
-    } else if (!context.forceExpectedType) {
+    } else if (!context.enforceExpectedType) {
       variableOptions.unshift(option);
     }
   });

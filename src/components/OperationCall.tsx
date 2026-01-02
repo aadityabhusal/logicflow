@@ -7,7 +7,11 @@ import {
   getOperationListItemParameters,
   getSkipExecution,
 } from "../lib/operation";
-import { getInverseTypes, mergeNarrowedTypes } from "../lib/utils";
+import {
+  getInverseTypes,
+  mergeNarrowedTypes,
+  resolveReference,
+} from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
 import { uiConfigStore } from "@/lib/store";
@@ -123,9 +127,10 @@ const OperationCallComponent = ({
                     ? getInverseTypes(context.variables, narrowedTypes)
                     : updatedVariables,
                 expectedType: originalOperation
-                  ? getOperationListItemParameters(originalOperation, data)[
-                      paramIndex + 1
-                    ]?.type
+                  ? getOperationListItemParameters(
+                      originalOperation,
+                      resolveReference(data, context)
+                    )?.[paramIndex + 1]?.type
                   : undefined,
                 skipExecution: getSkipExecution({
                   context,

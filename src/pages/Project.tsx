@@ -12,7 +12,7 @@ import { useHotkeys } from "@mantine/hooks";
 import { FocusInfo } from "@/components/FocusInfo";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
-import { IData, OperationType } from "@/lib/types";
+import { Context, IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
   createFileVariables,
@@ -21,6 +21,7 @@ import {
 import { getOperationEntities } from "@/lib/navigation";
 import { updateFiles } from "@/lib/update";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { DataTypes } from "@/lib/data";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -68,15 +69,19 @@ export default function Project() {
     () => ({ isTopLevel: true, disableDropdown: true }),
     []
   );
-  const context = useMemo(
-    () => ({
+  const context = useMemo(() => {
+    return {
       variables: createFileVariables(
         currentProject?.files,
         currentOperation?.id
       ),
-    }),
-    [currentProject?.files, currentOperation?.id]
-  );
+      reservedNames: new Set(
+        (currentProject?.files ?? [])
+          .map((file) => file.name)
+          .concat(Object.keys(DataTypes))
+      ),
+    } as Context;
+  }, [currentProject?.files, currentOperation?.id]);
 
   if (!currentProject) return <Navigate to="/" replace />;
 

@@ -104,11 +104,9 @@ const StatementComponent = ({
               onChange={(value) => {
                 const name = value || statement.name || "";
                 if (
-                  [
-                    ...Object.keys(DataTypes),
-                    ...context.variables.keys(),
-                    "operation",
-                  ].includes(name)
+                  Object.keys(DataTypes)
+                    .concat(Array.from(context.reservedNames ?? []))
+                    .includes(name)
                 ) {
                   return;
                 }
@@ -146,7 +144,7 @@ const StatementComponent = ({
                       ? undefined
                       : createVariableName({
                           prefix: "var",
-                          prev: [...context.variables.keys()],
+                          prev: Array.from(context.reservedNames ?? []),
                         }),
                   });
                   setUiConfig(() => ({
@@ -168,7 +166,6 @@ const StatementComponent = ({
                 }}
                 iconProps={{ title: "Add before" }}
                 className="bg-editor"
-                context={context}
               />
             </Popover.Dropdown>
           </Popover>

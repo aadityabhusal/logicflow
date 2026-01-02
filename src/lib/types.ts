@@ -118,19 +118,18 @@ export type Context = {
     string,
     { data: IData; reference?: { name: string; id: string } }
   >;
+  reservedNames?: Set<string>;
   currentStatementId?: string;
   expectedType?: DataType;
-  forceExpectedType?: boolean;
+  enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
 };
 
-export type Parameter = {
-  type: DataType;
-  name?: string;
-};
 export type OperationListItem = {
   name: string;
-  parameters: ((data: IData) => Parameter[]) | Parameter[];
+  parameters:
+    | ((data: IData) => OperationType["parameters"])
+    | OperationType["parameters"];
   isResultTypeFixed?: boolean; // TODO: Show error when type mismatches in the UI
 } & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | { handler: (...args: [Context, ...IData<any>[]]) => IData }

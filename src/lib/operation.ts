@@ -10,7 +10,6 @@ import {
   BooleanType,
   ObjectType,
   OperationListItem,
-  Parameter,
 } from "./types";
 import {
   createData,
@@ -536,8 +535,8 @@ const operationOperations: OperationListItem[] = [
       {
         type: {
           kind: "operation",
-          parameters: [{ type: { kind: "string" } }],
-          result: { kind: "string" },
+          parameters: [{ type: { kind: "unknown" } }],
+          result: { kind: "unknown" },
         },
       },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
@@ -603,7 +602,7 @@ function getArrayCallbackParameters(data: IData) {
         result: { kind: "unknown" },
       },
     },
-  ] as Parameter[];
+  ] as OperationType["parameters"];
 }
 
 /* Operation List */
