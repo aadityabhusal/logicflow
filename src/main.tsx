@@ -60,6 +60,11 @@ const router = createBrowserRouter([
     },
     HydrateFallback: LoadingFallback,
   },
+  {
+    path: "/docs",
+    lazy: () => import("@/pages/Docs").then((m) => ({ Component: m.default })),
+    HydrateFallback: LoadingFallback,
+  },
   { path: "*", element: <Navigate to="/" replace /> },
 ]);
 

@@ -1,7 +1,12 @@
 import { IconButton } from "@/ui/IconButton";
-import { Button, Menu, Tooltip } from "@mantine/core";
+import { Button, Menu } from "@mantine/core";
 import { useMemo } from "react";
-import { FaEllipsisVertical, FaPlus, FaTrash } from "react-icons/fa6";
+import {
+  FaBookOpen,
+  FaEllipsisVertical,
+  FaPlus,
+  FaTrash,
+} from "react-icons/fa6";
 import { Link, useNavigate } from "react-router";
 import relativeTime from "dayjs/plugin/relativeTime";
 import dayjs from "dayjs";
@@ -32,10 +37,16 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
-      <div className="border-b pb-2 flex items-center justify-between">
-        <Tooltip label="Projects" position="right">
-          <h2 className="text-2xl">Projects</h2>
-        </Tooltip>
+      <div className="border-b pb-2 flex items-center justify-between gap-4">
+        <h2 className="text-2xl mr-auto">Projects</h2>
+        <Button
+          component={Link}
+          to="/docs"
+          className="outline-none"
+          leftSection={<FaBookOpen />}
+        >
+          Docs
+        </Button>
         <Button leftSection={<FaPlus />} onClick={() => handleCreate()}>
           Create project
         </Button>
@@ -59,7 +70,7 @@ export default function Dashboard() {
                 >
                   {project.name}
                 </Link>
-                <div className="flex gap-2 text-xs text-disabled">
+                <div className="flex gap-2 text-xs text-gray-300">
                   <span>
                     {project.files.length} file
                     {project.files.length > 1 ? "s" : ""}

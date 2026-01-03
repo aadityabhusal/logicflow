@@ -1,37 +1,70 @@
 # Logicflow
 
-Creating programming logic visually by chaining operations on data.
+Logicflow is a block-based structured editor built on the principle that **all programming is operations done on data**. It provides a visual interface for creating programming logic through a series of data transformations through chained operations along with real-time execution and code generation capabilities.
 
-## Demo
+See [documentation](https://logicflow.dev/docs) for more details.
 
-#### Click the image below to watch the demo.
+## Editor Features
 
-[![Watch the video](https://img.youtube.com/vi/AOfOhNwQL64/hqdefault.jpg)](https://www.youtube.com/watch?v=AOfOhNwQL64)
+### Core Features
 
-## Entities
+- **Simple mental model**: All programming is Operations chained after Data. No additional concepts or syntax to learn.
+- **Block-based editor**: Create logic by chaining operations on data in a structured, text-like linear format.
+- **Real-time execution**: See execution results at each step as you build. Track how data transforms through operation chains.
+- **Skipped execution tracking**: Visual indicators for unreachable code in conditional operations.
+- **Undo/Redo**: Per-file history tracking with Undo(_Cmd/Ctrl+Z_) and Redo(_Cmd/Ctrl+Shift+Z_).
 
-1. **Operation**
-   - Has a series of statements of Statement type
-   - Has a set of parameters of Statement type
-   - Has a set of closures containing previous statements of current and parent scope
-   - Can be either of a generic type or have a fixed type based on its parameters and return type
-   - Can reference another Operation's definition and value (when called) as variable
-2. **Statement**
-   - Has the Data or Operation as the first item
-   - Adds a chain of Methods after the first Data entity
-   - Has a name for referencing its result value
-3. **Data**
-   - A value of type: string, number, boolean, array and object
-   - Can be either of a generic type or have a fixed type
-   - Can reference another Data's value as variable
-4. **Method**
-   - An Operation-like entity with parameters and a result type
-   - Chained after a Statement's Data taking the previous entity's result as first parameter
+### Keyboard Navigation
 
-## Setup and Development
+- **Arrow keys**: Navigate between statements and operations
+- **Cmd/Ctrl + Arrow keys**: Jump to statement/operation boundaries
+- **Alt + Arrow keys**: Navigate between operations within a statement
+- **Backspace/Alt + Backspace**: Delete focused element
+- **Escape**: Close dropdowns and details panel
+- **Ctrl + Space**: Open operation dropdown
+- **Alt + =**: Add operation call
 
-Install `yarn` package manager. Run `yarn install` to install all the packages and `yarn dev` to start the development server
+### UI Features
 
-### Typechecking
+- **Syntax highlighting**: Color-coded types (variables, types, methods, strings, numbers, etc.)
+- **Dropdown search**: Searchable operation and data type dropdowns
+- **Details panel**: Side panel showing type information and execution results
 
-Since, the project uses Vite as build tool which [doesn't perform](https://vitejs.dev/guide/features.html#transpile-only) type checking during development. We can use `tsc --noEmit --watch` in a separate terminal to check of types errors throughout the project.
+## Language Features
+
+### Core Entities
+
+**Data**:
+
+- Represents a typed data value.
+- Can be a primitive value such as string, number, boolean, undefined, null, etc.
+- Can be a complex value such as array, object, operation, union, reference, error, etc.
+
+**Statement**: A variable statement with operations
+
+- Has a Data entity followed by a series of chained Operation entities.
+- Can be assigned a `name` to create a variable and be referenced.
+
+**Operation**
+
+- First-class data entities that contain a series of Statement entities that are executed to produce a result.
+- Can be created either as a file or a Data entity type.
+- Can be called/invoked by either using a `call` operation or by chaining after compatible data and operations.
+
+### Type System
+
+- **Primitive types**: `string`, `number`, `boolean`, `undefined`
+- **Complex types**: `array`, `object` with nested properties
+- **Special types**: `operation`, `union` (multiple type options), `error`, `reference` (variables) etc.
+- **Type inference**: Automatic type inference from data values and operations.
+- **Type compatibility checking**: Deep structural type comparison.
+- **Type narrowing**: Context-aware type refinement based on conditions.
+
+### Error Handling
+
+- Errors as a first-class data entity that can be handled like any other data.
+- Different error types, including runtime errors, type errors, reference errors, and custom user-defined errors.
+
+## License
+
+[AGPL v3.0 License](LICENSE)

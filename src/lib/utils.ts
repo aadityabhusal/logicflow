@@ -12,6 +12,7 @@ import {
   UnionType,
   ProjectFile,
 } from "./types";
+import { MouseEvent } from "react";
 
 /* Create */
 
@@ -612,7 +613,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
       return ErrorTypesData[type.errorType]?.name ?? "Unknown Error";
 
     case "array":
-      return `${getTypeSignature(type.elementType, maxDepth - 1)}[]`;
+      return `array<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
 
     case "object": {
       const maxEntries = 3;
@@ -770,4 +771,11 @@ export function handleSearchParams(
     else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
+}
+
+export function didMouseEnterFromRight(e: MouseEvent) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const mouseX = e.clientX;
+  const elementRight = rect.right;
+  return mouseX >= elementRight - 5;
 }

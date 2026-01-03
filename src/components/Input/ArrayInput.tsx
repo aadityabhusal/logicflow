@@ -2,7 +2,7 @@ import { ArrayType, Context, IData, IStatement } from "../../lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useMemo, useState } from "react";
-import { inferTypeFromValue } from "../../lib/utils";
+import { didMouseEnterFromRight, inferTypeFromValue } from "../../lib/utils";
 
 export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType>;
@@ -43,7 +43,9 @@ const ArrayInputComponent = (
         isMultiline ? "flex-col" : "flex-row",
         props?.className,
       ].join(" ")}
-      onMouseEnter={() => setShowAddButton(true)}
+      onMouseEnter={(e) => {
+        if (!didMouseEnterFromRight(e)) setShowAddButton(true);
+      }}
       onMouseLeave={() => setShowAddButton(false)}
     >
       <span>{"["}</span>

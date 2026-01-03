@@ -99,6 +99,7 @@ const UnionInputComponent = (
             ? handleTypeRemove(activeType.index)
             : handleActiveTypeChange(newData)
         }
+        disableDelete={!!context.expectedType}
         context={{
           ...context,
           ...(context.expectedType?.kind === "union"

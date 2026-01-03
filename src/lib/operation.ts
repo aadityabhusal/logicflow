@@ -385,6 +385,21 @@ const arrayOperations: OperationListItem[] = [
     },
   },
   {
+    name: "join",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "string" } },
+    ],
+    handler: (_, data: IData<ArrayType>, p1: IData<StringType>) => {
+      return createData({
+        type: { kind: "string" },
+        value: data.value
+          .map((item) => getStatementResult(item).value)
+          .join(p1.value),
+      });
+    },
+  },
+  {
     name: "map",
     parameters: getArrayCallbackParameters,
     handler: (
