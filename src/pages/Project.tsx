@@ -92,7 +92,9 @@ export default function Project() {
         currentProject={currentProject}
       />
       <div className="flex flex-1 min-h-0 relative">
-        {!hideSidebar && <Sidebar />}
+        {!hideSidebar && (
+          <Sidebar reservedNames={Array.from(context.reservedNames ?? [])} />
+        )}
         <div
           className={"p-1 flex-1 overflow-y-auto scroll"}
           onClick={(e) => {

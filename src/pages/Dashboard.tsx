@@ -39,7 +39,12 @@ export default function Dashboard() {
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div className="border-b pb-2 flex items-center justify-between gap-4">
         <h2 className="text-2xl mr-auto">Projects</h2>
-        <Button component={Link} to="/docs" leftSection={<FaBookOpen />}>
+        <Button
+          component={Link}
+          to="/docs"
+          className="outline-none"
+          leftSection={<FaBookOpen />}
+        >
           Docs
         </Button>
         <Button leftSection={<FaPlus />} onClick={() => handleCreate()}>

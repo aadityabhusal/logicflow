@@ -9,15 +9,15 @@ import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { Button } from "@mantine/core";
 
-function SidebarComponent() {
+function SidebarComponent({ reservedNames }: { reservedNames: string[] }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [editingId, setEditingId] = useState<string>();
+  const [hoveringId, setHoveringId] = useState<string>();
   const addFile = useProjectStore((s) => s.addFile);
   const updateProject = useProjectStore((s) => s.updateProject);
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const getFile = useProjectStore((s) => s.getFile);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [editingId, setEditingId] = useState<string>();
-  const [hoveringId, setHoveringId] = useState<string>();
 
   return (
     <div className="flex flex-col ml-auto w-40 border-r">
@@ -28,9 +28,7 @@ function SidebarComponent() {
           icon={FaPlus}
           title="Add operation"
           onClick={() =>
-            addFile(
-              createProjectFile({ type: "operation" }, currentProject?.files)
-            )
+            addFile(createProjectFile({ type: "operation" }, reservedNames))
           }
         >
           Add
@@ -131,7 +129,7 @@ function SidebarComponent() {
           className="outline-none"
           leftSection={<FaBookOpen />}
         >
-          Documentation
+          Docs
         </Button>
         <Button
           component={Link}

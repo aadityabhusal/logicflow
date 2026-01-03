@@ -55,7 +55,7 @@ See [documentation](https://logicflow.dev/docs) for more details.
 
 - **Primitive types**: `string`, `number`, `boolean`, `undefined`
 - **Complex types**: `array`, `object` with nested properties
-- **Special types**: `operation`, `union` (multiple type options), `error`, `unknown`, `never`
+- **Special types**: `operation`, `union` (multiple type options), `error`, `reference` (variables) etc.
 - **Type inference**: Automatic type inference from data values and operations.
 - **Type compatibility checking**: Deep structural type comparison.
 - **Type narrowing**: Context-aware type refinement based on conditions.

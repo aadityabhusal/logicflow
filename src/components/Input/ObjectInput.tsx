@@ -3,7 +3,11 @@ import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useState } from "react";
-import { createVariableName, inferTypeFromValue } from "../../lib/utils";
+import {
+  createVariableName,
+  didMouseEnterFromRight,
+  inferTypeFromValue,
+} from "../../lib/utils";
 import { uiConfigStore } from "@/lib/store";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { getHotkeyHandler } from "@mantine/hooks";
@@ -63,7 +67,9 @@ const ObjectInputComponent = (
         isMultiline ? "flex-col" : "flex-row",
         props?.className,
       ].join(" ")}
-      onMouseEnter={() => setShowAddButton(true)}
+      onMouseEnter={(e) => {
+        if (!didMouseEnterFromRight(e)) setShowAddButton(true);
+      }}
       onMouseLeave={() => setShowAddButton(false)}
     >
       <span>{"{"}</span>
