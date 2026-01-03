@@ -37,6 +37,7 @@ body {
   color: #eee;
   line-height: 1.25;
   font-family: Arial, Helvetica, sans-serif;
+  scroll-behavior: smooth;
 }
 
 pre {

@@ -5,7 +5,6 @@ import {
   FaRegCopy,
   FaRegPaste,
   FaCheck,
-  FaHouse,
   FaGear,
 } from "react-icons/fa6";
 import {
@@ -23,8 +22,7 @@ import {
 import { useState } from "react";
 import { IData, OperationType, Project } from "../lib/types";
 import { OperationValueSchema } from "../lib/schemas";
-import { Link } from "react-router";
-import { Popover, Tooltip } from "@mantine/core";
+import { Popover } from "@mantine/core";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { preferenceOptions } from "@/lib/data";
 import { updateFiles } from "@/lib/update";
@@ -34,7 +32,7 @@ export function Header({
   currentOperation,
 }: {
   currentOperation?: IData<OperationType>;
-  currentProject?: Project;
+  currentProject: Project;
 }) {
   const uiConfig = uiConfigStore((s) => ({
     highlightOperation: s.highlightOperation,
@@ -85,28 +83,20 @@ export function Header({
           </Popover.Dropdown>
         </Popover>
       </div>
-      <div className="flex items-center gap-2">
-        <Tooltip label="Dashboard">
-          <Link to="/" className="hover:underline">
-            <FaHouse />
-          </Link>
-        </Tooltip>
-        <span className="text-disabled text-2xl">/</span>
-        {currentProject && (
-          <BaseInput
-            className="focus:outline hover:outline outline-white"
-            defaultValue={currentProject.name}
-            onFocus={() => setUiConfig({ navigation: undefined })}
-            onBlur={(e) =>
-              e.target.value &&
-              updateProject(currentProject.id, { name: e.target.value })
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-            }}
-          />
-        )}
-      </div>
+      {currentProject && (
+        <BaseInput
+          className="focus:outline hover:outline outline-white"
+          defaultValue={currentProject.name}
+          onFocus={() => setUiConfig({ navigation: undefined })}
+          onBlur={(e) =>
+            e.target.value &&
+            updateProject(currentProject.id, { name: e.target.value })
+          }
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+        />
+      )}
       <div className="flex items-center gap-2">
         <IconButton
           title="Copy"

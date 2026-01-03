@@ -1,12 +1,13 @@
-import { FaPencil, FaPlus, FaX } from "react-icons/fa6";
+import { FaBookOpen, FaHouse, FaPencil, FaPlus, FaX } from "react-icons/fa6";
 import { fileHistoryActions, useProjectStore } from "../lib/store";
 import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
-import { SiGithub, SiYoutube } from "react-icons/si";
-import { useSearchParams } from "react-router";
+import { SiGithub } from "react-icons/si";
+import { Link, useSearchParams } from "react-router";
 import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
+import { Button } from "@mantine/core";
 
 function SidebarComponent() {
   const addFile = useProjectStore((s) => s.addFile);
@@ -115,27 +116,32 @@ function SidebarComponent() {
           </li>
         ))}
       </ul>
-      <div className="flex flex-col gap-2 p-2 border-t">
-        <a
-          href="https://www.youtube.com/watch?v=AOfOhNwQL64"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1"
-          title="Demo video"
+      <div className="flex flex-col gap-2 p-1 border-t">
+        <Button
+          component={Link}
+          to="/"
+          className="outline-none"
+          leftSection={<FaHouse />}
         >
-          <SiYoutube size={20} />
-          <span className="p-px mr-1 text-white">Demo</span>
-        </a>
-        <a
-          href="https://github.com/aadityabhusal/logicflow"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1"
-          title="Source code"
+          Dashboard
+        </Button>
+        <Button
+          component={Link}
+          to="/docs"
+          className="outline-none"
+          leftSection={<FaBookOpen />}
         >
-          <SiGithub size={20} />
-          <span className="p-px mr-1 text-white">Source code</span>
-        </a>
+          Documentation
+        </Button>
+        <Button
+          component={Link}
+          to="https://github.com/aadityabhusal/logicflow"
+          target="_blank"
+          className="outline-none"
+          leftSection={<SiGithub />}
+        >
+          Source code
+        </Button>
       </div>
     </div>
   );

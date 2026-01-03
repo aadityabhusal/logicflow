@@ -8,9 +8,8 @@ See [documentation](https://logicflow.dev/docs) for more details.
 
 ### Core Features
 
+- **Simple mental model**: All programming is Operations chained after Data. No additional concepts or syntax to learn.
 - **Block-based editor**: Create logic by chaining operations on data in a structured, text-like linear format.
-- **First-class operations**: Operations are treated as data types that can be defined, referenced, and composed.
-- **Statement-based structure**: Each statement can have a name (creating a variable), data value, and chained operations.
 - **Real-time execution**: See execution results at each step as you build. Track how data transforms through operation chains.
 - **Skipped execution tracking**: Visual indicators for unreachable code in conditional operations.
 - **Undo/Redo**: Per-file history tracking with Undo(_Cmd/Ctrl+Z_) and Redo(_Cmd/Ctrl+Shift+Z_).
@@ -33,26 +32,6 @@ See [documentation](https://logicflow.dev/docs) for more details.
 
 ## Language Features
 
-### Type System
-
-- **Primitive types**: `string`, `number`, `boolean`, `undefined`
-- **Complex types**: `array`, `object` with nested properties
-- **Special types**: `operation`, `union` (multiple type options), `error`, `unknown`, `never`
-- Type inference and type compatibility checking
-
-### Union Types and Type Narrowing
-
-- Create and manage union types with a visual type switcher.
-- Automatic type narrowing after `isTypeOf` operation checks.
-- Context-aware variable types including inverse type narrowing for falsy branches.
-
-### Error Handling
-
-- Errors as first-class data types that can be handled like any other data.
-- Different error types including runtime errors, type errors, reference errors and custom user-defined errors.
-
-## Technical Architecture
-
 ### Core Entities
 
 **Data**:
@@ -68,18 +47,23 @@ See [documentation](https://logicflow.dev/docs) for more details.
 
 **Operation**
 
-- Has a series of Statement entities as parameters and statements.
+- First-class data entities that contain a series of Statement entities that are executed to produce a result.
 - Can be created either as a file or a Data entity type.
-- Can be called/invoked using either `call` operation.
-- Can be chained after compatible data and operations.
+- Can be called/invoked by either using a `call` operation or by chaining after compatible data and operations.
 
-### Type System Implementation
+### Type System
 
-- **Recursive type definitions**: Types can contain other types
-- **Type resolution**: Automatic union type flattening and deduplication
-- **Type compatibility checking**: Deep structural type comparison
-- **Type narrowing**: Context-aware type refinement based on conditions
-- **Reference resolution**: Variable lookup with proper scoping
+- **Primitive types**: `string`, `number`, `boolean`, `undefined`
+- **Complex types**: `array`, `object` with nested properties
+- **Special types**: `operation`, `union` (multiple type options), `error`, `unknown`, `never`
+- **Type inference**: Automatic type inference from data values and operations.
+- **Type compatibility checking**: Deep structural type comparison.
+- **Type narrowing**: Context-aware type refinement based on conditions.
+
+### Error Handling
+
+- Errors as a first-class data entity that can be handled like any other data.
+- Different error types, including runtime errors, type errors, reference errors, and custom user-defined errors.
 
 ## License
 
