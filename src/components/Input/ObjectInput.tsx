@@ -2,12 +2,8 @@ import { Context, IData, IStatement, ObjectType } from "../../lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useState } from "react";
-import {
-  createVariableName,
-  didMouseEnterFromRight,
-  inferTypeFromValue,
-} from "../../lib/utils";
+import { forwardRef, HTMLAttributes, memo } from "react";
+import { createVariableName, inferTypeFromValue } from "../../lib/utils";
 import { uiConfigStore } from "@/lib/store";
 import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { getHotkeyHandler } from "@mantine/hooks";
@@ -24,7 +20,6 @@ const ObjectInputComponent = (
   const isMultiline = data.value.size > 2;
   const navigationId = uiConfigStore((s) => s.navigation?.id);
   const customHotKeys = useCustomHotkeys();
-  const [showAddButton, setShowAddButton] = useState(false);
 
   function handleUpdate(
     dataArray: [string, IStatement][],
@@ -67,10 +62,6 @@ const ObjectInputComponent = (
         isMultiline ? "flex-col" : "flex-row",
         props?.className,
       ].join(" ")}
-      onMouseEnter={(e) => {
-        if (!didMouseEnterFromRight(e)) setShowAddButton(true);
-      }}
-      onMouseLeave={() => setShowAddButton(false)}
     >
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
@@ -108,7 +99,7 @@ const ObjectInputComponent = (
           </div>
         );
       })}
-      {!context.expectedType && showAddButton && (
+      {!context.expectedType && (
         <AddStatement
           id={data.id}
           onSelect={(value) => {

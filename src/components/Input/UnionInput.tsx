@@ -189,7 +189,7 @@ const UnionInputComponent = (
                   .filter(
                     ([type, value]) =>
                       !value.hideFromDropdown &&
-                      !["union"].includes(type) &&
+                      !["union", "operation"].includes(type) &&
                       // This is only for default types, if user updates a complex type, the default type options will be shown
                       !data.type.types.some((t) =>
                         isTypeCompatible(t, value.type)

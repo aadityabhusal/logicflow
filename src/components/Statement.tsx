@@ -1,4 +1,9 @@
-import { FaArrowRightLong, FaArrowTurnUp, FaEquals } from "react-icons/fa6";
+import {
+  FaArrowRightLong,
+  FaArrowTurnUp,
+  FaEquals,
+  FaQuestion,
+} from "react-icons/fa6";
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import {
   getStatementResult,
@@ -36,9 +41,10 @@ const StatementComponent = ({
   context: Context;
   options?: {
     enableVariable?: boolean;
+    isOptional?: boolean;
+    isParameter?: boolean;
     disableNameToggle?: boolean;
     disableDelete?: boolean;
-    disableOperationCall?: boolean;
   };
 }) => {
   const hasName = statement.name !== undefined;
@@ -129,15 +135,23 @@ const StatementComponent = ({
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={FaEquals}
+                icon={options?.isOptional ? FaQuestion : FaEquals}
                 position="right"
                 className={[
-                  "mt-[5px] hover:outline hover:outline-border",
+                  "hover:outline hover:outline-border",
+                  options?.isOptional ? "self-center" : "self-end",
                   isEqualsFocused ? "outline outline-border" : "",
                 ].join(" ")}
                 disabled={options?.disableNameToggle}
-                title="Create variable"
+                title={
+                  options?.isOptional
+                    ? "Make required"
+                    : options?.isParameter
+                    ? "Make optional"
+                    : "Create variable"
+                }
                 onClick={() => {
+                  if (options?.disableNameToggle) return;
                   handleStatement({
                     ...statement,
                     name: hasName
@@ -189,7 +203,7 @@ const StatementComponent = ({
             data={statement.data}
             disableDelete={options?.disableDelete}
             addOperationCall={
-              !options?.disableOperationCall &&
+              !options?.isParameter &&
               !context.skipExecution &&
               getFilteredOperations(statement.data, context.variables).length
                 ? () => addOperationCall(statement.data, 0)
@@ -241,7 +255,7 @@ const StatementComponent = ({
                       context={{ ...context, skipExecution }}
                       narrowedTypes={acc.narrowedTypes}
                       addOperationCall={
-                        !options?.disableOperationCall && !skipExecution
+                        !options?.isParameter && !skipExecution
                           ? () =>
                               addOperationCall(
                                 operation.value.result ?? data,

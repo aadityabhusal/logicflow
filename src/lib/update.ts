@@ -27,6 +27,7 @@ import {
   getInverseTypes,
   mergeNarrowedTypes,
   resolveReference,
+  getOperationResultType,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
@@ -49,26 +50,28 @@ export function updateOperationCalls(
         skipExecution: getSkipExecution({ context: _context, data, operation }),
       };
 
-      const parameters = operation.value.parameters.map((param, paramIndex) => {
-        const variables =
-          operation.value.name === "thenElse" && paramIndex === 1
-            ? getInverseTypes(context.variables, acc.narrowedTypes)
-            : mergeNarrowedTypes(
-                context.variables,
-                acc.narrowedTypes,
-                operation.value.name
-              );
-        return updateStatement(param, {
-          ...context,
-          variables,
-          skipExecution: getSkipExecution({
-            context,
-            data,
-            operation,
-            paramIndex: paramIndex,
-          }),
-        });
-      });
+      const updatedParameters = operation.value.parameters.map(
+        (param, paramIndex) => {
+          const variables =
+            operation.value.name === "thenElse" && paramIndex === 1
+              ? getInverseTypes(context.variables, acc.narrowedTypes)
+              : mergeNarrowedTypes(
+                  context.variables,
+                  acc.narrowedTypes,
+                  operation.value.name
+                );
+          return updateStatement(param, {
+            ...context,
+            variables,
+            skipExecution: getSkipExecution({
+              context,
+              data,
+              operation,
+              paramIndex: paramIndex,
+            }),
+          });
+        }
+      );
 
       const foundOperation = getFilteredOperations(
         data,
@@ -77,7 +80,12 @@ export function updateOperationCalls(
       const currentResult = operation.value.result;
       const result = foundOperation
         ? {
-            ...executeOperation(foundOperation, data, parameters, context),
+            ...executeOperation(
+              foundOperation,
+              data,
+              updatedParameters,
+              context
+            ),
             ...(currentResult && { id: currentResult?.id }),
           }
         : createData({
@@ -91,7 +99,10 @@ export function updateOperationCalls(
 
       acc.operations = [
         ...acc.operations,
-        { ...operation, value: { ...operation.value, parameters, result } },
+        {
+          ...operation,
+          value: { ...operation.value, parameters: updatedParameters, result },
+        },
       ];
       return acc;
     },
@@ -193,7 +204,11 @@ export function updateStatements({
     if (changedStatement && !currentIndexFound)
       return [...prevStatements, currentStatement];
 
-    const variables = createContextVariables(prevStatements, context.variables);
+    const variables = createContextVariables(
+      prevStatements,
+      context.variables,
+      operation
+    );
     const _context = {
       currentStatementId: statementToProcess.id,
       variables,
@@ -214,6 +229,7 @@ function updateOperationValue(
   const updatedStatements = updateStatements({
     statements: [...operation.value.parameters, ...operation.value.statements],
     context,
+    operation,
   });
   const parameterLength = operation.value.parameters.length;
   const parameters = updatedStatements.slice(0, parameterLength);
@@ -244,7 +260,10 @@ export function updateFiles(
       if (!isEqual(value, operation.value)) {
         const operationFile = createFileFromOperation({
           ...operation,
-          type: inferTypeFromValue(value),
+          type: {
+            ...operation.type,
+            result: getOperationResultType(value.statements),
+          },
           value,
         });
         fileToProcess = { ...operationFile, updatedAt: Date.now() };

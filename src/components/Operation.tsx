@@ -12,7 +12,7 @@ import { updateStatements } from "@/lib/update";
 import {
   createVariableName,
   createContextVariables,
-  inferTypeFromValue,
+  getOperationResultType,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
@@ -55,11 +55,13 @@ const OperationComponent = (
     ({
       statement,
       context,
+      index,
       remove,
       parameterLength = operation.value.parameters.length,
     }: {
       statement: IStatement;
       context: Context;
+      index: number;
       remove?: boolean;
       parameterLength?: number;
     }) => {
@@ -71,6 +73,7 @@ const OperationComponent = (
         context,
         changedStatement: statement,
         removeStatement: remove,
+        operation,
       });
 
       const updatedParameters = updatedStatements.slice(0, parameterLength);
@@ -78,10 +81,18 @@ const OperationComponent = (
 
       handleChange({
         ...operation,
-        type: inferTypeFromValue({
-          parameters: updatedParameters,
-          statements: updatedStatementsList,
-        }),
+        type: {
+          ...operation.type,
+          parameters: updatedParameters.map((param, i) => {
+            const idx = i >= index && remove ? i + 1 : i;
+            return {
+              name: param.name,
+              type: param.data.type,
+              isOptional: operation.type.parameters[idx]?.isOptional,
+            };
+          }),
+          result: getOperationResultType(updatedStatementsList),
+        },
         value: {
           ...operation.value,
           parameters: updatedParameters,
@@ -95,22 +106,22 @@ const OperationComponent = (
   const addStatement = useCallback(
     (statement: IStatement, position: "before" | "after", index: number) => {
       const _index = position === "before" ? index : index + 1;
+      const statements = operation.value.statements
+        .slice(0, _index)
+        .concat(statement)
+        .concat(operation.value.statements.slice(_index));
       handleChange({
         ...operation,
-        value: {
-          ...operation.value,
-          statements: operation.value.statements
-            .slice(0, _index)
-            .concat(statement)
-            .concat(operation.value.statements.slice(_index)),
-        },
+        type: { ...operation.type, result: getOperationResultType(statements) },
+        value: { ...operation.value, statements },
       });
     },
     [handleChange, operation]
   );
 
   const addParameter = useCallback(
-    (statement: IStatement) => {
+    (statement: IStatement, position: "before" | "after", index: number) => {
+      const _index = position === "before" ? index : index + 1;
       const newParameter = {
         ...statement,
         name: createVariableName({
@@ -118,21 +129,39 @@ const OperationComponent = (
           prev: Array.from(context.reservedNames ?? []),
         }),
       };
-      const updatedParameters = operation.value.parameters.concat(newParameter);
+      const updatedParameters = operation.value.parameters
+        .slice(0, _index)
+        .concat(newParameter)
+        .concat(operation.value.parameters.slice(_index));
+      const updatedParametersTypes = updatedParameters.map((param, i) => {
+        const idx = i >= _index ? i - 1 : i;
+        return {
+          name: param.name,
+          type: param.data.type,
+          isOptional: operation.type.parameters[idx]?.isOptional,
+        };
+      });
+
       handleChange({
         ...operation,
-        type: inferTypeFromValue({
-          parameters: updatedParameters,
-          statements: operation.value.statements,
-        }),
-        value: {
-          ...operation.value,
-          parameters: updatedParameters,
-        },
+        type: { ...operation.type, parameters: updatedParametersTypes },
+        value: { ...operation.value, parameters: updatedParameters },
       });
     },
     [context.reservedNames, handleChange, operation]
   );
+
+  function handleOptionalParameter(index: number) {
+    const parameterTypes = [...operation.type.parameters];
+    parameterTypes[index] = {
+      ...parameterTypes[index],
+      isOptional: !parameterTypes[index]?.isOptional,
+    };
+    handleChange({
+      ...operation,
+      type: { ...operation.type, parameters: parameterTypes },
+    });
+  }
 
   return (
     <div
@@ -146,19 +175,31 @@ const OperationComponent = (
           <Fragment key={parameter.id}>
             <Statement
               statement={parameter}
-              handleStatement={(statement, remove) =>
-                handleStatement({
-                  statement,
-                  remove,
-                  parameterLength: paramList.length + (remove ? -1 : 0),
-                  context,
-                })
-              }
+              handleStatement={(statement, remove) => {
+                if (!statement.name) {
+                  handleOptionalParameter(i);
+                } else {
+                  handleStatement({
+                    statement,
+                    remove,
+                    index: i,
+                    parameterLength: paramList.length + (remove ? -1 : 0),
+                    context,
+                  });
+                }
+              }}
               options={{
                 enableVariable: true,
                 disableDelete: options?.disableDelete,
-                disableOperationCall: true,
-                disableNameToggle: true,
+                isParameter: true,
+                isOptional: operation.type.parameters[i]?.isOptional,
+                disableNameToggle: (() => {
+                  const prev = operation.type.parameters[i - 1];
+                  const next = operation.type.parameters[i + 1];
+                  if (next && !next.isOptional) return true;
+                  if (prev && prev.isOptional) return true;
+                  return false;
+                })(),
               }}
               context={{
                 variables: new Map(),
@@ -169,7 +210,7 @@ const OperationComponent = (
                   enforceExpectedType: true,
                 }),
               }}
-              addStatement={addParameter}
+              addStatement={(...props) => addParameter(...props, i)}
             />
             {i + 1 < paramList.length && <span>,</span>}
           </Fragment>
@@ -177,7 +218,10 @@ const OperationComponent = (
         {!context.expectedType && (
           <AddStatement
             id={`${operation.id}_parameter`}
-            onSelect={addParameter}
+            onSelect={(statement) => {
+              const lastParameter = operation.value.parameters.length - 1;
+              addParameter(statement, "after", lastParameter);
+            }}
             iconProps={{ title: "Add parameter" }}
           />
         )}
@@ -186,7 +230,7 @@ const OperationComponent = (
       <div className="pl-4 [&>div]:mb-1 w-fit">
         {
           operation.value.statements.reduce(
-            (acc, statement, i) => {
+            (acc, statement, index) => {
               const _context: Context = {
                 currentStatementId: statement.id,
                 reservedNames,
@@ -199,7 +243,8 @@ const OperationComponent = (
 
               acc.variables = createContextVariables(
                 [statement],
-                acc.variables
+                acc.variables,
+                operation
               );
 
               acc.elements.push(
@@ -208,9 +253,14 @@ const OperationComponent = (
                   statement={statement}
                   options={{ enableVariable: true }}
                   handleStatement={(statement, remove) =>
-                    handleStatement({ statement, remove, context: _context })
+                    handleStatement({
+                      statement,
+                      remove,
+                      index,
+                      context: _context,
+                    })
                   }
-                  addStatement={(stmt, pos) => addStatement(stmt, pos, i)}
+                  addStatement={(stmt, pos) => addStatement(stmt, pos, index)}
                   context={_context}
                 />
               );
@@ -221,7 +271,8 @@ const OperationComponent = (
               elements: [] as ReactNode[],
               variables: createContextVariables(
                 operation.value.parameters.toReversed(),
-                context.variables
+                context.variables,
+                operation
               ),
             }
           ).elements

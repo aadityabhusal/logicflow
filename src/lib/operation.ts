@@ -124,19 +124,20 @@ const booleanOperations: OperationListItem[] = [
     parameters: [
       { type: { kind: "boolean" } },
       { type: { kind: "unknown" } },
-      { type: { kind: "unknown" } },
+      { type: { kind: "unknown" }, isOptional: true },
     ],
     lazyHandler: (
       context,
       data: IData<BooleanType>,
       trueBranch: IStatement,
-      falseBranch: IStatement
+      falseBranch?: IStatement
     ) => {
       const resultType = resolveUnionType([
         executeStatement(trueBranch, context).type,
-        executeStatement(falseBranch, context).type,
+        ...(falseBranch ? [executeStatement(falseBranch, context).type] : []),
       ]);
-      const selectedBranch = data.value ? trueBranch : falseBranch;
+      const selectedBranch =
+        !data.value && falseBranch ? falseBranch : trueBranch;
       const executedResult = executeStatement(selectedBranch, context);
       if (isDataOfType(executedResult, "error")) return executedResult;
       return createData({ type: resultType, value: executedResult.value });
@@ -550,7 +551,9 @@ const operationOperations: OperationListItem[] = [
       {
         type: {
           kind: "operation",
-          parameters: [{ type: { kind: "unknown" } }],
+          parameters: isDataOfType(data, "operation")
+            ? data.type.parameters
+            : [],
           result: { kind: "unknown" },
         },
       },
@@ -611,8 +614,12 @@ function getArrayCallbackParameters(data: IData) {
         kind: "operation",
         parameters: [
           { name: "item", type: elementType },
-          { name: "index", type: { kind: "number" } },
-          { name: "arr", type: { kind: "array", elementType } },
+          { name: "index", type: { kind: "number" }, isOptional: true },
+          {
+            name: "arr",
+            type: { kind: "array", elementType },
+            isOptional: true,
+          },
         ],
         result: { kind: "unknown" },
       },
@@ -704,18 +711,21 @@ export function createOperationCall({
     newOperation,
     data
   );
-  const newParameters = operationParameters.slice(1).map((item, index) => {
-    const newParam = createStatement({ data: createParamData(item, data) });
-    const prevParam = parameters?.[index];
-    if (
-      prevParam &&
-      isTypeCompatible(newParam.data.type, prevParam.data.type) &&
-      isTypeCompatible(newParam.data.type, getStatementResult(prevParam).type)
-    ) {
-      return prevParam;
-    }
-    return newParam;
-  });
+  const newParameters = operationParameters
+    .slice(1)
+    .filter((param) => !param?.isOptional)
+    .map((item, index) => {
+      const newParam = createStatement({ data: createParamData(item, data) });
+      const prevParam = parameters?.[index];
+      if (
+        prevParam &&
+        isTypeCompatible(newParam.data.type, prevParam.data.type) &&
+        isTypeCompatible(newParam.data.type, getStatementResult(prevParam).type)
+      ) {
+        return prevParam;
+      }
+      return newParam;
+    });
   const result = executeOperation(newOperation, data, newParameters, context);
 
   return {
@@ -836,8 +846,13 @@ export function executeOperation(
     }
   }
 
-  const parameters = _parameters.map((p) => executeStatement(p, prevContext));
   const operationParams = getOperationListItemParameters(operation, data);
+  const parameters = operationParams.slice(1).map((p, index) => {
+    const hasParam = _parameters[index];
+    return p.isOptional && !hasParam
+      ? createData({ type: p.type })
+      : executeStatement(hasParam, prevContext);
+  });
   const errorParamIndex = operationParams.slice(1).findIndex((p, i) => {
     return (
       isDataOfType(parameters[i], "error") ||

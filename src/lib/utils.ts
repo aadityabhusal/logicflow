@@ -217,12 +217,20 @@ export function createFileFromOperation(operation: IData<OperationType>) {
 
 export function createContextVariables(
   statements: IStatement[],
-  variables: Context["variables"]
+  variables: Context["variables"],
+  operation?: IData<OperationType>
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
       const data = resolveReference(statement.data, { variables });
       const result = getStatementResult({ ...statement, data });
+
+      const isOptional = operation?.type.parameters.find(
+        (param) => param.name === statement.name && param.isOptional
+      );
+      if (isOptional) {
+        result.type = resolveUnionType([result.type, { kind: "undefined" }]);
+      }
 
       variables.set(statement.name, {
         data: { ...result, id: statement.id },
@@ -465,7 +473,7 @@ export function mergeNarrowedTypes(
   operationName?: string
 ): Context["variables"] {
   return operationName === "or"
-    ? originalTypes // TODO: inverse narrowed types for 'or' operation
+    ? originalTypes
     : narrowedTypes.entries().reduce((acc, [key, value]) => {
         if (value.data.type.kind === "never") acc.delete(key);
         else acc.set(key, value);
@@ -516,22 +524,13 @@ function getArrayElementType(elements: IStatement[]): DataType {
   return resolveUnionType(unionTypes);
 }
 
-function getOperationType(
-  parameters: IStatement[],
-  statements: IStatement[]
-): OperationType {
-  const parameterTypes = parameters.map((param) => ({
-    name: param.name,
-    type: param.data.type,
-  }));
-
+export function getOperationResultType(statements: IStatement[]): DataType {
   let resultType: DataType = { kind: "undefined" };
   if (statements.length > 0) {
     const lastStatement = statements[statements.length - 1];
     resultType = getStatementResult(lastStatement).type;
   }
-
-  return { kind: "operation", parameters: parameterTypes, result: resultType };
+  return resultType;
 }
 
 export function resolveReference(data: IData, context: Context): IData {
@@ -576,7 +575,15 @@ export function inferTypeFromValue<T extends DataType>(
     Array.isArray(value.parameters) &&
     Array.isArray(value.statements)
   ) {
-    return getOperationType(value.parameters, value.statements) as T;
+    return {
+      kind: "operation",
+      // TODO: Add optional parameters support
+      parameters: value.parameters.map((param) => ({
+        name: param.name,
+        type: param.data.type,
+      })),
+      result: getOperationResultType(value.statements),
+    } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
     const trueType = getStatementResult(value.true as IStatement).type;

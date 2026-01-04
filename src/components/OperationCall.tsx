@@ -15,6 +15,7 @@ import {
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
 import { uiConfigStore } from "@/lib/store";
+import { AddStatement } from "./AddStatement";
 
 const OperationCallComponent = ({
   data,
@@ -68,18 +69,23 @@ const OperationCallComponent = ({
     });
   }
 
-  function handleParameter(item: IStatement, index: number) {
-    const parameters = operation.value.parameters.map((param, i) =>
-      i === index ? item : param
-    );
+  function handleParameter(item: IStatement, index: number, remove?: boolean) {
+    // eslint-disable-next-line prefer-const
+    let parameters = [...operation.value.parameters];
+    if (remove) parameters.splice(index, 1);
+    else parameters[index] = item;
     handleOperationCall({
       ...operation,
       type: {
         ...operation.type,
-        parameters: parameters.map((param) => ({
-          name: param.name,
-          type: param.data.type,
-        })),
+        parameters: operation.type.parameters.map((param, i) => {
+          const idx = (i >= index && remove ? i + 1 : i) - 1;
+          return {
+            ...param,
+            name: parameters[idx]?.name ?? param.name,
+            type: parameters[idx]?.data.type ?? param.type,
+          };
+        }),
       },
       value: { ...operation.value, parameters },
     });
@@ -118,8 +124,13 @@ const OperationCallComponent = ({
           <span key={item.id} className="flex">
             <Statement
               statement={item}
-              handleStatement={(val) => val && handleParameter(val, paramIndex)}
-              options={{ disableDelete: true }}
+              handleStatement={(val, remove) =>
+                val && handleParameter(val, paramIndex, remove)
+              }
+              options={{
+                disableDelete:
+                  !operation.type.parameters[paramIndex + 1]?.isOptional,
+              }}
               context={{
                 ...context,
                 variables:
@@ -144,6 +155,20 @@ const OperationCallComponent = ({
           </span>
         );
       })}
+      {operation.value.parameters.length + 1 <
+        operation.type.parameters.length && (
+        <AddStatement
+          id={`${operation.id}_parameter`}
+          onSelect={(statement) =>
+            handleParameter(statement, operation.value.parameters.length)
+          }
+          iconProps={{ title: "Add parameter" }}
+          dataType={
+            operation.type.parameters[operation.value.parameters.length + 1]
+              ?.type
+          }
+        />
+      )}
       <span className="self-end">{")"}</span>
     </Dropdown>
   );

@@ -10,7 +10,7 @@ export type ObjectType = {
 export type UnionType = { kind: "union"; types: DataType[] };
 export type OperationType = {
   kind: "operation";
-  parameters: { type: DataType; name?: string }[];
+  parameters: { type: DataType; name?: string; isOptional?: boolean }[];
   result: DataType;
 };
 export type ConditionType = { kind: "condition"; resultType: DataType };
