@@ -69,7 +69,7 @@ const ArrayInputComponent = (
           });
         }}
         iconProps={{ title: "Add array item" }}
-        dataType={expectedType}
+        config={{ type: expectedType }}
       />
       <span>{"]"}</span>
     </div>

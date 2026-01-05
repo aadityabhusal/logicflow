@@ -24,7 +24,11 @@ export function createData<T extends DataType>(
     id: props?.id ?? nanoid(),
     entityType: "data",
     type,
-    value: props?.value ?? createDefaultValue(type),
+    value:
+      props?.value !== undefined ||
+      isTypeCompatible(type, { kind: "undefined" })
+        ? (props?.value as DataValue<T>)
+        : createDefaultValue(type),
   };
 }
 
@@ -37,6 +41,7 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     entityType: "statement",
     data: newData,
     operations: props?.operations || [],
+    isOptional: props?.isOptional,
   };
 }
 
@@ -59,10 +64,14 @@ export function createVariableName({
   return `${prefix}${index || ""}`;
 }
 
-function createStatementFromType(type: DataType, name?: string) {
+function createStatementFromType(
+  type: DataType,
+  name?: string,
+  isOptional?: boolean
+) {
   const value = createDefaultValue(type);
   const data = createData({ type, value });
-  return createStatement({ data, name });
+  return createStatement({ data, name, isOptional });
 }
 
 export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
@@ -105,7 +114,7 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "operation": {
       return {
         parameters: type.parameters.map((param) =>
-          createStatementFromType(param.type, param.name)
+          createStatementFromType(param.type, param.name, param.isOptional)
         ),
         statements: [],
         result: undefined,
@@ -151,6 +160,7 @@ export function createParamData(
       createStatement({
         name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
         data: createParamData({ type: paramSpec.type }, data),
+        isOptional: paramSpec.isOptional,
       })
     );
     return prev;
@@ -159,7 +169,11 @@ export function createParamData(
   return createData({
     type: {
       kind: "operation",
-      parameters: parameters.map((p) => ({ name: p.name, type: p.data.type })),
+      parameters: parameters.map((p) => ({
+        name: p.name,
+        type: p.data.type,
+        isOptional: p.isOptional,
+      })),
       result: { kind: "undefined" },
     },
     value: { parameters: parameters, statements: [] },
@@ -265,10 +279,18 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
   if (first.kind === "unknown" || second.kind === "unknown") return true;
 
   if (first.kind === "operation" && second.kind === "operation") {
-    if (first.parameters.length !== second.parameters.length) return false;
     if (!isTypeCompatible(first.result, second.result)) return false;
-    return first.parameters.every((firstParam, index) =>
-      isTypeCompatible(firstParam.type, second.parameters[index].type)
+    return (
+      first.parameters.every((firstParam, index) => {
+        if (firstParam.isOptional && !second.parameters[index]) return true;
+        if (!second.parameters[index]) return false;
+        return isTypeCompatible(firstParam.type, second.parameters[index].type);
+      }) &&
+      second.parameters.every((secondParam, index) => {
+        if (secondParam.isOptional && !first.parameters[index]) return true;
+        if (!first.parameters[index]) return false;
+        return isTypeCompatible(secondParam.type, first.parameters[index].type);
+      })
     );
   }
 
@@ -481,6 +503,31 @@ export function mergeNarrowedTypes(
       }, new Map(originalTypes));
 }
 
+export function updateContextWithNarrowedTypes(
+  context: Context,
+  data: IData,
+  operationName?: string,
+  paramIndex?: number
+) {
+  const narrowedTypes = context.narrowedTypes ?? new Map();
+  const variables =
+    operationName === "thenElse" && paramIndex === 1
+      ? getInverseTypes(context.variables, narrowedTypes)
+      : mergeNarrowedTypes(context.variables, narrowedTypes, operationName);
+
+  return {
+    ...context,
+    variables,
+    narrowedTypes: undefined,
+    skipExecution: getSkipExecution({
+      context,
+      data,
+      operationName,
+      paramIndex: paramIndex,
+    }),
+  };
+}
+
 export function resolveUnionType(types: DataType[], union: true): UnionType;
 export function resolveUnionType(types: DataType[], union?: false): DataType;
 export function resolveUnionType(
@@ -639,7 +686,11 @@ export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
     case "operation": {
       const params = type.parameters
         .map(
-          (p) => `${p.name || "_"}: ${getTypeSignature(p.type, maxDepth - 1)}`
+          (p) =>
+            `${p.name || "_"}${p.isOptional ? "?" : ""}: ${getTypeSignature(
+              p.type,
+              maxDepth - 1
+            )}`
         )
         .join(", ");
       return `(${params}) => ${getTypeSignature(type.result, maxDepth - 1)}`;
@@ -655,7 +706,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
   }
 }
 
-/* Result */
+/* Execution */
 
 export function getStatementResult(
   statement: IStatement,
@@ -682,6 +733,43 @@ export function getConditionResult(condition: DataValue<ConditionType>): IData {
   return getStatementResult(
     conditionResult.value ? condition.true : condition.false
   );
+}
+
+export function getSkipExecution({
+  context,
+  data: _data,
+  operationName,
+  paramIndex,
+}: {
+  context: Context;
+  data: IData;
+  operationName?: string;
+  paramIndex?: number;
+}): Context["skipExecution"] {
+  if (context.skipExecution) return context.skipExecution;
+  const data = resolveReference(_data, context);
+  if (isDataOfType(data, "error"))
+    return { reason: data.value.reason, kind: "error" };
+  if (!operationName) return undefined;
+
+  if (paramIndex !== undefined && isDataOfType(data, "boolean")) {
+    if (
+      operationName === "thenElse" &&
+      data.value === (paramIndex === 0 ? false : true)
+    ) {
+      return { reason: "Unreachable branch", kind: "unreachable" };
+    } else if (
+      (operationName === "or" || operationName === "and") &&
+      data.value === (operationName === "or" ? true : false)
+    ) {
+      return {
+        reason: `${operationName} operation is unreachable`,
+        kind: "unreachable",
+      };
+    }
+  }
+
+  return undefined;
 }
 
 /* Others */

@@ -13,24 +13,19 @@ import {
   createVariableName,
   createContextVariables,
   getOperationResultType,
+  getSkipExecution,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
-import { getSkipExecution } from "@/lib/operation";
 
 export interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
   operation: IData<OperationType>;
   handleChange: (data: IData<OperationType>, remove?: boolean) => void;
   context: Context;
-  options?: {
-    disableDelete?: boolean;
-    disableDropdown?: boolean;
-    isTopLevel?: boolean;
-  };
 }
 
 const OperationComponent = (
-  { operation, handleChange, context, options, ...props }: OperationInputProps,
+  { operation, handleChange, context, ...props }: OperationInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const reservedNames = useMemo(
@@ -42,7 +37,7 @@ const OperationComponent = (
             if (s.name) acc.push(s.name);
             return acc;
           }, [] as string[])
-          .concat(Array.from(context.reservedNames ?? []))
+          .concat([...(context.reservedNames ?? [])])
       ),
     [
       context.reservedNames,
@@ -51,17 +46,23 @@ const OperationComponent = (
     ]
   );
 
+  const expectedParameterType = useMemo(
+    () =>
+      context.expectedType?.kind === "operation"
+        ? context.expectedType.parameters
+        : undefined,
+    [context.expectedType]
+  );
+
   const handleStatement = useCallback(
     ({
       statement,
       context,
-      index,
       remove,
       parameterLength = operation.value.parameters.length,
     }: {
       statement: IStatement;
       context: Context;
-      index: number;
       remove?: boolean;
       parameterLength?: number;
     }) => {
@@ -83,12 +84,11 @@ const OperationComponent = (
         ...operation,
         type: {
           ...operation.type,
-          parameters: updatedParameters.map((param, i) => {
-            const idx = i >= index && remove ? i + 1 : i;
+          parameters: updatedParameters.map((param) => {
             return {
               name: param.name,
               type: param.data.type,
-              isOptional: operation.type.parameters[idx]?.isOptional,
+              isOptional: param.isOptional,
             };
           }),
           result: getOperationResultType(updatedStatementsList),
@@ -124,21 +124,19 @@ const OperationComponent = (
       const _index = position === "before" ? index : index + 1;
       const newParameter = {
         ...statement,
-        name: createVariableName({
-          prefix: "param",
-          prev: Array.from(context.reservedNames ?? []),
-        }),
+        name:
+          statement.name ??
+          createVariableName({ prefix: "param", prev: [...reservedNames] }),
       };
       const updatedParameters = operation.value.parameters
         .slice(0, _index)
         .concat(newParameter)
         .concat(operation.value.parameters.slice(_index));
-      const updatedParametersTypes = updatedParameters.map((param, i) => {
-        const idx = i >= _index ? i - 1 : i;
+      const updatedParametersTypes = updatedParameters.map((param) => {
         return {
           name: param.name,
           type: param.data.type,
-          isOptional: operation.type.parameters[idx]?.isOptional,
+          isOptional: param.isOptional,
         };
       });
 
@@ -148,20 +146,8 @@ const OperationComponent = (
         value: { ...operation.value, parameters: updatedParameters },
       });
     },
-    [context.reservedNames, handleChange, operation]
+    [reservedNames, handleChange, operation]
   );
-
-  function handleOptionalParameter(index: number) {
-    const parameterTypes = [...operation.type.parameters];
-    parameterTypes[index] = {
-      ...parameterTypes[index],
-      isOptional: !parameterTypes[index]?.isOptional,
-    };
-    handleChange({
-      ...operation,
-      type: { ...operation.type, parameters: parameterTypes },
-    });
-  }
 
   return (
     <div
@@ -176,24 +162,22 @@ const OperationComponent = (
             <Statement
               statement={parameter}
               handleStatement={(statement, remove) => {
-                if (!statement.name) {
-                  handleOptionalParameter(i);
-                } else {
-                  handleStatement({
-                    statement,
-                    remove,
-                    index: i,
-                    parameterLength: paramList.length + (remove ? -1 : 0),
-                    context,
-                  });
-                }
+                handleStatement({
+                  statement,
+                  remove,
+                  parameterLength: paramList.length + (remove ? -1 : 0),
+                  context,
+                });
               }}
               options={{
                 enableVariable: true,
-                disableDelete: options?.disableDelete,
+                disableDelete: expectedParameterType
+                  ? !!paramList[i + 1] || !parameter.isOptional
+                  : false,
                 isParameter: true,
-                isOptional: operation.type.parameters[i]?.isOptional,
+                isOptional: parameter.isOptional,
                 disableNameToggle: (() => {
+                  if (expectedParameterType) return true;
                   const prev = operation.type.parameters[i - 1];
                   const next = operation.type.parameters[i + 1];
                   if (next && !next.isOptional) return true;
@@ -205,24 +189,38 @@ const OperationComponent = (
                 variables: new Map(),
                 reservedNames,
                 currentStatementId: parameter.id,
-                ...(context.expectedType?.kind === "operation" && {
-                  expectedType: context.expectedType.parameters[i]?.type,
+                ...(expectedParameterType && {
+                  expectedType: expectedParameterType[i]?.type,
                   enforceExpectedType: true,
                 }),
               }}
-              addStatement={(...props) => addParameter(...props, i)}
+              addStatement={(statement, position) => {
+                addParameter(
+                  { ...statement, isOptional: paramList[i - 1]?.isOptional },
+                  position,
+                  i
+                );
+              }}
             />
             {i + 1 < paramList.length && <span>,</span>}
           </Fragment>
         ))}
-        {!context.expectedType && (
+        {expectedParameterType &&
+        operation.value.parameters.length ===
+          expectedParameterType.length ? null : (
           <AddStatement
             id={`${operation.id}_parameter`}
             onSelect={(statement) => {
-              const lastParameter = operation.value.parameters.length - 1;
-              addParameter(statement, "after", lastParameter);
+              const lastIndex = operation.value.parameters.length - 1;
+              const isOptional =
+                statement.isOptional ??
+                operation.value.parameters[lastIndex]?.isOptional;
+              addParameter({ ...statement, isOptional }, "after", lastIndex);
             }}
             iconProps={{ title: "Add parameter" }}
+            config={{
+              ...expectedParameterType?.[operation.value.parameters.length],
+            }}
           />
         )}
         <span>{")"}</span>
@@ -256,7 +254,6 @@ const OperationComponent = (
                     handleStatement({
                       statement,
                       remove,
-                      index,
                       context: _context,
                     })
                   }

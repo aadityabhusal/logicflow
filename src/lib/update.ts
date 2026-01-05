@@ -2,7 +2,6 @@ import {
   getFilteredOperations,
   executeOperation,
   executeStatement,
-  getSkipExecution,
 } from "./operation";
 import {
   IStatement,
@@ -24,10 +23,10 @@ import {
   createFileFromOperation,
   createFileVariables,
   applyTypeNarrowing,
-  getInverseTypes,
-  mergeNarrowedTypes,
   resolveReference,
   getOperationResultType,
+  getSkipExecution,
+  updateContextWithNarrowedTypes,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
@@ -47,29 +46,25 @@ export function updateOperationCalls(
       );
       const context = {
         ..._context,
-        skipExecution: getSkipExecution({ context: _context, data, operation }),
+        narrowedTypes: acc.narrowedTypes,
+        skipExecution: getSkipExecution({
+          context: _context,
+          data,
+          operationName: operation.value.name,
+        }),
       };
 
       const updatedParameters = operation.value.parameters.map(
         (param, paramIndex) => {
-          const variables =
-            operation.value.name === "thenElse" && paramIndex === 1
-              ? getInverseTypes(context.variables, acc.narrowedTypes)
-              : mergeNarrowedTypes(
-                  context.variables,
-                  acc.narrowedTypes,
-                  operation.value.name
-                );
-          return updateStatement(param, {
-            ...context,
-            variables,
-            skipExecution: getSkipExecution({
+          return updateStatement(
+            param,
+            updateContextWithNarrowedTypes(
               context,
               data,
-              operation,
-              paramIndex: paramIndex,
-            }),
-          });
+              operation.value.name,
+              paramIndex
+            )
+          );
         }
       );
 

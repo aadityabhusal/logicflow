@@ -9,12 +9,9 @@ import {
   getStatementResult,
   createVariableName,
   applyTypeNarrowing,
-} from "../lib/utils";
-import {
-  createOperationCall,
-  getFilteredOperations,
   getSkipExecution,
-} from "../lib/operation";
+} from "../lib/utils";
+import { createOperationCall, getFilteredOperations } from "../lib/operation";
 import { Data } from "./Data";
 import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
@@ -127,7 +124,11 @@ const StatementComponent = ({
             />
           ) : null}
           <Popover
-            opened={hoverOpened || navigationId === `${statement.id}_add`}
+            opened={
+              context.enforceExpectedType
+                ? false
+                : hoverOpened || navigationId === `${statement.id}_add`
+            }
             offset={4}
             position="left"
             withinPortal={false}
@@ -141,24 +142,30 @@ const StatementComponent = ({
                   "hover:outline hover:outline-border",
                   options?.isOptional ? "self-center" : "self-end",
                   isEqualsFocused ? "outline outline-border" : "",
+                  options?.disableNameToggle ? "text-disabled" : "",
                 ].join(" ")}
-                disabled={options?.disableNameToggle}
                 title={
-                  options?.isOptional
-                    ? "Make required"
+                  options?.disableNameToggle
+                    ? undefined
                     : options?.isParameter
-                    ? "Make optional"
+                    ? options?.isOptional
+                      ? "Make required"
+                      : "Make optional"
                     : "Create variable"
                 }
                 onClick={() => {
                   if (options?.disableNameToggle) return;
                   handleStatement({
                     ...statement,
-                    name: hasName
-                      ? undefined
-                      : createVariableName({
-                          prefix: "var",
-                          prev: Array.from(context.reservedNames ?? []),
+                    ...(options?.isParameter
+                      ? { isOptional: !options?.isOptional }
+                      : {
+                          name: hasName
+                            ? undefined
+                            : createVariableName({
+                                prefix: "var",
+                                prev: Array.from(context.reservedNames ?? []),
+                              }),
                         }),
                   });
                   setUiConfig(() => ({
@@ -228,7 +235,7 @@ const StatementComponent = ({
               const skipExecution = getSkipExecution({
                 context,
                 data,
-                operation,
+                operationName: operation.value.name,
               });
 
               acc.elements.push(
@@ -251,9 +258,11 @@ const StatementComponent = ({
                       handleOperationCall={(op, remove) =>
                         handleOperationCall(op, i, remove)
                       }
-                      // passing context and narrowedTypes separately to handle inverse type narrowing
-                      context={{ ...context, skipExecution }}
-                      narrowedTypes={acc.narrowedTypes}
+                      context={{
+                        ...context,
+                        skipExecution,
+                        narrowedTypes: acc.narrowedTypes,
+                      }}
                       addOperationCall={
                         !options?.isParameter && !skipExecution
                           ? () =>

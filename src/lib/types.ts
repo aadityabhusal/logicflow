@@ -100,6 +100,7 @@ export interface IStatement {
   data: IData;
   operations: IData<OperationType>[];
   name?: string;
+  isOptional?: boolean;
 }
 
 export interface IDropdownItem {
@@ -120,6 +121,7 @@ export type Context = {
   >;
   reservedNames?: Set<string>;
   currentStatementId?: string;
+  narrowedTypes?: Context["variables"];
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };

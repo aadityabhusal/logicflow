@@ -148,11 +148,16 @@ export function getOperationEntities(
   depth = 0
 ): NavigationEntity[] {
   const parameterEntities = operation.value.parameters.flatMap((item) =>
-    getStatementEntities(item, depth, {
-      operationId: operation.id,
-      statementId: `${operation.id}_parameters`,
-      statementIndex: 0,
-    })
+    getStatementEntities(
+      item,
+      depth,
+      {
+        operationId: operation.id,
+        statementId: `${operation.id}_parameters`,
+        statementIndex: 0,
+      },
+      true
+    )
   );
   const statementEntities = operation.value.statements.flatMap((statement, i) =>
     getStatementEntities(

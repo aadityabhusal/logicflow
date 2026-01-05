@@ -48,7 +48,7 @@ Represents the absence of a value.
 
 Stores ordered collections of elements with the same type. Arrays are typed by their element type (e.g., `array<string>`).
 
-**Value**: `[1, 2, 3]` or `["a", "b", "c"]`
+**Value**: Holds a list of statements
 
 **Operations**: `get`, `getLength`, `concat`, `map`, `filter`, `find`, `sort` etc.
 
@@ -56,7 +56,7 @@ Stores ordered collections of elements with the same type. Arrays are typed by t
 
 Stores key-value pairs where each property has its own type. Each property maintains its own type information.
 
-**Value**: `{ name: "John", age: 30 }`
+**Value**: Holds a Key-Statement pair map with string keys
 
 **Operations**: `get`, `has`, `keys`, `values` etc.
 

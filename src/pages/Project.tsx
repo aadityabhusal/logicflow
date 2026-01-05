@@ -65,10 +65,6 @@ export default function Project() {
 
   useHotkeys(useCustomHotkeys(currentOperation), []);
 
-  const operationOptions = useMemo(
-    () => ({ isTopLevel: true, disableDropdown: true }),
-    []
-  );
   const context = useMemo(() => {
     return {
       variables: createFileVariables(
@@ -117,7 +113,6 @@ export default function Project() {
                 operation={currentOperation}
                 handleChange={handleOperationChange}
                 context={context}
-                options={operationOptions}
               />
             ) : (
               <NoteText>Select an operation</NoteText>

@@ -77,7 +77,6 @@ const DataComponent = ({
             operation={data}
             handleChange={handleChange}
             context={context}
-            options={{ disableDelete }}
           />
         ) : isDataOfType(data, "array") ? (
           <ArrayInput
