@@ -146,7 +146,9 @@ const StatementComponent = ({
                 ].join(" ")}
                 title={
                   options?.disableNameToggle
-                    ? undefined
+                    ? options?.isOptional
+                      ? "Optional Parameter"
+                      : undefined
                     : options?.isParameter
                     ? options?.isOptional
                       ? "Make required"

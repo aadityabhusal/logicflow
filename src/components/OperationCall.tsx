@@ -4,9 +4,9 @@ import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
   getFilteredOperations,
-  getOperationListItemParameters,
+  resolveParameters,
 } from "../lib/operation";
-import { resolveReference, updateContextWithNarrowedTypes } from "../lib/utils";
+import { updateContextWithNarrowedTypes } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
 import { uiConfigStore } from "@/lib/store";
@@ -40,11 +40,8 @@ const OperationCallComponent = ({
       .flatMap(([_, items]) => items)
       .find((item) => item.name === operation.value.name);
     if (!originalOperation) return undefined;
-    return getOperationListItemParameters(
-      originalOperation,
-      resolveReference(data, context)
-    );
-  }, [context, data, filteredOperations, operation.value.name]);
+    return resolveParameters(originalOperation, data, context.variables);
+  }, [context.variables, data, filteredOperations, operation.value.name]);
 
   function handleDropdown(name: string) {
     if (operation.value.name === name) return;

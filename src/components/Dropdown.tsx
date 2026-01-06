@@ -90,11 +90,11 @@ const DropdownComponent = ({
   const _result = useMemo(
     () =>
       operationResult
-        ? resolveReference(operationResult, context)
+        ? resolveReference(operationResult, context.variables)
         : data
-        ? resolveReference(data, context)
+        ? resolveReference(data, context.variables)
         : undefined,
-    [operationResult, data, context]
+    [operationResult, data, context.variables]
   );
   const result = useDeepCompareMemoize(_result);
 

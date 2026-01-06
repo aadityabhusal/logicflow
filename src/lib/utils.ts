@@ -236,7 +236,7 @@ export function createContextVariables(
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
-      const data = resolveReference(statement.data, { variables });
+      const data = resolveReference(statement.data, variables);
       const result = getStatementResult({ ...statement, data });
 
       const isOptional = operation?.type.parameters.find(
@@ -580,9 +580,12 @@ export function getOperationResultType(statements: IStatement[]): DataType {
   return resultType;
 }
 
-export function resolveReference(data: IData, context: Context): IData {
+export function resolveReference(
+  data: IData,
+  variables: Context["variables"]
+): IData {
   if (!isDataOfType(data, "reference")) return data;
-  const variable = context.variables.get(data.value.name);
+  const variable = variables.get(data.value.name);
   if (!variable) {
     return createData({
       id: data.id,
@@ -590,7 +593,7 @@ export function resolveReference(data: IData, context: Context): IData {
       value: { reason: `'${data.value.name}' not found` },
     });
   }
-  return resolveReference(variable.data, context);
+  return resolveReference(variable.data, variables);
 }
 
 export function inferTypeFromValue<T extends DataType>(
@@ -747,7 +750,7 @@ export function getSkipExecution({
   paramIndex?: number;
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
-  const data = resolveReference(_data, context);
+  const data = resolveReference(_data, context.variables);
   if (isDataOfType(data, "error"))
     return { reason: data.value.reason, kind: "error" };
   if (!operationName) return undefined;
@@ -802,6 +805,11 @@ export function getDataDropdownList({
       },
     };
     if (!context.expectedType || kind === context.expectedType.kind) {
+      if (context.expectedType) {
+        option.onClick = () => {
+          onSelect(createData({ id: data.id, type: context.expectedType }));
+        };
+      }
       allowedOptions.push(option);
     } else if (!context.enforceExpectedType) {
       dataTypeOptions.push(option);

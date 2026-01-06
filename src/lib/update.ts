@@ -2,6 +2,7 @@ import {
   getFilteredOperations,
   executeOperation,
   executeStatement,
+  resolveParameters,
 } from "./operation";
 import {
   IStatement,
@@ -54,48 +55,63 @@ export function updateOperationCalls(
         }),
       };
 
-      const updatedParameters = operation.value.parameters.map(
-        (param, paramIndex) => {
-          return updateStatement(
-            param,
-            updateContextWithNarrowedTypes(
-              context,
-              data,
-              operation.value.name,
-              paramIndex
-            )
-          );
-        }
-      );
-
       const foundOperation = getFilteredOperations(
         data,
         context.variables
       ).find((op) => op.name === operation.value.name);
-      const currentResult = operation.value.result;
-      const result = foundOperation
-        ? {
-            ...executeOperation(
-              foundOperation,
-              data,
-              updatedParameters,
-              context
-            ),
-            ...(currentResult && { id: currentResult?.id }),
-          }
-        : createData({
-            type: { kind: "error", errorType: "type_error" },
-            value: {
-              reason: `Cannot chain '${operation.value.name}' after '${
-                resolveReference(data, context).type.kind
-              }' type`,
-            },
-          });
 
+      let result: IData = createData({
+        type: { kind: "error", errorType: "type_error" },
+        value: {
+          reason: `Cannot chain '${operation.value.name}' after '${
+            resolveReference(data, context.variables).type.kind
+          }' type`,
+        },
+      });
+      let updatedParameters: IStatement[] = operation.value.parameters;
+      let updatedTypeParameters = operation.type.parameters;
+
+      if (foundOperation) {
+        const sourceParameters = resolveParameters(
+          foundOperation,
+          data,
+          context.variables
+        );
+        updatedTypeParameters = sourceParameters;
+
+        updatedParameters = sourceParameters
+          .slice(1)
+          .map((sourceParam, sourceParamIndex) => {
+            const param = operation.value.parameters[sourceParamIndex];
+            if (!param) {
+              if (sourceParam.isOptional) return null;
+              return createStatement({
+                data: createData({ type: sourceParam.type }),
+                isOptional: sourceParam.isOptional,
+              });
+            }
+            return updateStatement(
+              { ...param, isOptional: sourceParam.isOptional },
+              updateContextWithNarrowedTypes(
+                context,
+                data,
+                operation.value.name,
+                sourceParamIndex
+              )
+            );
+          })
+          .filter((p): p is IStatement => p !== null);
+
+        result = {
+          ...executeOperation(foundOperation, data, updatedParameters, context),
+          ...(operation.value.result && { id: operation.value.result?.id }),
+        };
+      }
       acc.operations = [
         ...acc.operations,
         {
           ...operation,
+          type: { ...operation.type, parameters: updatedTypeParameters },
           value: { ...operation.value, parameters: updatedParameters, result },
         },
       ];

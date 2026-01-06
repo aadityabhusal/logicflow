@@ -659,13 +659,11 @@ function operationToListItem(operation: IData<OperationType>, name?: string) {
 
 const dataSupportsOperation = (
   data: IData,
-  operationItem: OperationListItem
+  operationItem: OperationListItem,
+  variables: Context["variables"]
 ) => {
   if (data.type.kind === "never") return false;
-  const operationParameters = getOperationListItemParameters(
-    operationItem,
-    data
-  );
+  const operationParameters = resolveParameters(operationItem, data, variables);
   const firstParam = operationParameters[0]?.type ?? { kind: "undefined" };
   return data.type.kind === "union" && firstParam.kind !== "union"
     ? data.type.types.every((t) => t.kind === firstParam.kind)
@@ -680,14 +678,20 @@ export function getFilteredOperations<T extends boolean = false>(
   variables: Context["variables"],
   grouped?: T
 ): FilteredOperationsReturn<T> {
-  const data = resolveReference(_data, { variables });
+  const data = resolveReference(_data, variables);
   const builtInOps = builtInOperations.filter((operation) => {
-    return dataSupportsOperation(data, operation);
+    return dataSupportsOperation(data, operation, variables);
   });
 
   const userDefinedOps = variables.entries().reduce((acc, [name, variable]) => {
     if (!name || !isDataOfType(variable.data, "operation")) return acc;
-    if (dataSupportsOperation(data, operationToListItem(variable.data, name))) {
+    if (
+      dataSupportsOperation(
+        data,
+        operationToListItem(variable.data, name),
+        variables
+      )
+    ) {
       acc.push(operationToListItem(variable.data, name));
     }
     return acc;
@@ -701,13 +705,24 @@ export function getFilteredOperations<T extends boolean = false>(
     : (builtInOps.concat(userDefinedOps) as FilteredOperationsReturn<T>);
 }
 
-export function getOperationListItemParameters(
+export function resolveParameters(
   operationListItem: OperationListItem,
-  data: IData
+  _data: IData,
+  variables: Context["variables"]
 ) {
-  return typeof operationListItem.parameters === "function"
-    ? operationListItem.parameters(data)
-    : operationListItem.parameters;
+  const data = resolveReference(_data, variables);
+  const params =
+    typeof operationListItem.parameters === "function"
+      ? operationListItem.parameters(data)
+      : operationListItem.parameters;
+  return params.map((param) => {
+    if (param.isOptional)
+      return {
+        ...param,
+        type: resolveUnionType([param.type, { kind: "undefined" }]),
+      };
+    return param;
+  });
 }
 
 export function createOperationCall({
@@ -721,15 +736,16 @@ export function createOperationCall({
   parameters?: IStatement[];
   context: Context;
 }): IData<OperationType> {
-  const data = resolveReference(_data, context);
+  const data = resolveReference(_data, context.variables);
   const operations = getFilteredOperations(data, context.variables);
   const operationByName = operations.find(
     (operation) => operation.name === name
   );
   const newOperation = operationByName || operations[0];
-  const operationParameters = getOperationListItemParameters(
+  const operationParameters = resolveParameters(
     newOperation,
-    data
+    data,
+    context.variables
   );
   const newParameters = operationParameters
     .slice(1)
@@ -777,12 +793,13 @@ function buildExecutionContext(
   prevContext: Context
 ): Context {
   const context = { variables: new Map(prevContext.variables) };
-  const operationListItemParams = getOperationListItemParameters(
+  const operationListItemParams = resolveParameters(
     operation,
-    data
+    data,
+    prevContext.variables
   );
   if (operationListItemParams[0]?.name) {
-    const resolved = resolveReference(data, prevContext);
+    const resolved = resolveReference(data, prevContext.variables);
     context.variables.set(operationListItemParams[0].name, {
       data: resolved,
       reference: isDataOfType(data, "reference") ? data.value : undefined,
@@ -790,7 +807,10 @@ function buildExecutionContext(
   }
   operationListItemParams.slice(1).forEach((param, index) => {
     if (param.name && parameters[index]) {
-      const resolved = resolveReference(parameters[index], prevContext);
+      const resolved = resolveReference(
+        parameters[index],
+        prevContext.variables
+      );
       context.variables.set(param.name, {
         data: resolved,
         reference: isDataOfType(parameters[index], "reference")
@@ -806,7 +826,7 @@ export function executeStatement(
   statement: IStatement,
   context: Context
 ): IData {
-  let currentData = resolveReference(statement.data, context);
+  let currentData = resolveReference(statement.data, context.variables);
   if (isDataOfType(currentData, "error")) return currentData;
 
   if (isDataOfType(currentData, "condition")) {
@@ -856,8 +876,11 @@ export function executeOperation(
   prevContext: Context
 ): IData {
   if (prevContext.skipExecution) return createData();
-  const data = resolveReference(_data, prevContext);
-  if (isDataOfType(data, "error") && !dataSupportsOperation(data, operation)) {
+  const data = resolveReference(_data, prevContext.variables);
+  if (
+    isDataOfType(data, "error") &&
+    !dataSupportsOperation(data, operation, prevContext.variables)
+  ) {
     return data;
   }
 
@@ -869,16 +892,15 @@ export function executeOperation(
     }
   }
 
-  const operationParams = getOperationListItemParameters(operation, data);
+  const operationParams = resolveParameters(
+    operation,
+    data,
+    prevContext.variables
+  );
   const parameters = operationParams.slice(1).map((p, index) => {
-    const hasParam = _parameters[index];
-    // The isOptional check is for the isTypeCompatible check in errorParamIndex below
-    return p.isOptional && !hasParam
-      ? createData({
-          type: resolveUnionType([p.type, { kind: "undefined" }]),
-          value: undefined,
-        })
-      : executeStatement(hasParam, prevContext);
+    const hasParam = structuredClone(_parameters[index]);
+    if (!hasParam) return createData({ type: { kind: "undefined" } });
+    return executeStatement(hasParam, prevContext);
   });
   const errorParamIndex = operationParams.slice(1).findIndex((p, i) => {
     return (
