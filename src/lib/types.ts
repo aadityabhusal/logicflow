@@ -107,10 +107,18 @@ export interface IDropdownItem {
   label?: string;
   value: string;
   secondaryLabel?: string;
-  variableType?: DataType;
+  type?: DataType;
   entityType: "data" | "operationCall";
   onClick?: () => void;
 }
+
+export type NavigationEntity = {
+  id: string;
+  depth: number;
+  operationId: string;
+  statementIndex: number;
+  statementId?: string;
+};
 
 /* Context and Execution */
 

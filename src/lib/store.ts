@@ -2,22 +2,17 @@ import { StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   Context,
+  IData,
   INavigation,
   IStatement,
   Project,
   ProjectFile,
+  NavigationEntity,
 } from "./types";
 import { preferenceOptions } from "./data";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
-import {
-  createProjectFile,
-  createVariableName,
-  jsonParseReviver,
-  jsonStringifyReplacer,
-} from "./utils";
-import { NavigationEntity } from "./navigation";
 import { nanoid } from "nanoid";
 
 const IDbStore = openDB("logicflow", 1, {
@@ -87,7 +82,7 @@ export const fileHistoryActions = {
 
 export interface IProjectsStore {
   projects: Record<string, Project>;
-  createProject: () => Project;
+  createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   getProject: (id?: string) => Project | undefined;
@@ -117,17 +112,14 @@ const createProjectsSlice: StateCreator<
   IProjectsStore
 > = (set, get) => ({
   projects: {},
-  createProject: () => {
+  createProject: (name, initialFiles = []) => {
     const createdAt = Date.now();
     const newProject: Project = {
       id: nanoid(),
-      name: createVariableName({
-        prefix: "New Project ",
-        prev: Object.values(get().projects).map((p) => p.name),
-      }),
+      name,
       version: "0.0.1",
       createdAt,
-      files: [createProjectFile({ name: "main", type: "operation" })],
+      files: initialFiles,
     };
     set((state) => ({
       projects: { ...state.projects, [newProject.id]: newProject },
@@ -172,19 +164,18 @@ const createCurrentProjectSlice: StateCreator<
     const file = currentProject?.files.find((f) => f.name === fileName);
     if (file) set({ currentFileId: file.id });
   },
-  addFile: (file) => {
+  addFile: (file: ProjectFile) => {
     const currentProject = get().getCurrentProject();
     if (!currentProject) return;
-    const newFile = createProjectFile(file, currentProject.files);
     const updatedProject = {
       ...currentProject,
-      files: [...currentProject.files, newFile],
+      files: [...currentProject.files, file],
       updatedAt: Date.now(),
     };
     set((state) => ({
       projects: { ...state.projects, [currentProject.id]: updatedProject },
     }));
-    return newFile;
+    return file;
   },
   updateFile: (fileId, updates) => {
     const currentProject = get().getCurrentProject();
@@ -302,3 +293,19 @@ export const uiConfigStore = createWithEqualityFn(
   ),
   shallow
 );
+
+export function jsonParseReviver(_: string, value: unknown) {
+  if (
+    value &&
+    typeof value === "object" &&
+    "_map_" in value &&
+    Array.isArray(value._map_)
+  ) {
+    return new Map(value._map_);
+  }
+  return value;
+}
+
+export function jsonStringifyReplacer(_: string, value: IData["value"]) {
+  return value instanceof Map ? { _map_: Array.from(value.entries()) } : value;
+}

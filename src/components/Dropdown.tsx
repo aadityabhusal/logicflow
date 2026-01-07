@@ -376,28 +376,28 @@ const DropdownComponent = ({
                   }}
                 >
                   {groupItems.map((option) => (
-                    <Combobox.Option
-                      value={option.value}
+                    <Tooltip
+                      position="right"
                       key={option.value}
-                      className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
-                      active={option.value === value}
+                      classNames={{ tooltip: !option.type ? "hidden" : "" }}
+                      label={
+                        <span className="text-xs">
+                          {option.type ? getTypeSignature(option.type) : null}
+                        </span>
+                      }
                     >
-                      <span className="text-sm max-w-32 truncate">
-                        {option.label || option.value}
-                      </span>
-                      <Tooltip
-                        position="right"
-                        label={
-                          <span className="text-xs">
-                            {option.variableType
-                              ? getTypeSignature(option.variableType)
-                              : null}
-                          </span>
-                        }
+                      <Combobox.Option
+                        value={option.value}
+                        key={option.value}
+                        className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
+                        active={option.value === value}
                       >
+                        <span className="text-sm max-w-32 truncate">
+                          {option.label || option.value}
+                        </span>
                         <span className="text-xs">{option.secondaryLabel}</span>
-                      </Tooltip>
-                    </Combobox.Option>
+                      </Combobox.Option>
+                    </Tooltip>
                   ))}
                 </Combobox.Group>
               ))}

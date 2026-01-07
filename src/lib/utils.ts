@@ -155,16 +155,18 @@ export function createParamData(
     return createData({ type: item.type || data.type });
   }
 
-  const parameters = item.type.parameters.reduce((prev, paramSpec) => {
-    prev.push(
-      createStatement({
-        name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
-        data: createParamData({ type: paramSpec.type }, data),
-        isOptional: paramSpec.isOptional,
-      })
-    );
-    return prev;
-  }, [] as IStatement[]);
+  const parameters = item.type.parameters
+    .filter((param) => !param.isOptional)
+    .reduce((prev, paramSpec) => {
+      prev.push(
+        createStatement({
+          name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
+          data: createParamData({ type: paramSpec.type }, data),
+          isOptional: paramSpec.isOptional,
+        })
+      );
+      return prev;
+    }, [] as IStatement[]);
 
   return createData({
     type: {
@@ -323,7 +325,7 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
       )
     );
   } else if (first.kind === "union") {
-    return first.types.some((t) => isTypeCompatible(t, second));
+    return first.types.every((t) => isTypeCompatible(t, second));
   } else if (second.kind === "union") {
     return second.types.some((t) => isTypeCompatible(first, t));
   }
@@ -789,27 +791,49 @@ export function getDataDropdownList({
   const allowedOptions: IDropdownItem[] = [];
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
+  const dataTypeSignature = getTypeSignature(data.type);
+  if (context.expectedType) {
+    const expectedTypeSignature = getTypeSignature(context.expectedType);
+    const option: IDropdownItem = {
+      entityType: "data",
+      label: context.expectedType.kind,
+      value: expectedTypeSignature,
+      type: context.expectedType,
+      onClick: () => {
+        onSelect(createData({ id: data.id, type: context.expectedType }));
+      },
+    };
+    if (dataTypeSignature !== expectedTypeSignature) {
+      allowedOptions.push(option);
+    } else if (!context.enforceExpectedType) {
+      dataTypeOptions.push(option);
+    }
+  }
 
   (Object.keys(DataTypes) as DataType["kind"][]).forEach((kind) => {
+    const kindSignature = getTypeSignature(DataTypes[kind].type);
     if (
       DataTypes[kind].hideFromDropdown ||
-      (!isDataOfType(data, "reference") && kind === data.type.kind)
+      (!isDataOfType(data, "reference") &&
+        kindSignature === dataTypeSignature) ||
+      allowedOptions
+        .concat(dataTypeOptions)
+        .some((option) => option.value === kindSignature)
     ) {
       return;
     }
     const option: IDropdownItem = {
       entityType: "data",
       value: kind,
+      type: DataTypes[kind].type,
       onClick: () => {
         onSelect(createData({ id: data.id, type: DataTypes[kind].type }));
       },
     };
-    if (!context.expectedType || kind === context.expectedType.kind) {
-      if (context.expectedType) {
-        option.onClick = () => {
-          onSelect(createData({ id: data.id, type: context.expectedType }));
-        };
-      }
+    if (
+      !context.expectedType ||
+      kindSignature === getTypeSignature(context.expectedType)
+    ) {
       allowedOptions.push(option);
     } else if (!context.enforceExpectedType) {
       dataTypeOptions.push(option);
@@ -820,7 +844,7 @@ export function getDataDropdownList({
     const option: IDropdownItem = {
       value: name,
       secondaryLabel: variable.data.type.kind,
-      variableType: variable.data.type,
+      type: variable.data.type,
       entityType: "data",
       onClick: () =>
         onSelect({
@@ -845,17 +869,6 @@ export function getDataDropdownList({
     ["Data Types", dataTypeOptions],
     ["Variables", variableOptions],
   ] as [string, IDropdownItem[]][];
-}
-
-export function jsonParseReviver(_: string, value: unknown) {
-  if (isObject(value, ["_map_"]) && Array.isArray(value._map_)) {
-    return new Map(value._map_);
-  }
-  return value;
-}
-
-export function jsonStringifyReplacer(_: string, value: IData["value"]) {
-  return value instanceof Map ? { _map_: Array.from(value.entries()) } : value;
 }
 
 export function isTextInput(element: Element | null) {

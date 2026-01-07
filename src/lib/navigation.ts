@@ -7,6 +7,7 @@ import {
   NavigationDirection,
   NavigationModifier,
   OperationType,
+  NavigationEntity,
 } from "./types";
 import {
   createData,
@@ -15,14 +16,6 @@ import {
   isDataOfType,
   isTextInput,
 } from "./utils";
-
-export type NavigationEntity = {
-  id: string;
-  depth: number;
-  operationId: string;
-  statementIndex: number;
-  statementId?: string;
-};
 
 function shouldFocusInInput(
   event: KeyboardEvent,
