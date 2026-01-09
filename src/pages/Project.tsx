@@ -7,11 +7,11 @@ import {
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useHotkeys } from "@mantine/hooks";
 import { FocusInfo } from "@/components/FocusInfo";
 import { Navigate } from "react-router";
-import { useCustomHotkeys } from "@/hooks/useNavigation";
+import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { Context, IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
@@ -43,25 +43,21 @@ export default function Project() {
       if (!currentProject) return;
       if (remove) deleteFile(operation.id);
       else {
-        updateProject(currentProject.id, {
-          files: updateFiles(
-            currentProject.files,
-            fileHistoryActions.pushState,
-            createFileFromOperation(operation)
-          ),
-        });
+        updateProject(
+          currentProject.id,
+          {
+            files: updateFiles(
+              currentProject.files,
+              fileHistoryActions.pushState,
+              createFileFromOperation(operation)
+            ),
+          },
+          currentOperation && getOperationEntities(currentOperation)
+        );
       }
     },
-    [currentProject, updateProject, deleteFile]
+    [currentProject, updateProject, deleteFile, currentOperation]
   );
-
-  useEffect(() => {
-    if (currentOperation) {
-      setUiConfig({
-        navigationEntities: getOperationEntities(currentOperation, 0),
-      });
-    }
-  }, [currentOperation, setUiConfig]);
 
   useHotkeys(useCustomHotkeys(currentOperation), []);
 

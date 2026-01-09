@@ -46,12 +46,15 @@ const createIDbStorage = <T>(storeName: string) =>
     { reviver: jsonParseReviver, replacer: jsonStringifyReplacer }
   );
 
-interface FileHistory {
-  past: ProjectFile["content"][];
-  future: ProjectFile["content"][];
+interface FileHistoryItem {
+  content: ProjectFile["content"];
+  focusId?: string;
 }
 
-export const fileHistories = new Map<string, FileHistory>();
+export const fileHistories = new Map<
+  string,
+  { past: FileHistoryItem[]; future: FileHistoryItem[] }
+>();
 const MAX_HISTORY = 50;
 
 export const fileHistoryActions = {
@@ -60,7 +63,8 @@ export const fileHistoryActions = {
       fileHistories.set(fileId, { past: [], future: [] });
     }
     const history = fileHistories.get(fileId)!;
-    history.past.push(structuredClone(content));
+    const focusId = uiConfigStore.getState().navigation?.id;
+    history.past.push({ content: structuredClone(content), focusId });
     if (history.past.length > MAX_HISTORY) history.past.shift();
     history.future = [];
   },
@@ -83,7 +87,11 @@ export const fileHistoryActions = {
 export interface IProjectsStore {
   projects: Record<string, Project>;
   createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
-  updateProject: (id: string, updates: Partial<Project>) => void;
+  updateProject: (
+    id: string,
+    updates: Partial<Project>,
+    navigationEntities?: NavigationEntity[]
+  ) => void;
   deleteProject: (id: string) => void;
   getProject: (id?: string) => Project | undefined;
   getCurrentProject: () => Project | undefined;
@@ -126,13 +134,16 @@ const createProjectsSlice: StateCreator<
     }));
     return newProject;
   },
-  updateProject: (id, updates) => {
+  updateProject: (id, updates, navigationEntities) => {
     set((state) => ({
       projects: {
         ...state.projects,
         [id]: { ...state.projects[id], ...updates, updatedAt: Date.now() },
       },
     }));
+    if (navigationEntities) {
+      uiConfigStore.getState().setUiConfig({ navigationEntities });
+    }
   },
   deleteProject: (id) => {
     set((state) => {
@@ -223,9 +234,18 @@ const createCurrentProjectSlice: StateCreator<
     if (!currentFile) return;
     const history = fileHistories.get(currentFile.id);
     if (!history || history.past.length === 0) return;
-    history.future.push(structuredClone(currentFile.content));
-    const content = history.past.pop()!;
-    updateFile(currentFile.id, { content } as Partial<ProjectFile>);
+    const focusId = uiConfigStore.getState().navigation?.id;
+    history.future.push({
+      content: structuredClone(currentFile.content),
+      focusId,
+    });
+    const lastItem = history.past.pop()!;
+    updateFile(currentFile.id, {
+      content: lastItem.content,
+    } as Partial<ProjectFile>);
+    uiConfigStore
+      .getState()
+      .setUiConfig({ navigation: { id: lastItem.focusId } });
   },
 
   redo: () => {
@@ -234,9 +254,18 @@ const createCurrentProjectSlice: StateCreator<
     if (!currentFile) return;
     const history = fileHistories.get(currentFile.id);
     if (!history || history.future.length === 0) return;
-    history.past.push(structuredClone(currentFile.content));
-    const content = history.future.pop()!;
-    updateFile(currentFile.id, { content } as Partial<ProjectFile>);
+    const currentFocusId = uiConfigStore.getState().navigation?.id;
+    history.past.push({
+      content: structuredClone(currentFile.content),
+      focusId: currentFocusId,
+    });
+    const nextItem = history.future.pop()!;
+    updateFile(currentFile.id, {
+      content: nextItem.content,
+    } as Partial<ProjectFile>);
+    uiConfigStore
+      .getState()
+      .setUiConfig({ navigation: { id: nextItem.focusId } });
   },
 });
 

@@ -51,6 +51,7 @@ const OperationCallComponent = ({
       parameters: operation.value.parameters,
       context,
     });
+    operationCall.id = operation.id;
     handleOperationCall(operationCall);
     const params = operationCall.value.parameters;
     setUiConfig({
@@ -135,7 +136,7 @@ const OperationCallComponent = ({
       {operation.value.parameters.length + 1 <
         operation.type.parameters.length && (
         <AddStatement
-          id={`${operation.id}_parameter`}
+          id={`${operation.id}_call_parameter`}
           onSelect={(statement) =>
             handleParameter(statement, operation.value.parameters.length)
           }

@@ -46,9 +46,9 @@ export function useCustomHotkeys(
   ];
 
   return [
-    ["meta+shift+z", () => redo()],
-    ["meta+z", () => undo()],
-    ["meta+y", () => redo()],
+    ["mod+shift+z", () => redo()],
+    ["mod+z", () => undo()],
+    ["mod+y", () => redo()],
     ...(entities
       ? (hotKeys.map(({ modifier, direction, key }) => [
           (modifier ? `${modifier}+` : "") + key,

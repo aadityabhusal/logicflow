@@ -4,6 +4,8 @@ import { IStatement, OperationType } from "../lib/types";
 import { createData, createStatement } from "../lib/utils";
 import { ComponentPropsWithoutRef, memo } from "react";
 import { uiConfigStore } from "@/lib/store";
+import { getHotkeyHandler } from "@mantine/hooks";
+import { getNextIdAfterDelete } from "@/lib/navigation";
 
 const AddStatementComponent = ({
   id,
@@ -18,9 +20,8 @@ const AddStatementComponent = ({
   className?: string;
   config?: Partial<OperationType["parameters"][number]>;
 }) => {
-  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const isFocused = uiConfigStore((s) => s.navigation?.id === `${id}_add`);
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
-  const isFocused = navigationId === `${id}_add`;
 
   return (
     <div className="w-max">
@@ -38,6 +39,23 @@ const AddStatementComponent = ({
           setUiConfig({ navigation: { id: data.id } });
           onSelect(createStatement({ data, ...config }));
         }}
+        onKeyDown={getHotkeyHandler(
+          ["backspace", "alt+backspace"].map((key) => [
+            key,
+            (e) => {
+              e.stopPropagation();
+              if (e.target instanceof HTMLButtonElement) e.target.blur();
+              setUiConfig((p) => {
+                const entities = p.navigationEntities ?? [];
+                return {
+                  navigation: {
+                    id: getNextIdAfterDelete(entities, entities, `${id}_add`),
+                  },
+                };
+              });
+            },
+          ])
+        )}
         {...iconProps}
       />
     </div>

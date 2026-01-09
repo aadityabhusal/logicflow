@@ -105,14 +105,12 @@ const DataComponent = ({
             className="text-number"
             value={data.value}
             onChange={(val) => {
-              onChange?.(val.toString());
               handleChange({ ...data, value: Number(val) });
             }}
           />
         ) : isDataOfType(data, "string") ? (
           <BaseInput
             {...props}
-            type="text"
             className="text-string"
             value={data.value}
             onChange={(val) => {
@@ -146,7 +144,6 @@ const DataComponent = ({
           // Undefined type
           <BaseInput
             {...props}
-            type="text"
             className="text-border"
             value={data.value?.toString() || ""}
             onChange={(_val) => {

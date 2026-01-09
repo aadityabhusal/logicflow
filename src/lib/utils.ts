@@ -849,7 +849,7 @@ export function getDataDropdownList({
       onClick: () =>
         onSelect({
           ...variable.data,
-          id: nanoid(),
+          id: data.id,
           type: { kind: "reference", dataType: variable.data.type },
           value: { name, id: variable.data.id },
         }),

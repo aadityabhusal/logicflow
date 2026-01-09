@@ -55,7 +55,6 @@ const DropdownComponent = ({
   addOperationCall,
   children,
   options,
-  hotkeys,
   isInputTarget,
   target,
   context,
@@ -73,14 +72,13 @@ const DropdownComponent = ({
     withDropdownIcon?: boolean;
     focusOnClick?: boolean;
   };
-  hotkeys?: HotkeyItem[];
   isInputTarget?: boolean;
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
 }) => {
   const [, setSearchParams] = useSearchParams();
   const highlightOperation = uiConfigStore((s) => s.highlightOperation);
-  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const isFocused = uiConfigStore((s) => s.navigation?.id === id);
   const navigationDirection = uiConfigStore((s) => s.navigation?.direction);
   const navigationModifier = uiConfigStore((s) => s.navigation?.modifier);
   const showPopup = uiConfigStore((s) => s.showPopup);
@@ -101,13 +99,13 @@ const DropdownComponent = ({
   const forceDisplayBorder =
     highlightOperation && isDataOfType(data, "operation");
   const [isHovered, setHovered] = useState(false);
-  const isFocused = navigationId === id;
   const [search, setSearch] = useState("");
   const combobox = useCombobox({
     loop: true,
     onDropdownClose: () => {
       handleSearch(options?.withSearch ? "" : value || "");
       combobox.resetSelectedOption();
+      setUiConfig({ navigation: { id, disable: false } });
     },
     onDropdownOpen: () => {
       if (options?.withSearch) combobox.focusSearchInput();
@@ -134,19 +132,22 @@ const DropdownComponent = ({
     setSearch(val);
   }
 
+  // TODO: Fix this when creating single attachable dropdown component
   useHotkeys(
     isFocused
       ? [
           ...(["backspace", "alt+backspace"].map((key) => [
             key,
-            () => {
+            (e) => {
               const textInput = isTextInput(combobox.targetRef.current);
-              if (!textInput || !handleDelete) return;
+              if (!handleDelete) return;
               if (
+                textInput &&
                 textInput.value.length > (data?.type.kind === "number" ? 1 : 0)
               ) {
                 return;
               }
+              e.preventDefault();
               handleDelete();
               textInput?.blur();
               setUiConfig((p) => {
@@ -154,13 +155,12 @@ const DropdownComponent = ({
                   useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
-                const newEntities = getOperationEntities(operation, 0);
+                const newEntities = getOperationEntities(operation);
                 const oldEntities = p.navigationEntities || [];
                 return {
                   navigationEntities: newEntities,
                   navigation: {
                     id: getNextIdAfterDelete(newEntities, oldEntities, id),
-                    context,
                   },
                 };
               });
@@ -213,7 +213,13 @@ const DropdownComponent = ({
       }
       textInput.setSelectionRange(caretPosition, caretPosition);
     }
-  }, [isFocused, combobox.targetRef, navigationDirection, navigationModifier]);
+  }, [
+    isFocused,
+    combobox.targetRef,
+    navigationDirection,
+    navigationModifier,
+    data?.type.kind,
+  ]);
 
   return (
     <Combobox
@@ -264,7 +270,6 @@ const DropdownComponent = ({
                     onBlur: () => combobox?.closeDropdown(),
                     onKeyDown: getHotkeyHandler([
                       ["ctrl+space", () => combobox.openDropdown()],
-                      ...(hotkeys ?? []),
                     ]),
                   }
                 : {}),

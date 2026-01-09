@@ -17,12 +17,11 @@ import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
 import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
-import { getHotkeyHandler, useDisclosure } from "@mantine/hooks";
+import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { DataTypes } from "../lib/data";
 import { memo, useMemo, type ReactNode } from "react";
 import { uiConfigStore } from "@/lib/store";
-import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 const StatementComponent = ({
@@ -45,9 +44,17 @@ const StatementComponent = ({
   };
 }) => {
   const hasName = statement.name !== undefined;
-  const navigationId = uiConfigStore((state) => state.navigation?.id);
+  const isEqualsFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${statement.id}_equals`
+  );
+  const isNameFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${statement.id}_name`
+  );
+  const isAddFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${statement.id}_add`
+  );
+
   const setUiConfig = uiConfigStore((state) => state.setUiConfig);
-  const customHotKeys = useCustomHotkeys();
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
     open,
@@ -57,9 +64,6 @@ const StatementComponent = ({
   });
   const PipeArrow =
     statement.operations.length > 1 ? FaArrowTurnUp : FaArrowRightLong;
-
-  const isEqualsFocused = navigationId === `${statement.id}_equals`;
-  const isNameFocused = navigationId === `${statement.id}_name`;
 
   const hoverEvents = useMemo(
     () => ({
@@ -120,14 +124,11 @@ const StatementComponent = ({
                   navigation: { id: `${statement.id}_name` },
                 }))
               }
-              onKeyDown={getHotkeyHandler(customHotKeys)}
             />
           ) : null}
           <Popover
             opened={
-              context.enforceExpectedType
-                ? false
-                : hoverOpened || navigationId === `${statement.id}_add`
+              context.enforceExpectedType ? false : hoverOpened || isAddFocused
             }
             offset={4}
             position="left"
@@ -140,7 +141,7 @@ const StatementComponent = ({
                 position="right"
                 className={[
                   "hover:outline hover:outline-border",
-                  options?.isOptional ? "self-center" : "self-end",
+                  options?.isOptional ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
                   options?.disableNameToggle ? "text-disabled" : "",
                 ].join(" ")}
