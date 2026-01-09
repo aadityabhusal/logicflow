@@ -127,7 +127,10 @@ export type Context = {
     string,
     { data: IData; reference?: { name: string; id: string } }
   >;
-  reservedNames?: Set<string>;
+  reservedNames?: Set<{
+    kind: "data-type" | "operation" | "variable";
+    name: string;
+  }>;
   currentStatementId?: string;
   narrowedTypes?: Context["variables"];
   expectedType?: DataType;
@@ -262,3 +265,5 @@ export interface CronTrigger {
   schedule: string; // Cron expression
   timezone?: string;
 }
+
+export type SetItem<T> = T extends Set<infer U> ? U : never;

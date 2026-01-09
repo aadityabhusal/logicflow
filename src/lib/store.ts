@@ -304,7 +304,9 @@ export type IUiConfig = Partial<{
   hideSidebar?: boolean;
   result?: IStatement["data"];
   skipExecution?: Context["skipExecution"];
-  showPopup?: boolean;
+  showDetailsPanel?: boolean;
+  detailsPanelSize?: { width?: number; height?: number };
+  // TODO: Don't persist navigation entities in local storage
   navigationEntities?: NavigationEntity[];
   navigation?: INavigation;
   setUiConfig: (
@@ -315,6 +317,7 @@ export type IUiConfig = Partial<{
 export const uiConfigStore = createWithEqualityFn(
   persist<IUiConfig>(
     (set) => ({
+      showDetailsPanel: true,
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),

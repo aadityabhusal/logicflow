@@ -1,5 +1,5 @@
 import ReactMarkdown from "react-markdown";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { FaHouse, FaBars, FaXmark } from "react-icons/fa6";
 import { Button } from "@mantine/core";
 
@@ -75,14 +75,23 @@ const docSections = [
 
 export default function Docs() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     document.title = "Logicflow Docs";
-  }, []);
+    if (location.hash) {
+      const timeoutId = setTimeout(() => {
+        const id = location.hash.slice(1);
+        const element = document.getElementById(id);
+        if (element) element.scrollIntoView();
+      }, 150);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [location.hash]);
 
   return (
     <div className="flex flex-col">
-      <header className="flex items-center gap-4 border-b px-4 py-2 justify-between sticky h-12 top-0 bg-editor z-50">
+      <header className="flex items-center gap-4 border-b px-4 py-2 justify-between sticky h-12 top-0 bg-editor z-40">
         <div className="flex items-center gap-4">
           <Button
             className="md:hidden outline-none"
@@ -103,7 +112,7 @@ export default function Docs() {
       </header>
       <main className="flex gap-2 relative">
         <aside
-          className={`w-64 border-r bg-editor overflow-y-auto p-4 top-12 h-[calc(100vh-48px)] z-50
+          className={`w-64 border-r bg-editor overflow-y-auto p-4 top-12 h-[calc(100vh-48px)] z-40
           ${isSidebarOpen ? "fixed left-0" : "hidden md:block md:sticky"}`}
         >
           <div className="space-y-1 flex flex-col gap-2">

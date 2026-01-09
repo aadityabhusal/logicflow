@@ -892,17 +892,17 @@ export function executeOperation(
     }
   }
 
-  const operationParams = resolveParameters(
+  const resolvedParams = resolveParameters(
     operation,
     data,
     prevContext.variables
   );
-  const parameters = operationParams.slice(1).map((p, index) => {
+  const parameters = resolvedParams.slice(1).map((p, index) => {
     const hasParam = structuredClone(_parameters[index]);
     if (!hasParam) return createData({ type: { kind: "undefined" } });
     return executeStatement(hasParam, prevContext);
   });
-  const errorParamIndex = operationParams.slice(1).findIndex((p, i) => {
+  const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
     return (
       isDataOfType(parameters[i], "error") ||
       !isTypeCompatible(p.type, parameters[i].type)
@@ -913,7 +913,7 @@ export function executeOperation(
       type: { kind: "error", errorType: "type_error" },
       value: {
         reason: `Parameter #${errorParamIndex + 1} should be of type '${
-          operationParams[errorParamIndex + 1].type.kind
+          resolvedParams[errorParamIndex + 1].type.kind
         }'`,
       },
     });

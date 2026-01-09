@@ -147,41 +147,6 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
   }
 }
 
-export function createParamData(
-  item: OperationType["parameters"][number],
-  data: IData
-): IStatement["data"] {
-  if (item.type.kind !== "operation") {
-    return createData({ type: item.type || data.type });
-  }
-
-  const parameters = item.type.parameters
-    .filter((param) => !param.isOptional)
-    .reduce((prev, paramSpec) => {
-      prev.push(
-        createStatement({
-          name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
-          data: createParamData({ type: paramSpec.type }, data),
-          isOptional: paramSpec.isOptional,
-        })
-      );
-      return prev;
-    }, [] as IStatement[]);
-
-  return createData({
-    type: {
-      kind: "operation",
-      parameters: parameters.map((p) => ({
-        name: p.name,
-        type: p.data.type,
-        isOptional: p.isOptional,
-      })),
-      result: { kind: "undefined" },
-    },
-    value: { parameters: parameters, statements: [] },
-  });
-}
-
 export function createProjectFile(
   props: Partial<ProjectFile>,
   prev: (string | ProjectFile)[] = []
@@ -792,7 +757,10 @@ export function getDataDropdownList({
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
   const dataTypeSignature = getTypeSignature(data.type);
-  if (context.expectedType) {
+  if (
+    context.expectedType &&
+    !DataTypes[context.expectedType.kind].hideFromDropdown
+  ) {
     const expectedTypeSignature = getTypeSignature(context.expectedType);
     const option: IDropdownItem = {
       entityType: "data",

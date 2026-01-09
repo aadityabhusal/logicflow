@@ -7,7 +7,13 @@ import {
   memo,
   useMemo,
 } from "react";
-import { Context, IData, IStatement, OperationType } from "../lib/types";
+import {
+  Context,
+  IData,
+  IStatement,
+  OperationType,
+  SetItem,
+} from "../lib/types";
 import { updateStatements } from "@/lib/update";
 import {
   createVariableName,
@@ -34,9 +40,9 @@ const OperationComponent = (
         operation.value.parameters
           .concat(operation.value.statements)
           .reduce((acc, s) => {
-            if (s.name) acc.push(s.name);
+            if (s.name) acc.push({ kind: "variable", name: s.name });
             return acc;
-          }, [] as string[])
+          }, [] as SetItem<Context["reservedNames"]>[])
           .concat([...(context.reservedNames ?? [])])
       ),
     [
@@ -126,7 +132,10 @@ const OperationComponent = (
         ...statement,
         name:
           statement.name ??
-          createVariableName({ prefix: "param", prev: [...reservedNames] }),
+          createVariableName({
+            prefix: "param",
+            prev: [...reservedNames].map((r) => r.name),
+          }),
       };
       const updatedParameters = operation.value.parameters
         .slice(0, _index)
@@ -150,11 +159,7 @@ const OperationComponent = (
   );
 
   return (
-    <div
-      {...props}
-      ref={ref}
-      className={["max-w-max", props?.className].join(" ")}
-    >
+    <div {...props} ref={ref}>
       <div className="flex items-start gap-1">
         <span>{"("}</span>
         {operation.value.parameters.map((parameter, i, paramList) => (

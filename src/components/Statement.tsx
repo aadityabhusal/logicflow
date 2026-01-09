@@ -19,10 +19,10 @@ import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { DataTypes } from "../lib/data";
 import { memo, useMemo, type ReactNode } from "react";
 import { uiConfigStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { notifications } from "@mantine/notifications";
 
 const StatementComponent = ({
   statement,
@@ -110,11 +110,13 @@ const StatementComponent = ({
               ].join(" ")}
               onChange={(value) => {
                 const name = value || statement.name || "";
-                if (
-                  Object.keys(DataTypes)
-                    .concat(Array.from(context.reservedNames ?? []))
-                    .includes(name)
-                ) {
+                const isReserved = Array.from(context.reservedNames ?? []).find(
+                  (r) => r.name === name
+                );
+                if (isReserved) {
+                  notifications.show({
+                    message: `Cannot use the ${isReserved.kind} '${name}' as a variable name`,
+                  });
                   return;
                 }
                 handleStatement({ ...statement, name });
@@ -167,7 +169,9 @@ const StatementComponent = ({
                             ? undefined
                             : createVariableName({
                                 prefix: "var",
-                                prev: Array.from(context.reservedNames ?? []),
+                                prev: Array.from(
+                                  context.reservedNames ?? []
+                                ).map((r) => r.name),
                               }),
                         }),
                   });

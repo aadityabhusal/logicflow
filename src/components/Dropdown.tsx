@@ -81,7 +81,6 @@ const DropdownComponent = ({
   const isFocused = uiConfigStore((s) => s.navigation?.id === id);
   const navigationDirection = uiConfigStore((s) => s.navigation?.direction);
   const navigationModifier = uiConfigStore((s) => s.navigation?.modifier);
-  const showPopup = uiConfigStore((s) => s.showPopup);
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
 
@@ -191,10 +190,10 @@ const DropdownComponent = ({
   }, [combobox.dropdownOpened]);
 
   useEffect(() => {
-    if (isFocused && result && showPopup) {
+    if (isFocused && result) {
       setUiConfig({ result });
     }
-  }, [isFocused, result, setUiConfig, showPopup]);
+  }, [isFocused, result, setUiConfig]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -248,7 +247,10 @@ const DropdownComponent = ({
             context.skipExecution && context.skipExecution.kind !== "error"
               ? "opacity-50 "
               : "",
-            result?.type.kind === "error" ? "bg-error/25" : "",
+            isDataOfType(result, "error") &&
+            result.type.errorType !== "custom_error"
+              ? "bg-error/25"
+              : "",
           ].join(" ")}
           onMouseOver={(e) => {
             e.stopPropagation();
@@ -279,7 +281,6 @@ const DropdownComponent = ({
                   if (e.target === e.currentTarget) {
                     setUiConfig({
                       navigation: { id },
-                      showPopup: true,
                       skipExecution: context.skipExecution,
                     });
                   }
@@ -288,7 +289,6 @@ const DropdownComponent = ({
               onFocus: () =>
                 setUiConfig({
                   navigation: { id },
-                  showPopup: true,
                   skipExecution: context.skipExecution,
                 }),
             })}
