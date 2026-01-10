@@ -1,27 +1,28 @@
-import { FaArrowRightLong, FaArrowTurnUp, FaEquals } from "react-icons/fa6";
+import {
+  FaArrowRightLong,
+  FaArrowTurnUp,
+  FaEquals,
+  FaQuestion,
+} from "react-icons/fa6";
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import {
   getStatementResult,
   createVariableName,
   applyTypeNarrowing,
-} from "../lib/utils";
-import {
-  createOperationCall,
-  getFilteredOperations,
   getSkipExecution,
-} from "../lib/operation";
+} from "../lib/utils";
+import { createOperationCall, getFilteredOperations } from "../lib/operation";
 import { Data } from "./Data";
 import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
 import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
-import { getHotkeyHandler, useDisclosure } from "@mantine/hooks";
+import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { DataTypes } from "../lib/data";
 import { memo, useMemo, type ReactNode } from "react";
 import { uiConfigStore } from "@/lib/store";
-import { useCustomHotkeys } from "@/hooks/useNavigation";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { notifications } from "@mantine/notifications";
 
 const StatementComponent = ({
   statement,
@@ -36,15 +37,24 @@ const StatementComponent = ({
   context: Context;
   options?: {
     enableVariable?: boolean;
+    isOptional?: boolean;
+    isParameter?: boolean;
     disableNameToggle?: boolean;
     disableDelete?: boolean;
-    disableOperationCall?: boolean;
   };
 }) => {
   const hasName = statement.name !== undefined;
-  const navigationId = uiConfigStore((state) => state.navigation?.id);
+  const isEqualsFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${statement.id}_equals`
+  );
+  const isNameFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${statement.id}_name`
+  );
+  const isAddFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${statement.id}_add`
+  );
+
   const setUiConfig = uiConfigStore((state) => state.setUiConfig);
-  const customHotKeys = useCustomHotkeys();
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
     open,
@@ -54,9 +64,6 @@ const StatementComponent = ({
   });
   const PipeArrow =
     statement.operations.length > 1 ? FaArrowTurnUp : FaArrowRightLong;
-
-  const isEqualsFocused = navigationId === `${statement.id}_equals`;
-  const isNameFocused = navigationId === `${statement.id}_name`;
 
   const hoverEvents = useMemo(
     () => ({
@@ -103,11 +110,13 @@ const StatementComponent = ({
               ].join(" ")}
               onChange={(value) => {
                 const name = value || statement.name || "";
-                if (
-                  Object.keys(DataTypes)
-                    .concat(Array.from(context.reservedNames ?? []))
-                    .includes(name)
-                ) {
+                const isReserved = Array.from(context.reservedNames ?? []).find(
+                  (r) => r.name === name
+                );
+                if (isReserved) {
+                  notifications.show({
+                    message: `Cannot use the ${isReserved.kind} '${name}' as a variable name`,
+                  });
                   return;
                 }
                 handleStatement({ ...statement, name });
@@ -117,11 +126,12 @@ const StatementComponent = ({
                   navigation: { id: `${statement.id}_name` },
                 }))
               }
-              onKeyDown={getHotkeyHandler(customHotKeys)}
             />
           ) : null}
           <Popover
-            opened={hoverOpened || navigationId === `${statement.id}_add`}
+            opened={
+              context.enforceExpectedType ? false : hoverOpened || isAddFocused
+            }
             offset={4}
             position="left"
             withinPortal={false}
@@ -129,22 +139,40 @@ const StatementComponent = ({
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={FaEquals}
+                icon={options?.isOptional ? FaQuestion : FaEquals}
                 position="right"
                 className={[
-                  "mt-[5px] hover:outline hover:outline-border",
+                  "hover:outline hover:outline-border",
+                  options?.isOptional ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
+                  options?.disableNameToggle ? "text-disabled" : "",
                 ].join(" ")}
-                disabled={options?.disableNameToggle}
-                title="Create variable"
+                title={
+                  options?.disableNameToggle
+                    ? options?.isOptional
+                      ? "Optional Parameter"
+                      : undefined
+                    : options?.isParameter
+                    ? options?.isOptional
+                      ? "Make required"
+                      : "Make optional"
+                    : "Create variable"
+                }
                 onClick={() => {
+                  if (options?.disableNameToggle) return;
                   handleStatement({
                     ...statement,
-                    name: hasName
-                      ? undefined
-                      : createVariableName({
-                          prefix: "var",
-                          prev: Array.from(context.reservedNames ?? []),
+                    ...(options?.isParameter
+                      ? { isOptional: !options?.isOptional }
+                      : {
+                          name: hasName
+                            ? undefined
+                            : createVariableName({
+                                prefix: "var",
+                                prev: Array.from(
+                                  context.reservedNames ?? []
+                                ).map((r) => r.name),
+                              }),
                         }),
                   });
                   setUiConfig(() => ({
@@ -189,7 +217,7 @@ const StatementComponent = ({
             data={statement.data}
             disableDelete={options?.disableDelete}
             addOperationCall={
-              !options?.disableOperationCall &&
+              !options?.isParameter &&
               !context.skipExecution &&
               getFilteredOperations(statement.data, context.variables).length
                 ? () => addOperationCall(statement.data, 0)
@@ -214,7 +242,7 @@ const StatementComponent = ({
               const skipExecution = getSkipExecution({
                 context,
                 data,
-                operation,
+                operationName: operation.value.name,
               });
 
               acc.elements.push(
@@ -237,11 +265,13 @@ const StatementComponent = ({
                       handleOperationCall={(op, remove) =>
                         handleOperationCall(op, i, remove)
                       }
-                      // passing context and narrowedTypes separately to handle inverse type narrowing
-                      context={{ ...context, skipExecution }}
-                      narrowedTypes={acc.narrowedTypes}
+                      context={{
+                        ...context,
+                        skipExecution,
+                        narrowedTypes: acc.narrowedTypes,
+                      }}
                       addOperationCall={
-                        !options?.disableOperationCall && !skipExecution
+                        !options?.isParameter && !skipExecution
                           ? () =>
                               addOperationCall(
                                 operation.value.result ?? data,

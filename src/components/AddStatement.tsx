@@ -1,26 +1,27 @@
 import { IconButton } from "../ui/IconButton";
 import { FaPlus } from "react-icons/fa6";
-import { DataType, IStatement } from "../lib/types";
+import { IStatement, OperationType } from "../lib/types";
 import { createData, createStatement } from "../lib/utils";
 import { ComponentPropsWithoutRef, memo } from "react";
 import { uiConfigStore } from "@/lib/store";
+import { getHotkeyHandler } from "@mantine/hooks";
+import { getNextIdAfterDelete } from "@/lib/navigation";
 
 const AddStatementComponent = ({
   id,
   onSelect,
   iconProps,
   className,
-  dataType,
+  config,
 }: {
   id: string;
   onSelect: (statement: IStatement) => void;
   iconProps?: Partial<ComponentPropsWithoutRef<typeof IconButton>>;
   className?: string;
-  dataType?: DataType;
+  config?: Partial<OperationType["parameters"][number]>;
 }) => {
-  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const isFocused = uiConfigStore((s) => s.navigation?.id === `${id}_add`);
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
-  const isFocused = navigationId === `${id}_add`;
 
   return (
     <div className="w-max">
@@ -34,10 +35,27 @@ const AddStatementComponent = ({
           className || "",
         ].join(" ")}
         onClick={() => {
-          const data = createData({ type: dataType });
+          const data = createData({ type: config?.type });
           setUiConfig({ navigation: { id: data.id } });
-          onSelect(createStatement({ data }));
+          onSelect(createStatement({ data, ...config }));
         }}
+        onKeyDown={getHotkeyHandler(
+          ["backspace", "alt+backspace"].map((key) => [
+            key,
+            (e) => {
+              e.stopPropagation();
+              if (e.target instanceof HTMLButtonElement) e.target.blur();
+              setUiConfig((p) => {
+                const entities = p.navigationEntities ?? [];
+                return {
+                  navigation: {
+                    id: getNextIdAfterDelete(entities, entities, `${id}_add`),
+                  },
+                };
+              });
+            },
+          ])
+        )}
         {...iconProps}
       />
     </div>

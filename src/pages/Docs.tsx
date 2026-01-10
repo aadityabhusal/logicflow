@@ -1,6 +1,6 @@
 import ReactMarkdown from "react-markdown";
-import { Link } from "react-router";
-import { FaHouse } from "react-icons/fa6";
+import { Link, useLocation } from "react-router";
+import { FaHouse, FaBars, FaXmark } from "react-icons/fa6";
 import { Button } from "@mantine/core";
 
 import introduction from "@/../docs/introduction.md?raw";
@@ -8,7 +8,7 @@ import gettingStarted from "@/../docs/getting-started.md?raw";
 import coreConcepts from "@/../docs/core-concepts.md?raw";
 import dataTypes from "@/../docs/data-types.md?raw";
 import additionalFeatures from "@/../docs/additional-features.md?raw";
-import { Fragment, ReactNode, useEffect } from "react";
+import { Fragment, ReactNode, useEffect, useState } from "react";
 
 function createSubHeadingSlug(text: string): string {
   return text
@@ -74,14 +74,33 @@ const docSections = [
 ];
 
 export default function Docs() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const location = useLocation();
+
   useEffect(() => {
     document.title = "Logicflow Docs";
-  }, []);
+    if (location.hash) {
+      const timeoutId = setTimeout(() => {
+        const id = location.hash.slice(1);
+        const element = document.getElementById(id);
+        if (element) element.scrollIntoView();
+      }, 150);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [location.hash]);
 
   return (
     <div className="flex flex-col">
-      <header className="flex items-center gap-4 border-b p-2 justify-between">
-        <h2 className="text-2xl">Logicflow Docs</h2>
+      <header className="flex items-center gap-4 border-b px-4 py-2 justify-between sticky h-12 top-0 bg-editor z-40">
+        <div className="flex items-center gap-4">
+          <Button
+            className="md:hidden outline-none"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          >
+            {isSidebarOpen ? <FaXmark size={20} /> : <FaBars size={20} />}
+          </Button>
+          <h2 className="text-2xl">Logicflow Docs</h2>
+        </div>
         <Button
           component={Link}
           to="/"
@@ -91,18 +110,30 @@ export default function Docs() {
           Dashboard
         </Button>
       </header>
-      <main className="flex gap-2">
-        <aside className="w-64 border-r bg-editor overflow-y-auto p-4 sticky top-0 h-screen">
-          <h2 className="text-xl font-semibold mb-4">Table of Contents</h2>
-          <div className="space-y-1 flex flex-col gap-2 pb-12">
+      <main className="flex gap-2 relative">
+        <aside
+          className={`w-64 border-r bg-editor overflow-y-auto p-4 top-12 h-[calc(100vh-48px)] z-40
+          ${isSidebarOpen ? "fixed left-0" : "hidden md:block md:sticky"}`}
+        >
+          <div className="space-y-1 flex flex-col gap-2">
             {docSections.map(({ id, title, subHeadings }) => (
               <Fragment key={id}>
-                <a key={id} href={`#${id}`} className="hover:underline text-lg">
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  className="hover:underline text-lg"
+                  onClick={() => setIsSidebarOpen(false)}
+                >
                   {title}
                 </a>
                 <div className="space-y-1 flex flex-col gap-2 ml-6">
                   {subHeadings.map(({ text, slug }) => (
-                    <a key={slug} href={`#${slug}`} className="hover:underline">
+                    <a
+                      key={slug}
+                      href={`#${slug}`}
+                      className="hover:underline"
+                      onClick={() => setIsSidebarOpen(false)}
+                    >
                       {text}
                     </a>
                   ))}
@@ -111,13 +142,17 @@ export default function Docs() {
             ))}
           </div>
         </aside>
-        <article className="flex-1 overflow-y-auto scroll bg-editor mx-32">
+        <article className="flex-1 overflow-y-auto scroll bg-editor md:mx-20 mx-4">
           {docSections.map(({ id, content }) => (
             <section key={id} className="prose prose-invert max-w-none mb-8">
               <ReactMarkdown
                 components={{
                   h1: ({ node: _, ...props }) => (
-                    <h1 id={id} className="text-2xl my-4 border-b" {...props} />
+                    <h1
+                      id={id}
+                      className="text-2xl my-4 border-b scroll-mt-14"
+                      {...props}
+                    />
                   ),
                   h2: ({
                     node: _,
@@ -132,7 +167,7 @@ export default function Docs() {
                           ? createSubHeadingSlug(props.children)
                           : undefined
                       }
-                      className="text-xl mb-4 mt-8"
+                      className="text-xl mb-4 mt-8 scroll-mt-14"
                       {...props}
                     />
                   ),

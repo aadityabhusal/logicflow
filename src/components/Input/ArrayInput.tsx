@@ -1,8 +1,8 @@
 import { ArrayType, Context, IData, IStatement } from "../../lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useMemo, useState } from "react";
-import { didMouseEnterFromRight, inferTypeFromValue } from "../../lib/utils";
+import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
+import { inferTypeFromValue } from "../../lib/utils";
 
 export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType>;
@@ -15,8 +15,6 @@ const ArrayInputComponent = (
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.length > 3;
-  const [showAddButton, setShowAddButton] = useState(false);
-
   function handleUpdate(result: IStatement, index: number, remove?: boolean) {
     const newValue = [...data.value];
     if (remove) newValue.splice(index, 1);
@@ -43,10 +41,6 @@ const ArrayInputComponent = (
         isMultiline ? "flex-col" : "flex-row",
         props?.className,
       ].join(" ")}
-      onMouseEnter={(e) => {
-        if (!didMouseEnterFromRight(e)) setShowAddButton(true);
-      }}
-      onMouseLeave={() => setShowAddButton(false)}
     >
       <span>{"["}</span>
       {data.value.map((item, i, arr) => {
@@ -64,21 +58,19 @@ const ArrayInputComponent = (
           </div>
         );
       })}
-      {showAddButton && (
-        <AddStatement
-          id={data.id}
-          onSelect={(value) => {
-            const newVal = [...data.value, value];
-            handleData({
-              ...data,
-              type: inferTypeFromValue(newVal),
-              value: newVal,
-            });
-          }}
-          iconProps={{ title: "Add array item" }}
-          dataType={expectedType}
-        />
-      )}
+      <AddStatement
+        id={data.id}
+        onSelect={(value) => {
+          const newVal = [...data.value, value];
+          handleData({
+            ...data,
+            type: inferTypeFromValue(newVal),
+            value: newVal,
+          });
+        }}
+        iconProps={{ title: "Add array item" }}
+        config={{ type: expectedType }}
+      />
       <span>{"]"}</span>
     </div>
   );

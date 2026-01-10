@@ -11,14 +11,12 @@ import {
   fileHistoryActions,
   uiConfigStore,
   useProjectStore,
+  jsonParseReviver,
+  jsonStringifyReplacer,
 } from "../lib/store";
 import { IconButton } from "./IconButton";
 import { useClipboard, useTimeout } from "@mantine/hooks";
-import {
-  createFileFromOperation,
-  jsonParseReviver,
-  jsonStringifyReplacer,
-} from "../lib/utils";
+import { createData, createFileFromOperation } from "../lib/utils";
 import { useState } from "react";
 import { IData, OperationType, Project } from "../lib/types";
 import { OperationValueSchema } from "../lib/schemas";
@@ -26,6 +24,7 @@ import { Popover } from "@mantine/core";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { preferenceOptions } from "@/lib/data";
 import { updateFiles } from "@/lib/update";
+import { BooleanInput } from "@/components/Input/BooleanInput";
 
 export function Header({
   currentProject,
@@ -36,7 +35,7 @@ export function Header({
 }) {
   const uiConfig = uiConfigStore((s) => ({
     highlightOperation: s.highlightOperation,
-    hideFocusInfo: s.hideFocusInfo,
+    showDetailsPanel: s.showDetailsPanel,
   }));
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
   const undo = useProjectStore((s) => s.undo);
@@ -72,11 +71,13 @@ export function Header({
                 <label className="cursor-pointer" htmlFor={item.id}>
                   {item.label}
                 </label>
-                <input
+                <BooleanInput
                   id={item.id}
-                  type="checkbox"
-                  checked={uiConfig[item.id]}
-                  onChange={(e) => setUiConfig({ [item.id]: e.target.checked })}
+                  data={createData({
+                    type: { kind: "boolean" },
+                    value: uiConfig[item.id] ?? false,
+                  })}
+                  handleData={({ value }) => setUiConfig({ [item.id]: value })}
                 />
               </div>
             ))}

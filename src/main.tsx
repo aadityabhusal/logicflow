@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import { LoadingFallback } from "./ui/LoadingFallback";
 import { useProjectStore, waitForHydration } from "./lib/store";
+import { Notifications } from "@mantine/notifications";
 
 const theme = createTheme({
   scale: 1,
@@ -71,6 +72,15 @@ const router = createBrowserRouter([
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <HeadlessMantineProvider theme={theme}>
+      <Notifications
+        autoClose={2000}
+        limit={3}
+        classNames={{
+          notification:
+            "flex bg-editor items-center gap-2 p-2 rounded-sm border [&_svg]:size-5!",
+          root: "fixed right-2 bottom-2",
+        }}
+      />
       <RouterProvider router={router} />
     </HeadlessMantineProvider>
   </React.StrictMode>

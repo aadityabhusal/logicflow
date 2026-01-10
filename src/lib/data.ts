@@ -72,5 +72,7 @@ export const preferenceOptions = [
   // { id: "highlightAll", label: "Highlight all" },
   // { id: "displayCode", label: "Display Code" },
   { id: "highlightOperation", label: "Highlight Operations" },
-  { id: "hideFocusInfo", label: "Hide Details" },
+  { id: "showDetailsPanel", label: "Details Panel" },
 ] as const;
+
+export const MAX_SCREEN_WIDTH = 767;

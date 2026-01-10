@@ -2,22 +2,17 @@ import { StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   Context,
+  IData,
   INavigation,
   IStatement,
   Project,
   ProjectFile,
+  NavigationEntity,
 } from "./types";
 import { preferenceOptions } from "./data";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
-import {
-  createProjectFile,
-  createVariableName,
-  jsonParseReviver,
-  jsonStringifyReplacer,
-} from "./utils";
-import { NavigationEntity } from "./navigation";
 import { nanoid } from "nanoid";
 
 const IDbStore = openDB("logicflow", 1, {
@@ -51,12 +46,15 @@ const createIDbStorage = <T>(storeName: string) =>
     { reviver: jsonParseReviver, replacer: jsonStringifyReplacer }
   );
 
-interface FileHistory {
-  past: ProjectFile["content"][];
-  future: ProjectFile["content"][];
+interface FileHistoryItem {
+  content: ProjectFile["content"];
+  focusId?: string;
 }
 
-export const fileHistories = new Map<string, FileHistory>();
+export const fileHistories = new Map<
+  string,
+  { past: FileHistoryItem[]; future: FileHistoryItem[] }
+>();
 const MAX_HISTORY = 50;
 
 export const fileHistoryActions = {
@@ -65,7 +63,8 @@ export const fileHistoryActions = {
       fileHistories.set(fileId, { past: [], future: [] });
     }
     const history = fileHistories.get(fileId)!;
-    history.past.push(structuredClone(content));
+    const focusId = uiConfigStore.getState().navigation?.id;
+    history.past.push({ content: structuredClone(content), focusId });
     if (history.past.length > MAX_HISTORY) history.past.shift();
     history.future = [];
   },
@@ -87,8 +86,12 @@ export const fileHistoryActions = {
 
 export interface IProjectsStore {
   projects: Record<string, Project>;
-  createProject: () => Project;
-  updateProject: (id: string, updates: Partial<Project>) => void;
+  createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
+  updateProject: (
+    id: string,
+    updates: Partial<Project>,
+    navigationEntities?: NavigationEntity[]
+  ) => void;
   deleteProject: (id: string) => void;
   getProject: (id?: string) => Project | undefined;
   getCurrentProject: () => Project | undefined;
@@ -117,30 +120,30 @@ const createProjectsSlice: StateCreator<
   IProjectsStore
 > = (set, get) => ({
   projects: {},
-  createProject: () => {
+  createProject: (name, initialFiles = []) => {
     const createdAt = Date.now();
     const newProject: Project = {
       id: nanoid(),
-      name: createVariableName({
-        prefix: "New Project ",
-        prev: Object.values(get().projects).map((p) => p.name),
-      }),
+      name,
       version: "0.0.1",
       createdAt,
-      files: [createProjectFile({ name: "main", type: "operation" })],
+      files: initialFiles,
     };
     set((state) => ({
       projects: { ...state.projects, [newProject.id]: newProject },
     }));
     return newProject;
   },
-  updateProject: (id, updates) => {
+  updateProject: (id, updates, navigationEntities) => {
     set((state) => ({
       projects: {
         ...state.projects,
         [id]: { ...state.projects[id], ...updates, updatedAt: Date.now() },
       },
     }));
+    if (navigationEntities) {
+      uiConfigStore.getState().setUiConfig({ navigationEntities });
+    }
   },
   deleteProject: (id) => {
     set((state) => {
@@ -172,19 +175,18 @@ const createCurrentProjectSlice: StateCreator<
     const file = currentProject?.files.find((f) => f.name === fileName);
     if (file) set({ currentFileId: file.id });
   },
-  addFile: (file) => {
+  addFile: (file: ProjectFile) => {
     const currentProject = get().getCurrentProject();
     if (!currentProject) return;
-    const newFile = createProjectFile(file, currentProject.files);
     const updatedProject = {
       ...currentProject,
-      files: [...currentProject.files, newFile],
+      files: [...currentProject.files, file],
       updatedAt: Date.now(),
     };
     set((state) => ({
       projects: { ...state.projects, [currentProject.id]: updatedProject },
     }));
-    return newFile;
+    return file;
   },
   updateFile: (fileId, updates) => {
     const currentProject = get().getCurrentProject();
@@ -232,9 +234,18 @@ const createCurrentProjectSlice: StateCreator<
     if (!currentFile) return;
     const history = fileHistories.get(currentFile.id);
     if (!history || history.past.length === 0) return;
-    history.future.push(structuredClone(currentFile.content));
-    const content = history.past.pop()!;
-    updateFile(currentFile.id, { content } as Partial<ProjectFile>);
+    const focusId = uiConfigStore.getState().navigation?.id;
+    history.future.push({
+      content: structuredClone(currentFile.content),
+      focusId,
+    });
+    const lastItem = history.past.pop()!;
+    updateFile(currentFile.id, {
+      content: lastItem.content,
+    } as Partial<ProjectFile>);
+    uiConfigStore
+      .getState()
+      .setUiConfig({ navigation: { id: lastItem.focusId } });
   },
 
   redo: () => {
@@ -243,9 +254,18 @@ const createCurrentProjectSlice: StateCreator<
     if (!currentFile) return;
     const history = fileHistories.get(currentFile.id);
     if (!history || history.future.length === 0) return;
-    history.past.push(structuredClone(currentFile.content));
-    const content = history.future.pop()!;
-    updateFile(currentFile.id, { content } as Partial<ProjectFile>);
+    const currentFocusId = uiConfigStore.getState().navigation?.id;
+    history.past.push({
+      content: structuredClone(currentFile.content),
+      focusId: currentFocusId,
+    });
+    const nextItem = history.future.pop()!;
+    updateFile(currentFile.id, {
+      content: nextItem.content,
+    } as Partial<ProjectFile>);
+    uiConfigStore
+      .getState()
+      .setUiConfig({ navigation: { id: nextItem.focusId } });
   },
 });
 
@@ -284,7 +304,9 @@ export type IUiConfig = Partial<{
   hideSidebar?: boolean;
   result?: IStatement["data"];
   skipExecution?: Context["skipExecution"];
-  showPopup?: boolean;
+  showDetailsPanel?: boolean;
+  detailsPanelSize?: { width?: number; height?: number };
+  // TODO: Don't persist navigation entities in local storage
   navigationEntities?: NavigationEntity[];
   navigation?: INavigation;
   setUiConfig: (
@@ -295,6 +317,7 @@ export type IUiConfig = Partial<{
 export const uiConfigStore = createWithEqualityFn(
   persist<IUiConfig>(
     (set) => ({
+      showDetailsPanel: true,
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),
@@ -302,3 +325,19 @@ export const uiConfigStore = createWithEqualityFn(
   ),
   shallow
 );
+
+export function jsonParseReviver(_: string, value: unknown) {
+  if (
+    value &&
+    typeof value === "object" &&
+    "_map_" in value &&
+    Array.isArray(value._map_)
+  ) {
+    return new Map(value._map_);
+  }
+  return value;
+}
+
+export function jsonStringifyReplacer(_: string, value: IData["value"]) {
+  return value instanceof Map ? { _map_: Array.from(value.entries()) } : value;
+}

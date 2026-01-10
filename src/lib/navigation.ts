@@ -7,6 +7,7 @@ import {
   NavigationDirection,
   NavigationModifier,
   OperationType,
+  NavigationEntity,
 } from "./types";
 import {
   createData,
@@ -16,16 +17,7 @@ import {
   isTextInput,
 } from "./utils";
 
-export type NavigationEntity = {
-  id: string;
-  depth: number;
-  operationId: string;
-  statementIndex: number;
-  statementId?: string;
-};
-
 function shouldFocusInInput(
-  event: KeyboardEvent,
   direction: NavigationDirection,
   modifier?: NavigationModifier,
   disable?: boolean
@@ -33,24 +25,29 @@ function shouldFocusInInput(
   const upDownKey = direction === "up" || direction === "down";
   const textInput = isTextInput(document.activeElement);
   if (!textInput) {
-    if (disable) return true;
-    if (document.activeElement instanceof HTMLButtonElement) {
-      document.activeElement.blur();
+    if (disable) {
+      return { focus: true, blur: false, preventDefault: false };
     }
-    return false;
+    // Blur button elements when not in text input
+    const blur = document.activeElement instanceof HTMLButtonElement;
+    return { focus: false, blur, preventDefault: false };
   }
   if ((upDownKey && !disable) || modifier === "mod") {
-    return event.preventDefault(), textInput.blur(), false;
+    return { focus: false, blur: true, preventDefault: true };
   }
 
   const start = textInput.selectionStart ?? 0;
-  if (start !== (textInput.selectionEnd ?? 0)) return true;
+  const end = textInput.selectionEnd ?? 0;
+  if (start !== end) {
+    return { focus: true, blur: false, preventDefault: false };
+  }
 
   const isAtBoundary =
     direction === "left" ? start === 0 : start === textInput.value.length;
-  if (!isAtBoundary || upDownKey) return true;
-
-  return event.preventDefault(), textInput.blur(), false;
+  if (!isAtBoundary || upDownKey) {
+    return { focus: true, blur: false, preventDefault: false };
+  }
+  return { focus: false, blur: true, preventDefault: true };
 }
 
 export function getNextIdAfterDelete(
@@ -91,12 +88,22 @@ export function handleNavigation({
   entities: NavigationEntity[];
   modifier?: NavigationModifier;
 }): void {
-  if (
-    !navigation ||
-    shouldFocusInInput(event, direction, modifier, navigation.disable)
-  ) {
-    return;
+  if (!navigation) return;
+  const focusResult = shouldFocusInInput(
+    direction,
+    modifier,
+    navigation.disable
+  );
+  if (focusResult.preventDefault) event.preventDefault();
+  if (focusResult.blur) {
+    const textInput = isTextInput(document.activeElement);
+    if (textInput) {
+      textInput.blur();
+    } else if (document.activeElement instanceof HTMLButtonElement) {
+      document.activeElement.blur();
+    }
   }
+  if (focusResult.focus) return;
 
   let targetEntity: NavigationEntity | undefined;
   const delta = direction === "left" || direction === "up" ? -1 : 1;
@@ -148,11 +155,16 @@ export function getOperationEntities(
   depth = 0
 ): NavigationEntity[] {
   const parameterEntities = operation.value.parameters.flatMap((item) =>
-    getStatementEntities(item, depth, {
-      operationId: operation.id,
-      statementId: `${operation.id}_parameters`,
-      statementIndex: 0,
-    })
+    getStatementEntities(
+      item,
+      depth,
+      {
+        operationId: operation.id,
+        statementId: `${operation.id}_parameters`,
+        statementIndex: 0,
+      },
+      true
+    )
   );
   const statementEntities = operation.value.statements.flatMap((statement, i) =>
     getStatementEntities(
@@ -210,7 +222,7 @@ function getStatementEntities(
     entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
   } else if (isDataOfType(statement.data, "object")) {
     statement.data.value.forEach((property) => {
-      entities.push({ id: `${property.id}_name`, depth: depth + 1, ...parent });
+      entities.push({ id: `${property.id}_key`, depth: depth + 1, ...parent });
       entities.push(...getStatementEntities(property, depth + 1, parent));
     });
     entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
@@ -236,10 +248,19 @@ function getStatementEntities(
 
   statement.operations.forEach((operation) => {
     entities.push({ id: operation.id, depth, ...parent });
-
     operation.value.parameters.forEach((param) => {
       entities.push(...getStatementEntities(param, depth + 1, parent));
     });
+    if (
+      operation.value.parameters.length + 1 <
+      operation.type.parameters.length
+    ) {
+      entities.push({
+        id: `${operation.id}_call_parameter_add`,
+        depth: depth + 1,
+        ...parent,
+      });
+    }
   });
 
   return entities;

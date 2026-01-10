@@ -10,7 +10,7 @@ export type ObjectType = {
 export type UnionType = { kind: "union"; types: DataType[] };
 export type OperationType = {
   kind: "operation";
-  parameters: { type: DataType; name?: string }[];
+  parameters: { type: DataType; name?: string; isOptional?: boolean }[];
   result: DataType;
 };
 export type ConditionType = { kind: "condition"; resultType: DataType };
@@ -100,16 +100,25 @@ export interface IStatement {
   data: IData;
   operations: IData<OperationType>[];
   name?: string;
+  isOptional?: boolean;
 }
 
 export interface IDropdownItem {
   label?: string;
   value: string;
   secondaryLabel?: string;
-  variableType?: DataType;
+  type?: DataType;
   entityType: "data" | "operationCall";
   onClick?: () => void;
 }
+
+export type NavigationEntity = {
+  id: string;
+  depth: number;
+  operationId: string;
+  statementIndex: number;
+  statementId?: string;
+};
 
 /* Context and Execution */
 
@@ -118,8 +127,12 @@ export type Context = {
     string,
     { data: IData; reference?: { name: string; id: string } }
   >;
-  reservedNames?: Set<string>;
+  reservedNames?: Set<{
+    kind: "data-type" | "operation" | "variable";
+    name: string;
+  }>;
   currentStatementId?: string;
+  narrowedTypes?: Context["variables"];
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
@@ -252,3 +265,5 @@ export interface CronTrigger {
   schedule: string; // Cron expression
   timezone?: string;
 }
+
+export type SetItem<T> = T extends Set<infer U> ? U : never;

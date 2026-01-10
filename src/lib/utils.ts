@@ -24,7 +24,11 @@ export function createData<T extends DataType>(
     id: props?.id ?? nanoid(),
     entityType: "data",
     type,
-    value: props?.value ?? createDefaultValue(type),
+    value:
+      props?.value !== undefined ||
+      isTypeCompatible(type, { kind: "undefined" })
+        ? (props?.value as DataValue<T>)
+        : createDefaultValue(type),
   };
 }
 
@@ -37,6 +41,7 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     entityType: "statement",
     data: newData,
     operations: props?.operations || [],
+    isOptional: props?.isOptional,
   };
 }
 
@@ -59,10 +64,14 @@ export function createVariableName({
   return `${prefix}${index || ""}`;
 }
 
-function createStatementFromType(type: DataType, name?: string) {
+function createStatementFromType(
+  type: DataType,
+  name?: string,
+  isOptional?: boolean
+) {
   const value = createDefaultValue(type);
   const data = createData({ type, value });
-  return createStatement({ data, name });
+  return createStatement({ data, name, isOptional });
 }
 
 export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
@@ -105,7 +114,7 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "operation": {
       return {
         parameters: type.parameters.map((param) =>
-          createStatementFromType(param.type, param.name)
+          createStatementFromType(param.type, param.name, param.isOptional)
         ),
         statements: [],
         result: undefined,
@@ -136,34 +145,6 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     default:
       return undefined as DataValue<T>;
   }
-}
-
-export function createParamData(
-  item: OperationType["parameters"][number],
-  data: IData
-): IStatement["data"] {
-  if (item.type.kind !== "operation") {
-    return createData({ type: item.type || data.type });
-  }
-
-  const parameters = item.type.parameters.reduce((prev, paramSpec) => {
-    prev.push(
-      createStatement({
-        name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
-        data: createParamData({ type: paramSpec.type }, data),
-      })
-    );
-    return prev;
-  }, [] as IStatement[]);
-
-  return createData({
-    type: {
-      kind: "operation",
-      parameters: parameters.map((p) => ({ name: p.name, type: p.data.type })),
-      result: { kind: "undefined" },
-    },
-    value: { parameters: parameters, statements: [] },
-  });
 }
 
 export function createProjectFile(
@@ -217,12 +198,20 @@ export function createFileFromOperation(operation: IData<OperationType>) {
 
 export function createContextVariables(
   statements: IStatement[],
-  variables: Context["variables"]
+  variables: Context["variables"],
+  operation?: IData<OperationType>
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
-      const data = resolveReference(statement.data, { variables });
+      const data = resolveReference(statement.data, variables);
       const result = getStatementResult({ ...statement, data });
+
+      const isOptional = operation?.type.parameters.find(
+        (param) => param.name === statement.name && param.isOptional
+      );
+      if (isOptional) {
+        result.type = resolveUnionType([result.type, { kind: "undefined" }]);
+      }
 
       variables.set(statement.name, {
         data: { ...result, id: statement.id },
@@ -257,10 +246,18 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
   if (first.kind === "unknown" || second.kind === "unknown") return true;
 
   if (first.kind === "operation" && second.kind === "operation") {
-    if (first.parameters.length !== second.parameters.length) return false;
     if (!isTypeCompatible(first.result, second.result)) return false;
-    return first.parameters.every((firstParam, index) =>
-      isTypeCompatible(firstParam.type, second.parameters[index].type)
+    return (
+      first.parameters.every((firstParam, index) => {
+        if (firstParam.isOptional && !second.parameters[index]) return true;
+        if (!second.parameters[index]) return false;
+        return isTypeCompatible(firstParam.type, second.parameters[index].type);
+      }) &&
+      second.parameters.every((secondParam, index) => {
+        if (secondParam.isOptional && !first.parameters[index]) return true;
+        if (!first.parameters[index]) return false;
+        return isTypeCompatible(secondParam.type, first.parameters[index].type);
+      })
     );
   }
 
@@ -465,12 +462,37 @@ export function mergeNarrowedTypes(
   operationName?: string
 ): Context["variables"] {
   return operationName === "or"
-    ? originalTypes // TODO: inverse narrowed types for 'or' operation
+    ? originalTypes
     : narrowedTypes.entries().reduce((acc, [key, value]) => {
         if (value.data.type.kind === "never") acc.delete(key);
         else acc.set(key, value);
         return acc;
       }, new Map(originalTypes));
+}
+
+export function updateContextWithNarrowedTypes(
+  context: Context,
+  data: IData,
+  operationName?: string,
+  paramIndex?: number
+) {
+  const narrowedTypes = context.narrowedTypes ?? new Map();
+  const variables =
+    operationName === "thenElse" && paramIndex === 1
+      ? getInverseTypes(context.variables, narrowedTypes)
+      : mergeNarrowedTypes(context.variables, narrowedTypes, operationName);
+
+  return {
+    ...context,
+    variables,
+    narrowedTypes: undefined,
+    skipExecution: getSkipExecution({
+      context,
+      data,
+      operationName,
+      paramIndex: paramIndex,
+    }),
+  };
 }
 
 export function resolveUnionType(types: DataType[], union: true): UnionType;
@@ -516,35 +538,50 @@ function getArrayElementType(elements: IStatement[]): DataType {
   return resolveUnionType(unionTypes);
 }
 
-function getOperationType(
-  parameters: IStatement[],
-  statements: IStatement[]
-): OperationType {
-  const parameterTypes = parameters.map((param) => ({
-    name: param.name,
-    type: param.data.type,
-  }));
-
+export function getOperationResultType(statements: IStatement[]): DataType {
   let resultType: DataType = { kind: "undefined" };
   if (statements.length > 0) {
     const lastStatement = statements[statements.length - 1];
     resultType = getStatementResult(lastStatement).type;
   }
-
-  return { kind: "operation", parameters: parameterTypes, result: resultType };
+  return resultType;
 }
 
-export function resolveReference(data: IData, context: Context): IData {
-  if (!isDataOfType(data, "reference")) return data;
-  const variable = context.variables.get(data.value.name);
-  if (!variable) {
+export function resolveReference(
+  data: IData,
+  variables: Context["variables"]
+): IData {
+  if (isDataOfType(data, "reference")) {
+    const variable = variables.get(data.value.name);
+    if (!variable) {
+      return createData({
+        id: data.id,
+        type: { kind: "error", errorType: "reference_error" },
+        value: { reason: `'${data.value.name}' not found` },
+      });
+    }
+    return resolveReference(variable.data, variables);
+  }
+  if (isDataOfType(data, "array")) {
     return createData({
-      id: data.id,
-      type: { kind: "error", errorType: "reference_error" },
-      value: { reason: `'${data.value.name}' not found` },
+      ...data,
+      value: data.value.map((statement) => ({
+        ...statement,
+        data: resolveReference(statement.data, variables),
+      })),
     });
   }
-  return resolveReference(variable.data, context);
+  if (isDataOfType(data, "object")) {
+    const newMap = new Map();
+    data.value.forEach((statement, key) => {
+      newMap.set(key, {
+        ...statement,
+        data: resolveReference(statement.data, variables),
+      });
+    });
+    return createData({ ...data, value: newMap });
+  }
+  return data;
 }
 
 export function inferTypeFromValue<T extends DataType>(
@@ -576,7 +613,15 @@ export function inferTypeFromValue<T extends DataType>(
     Array.isArray(value.parameters) &&
     Array.isArray(value.statements)
   ) {
-    return getOperationType(value.parameters, value.statements) as T;
+    return {
+      kind: "operation",
+      // TODO: Add optional parameters support
+      parameters: value.parameters.map((param) => ({
+        name: param.name,
+        type: param.data.type,
+      })),
+      result: getOperationResultType(value.statements),
+    } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
     const trueType = getStatementResult(value.true as IStatement).type;
@@ -597,7 +642,7 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
-export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
+export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
   if (maxDepth <= 0) return "...";
 
   switch (type.kind) {
@@ -625,14 +670,18 @@ export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
     }
 
     case "union":
-      return type.types
-        .map((t) => getTypeSignature(t, maxDepth - 1))
+      return resolveUnionType(type.types, true)
+        .types.map((t) => getTypeSignature(t, maxDepth - 1))
         .join(" | ");
 
     case "operation": {
       const params = type.parameters
         .map(
-          (p) => `${p.name || "_"}: ${getTypeSignature(p.type, maxDepth - 1)}`
+          (p) =>
+            `${p.name || "_"}${p.isOptional ? "?" : ""}: ${getTypeSignature(
+              p.type,
+              maxDepth - 1
+            )}`
         )
         .join(", ");
       return `(${params}) => ${getTypeSignature(type.result, maxDepth - 1)}`;
@@ -648,7 +697,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
   }
 }
 
-/* Result */
+/* Execution */
 
 export function getStatementResult(
   statement: IStatement,
@@ -677,6 +726,43 @@ export function getConditionResult(condition: DataValue<ConditionType>): IData {
   );
 }
 
+export function getSkipExecution({
+  context,
+  data: _data,
+  operationName,
+  paramIndex,
+}: {
+  context: Context;
+  data: IData;
+  operationName?: string;
+  paramIndex?: number;
+}): Context["skipExecution"] {
+  if (context.skipExecution) return context.skipExecution;
+  const data = resolveReference(_data, context.variables);
+  if (isDataOfType(data, "error"))
+    return { reason: data.value.reason, kind: "error" };
+  if (!operationName) return undefined;
+
+  if (paramIndex !== undefined && isDataOfType(data, "boolean")) {
+    if (
+      operationName === "thenElse" &&
+      data.value === (paramIndex === 0 ? false : true)
+    ) {
+      return { reason: "Unreachable branch", kind: "unreachable" };
+    } else if (
+      (operationName === "or" || operationName === "and") &&
+      data.value === (operationName === "or" ? true : false)
+    ) {
+      return {
+        reason: `${operationName} operation is unreachable`,
+        kind: "unreachable",
+      };
+    }
+  }
+
+  return undefined;
+}
+
 /* Others */
 
 export function getDataDropdownList({
@@ -691,22 +777,52 @@ export function getDataDropdownList({
   const allowedOptions: IDropdownItem[] = [];
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
+  const dataTypeSignature = getTypeSignature(data.type);
+  if (
+    context.expectedType &&
+    !DataTypes[context.expectedType.kind].hideFromDropdown
+  ) {
+    const expectedTypeSignature = getTypeSignature(context.expectedType);
+    const option: IDropdownItem = {
+      entityType: "data",
+      label: context.expectedType.kind,
+      value: expectedTypeSignature,
+      type: context.expectedType,
+      onClick: () => {
+        onSelect(createData({ id: data.id, type: context.expectedType }));
+      },
+    };
+    if (dataTypeSignature !== expectedTypeSignature) {
+      allowedOptions.push(option);
+    } else if (!context.enforceExpectedType) {
+      dataTypeOptions.push(option);
+    }
+  }
 
   (Object.keys(DataTypes) as DataType["kind"][]).forEach((kind) => {
+    const kindSignature = getTypeSignature(DataTypes[kind].type);
     if (
       DataTypes[kind].hideFromDropdown ||
-      (!isDataOfType(data, "reference") && kind === data.type.kind)
+      (!isDataOfType(data, "reference") &&
+        kindSignature === dataTypeSignature) ||
+      allowedOptions
+        .concat(dataTypeOptions)
+        .some((option) => option.value === kindSignature)
     ) {
       return;
     }
     const option: IDropdownItem = {
       entityType: "data",
       value: kind,
+      type: DataTypes[kind].type,
       onClick: () => {
         onSelect(createData({ id: data.id, type: DataTypes[kind].type }));
       },
     };
-    if (!context.expectedType || kind === context.expectedType.kind) {
+    if (
+      !context.expectedType ||
+      kindSignature === getTypeSignature(context.expectedType)
+    ) {
       allowedOptions.push(option);
     } else if (!context.enforceExpectedType) {
       dataTypeOptions.push(option);
@@ -717,12 +833,12 @@ export function getDataDropdownList({
     const option: IDropdownItem = {
       value: name,
       secondaryLabel: variable.data.type.kind,
-      variableType: variable.data.type,
+      type: variable.data.type,
       entityType: "data",
       onClick: () =>
         onSelect({
           ...variable.data,
-          id: nanoid(),
+          id: data.id,
           type: { kind: "reference", dataType: variable.data.type },
           value: { name, id: variable.data.id },
         }),
@@ -742,17 +858,6 @@ export function getDataDropdownList({
     ["Data Types", dataTypeOptions],
     ["Variables", variableOptions],
   ] as [string, IDropdownItem[]][];
-}
-
-export function jsonParseReviver(_: string, value: unknown) {
-  if (isObject(value, ["_map_"]) && Array.isArray(value._map_)) {
-    return new Map(value._map_);
-  }
-  return value;
-}
-
-export function jsonStringifyReplacer(_: string, value: IData["value"]) {
-  return value instanceof Map ? { _map_: Array.from(value.entries()) } : value;
 }
 
 export function isTextInput(element: Element | null) {

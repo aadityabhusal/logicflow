@@ -26,10 +26,11 @@ const UnionInputComponent = (
   { data, handleData, context, ...props }: UnionInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const isIconFocused = uiConfigStore(
+    (s) => s.navigation?.id === `${data.id}_options`
+  );
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
   const [menuOpened, setMenuOpened] = useState(false);
-  const isFocused = navigationId === `${data.id}_options`;
 
   const activeType = useMemo(() => {
     const type = inferTypeFromValue(data.value, context);
@@ -126,7 +127,7 @@ const UnionInputComponent = (
         <Menu.Target>
           <IconButton
             ref={(elem) => {
-              if (isFocused) {
+              if (isIconFocused) {
                 if (menuOpened) elem?.blur();
                 else elem?.focus();
               }
@@ -135,7 +136,7 @@ const UnionInputComponent = (
             size={14}
             className={[
               "mt-1 hover:outline hover:outline-border",
-              isFocused ? "outline outline-border" : "",
+              isIconFocused ? "outline outline-border" : "",
             ].join(" ")}
             title="Show union types"
           />
@@ -189,7 +190,7 @@ const UnionInputComponent = (
                   .filter(
                     ([type, value]) =>
                       !value.hideFromDropdown &&
-                      !["union"].includes(type) &&
+                      !["union", "operation"].includes(type) &&
                       // This is only for default types, if user updates a complex type, the default type options will be shown
                       !data.type.types.some((t) =>
                         isTypeCompatible(t, value.type)

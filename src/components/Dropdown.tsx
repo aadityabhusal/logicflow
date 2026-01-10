@@ -55,7 +55,6 @@ const DropdownComponent = ({
   addOperationCall,
   children,
   options,
-  hotkeys,
   isInputTarget,
   target,
   context,
@@ -73,41 +72,39 @@ const DropdownComponent = ({
     withDropdownIcon?: boolean;
     focusOnClick?: boolean;
   };
-  hotkeys?: HotkeyItem[];
   isInputTarget?: boolean;
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
 }) => {
   const [, setSearchParams] = useSearchParams();
   const highlightOperation = uiConfigStore((s) => s.highlightOperation);
-  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const isFocused = uiConfigStore((s) => s.navigation?.id === id);
   const navigationDirection = uiConfigStore((s) => s.navigation?.direction);
   const navigationModifier = uiConfigStore((s) => s.navigation?.modifier);
-  const showPopup = uiConfigStore((s) => s.showPopup);
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
 
   const _result = useMemo(
     () =>
       operationResult
-        ? resolveReference(operationResult, context)
+        ? resolveReference(operationResult, context.variables)
         : data
-        ? resolveReference(data, context)
+        ? resolveReference(data, context.variables)
         : undefined,
-    [operationResult, data, context]
+    [operationResult, data, context.variables]
   );
   const result = useDeepCompareMemoize(_result);
 
   const forceDisplayBorder =
     highlightOperation && isDataOfType(data, "operation");
   const [isHovered, setHovered] = useState(false);
-  const isFocused = navigationId === id;
   const [search, setSearch] = useState("");
   const combobox = useCombobox({
     loop: true,
     onDropdownClose: () => {
       handleSearch(options?.withSearch ? "" : value || "");
       combobox.resetSelectedOption();
+      setUiConfig({ navigation: { id, disable: false } });
     },
     onDropdownOpen: () => {
       if (options?.withSearch) combobox.focusSearchInput();
@@ -134,19 +131,22 @@ const DropdownComponent = ({
     setSearch(val);
   }
 
+  // TODO: Fix this when creating single attachable dropdown component
   useHotkeys(
     isFocused
       ? [
           ...(["backspace", "alt+backspace"].map((key) => [
             key,
-            () => {
+            (e) => {
               const textInput = isTextInput(combobox.targetRef.current);
-              if (!textInput || !handleDelete) return;
+              if (!handleDelete) return;
               if (
+                textInput &&
                 textInput.value.length > (data?.type.kind === "number" ? 1 : 0)
               ) {
                 return;
               }
+              e.preventDefault();
               handleDelete();
               textInput?.blur();
               setUiConfig((p) => {
@@ -154,13 +154,12 @@ const DropdownComponent = ({
                   useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
-                const newEntities = getOperationEntities(operation, 0);
+                const newEntities = getOperationEntities(operation);
                 const oldEntities = p.navigationEntities || [];
                 return {
                   navigationEntities: newEntities,
                   navigation: {
                     id: getNextIdAfterDelete(newEntities, oldEntities, id),
-                    context,
                   },
                 };
               });
@@ -191,10 +190,10 @@ const DropdownComponent = ({
   }, [combobox.dropdownOpened]);
 
   useEffect(() => {
-    if (isFocused && result && showPopup) {
+    if (isFocused && result) {
       setUiConfig({ result });
     }
-  }, [isFocused, result, setUiConfig, showPopup]);
+  }, [isFocused, result, setUiConfig]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -213,7 +212,13 @@ const DropdownComponent = ({
       }
       textInput.setSelectionRange(caretPosition, caretPosition);
     }
-  }, [isFocused, combobox.targetRef, navigationDirection, navigationModifier]);
+  }, [
+    isFocused,
+    combobox.targetRef,
+    navigationDirection,
+    navigationModifier,
+    data?.type.kind,
+  ]);
 
   return (
     <Combobox
@@ -242,7 +247,10 @@ const DropdownComponent = ({
             context.skipExecution && context.skipExecution.kind !== "error"
               ? "opacity-50 "
               : "",
-            result?.type.kind === "error" ? "bg-error/25" : "",
+            isDataOfType(result, "error") &&
+            result.type.errorType !== "custom_error"
+              ? "bg-error/25"
+              : "",
           ].join(" ")}
           onMouseOver={(e) => {
             e.stopPropagation();
@@ -264,7 +272,6 @@ const DropdownComponent = ({
                     onBlur: () => combobox?.closeDropdown(),
                     onKeyDown: getHotkeyHandler([
                       ["ctrl+space", () => combobox.openDropdown()],
-                      ...(hotkeys ?? []),
                     ]),
                   }
                 : {}),
@@ -274,7 +281,6 @@ const DropdownComponent = ({
                   if (e.target === e.currentTarget) {
                     setUiConfig({
                       navigation: { id },
-                      showPopup: true,
                       skipExecution: context.skipExecution,
                     });
                   }
@@ -283,7 +289,6 @@ const DropdownComponent = ({
               onFocus: () =>
                 setUiConfig({
                   navigation: { id },
-                  showPopup: true,
                   skipExecution: context.skipExecution,
                 }),
             })}
@@ -376,28 +381,28 @@ const DropdownComponent = ({
                   }}
                 >
                   {groupItems.map((option) => (
-                    <Combobox.Option
-                      value={option.value}
+                    <Tooltip
+                      position="right"
                       key={option.value}
-                      className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
-                      active={option.value === value}
+                      classNames={{ tooltip: !option.type ? "hidden" : "" }}
+                      label={
+                        <span className="text-xs">
+                          {option.type ? getTypeSignature(option.type) : null}
+                        </span>
+                      }
                     >
-                      <span className="text-sm max-w-32 truncate">
-                        {option.label || option.value}
-                      </span>
-                      <Tooltip
-                        position="right"
-                        label={
-                          <span className="text-xs">
-                            {option.variableType
-                              ? getTypeSignature(option.variableType)
-                              : null}
-                          </span>
-                        }
+                      <Combobox.Option
+                        value={option.value}
+                        key={option.value}
+                        className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
+                        active={option.value === value}
                       >
+                        <span className="text-sm max-w-32 truncate">
+                          {option.label || option.value}
+                        </span>
                         <span className="text-xs">{option.secondaryLabel}</span>
-                      </Tooltip>
-                    </Combobox.Option>
+                      </Combobox.Option>
+                    </Tooltip>
                   ))}
                 </Combobox.Group>
               ))}

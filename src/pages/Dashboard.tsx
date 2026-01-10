@@ -11,6 +11,7 @@ import { Link, useNavigate } from "react-router";
 import relativeTime from "dayjs/plugin/relativeTime";
 import dayjs from "dayjs";
 import { useProjectStore } from "@/lib/store";
+import { createProjectFile, createVariableName } from "@/lib/utils";
 
 dayjs.extend(relativeTime);
 
@@ -31,7 +32,13 @@ export default function Dashboard() {
   );
 
   const handleCreate = () => {
-    const created = createProject();
+    const created = createProject(
+      createVariableName({
+        prefix: "New Project ",
+        prev: Object.values(projects).map((p) => p.name),
+      }),
+      [createProjectFile({ name: "main", type: "operation" })]
+    );
     navigate(`/project/${created.id}`);
   };
 

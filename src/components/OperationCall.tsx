@@ -4,17 +4,13 @@ import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
   getFilteredOperations,
-  getOperationListItemParameters,
-  getSkipExecution,
+  resolveParameters,
 } from "../lib/operation";
-import {
-  getInverseTypes,
-  mergeNarrowedTypes,
-  resolveReference,
-} from "../lib/utils";
+import { updateContextWithNarrowedTypes } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
 import { uiConfigStore } from "@/lib/store";
+import { AddStatement } from "./AddStatement";
 
 const OperationCallComponent = ({
   data,
@@ -22,7 +18,6 @@ const OperationCallComponent = ({
   handleOperationCall,
   addOperationCall,
   context,
-  narrowedTypes,
 }: {
   data: IData;
   operation: IData<OperationType>;
@@ -32,23 +27,21 @@ const OperationCallComponent = ({
   ) => void;
   addOperationCall?: () => void;
   context: Context;
-  narrowedTypes: Context["variables"];
 }) => {
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
 
-  const updatedVariables = useMemo(
-    () =>
-      mergeNarrowedTypes(
-        context.variables,
-        narrowedTypes,
-        operation.value.name
-      ),
-    [context.variables, narrowedTypes, operation.value.name]
-  );
   const filteredOperations = useMemo(
     () => getFilteredOperations(data, context.variables, true),
     [data, context.variables]
   );
+
+  const originalParameters = useMemo(() => {
+    const originalOperation = filteredOperations
+      .flatMap(([_, items]) => items)
+      .find((item) => item.name === operation.value.name);
+    if (!originalOperation) return undefined;
+    return resolveParameters(originalOperation, data, context.variables);
+  }, [context.variables, data, filteredOperations, operation.value.name]);
 
   function handleDropdown(name: string) {
     if (operation.value.name === name) return;
@@ -58,6 +51,7 @@ const OperationCallComponent = ({
       parameters: operation.value.parameters,
       context,
     });
+    operationCall.id = operation.id;
     handleOperationCall(operationCall);
     const params = operationCall.value.parameters;
     setUiConfig({
@@ -68,18 +62,25 @@ const OperationCallComponent = ({
     });
   }
 
-  function handleParameter(item: IStatement, index: number) {
-    const parameters = operation.value.parameters.map((param, i) =>
-      i === index ? item : param
-    );
+  function handleParameter(item: IStatement, index: number, remove?: boolean) {
+    // eslint-disable-next-line prefer-const
+    let parameters = [...operation.value.parameters];
+    if (remove) parameters.splice(index, 1);
+    else parameters[index] = item;
     handleOperationCall({
       ...operation,
       type: {
         ...operation.type,
-        parameters: parameters.map((param) => ({
-          name: param.name,
-          type: param.data.type,
-        })),
+        parameters: (originalParameters ?? operation.type.parameters).map(
+          (param, i) => {
+            const idx = (i >= index && remove ? i + 1 : i) - 1;
+            return {
+              ...param,
+              name: parameters[idx]?.name ?? param.name,
+              type: parameters[idx]?.data.type ?? param.type,
+            };
+          }
+        ),
       },
       value: { ...operation.value, parameters },
     });
@@ -110,40 +111,42 @@ const OperationCallComponent = ({
     >
       <span>{"("}</span>
       {operation.value.parameters.map((item, paramIndex, arr) => {
-        const originalOperation = filteredOperations
-          .flatMap(([_, items]) => items)
-          .find((item) => item.name === operation.value.name);
-
         return (
           <span key={item.id} className="flex">
             <Statement
               statement={item}
-              handleStatement={(val) => val && handleParameter(val, paramIndex)}
-              options={{ disableDelete: true }}
+              handleStatement={(val, remove) =>
+                val && handleParameter(val, paramIndex, remove)
+              }
+              options={{ disableDelete: !item.isOptional }}
               context={{
-                ...context,
-                variables:
-                  operation.value.name === "thenElse" && paramIndex === 1
-                    ? getInverseTypes(context.variables, narrowedTypes)
-                    : updatedVariables,
-                expectedType: originalOperation
-                  ? getOperationListItemParameters(
-                      originalOperation,
-                      resolveReference(data, context)
-                    )?.[paramIndex + 1]?.type
-                  : undefined,
-                skipExecution: getSkipExecution({
+                ...updateContextWithNarrowedTypes(
                   context,
                   data,
-                  operation,
-                  paramIndex,
-                }),
+                  operation.value.name,
+                  paramIndex
+                ),
+                expectedType: originalParameters?.[paramIndex + 1]?.type,
               }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
           </span>
         );
       })}
+      {operation.value.parameters.length + 1 <
+        operation.type.parameters.length && (
+        <AddStatement
+          id={`${operation.id}_call_parameter`}
+          onSelect={(statement) =>
+            handleParameter(statement, operation.value.parameters.length)
+          }
+          iconProps={{ title: "Add parameter" }}
+          config={{
+            ...operation.type.parameters[operation.value.parameters.length + 1],
+            name: undefined,
+          }}
+        />
+      )}
       <span className="self-end">{")"}</span>
     </Dropdown>
   );

@@ -7,11 +7,11 @@ import {
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
-import { useCallback, useEffect, useMemo } from "react";
+import { MouseEvent, useCallback, useMemo } from "react";
 import { useHotkeys } from "@mantine/hooks";
-import { FocusInfo } from "@/components/FocusInfo";
+import { DetailsPanel } from "@/components/DetailsPanel";
 import { Navigate } from "react-router";
-import { useCustomHotkeys } from "@/hooks/useNavigation";
+import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { Context, IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
@@ -22,13 +22,14 @@ import { getOperationEntities } from "@/lib/navigation";
 import { updateFiles } from "@/lib/update";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DataTypes } from "@/lib/data";
+import { builtInOperations } from "@/lib/operation";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const updateProject = useProjectStore((s) => s.updateProject);
   const currentFileId = useProjectStore((s) => s.currentFileId);
-  const { hideSidebar, hideFocusInfo, setUiConfig } = uiConfigStore();
+  const { hideSidebar, showDetailsPanel, setUiConfig } = uiConfigStore();
 
   const currentOperation = useMemo(
     () =>
@@ -43,32 +44,24 @@ export default function Project() {
       if (!currentProject) return;
       if (remove) deleteFile(operation.id);
       else {
-        updateProject(currentProject.id, {
-          files: updateFiles(
-            currentProject.files,
-            fileHistoryActions.pushState,
-            createFileFromOperation(operation)
-          ),
-        });
+        updateProject(
+          currentProject.id,
+          {
+            files: updateFiles(
+              currentProject.files,
+              fileHistoryActions.pushState,
+              createFileFromOperation(operation)
+            ),
+          },
+          getOperationEntities(operation)
+        );
       }
     },
     [currentProject, updateProject, deleteFile]
   );
 
-  useEffect(() => {
-    if (currentOperation) {
-      setUiConfig({
-        navigationEntities: getOperationEntities(currentOperation, 0),
-      });
-    }
-  }, [currentOperation, setUiConfig]);
+  useHotkeys(useCustomHotkeys(), []);
 
-  useHotkeys(useCustomHotkeys(currentOperation), []);
-
-  const operationOptions = useMemo(
-    () => ({ isTopLevel: true, disableDropdown: true }),
-    []
-  );
   const context = useMemo(() => {
     return {
       variables: createFileVariables(
@@ -77,11 +70,37 @@ export default function Project() {
       ),
       reservedNames: new Set(
         (currentProject?.files ?? [])
-          .map((file) => file.name)
-          .concat(Object.keys(DataTypes))
+          .map((file) => ({ kind: "operation", name: file.name }))
+          .concat(
+            Object.keys(DataTypes).map((type) => ({
+              kind: "data-type",
+              name: type,
+            }))
+          )
+          .concat(
+            builtInOperations.map((op) => ({
+              kind: "built-in-operation",
+              name: op.name,
+            }))
+          )
       ),
     } as Context;
   }, [currentProject?.files, currentOperation?.id]);
+
+  const handleOperationClick = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (currentOperation?.id && e.target === e.currentTarget) {
+        setUiConfig({
+          navigation: { id: `${currentOperation?.id}_statement_add` },
+        });
+      }
+    },
+    [currentOperation?.id, setUiConfig]
+  );
+
+  const reservedNames = useMemo(() => {
+    return Array.from(context.reservedNames ?? []).map((r) => r.name);
+  }, [context.reservedNames]);
 
   if (!currentProject) return <Navigate to="/" replace />;
 
@@ -92,18 +111,9 @@ export default function Project() {
         currentProject={currentProject}
       />
       <div className="flex flex-1 min-h-0 relative">
-        {!hideSidebar && (
-          <Sidebar reservedNames={Array.from(context.reservedNames ?? [])} />
-        )}
+        {!hideSidebar && <Sidebar reservedNames={reservedNames} />}
         <div
-          className={"p-1 flex-1 overflow-y-auto scroll"}
-          onClick={(e) => {
-            if (currentOperation?.id && e.target === e.currentTarget) {
-              setUiConfig({
-                navigation: { id: `${currentOperation.id}_statement_add` },
-              });
-            }
-          }}
+          className={"flex-1 overflow-y-auto scroll flex flex-col md:flex-row"}
         >
           <ErrorBoundary
             fallback={
@@ -117,13 +127,14 @@ export default function Project() {
                 operation={currentOperation}
                 handleChange={handleOperationChange}
                 context={context}
-                options={operationOptions}
+                className="flex-1 min-w-0 min-h-0 overflow-auto px-1"
+                onClick={handleOperationClick}
               />
             ) : (
               <NoteText>Select an operation</NoteText>
             )}
           </ErrorBoundary>
-          {!hideFocusInfo && <FocusInfo />}
+          {showDetailsPanel ? <DetailsPanel /> : null}
         </div>
       </div>
     </div>
