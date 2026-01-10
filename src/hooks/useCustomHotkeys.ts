@@ -1,17 +1,9 @@
-import { getOperationEntities, handleNavigation } from "@/lib/navigation";
+import { handleNavigation } from "@/lib/navigation";
 import { useProjectStore, uiConfigStore } from "@/lib/store";
-import {
-  IData,
-  NavigationDirection,
-  NavigationModifier,
-  OperationType,
-} from "@/lib/types";
+import { NavigationDirection, NavigationModifier } from "@/lib/types";
 import { HotkeyItem } from "@mantine/hooks";
-import { useMemo } from "react";
 
-export function useCustomHotkeys(
-  currentOperation?: IData<OperationType>
-): HotkeyItem[] {
+export function useCustomHotkeys(): HotkeyItem[] {
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
 
@@ -21,10 +13,7 @@ export function useCustomHotkeys(
       : undefined
   );
   const setUiConfig = uiConfigStore((state) => state.setUiConfig);
-  const entities = useMemo(
-    () => currentOperation && getOperationEntities(currentOperation),
-    [currentOperation]
-  );
+  const entities = uiConfigStore((state) => state.navigationEntities);
 
   const hotKeys: {
     key: string;

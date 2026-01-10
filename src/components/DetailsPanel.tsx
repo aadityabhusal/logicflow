@@ -41,12 +41,9 @@ export function DetailsPanel() {
         <Resizer
           type="height"
           direction="negative"
-          minSize={200}
+          minSize={150}
           maxSize={window.innerHeight / 2}
-          setPanelSize={(size) => {
-            console.log("size", size);
-            setUiConfig({ detailsPanelSize: size });
-          }}
+          setPanelSize={(size) => setUiConfig({ detailsPanelSize: size })}
           className="absolute top-0 left-0"
         />
       )}

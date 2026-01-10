@@ -7,9 +7,9 @@ import {
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
-import { useCallback, useMemo } from "react";
+import { MouseEvent, useCallback, useMemo } from "react";
 import { useHotkeys } from "@mantine/hooks";
-import { DetailsPanel } from "@/components/FocusInfo";
+import { DetailsPanel } from "@/components/DetailsPanel";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { Context, IData, OperationType } from "@/lib/types";
@@ -53,14 +53,14 @@ export default function Project() {
               createFileFromOperation(operation)
             ),
           },
-          currentOperation && getOperationEntities(currentOperation)
+          getOperationEntities(operation)
         );
       }
     },
-    [currentProject, updateProject, deleteFile, currentOperation]
+    [currentProject, updateProject, deleteFile]
   );
 
-  useHotkeys(useCustomHotkeys(currentOperation), []);
+  useHotkeys(useCustomHotkeys(), []);
 
   const context = useMemo(() => {
     return {
@@ -87,6 +87,21 @@ export default function Project() {
     } as Context;
   }, [currentProject?.files, currentOperation?.id]);
 
+  const handleOperationClick = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (currentOperation?.id && e.target === e.currentTarget) {
+        setUiConfig({
+          navigation: { id: `${currentOperation?.id}_statement_add` },
+        });
+      }
+    },
+    [currentOperation?.id, setUiConfig]
+  );
+
+  const reservedNames = useMemo(() => {
+    return Array.from(context.reservedNames ?? []).map((r) => r.name);
+  }, [context.reservedNames]);
+
   if (!currentProject) return <Navigate to="/" replace />;
 
   return (
@@ -96,13 +111,7 @@ export default function Project() {
         currentProject={currentProject}
       />
       <div className="flex flex-1 min-h-0 relative">
-        {!hideSidebar && (
-          <Sidebar
-            reservedNames={Array.from(context.reservedNames ?? []).map(
-              (r) => r.name
-            )}
-          />
-        )}
+        {!hideSidebar && <Sidebar reservedNames={reservedNames} />}
         <div
           className={"flex-1 overflow-y-auto scroll flex flex-col md:flex-row"}
         >
@@ -119,15 +128,7 @@ export default function Project() {
                 handleChange={handleOperationChange}
                 context={context}
                 className="flex-1 min-w-0 min-h-0 overflow-auto px-1"
-                onClick={(e) => {
-                  if (currentOperation?.id && e.target === e.currentTarget) {
-                    setUiConfig({
-                      navigation: {
-                        id: `${currentOperation.id}_statement_add`,
-                      },
-                    });
-                  }
-                }}
+                onClick={handleOperationClick}
               />
             ) : (
               <NoteText>Select an operation</NoteText>

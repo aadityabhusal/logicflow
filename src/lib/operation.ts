@@ -14,7 +14,7 @@ import {
 import {
   createData,
   createStatement,
-  createParamData,
+  createVariableName,
   getStatementResult,
   inferTypeFromValue,
   isDataOfType,
@@ -609,9 +609,19 @@ function executeArrayOperation(
   return data.value.map((item, index) => {
     const itemData = getStatementResult(item);
     return executeOperation(
-      operationToListItem(operation),
-      { ...itemData, type: data.type.elementType },
+      operationToListItem({
+        ...operation,
+        type: {
+          ...operation.type,
+          parameters: [
+            { type: data.type.elementType },
+            ...operation.type.parameters,
+          ],
+        },
+      }),
+      data,
       [
+        createStatement({ data: createData(itemData), isOptional: true }),
         createStatement({
           data: createData({ type: { kind: "number" }, value: index }),
           isOptional: true,
@@ -722,6 +732,37 @@ export function resolveParameters(
         type: resolveUnionType([param.type, { kind: "undefined" }]),
       };
     return param;
+  });
+}
+
+export function createParamData(
+  item: OperationType["parameters"][number],
+  data: IData
+): IStatement["data"] {
+  if (item.type.kind !== "operation") {
+    return createData({ type: item.type || data.type });
+  }
+
+  const parameters = item.type.parameters
+    .filter((param) => !param.isOptional)
+    .reduce((prev, paramSpec) => {
+      prev.push(
+        createStatement({
+          name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
+          data: createParamData({ type: paramSpec.type }, data),
+          isOptional: paramSpec.isOptional,
+        })
+      );
+      return prev;
+    }, [] as IStatement[]);
+
+  return createData({
+    type: {
+      kind: "operation",
+      parameters: item.type.parameters,
+      result: { kind: "undefined" },
+    },
+    value: { parameters: parameters, statements: [] },
   });
 }
 
@@ -903,10 +944,9 @@ export function executeOperation(
     return executeStatement(hasParam, prevContext);
   });
   const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
-    return (
-      isDataOfType(parameters[i], "error") ||
-      !isTypeCompatible(p.type, parameters[i].type)
-    );
+    const hasError = isDataOfType(parameters[i], "error");
+    const typeMismatch = !isTypeCompatible(parameters[i].type, p.type);
+    return hasError || typeMismatch;
   });
   if (errorParamIndex !== -1) {
     return createData({

@@ -290,7 +290,7 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
       )
     );
   } else if (first.kind === "union") {
-    return first.types.every((t) => isTypeCompatible(t, second));
+    return first.types.some((t) => isTypeCompatible(t, second));
   } else if (second.kind === "union") {
     return second.types.some((t) => isTypeCompatible(first, t));
   }
@@ -551,16 +551,37 @@ export function resolveReference(
   data: IData,
   variables: Context["variables"]
 ): IData {
-  if (!isDataOfType(data, "reference")) return data;
-  const variable = variables.get(data.value.name);
-  if (!variable) {
+  if (isDataOfType(data, "reference")) {
+    const variable = variables.get(data.value.name);
+    if (!variable) {
+      return createData({
+        id: data.id,
+        type: { kind: "error", errorType: "reference_error" },
+        value: { reason: `'${data.value.name}' not found` },
+      });
+    }
+    return resolveReference(variable.data, variables);
+  }
+  if (isDataOfType(data, "array")) {
     return createData({
-      id: data.id,
-      type: { kind: "error", errorType: "reference_error" },
-      value: { reason: `'${data.value.name}' not found` },
+      ...data,
+      value: data.value.map((statement) => ({
+        ...statement,
+        data: resolveReference(statement.data, variables),
+      })),
     });
   }
-  return resolveReference(variable.data, variables);
+  if (isDataOfType(data, "object")) {
+    const newMap = new Map();
+    data.value.forEach((statement, key) => {
+      newMap.set(key, {
+        ...statement,
+        data: resolveReference(statement.data, variables),
+      });
+    });
+    return createData({ ...data, value: newMap });
+  }
+  return data;
 }
 
 export function inferTypeFromValue<T extends DataType>(
@@ -621,7 +642,7 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
-export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
+export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
   if (maxDepth <= 0) return "...";
 
   switch (type.kind) {
@@ -649,8 +670,8 @@ export function getTypeSignature(type: DataType, maxDepth: number = 4): string {
     }
 
     case "union":
-      return type.types
-        .map((t) => getTypeSignature(t, maxDepth - 1))
+      return resolveUnionType(type.types, true)
+        .types.map((t) => getTypeSignature(t, maxDepth - 1))
         .join(" | ");
 
     case "operation": {
