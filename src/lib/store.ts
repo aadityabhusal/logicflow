@@ -87,11 +87,7 @@ export const fileHistoryActions = {
 export interface IProjectsStore {
   projects: Record<string, Project>;
   createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
-  updateProject: (
-    id: string,
-    updates: Partial<Project>,
-    navigationEntities?: NavigationEntity[]
-  ) => void;
+  updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   getProject: (id?: string) => Project | undefined;
   getCurrentProject: () => Project | undefined;
@@ -134,16 +130,13 @@ const createProjectsSlice: StateCreator<
     }));
     return newProject;
   },
-  updateProject: (id, updates, navigationEntities) => {
+  updateProject: (id, updates) => {
     set((state) => ({
       projects: {
         ...state.projects,
         [id]: { ...state.projects[id], ...updates, updatedAt: Date.now() },
       },
     }));
-    if (navigationEntities) {
-      uiConfigStore.getState().setUiConfig({ navigationEntities });
-    }
   },
   deleteProject: (id) => {
     set((state) => {

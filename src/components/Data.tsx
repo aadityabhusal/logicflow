@@ -6,6 +6,7 @@ import { Dropdown, IDropdownTargetProps } from "./Dropdown";
 import {
   createDefaultValue,
   getDataDropdownList,
+  getTypeSignature,
   isDataOfType,
 } from "../lib/utils";
 import { memo, useMemo } from "react";
@@ -64,7 +65,11 @@ const DataComponent = ({
       addOperationCall={addOperationCall}
       options={dropdownOptions}
       context={context}
-      value={isDataOfType(data, "reference") ? data.value.name : data.type.kind}
+      value={
+        isDataOfType(data, "reference")
+          ? data.value.name
+          : getTypeSignature(data.type)
+      }
       isInputTarget={
         isDataOfType(data, "reference") ||
         ["string", "number", "undefined"].includes(data.type.kind)

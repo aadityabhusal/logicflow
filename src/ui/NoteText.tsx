@@ -8,9 +8,10 @@ export function NoteText(props: {
 }) {
   return (
     <p
-      className={
-        "text-xs text-disabled p-1 " + (props.border ? "border-b" : "")
-      }
+      className={[
+        "text-xs text-disabled p-1 flex-1",
+        props.border ? "border-b" : "",
+      ].join(" ")}
       style={{
         ...(props.center ? { textAlign: "center" } : {}),
         ...(props.italic ? { fontStyle: "italic" } : {}),

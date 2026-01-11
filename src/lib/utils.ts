@@ -19,14 +19,14 @@ import { MouseEvent } from "react";
 export function createData<T extends DataType>(
   props?: Partial<IData<T>>
 ): IData<T> {
-  const type = (props?.type || { kind: "undefined" }) as T;
+  const type = (props?.type ?? inferTypeFromValue(props?.value)) as T;
   return {
     id: props?.id ?? nanoid(),
     entityType: "data",
     type,
     value:
       props?.value !== undefined ||
-      isTypeCompatible(type, { kind: "undefined" })
+      isTypeCompatible({ kind: "undefined" }, type)
         ? (props?.value as DataValue<T>)
         : createDefaultValue(type),
   };
@@ -289,8 +289,6 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
         first.types.some((firstType) => isTypeCompatible(firstType, secondType))
       )
     );
-  } else if (first.kind === "union") {
-    return first.types.some((t) => isTypeCompatible(t, second));
   } else if (second.kind === "union") {
     return second.types.some((t) => isTypeCompatible(first, t));
   }
@@ -410,9 +408,10 @@ export function applyTypeNarrowing(
     referenceName = data.value.name;
     const reference = context.variables.get(referenceName);
     if (reference) {
+      const resolvedParamData = resolveReference(param.data, context.variables);
       narrowedType = narrowType(
         reference.data.type,
-        inferTypeFromValue(param.data.value)
+        inferTypeFromValue(resolvedParamData.value)
       );
     }
   }
@@ -585,7 +584,7 @@ export function resolveReference(
 }
 
 export function inferTypeFromValue<T extends DataType>(
-  value: DataValue<T>,
+  value?: DataValue<T>,
   context?: Context
 ): T {
   if (value === undefined) return { kind: "undefined" } as T;
@@ -804,10 +803,14 @@ export function getDataDropdownList({
     if (
       DataTypes[kind].hideFromDropdown ||
       (!isDataOfType(data, "reference") &&
-        kindSignature === dataTypeSignature) ||
+        kindSignature === dataTypeSignature &&
+        kind === data.type.kind) ||
       allowedOptions
         .concat(dataTypeOptions)
-        .some((option) => option.value === kindSignature)
+        .some(
+          (option) =>
+            option.value === kindSignature && option.type?.kind === kind
+        )
     ) {
       return;
     }
@@ -821,7 +824,8 @@ export function getDataDropdownList({
     };
     if (
       !context.expectedType ||
-      kindSignature === getTypeSignature(context.expectedType)
+      (kindSignature === getTypeSignature(context.expectedType) &&
+        kind === context.expectedType.kind)
     ) {
       allowedOptions.push(option);
     } else if (!context.enforceExpectedType) {

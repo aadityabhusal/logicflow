@@ -130,9 +130,15 @@ export function handleNavigation({
     if (modifier === "mod") {
       targetEntity = entities[delta === -1 ? 0 : entities.length - 1];
     } else if (modifier === "alt") {
-      targetEntity = findEntity.bind(entities)(
-        (e) => e.operationId === entities[itemIndex].operationId
-      );
+      if (entities[itemIndex].depth === 0) {
+        targetEntity = findEntity.bind(entities)(
+          (e) => e.operationId === entities[itemIndex].operationId
+        );
+      } else {
+        targetEntity = entities
+          .slice(0, itemIndex)
+          .findLast((e) => e.depth === entities[itemIndex].depth - 1);
+      }
     } else {
       targetEntity = entities.find(
         (e) =>

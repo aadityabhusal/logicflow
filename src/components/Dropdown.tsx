@@ -293,20 +293,18 @@ const DropdownComponent = ({
                 }),
             })}
           </Combobox.EventsTarget>
-          {isDataOfType(data, "reference") &&
-            currentProject?.files.find((f) => f.name === data.value.name) && (
+          {(isDataOfType(data, "reference") || operationResult) &&
+            currentProject?.files.find((f) => f.name === value) && (
               <IconButton
                 tabIndex={-1}
                 size={8}
                 className="absolute -top-1.5 right-2.5 text-white bg-border rounded-full z-10 p-0.5"
                 icon={FaSquareArrowUpRight}
                 onClick={() =>
-                  setSearchParams(
-                    ...handleSearchParams({ file: data.value.name }, true)
-                  )
+                  setSearchParams(...handleSearchParams({ file: value }, true))
                 }
                 hidden={!isFocused && !isHovered}
-                title="Go to operation file"
+                title="Go to operation"
               />
             )}
           {handleDelete && (

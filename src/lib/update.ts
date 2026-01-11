@@ -170,11 +170,20 @@ function updateStatement(
   const currentReference = isDataOfType(currentStatement.data, "reference")
     ? currentStatement.data.value
     : undefined;
+
   const foundReference = context.variables
     .entries()
     .find(([, item]) => item.data?.id === currentReference?.id);
+
+  const foundByName =
+    !foundReference && currentReference
+      ? context.variables.get(currentReference.name)
+      : undefined;
+
   const reference = foundReference
     ? { name: foundReference[0], data: foundReference[1].data }
+    : foundByName
+    ? { name: currentReference!.name, data: foundByName.data }
     : undefined;
 
   const newStatement = {

@@ -7,7 +7,7 @@ import {
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
-import { MouseEvent, useCallback, useMemo } from "react";
+import { MouseEvent, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "@mantine/hooks";
 import { DetailsPanel } from "@/components/DetailsPanel";
 import { Navigate } from "react-router";
@@ -29,7 +29,9 @@ export default function Project() {
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const updateProject = useProjectStore((s) => s.updateProject);
   const currentFileId = useProjectStore((s) => s.currentFileId);
-  const { hideSidebar, showDetailsPanel, setUiConfig } = uiConfigStore();
+  const hideSidebar = uiConfigStore((s) => s.hideSidebar);
+  const showDetailsPanel = uiConfigStore((s) => s.showDetailsPanel);
+  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
 
   const currentOperation = useMemo(
     () =>
@@ -44,21 +46,25 @@ export default function Project() {
       if (!currentProject) return;
       if (remove) deleteFile(operation.id);
       else {
-        updateProject(
-          currentProject.id,
-          {
-            files: updateFiles(
-              currentProject.files,
-              fileHistoryActions.pushState,
-              createFileFromOperation(operation)
-            ),
-          },
-          getOperationEntities(operation)
-        );
+        updateProject(currentProject.id, {
+          files: updateFiles(
+            currentProject.files,
+            fileHistoryActions.pushState,
+            createFileFromOperation(operation)
+          ),
+        });
       }
     },
     [currentProject, updateProject, deleteFile]
   );
+
+  useEffect(() => {
+    if (currentOperation) {
+      setUiConfig({
+        navigationEntities: getOperationEntities(currentOperation),
+      });
+    }
+  }, [currentOperation, setUiConfig]);
 
   useHotkeys(useCustomHotkeys(), []);
 
@@ -127,7 +133,7 @@ export default function Project() {
                 operation={currentOperation}
                 handleChange={handleOperationChange}
                 context={context}
-                className="flex-1 min-w-0 min-h-0 overflow-auto px-1"
+                className="flex-1 min-w-0 min-h-0 overflow-auto p-1"
                 onClick={handleOperationClick}
               />
             ) : (

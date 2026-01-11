@@ -6,12 +6,12 @@ Logicflow is designed for efficient keyboard-first navigation.
 
 ### Arrow Key Navigation
 
-- **Left/Right**: Move between elements in a statement
+- **Left/Right**: Move the caret through data, operations and buttons
 - **Up/Down**: Move between statements
+- **Alt + Left/Right**: Jump between data and operations skipping their text
+- **Alt + Up/Down**: Jump to the parent i.e. focus from array item to parent array
 - **Cmd/Ctrl + Left/Right**: Jump to first/last element in current statement
-- **Cmd/Ctrl + Up/Down**: Jump to first/last statement
-- **Alt + Left/Right**: Jump between statements at same nesting level
-- **Alt + Up/Down**: Jump to different operations/files
+- **Cmd/Ctrl + Up/Down**: Jump to first/last statement of operation file.
 
 Navigation respects text input cursor position—arrow keys move within text until you reach boundaries.
 

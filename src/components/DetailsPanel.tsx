@@ -16,7 +16,9 @@ export function DetailsPanel() {
     s.skipExecution?.kind !== "error" ? s.skipExecution : undefined
   );
   const setUiConfig = uiConfigStore((s) => s.setUiConfig);
-  const detailsPanelSize = uiConfigStore((s) => s.detailsPanelSize);
+  const detailsPanelSize = uiConfigStore(
+    (s) => s.detailsPanelSize ?? { width: 200, height: 150 }
+  );
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const typeSignature = useMemo(
     () => getTypeSignature(result?.type ?? { kind: "undefined" }),

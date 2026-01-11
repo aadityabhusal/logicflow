@@ -848,14 +848,12 @@ function buildExecutionContext(
   }
   operationListItemParams.slice(1).forEach((param, index) => {
     if (param.name && parameters[index]) {
-      const resolved = resolveReference(
-        parameters[index],
-        prevContext.variables
-      );
+      const _parameter = { ...parameters[index], type: param.type };
+      const resolved = resolveReference(_parameter, prevContext.variables);
       context.variables.set(param.name, {
         data: resolved,
-        reference: isDataOfType(parameters[index], "reference")
-          ? parameters[index].value
+        reference: isDataOfType(_parameter, "reference")
+          ? _parameter.value
           : undefined,
       });
     }
@@ -940,7 +938,11 @@ export function executeOperation(
   );
   const parameters = resolvedParams.slice(1).map((p, index) => {
     const hasParam = structuredClone(_parameters[index]);
-    if (!hasParam) return createData({ type: { kind: "undefined" } });
+    if (!hasParam)
+      return createData({
+        type: resolveUnionType([p.type, { kind: "undefined" }]),
+        value: undefined,
+      });
     return executeStatement(hasParam, prevContext);
   });
   const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {

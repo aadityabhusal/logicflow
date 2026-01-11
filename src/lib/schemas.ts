@@ -204,6 +204,7 @@ export const IStatementSchema: z.ZodType<IStatement> = z.object({
   id: z.string(),
   entityType: z.literal("statement"),
   name: z.string().optional(),
+  isOptional: z.boolean().optional(),
   get data() {
     return IDataSchema;
   },

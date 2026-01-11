@@ -11,7 +11,15 @@ import { Link, useNavigate } from "react-router";
 import relativeTime from "dayjs/plugin/relativeTime";
 import dayjs from "dayjs";
 import { useProjectStore } from "@/lib/store";
-import { createProjectFile, createVariableName } from "@/lib/utils";
+import {
+  createContextVariables,
+  createData,
+  createFileFromOperation,
+  createFileVariables,
+  createStatement,
+  createVariableName,
+} from "@/lib/utils";
+import { createOperationCall } from "@/lib/operation";
 
 dayjs.extend(relativeTime);
 
@@ -32,14 +40,79 @@ export default function Dashboard() {
   );
 
   const handleCreate = () => {
+    const nameParam = createStatement({
+      data: createData({ value: "Test name" }),
+      name: "name",
+    });
+    const helloData = createData({ value: "Hello! " });
+    const concatOperation = createOperationCall({
+      data: helloData,
+      name: "concat",
+      parameters: [
+        createStatement({
+          data: createData({
+            type: { kind: "reference", dataType: nameParam.data.type },
+            value: { name: "name", id: nameParam.id },
+          }),
+        }),
+      ],
+      context: { variables: createContextVariables([nameParam], new Map()) },
+    });
+    const greetOperationFile = createFileFromOperation(
+      createData({
+        type: {
+          kind: "operation",
+          parameters: [{ name: "name", type: { kind: "string" } }],
+          result: { kind: "string" },
+        },
+        value: {
+          name: "greet",
+          parameters: [nameParam],
+          statements: [
+            createStatement({
+              data: helloData,
+              operations: [concatOperation],
+            }),
+          ],
+          result: concatOperation.value.result,
+        },
+      })
+    );
+
+    const nameData = createData({ value: "Your name" });
+    const mainOperationFile = createFileFromOperation(
+      createData({
+        type: { kind: "operation", parameters: [], result: { kind: "string" } },
+        value: {
+          name: "main",
+          parameters: [],
+          statements: [
+            createStatement({
+              data: nameData,
+              operations: [
+                createOperationCall({
+                  data: nameData,
+                  name: "greet",
+                  parameters: [nameParam],
+                  context: {
+                    variables: createFileVariables([greetOperationFile]),
+                  },
+                }),
+              ],
+            }),
+          ],
+        },
+      })
+    );
+
     const created = createProject(
       createVariableName({
         prefix: "New Project ",
         prev: Object.values(projects).map((p) => p.name),
       }),
-      [createProjectFile({ name: "main", type: "operation" })]
+      [mainOperationFile, greetOperationFile]
     );
-    navigate(`/project/${created.id}`);
+    navigate(`/project/${created.id}?file=${mainOperationFile.name}`);
   };
 
   return (
