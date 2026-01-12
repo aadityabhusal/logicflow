@@ -76,12 +76,12 @@ export function handleNavigation({
   entities,
   modifier,
   navigation,
-  setUiConfig,
+  setNavigation,
 }: {
   event: KeyboardEvent;
   direction: NavigationDirection;
   navigation?: { id?: string; disable?: boolean };
-  setUiConfig: (config: {
+  setNavigation: (config: {
     navigationEntities?: NavigationEntity[];
     navigation?: INavigation;
   }) => void;
@@ -149,7 +149,7 @@ export function handleNavigation({
   }
 
   if (targetEntity) {
-    setUiConfig({
+    setNavigation({
       navigationEntities: entities,
       navigation: { id: targetEntity.id, direction, modifier },
     });

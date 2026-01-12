@@ -1,5 +1,5 @@
 import { handleNavigation } from "@/lib/navigation";
-import { useProjectStore, uiConfigStore } from "@/lib/store";
+import { useProjectStore, useNavigationStore } from "@/lib/store";
 import { NavigationDirection, NavigationModifier } from "@/lib/types";
 import { HotkeyItem } from "@mantine/hooks";
 
@@ -7,13 +7,13 @@ export function useCustomHotkeys(): HotkeyItem[] {
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
 
-  const navigation = uiConfigStore((state) =>
+  const navigation = useNavigationStore((state) =>
     state.navigation
       ? { id: state.navigation?.id, disable: state.navigation?.disable }
       : undefined
   );
-  const setUiConfig = uiConfigStore((state) => state.setUiConfig);
-  const entities = uiConfigStore((state) => state.navigationEntities);
+  const setNavigation = useNavigationStore((state) => state.setNavigation);
+  const entities = useNavigationStore((state) => state.navigationEntities);
 
   const hotKeys: {
     key: string;
@@ -46,7 +46,7 @@ export function useCustomHotkeys(): HotkeyItem[] {
               event,
               direction,
               navigation,
-              setUiConfig,
+              setNavigation,
               modifier,
               entities,
             });

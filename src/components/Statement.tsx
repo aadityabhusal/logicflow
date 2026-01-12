@@ -20,7 +20,7 @@ import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { memo, useMemo, type ReactNode } from "react";
-import { uiConfigStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
 
@@ -44,17 +44,16 @@ const StatementComponent = ({
   };
 }) => {
   const hasName = statement.name !== undefined;
-  const isEqualsFocused = uiConfigStore(
+  const isEqualsFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_equals`
   );
-  const isNameFocused = uiConfigStore(
+  const isNameFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_name`
   );
-  const isAddFocused = uiConfigStore(
+  const isAddFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_add`
   );
-
-  const setUiConfig = uiConfigStore((state) => state.setUiConfig);
+  const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
     open,
@@ -81,7 +80,7 @@ const StatementComponent = ({
     const operations = [...statement.operations];
     operations.splice(index, 0, operation);
     handleStatement({ ...statement, operations });
-    setUiConfig({ navigation: { id: operation.id, direction: "right" } });
+    setNavigation({ navigation: { id: operation.id, direction: "right" } });
   }
 
   function handleOperationCall(
@@ -122,7 +121,7 @@ const StatementComponent = ({
                 handleStatement({ ...statement, name });
               }}
               onFocus={() =>
-                setUiConfig(() => ({
+                setNavigation(() => ({
                   navigation: { id: `${statement.id}_name` },
                 }))
               }
@@ -175,7 +174,7 @@ const StatementComponent = ({
                               }),
                         }),
                   });
-                  setUiConfig(() => ({
+                  setNavigation(() => ({
                     navigation: { id: `${statement.id}_name` },
                   }));
                 }}

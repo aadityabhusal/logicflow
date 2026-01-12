@@ -4,16 +4,16 @@ import {
   Context,
   IData,
   INavigation,
-  IStatement,
   Project,
   ProjectFile,
   NavigationEntity,
+  DataType,
 } from "./types";
-import { preferenceOptions } from "./data";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
 import { nanoid } from "nanoid";
+import { SetStateAction } from "react";
 
 const IDbStore = openDB("logicflow", 1, {
   upgrade(db) {
@@ -63,7 +63,7 @@ export const fileHistoryActions = {
       fileHistories.set(fileId, { past: [], future: [] });
     }
     const history = fileHistories.get(fileId)!;
-    const focusId = uiConfigStore.getState().navigation?.id;
+    const focusId = useNavigationStore.getState().navigation?.id;
     history.past.push({ content: structuredClone(content), focusId });
     if (history.past.length > MAX_HISTORY) history.past.shift();
     history.future = [];
@@ -227,7 +227,7 @@ const createCurrentProjectSlice: StateCreator<
     if (!currentFile) return;
     const history = fileHistories.get(currentFile.id);
     if (!history || history.past.length === 0) return;
-    const focusId = uiConfigStore.getState().navigation?.id;
+    const focusId = useNavigationStore.getState().navigation?.id;
     history.future.push({
       content: structuredClone(currentFile.content),
       focusId,
@@ -236,9 +236,9 @@ const createCurrentProjectSlice: StateCreator<
     updateFile(currentFile.id, {
       content: lastItem.content,
     } as Partial<ProjectFile>);
-    uiConfigStore
+    useNavigationStore
       .getState()
-      .setUiConfig({ navigation: { id: lastItem.focusId } });
+      .setNavigation({ navigation: { id: lastItem.focusId } });
   },
 
   redo: () => {
@@ -247,7 +247,7 @@ const createCurrentProjectSlice: StateCreator<
     if (!currentFile) return;
     const history = fileHistories.get(currentFile.id);
     if (!history || history.future.length === 0) return;
-    const currentFocusId = uiConfigStore.getState().navigation?.id;
+    const currentFocusId = useNavigationStore.getState().navigation?.id;
     history.past.push({
       content: structuredClone(currentFile.content),
       focusId: currentFocusId,
@@ -256,9 +256,9 @@ const createCurrentProjectSlice: StateCreator<
     updateFile(currentFile.id, {
       content: nextItem.content,
     } as Partial<ProjectFile>);
-    uiConfigStore
+    useNavigationStore
       .getState()
-      .setUiConfig({ navigation: { id: nextItem.focusId } });
+      .setNavigation({ navigation: { id: nextItem.focusId } });
   },
 });
 
@@ -290,32 +290,44 @@ export const waitForHydration = () => {
   });
 };
 
-type SetUIConfig = Partial<Omit<IUiConfig, "setUiConfig">>;
-export type IUiConfig = Partial<{
-  [key in (typeof preferenceOptions)[number]["id"]]: boolean;
-}> & {
+type UiConfigStore = {
   hideSidebar?: boolean;
-  result?: IStatement["data"];
-  skipExecution?: Context["skipExecution"];
-  showDetailsPanel?: boolean;
-  detailsPanelSize?: { width?: number; height?: number };
-  // TODO: Don't persist navigation entities in local storage
-  navigationEntities?: NavigationEntity[];
-  navigation?: INavigation;
+  detailsPanel: {
+    hidden?: boolean;
+    size?: { width?: number; height?: number };
+    lockedIds?: { [operationId: string]: string };
+  };
   setUiConfig: (
-    change: SetUIConfig | ((change: SetUIConfig) => SetUIConfig)
+    change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;
 };
-
-export const uiConfigStore = createWithEqualityFn(
-  persist<IUiConfig>(
+export const useUiConfigStore = createWithEqualityFn(
+  persist<UiConfigStore>(
     (set) => ({
-      showDetailsPanel: true,
+      detailsPanel: { size: { width: 200, height: 150 } },
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),
     { name: "uiConfig", storage: createIDbStorage("uiConfig") }
   ),
+  shallow
+);
+
+type NavigationStore = {
+  navigation?: INavigation;
+  navigationEntities?: NavigationEntity[];
+  skipExecution?: Context["skipExecution"];
+  type?: DataType;
+  result?: IData;
+  setNavigation: (
+    change: SetStateAction<Partial<Omit<NavigationStore, "setNavigation">>>
+  ) => void;
+};
+export const useNavigationStore = createWithEqualityFn<NavigationStore>(
+  (set) => ({
+    setNavigation: (change) =>
+      set((state) => (typeof change === "function" ? change(state) : change)),
+  }),
   shallow
 );
 

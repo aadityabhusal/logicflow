@@ -1,8 +1,9 @@
 import { Operation } from "@/components/Operation";
 import {
   fileHistoryActions,
-  uiConfigStore,
+  useUiConfigStore,
   useProjectStore,
+  useNavigationStore,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
@@ -29,9 +30,8 @@ export default function Project() {
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const updateProject = useProjectStore((s) => s.updateProject);
   const currentFileId = useProjectStore((s) => s.currentFileId);
-  const hideSidebar = uiConfigStore((s) => s.hideSidebar);
-  const showDetailsPanel = uiConfigStore((s) => s.showDetailsPanel);
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   const currentOperation = useMemo(
     () =>
@@ -60,11 +60,11 @@ export default function Project() {
 
   useEffect(() => {
     if (currentOperation) {
-      setUiConfig({
+      setNavigation({
         navigationEntities: getOperationEntities(currentOperation),
       });
     }
-  }, [currentOperation, setUiConfig]);
+  }, [currentOperation, setNavigation]);
 
   useHotkeys(useCustomHotkeys(), []);
 
@@ -96,12 +96,12 @@ export default function Project() {
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       if (currentOperation?.id && e.target === e.currentTarget) {
-        setUiConfig({
+        setNavigation({
           navigation: { id: `${currentOperation?.id}_statement_add` },
         });
       }
     },
-    [currentOperation?.id, setUiConfig]
+    [currentOperation?.id, setNavigation]
   );
 
   const reservedNames = useMemo(() => {
@@ -119,7 +119,9 @@ export default function Project() {
       <div className="flex flex-1 min-h-0 relative">
         {!hideSidebar && <Sidebar reservedNames={reservedNames} />}
         <div
-          className={"flex-1 overflow-y-auto scroll flex flex-col md:flex-row"}
+          className={
+            "relative flex-1 overflow-y-auto scroll flex flex-col md:flex-row"
+          }
         >
           <ErrorBoundary
             fallback={
@@ -140,7 +142,7 @@ export default function Project() {
               <NoteText>Select an operation</NoteText>
             )}
           </ErrorBoundary>
-          {showDetailsPanel ? <DetailsPanel /> : null}
+          <DetailsPanel />
         </div>
       </div>
     </div>

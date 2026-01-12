@@ -4,7 +4,7 @@ import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo } from "react";
 import { createVariableName, inferTypeFromValue } from "../../lib/utils";
-import { uiConfigStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 
 export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
@@ -16,7 +16,7 @@ const ObjectInputComponent = (
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.size > 2;
-  const navigationId = uiConfigStore((s) => s.navigation?.id);
+  const navigationId = useNavigationStore((s) => s.navigation?.id);
 
   function handleUpdate(
     dataArray: [string, IStatement][],

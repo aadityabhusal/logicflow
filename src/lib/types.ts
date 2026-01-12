@@ -103,6 +103,8 @@ export interface IStatement {
   isOptional?: boolean;
 }
 
+/* UI Types */
+
 export interface IDropdownItem {
   label?: string;
   value: string;
@@ -118,6 +120,15 @@ export type NavigationEntity = {
   operationId: string;
   statementIndex: number;
   statementId?: string;
+};
+
+export type NavigationDirection = "left" | "right" | "up" | "down";
+export type NavigationModifier = "alt" | "mod";
+export type INavigation = {
+  id?: string;
+  direction?: NavigationDirection;
+  modifier?: NavigationModifier;
+  disable?: boolean;
 };
 
 /* Context and Execution */
@@ -150,15 +161,6 @@ export type OperationListItem = {
   | { lazyHandler: (...args: [Context, IData<any>, ...IStatement[]]) => IData }
   | { statements: IStatement[] }
 );
-
-export type NavigationDirection = "left" | "right" | "up" | "down";
-export type NavigationModifier = "alt" | "mod";
-export type INavigation = {
-  id?: string;
-  direction?: NavigationDirection;
-  modifier?: NavigationModifier;
-  disable?: boolean;
-};
 
 /* Project Types */
 

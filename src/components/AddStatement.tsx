@@ -3,7 +3,7 @@ import { FaPlus } from "react-icons/fa6";
 import { IStatement, OperationType } from "../lib/types";
 import { createData, createStatement } from "../lib/utils";
 import { ComponentPropsWithoutRef, memo } from "react";
-import { uiConfigStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 import { getHotkeyHandler } from "@mantine/hooks";
 import { getNextIdAfterDelete } from "@/lib/navigation";
 
@@ -20,8 +20,8 @@ const AddStatementComponent = ({
   className?: string;
   config?: Partial<OperationType["parameters"][number]>;
 }) => {
-  const isFocused = uiConfigStore((s) => s.navigation?.id === `${id}_add`);
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const isFocused = useNavigationStore((s) => s.navigation?.id === `${id}_add`);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   return (
     <div className="w-max">
@@ -36,7 +36,7 @@ const AddStatementComponent = ({
         ].join(" ")}
         onClick={() => {
           const data = createData({ type: config?.type });
-          setUiConfig({ navigation: { id: data.id } });
+          setNavigation({ navigation: { id: data.id } });
           onSelect(createStatement({ data, ...config }));
         }}
         onKeyDown={getHotkeyHandler(
@@ -45,7 +45,7 @@ const AddStatementComponent = ({
             (e) => {
               e.stopPropagation();
               if (e.target instanceof HTMLButtonElement) e.target.blur();
-              setUiConfig((p) => {
+              setNavigation((p) => {
                 const entities = p.navigationEntities ?? [];
                 return {
                   navigation: {

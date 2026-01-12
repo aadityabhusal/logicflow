@@ -9,7 +9,7 @@ import {
 import { updateContextWithNarrowedTypes } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
-import { uiConfigStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 
 const OperationCallComponent = ({
@@ -28,7 +28,7 @@ const OperationCallComponent = ({
   addOperationCall?: () => void;
   context: Context;
 }) => {
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   const filteredOperations = useMemo(
     () => getFilteredOperations(data, context.variables, true),
@@ -54,7 +54,7 @@ const OperationCallComponent = ({
     operationCall.id = operation.id;
     handleOperationCall(operationCall);
     const params = operationCall.value.parameters;
-    setUiConfig({
+    setNavigation({
       navigation: {
         id: params.length > 0 ? params[0].data.id : operation.id,
         direction: "right",

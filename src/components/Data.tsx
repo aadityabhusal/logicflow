@@ -17,7 +17,7 @@ import { ConditionInput } from "./Input/ConditionInput";
 import { UnionInput } from "./Input/UnionInput";
 import { Operation } from "./Operation";
 import { ErrorInput } from "./Input/ErrorInput";
-import { uiConfigStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 
 interface IProps {
   data: IData;
@@ -34,7 +34,7 @@ const DataComponent = ({
   handleChange,
   context,
 }: IProps) => {
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
   const dropdownItems = useMemo(
     () => getDataDropdownList({ data, onSelect: handleChange, context }),
     [data, handleChange, context]
@@ -174,9 +174,11 @@ const DataComponent = ({
                 value: transform.value,
               });
               if (Array.isArray(transform.value)) {
-                setUiConfig({ navigation: { id: transform.value[0].data.id } });
+                setNavigation({
+                  navigation: { id: transform.value[0].data.id },
+                });
               } else if (transform.value instanceof Map) {
-                setUiConfig({
+                setNavigation({
                   navigation: { id: transform.value.get("key")?.data.id },
                 });
               }

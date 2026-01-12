@@ -3,9 +3,9 @@ import {
   HTMLAttributes,
   memo,
   ReactNode,
+  useDeferredValue,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { BaseInput } from "./Input/BaseInput";
@@ -16,7 +16,11 @@ import {
   FaCircleXmark,
   FaSquareArrowUpRight,
 } from "react-icons/fa6";
-import { useProjectStore, uiConfigStore } from "../lib/store";
+import {
+  useProjectStore,
+  useNavigationStore,
+  useUiConfigStore,
+} from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
 import { Context, IData, IDropdownItem } from "../lib/types";
 import { useSearchParams } from "react-router";
@@ -29,20 +33,11 @@ import {
   resolveReference,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
-import isEqual from "react-fast-compare";
 
 export interface IDropdownTargetProps
   extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
   value?: string;
   onChange?: (value: string) => void;
-}
-
-function useDeepCompareMemoize<T>(value: T): T {
-  const ref = useRef<T | undefined>(undefined);
-  // eslint-disable-next-line react-hooks/refs
-  if (!ref.current || !isEqual(ref.current, value)) ref.current = value;
-  // eslint-disable-next-line react-hooks/refs
-  return ref.current as T;
 }
 
 const DropdownComponent = ({
@@ -77,12 +72,19 @@ const DropdownComponent = ({
   context: Context;
 }) => {
   const [, setSearchParams] = useSearchParams();
-  const highlightOperation = uiConfigStore((s) => s.highlightOperation);
-  const isFocused = uiConfigStore((s) => s.navigation?.id === id);
-  const navigationDirection = uiConfigStore((s) => s.navigation?.direction);
-  const navigationModifier = uiConfigStore((s) => s.navigation?.modifier);
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
-  const currentProject = useProjectStore((s) => s.getCurrentProject());
+  const isFocused = useNavigationStore((s) => s.navigation?.id === id);
+  const navigationDirection = useNavigationStore(
+    (s) => s.navigation?.direction
+  );
+  const currentFileId = useProjectStore((s) => s.currentFileId);
+  const navigationModifier = useNavigationStore((s) => s.navigation?.modifier);
+  const detailsPanelLockedId = useUiConfigStore(
+    (s) => currentFileId && s.detailsPanel.lockedIds?.[currentFileId]
+  );
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
+  const isOperationFile = useProjectStore((s) =>
+    s.getCurrentProject()?.files.find((f) => f.name === value)
+  );
 
   const _result = useMemo(
     () =>
@@ -93,10 +95,8 @@ const DropdownComponent = ({
         : undefined,
     [operationResult, data, context.variables]
   );
-  const result = useDeepCompareMemoize(_result);
+  const result = useDeferredValue(_result);
 
-  const forceDisplayBorder =
-    highlightOperation && isDataOfType(data, "operation");
   const [isHovered, setHovered] = useState(false);
   const [search, setSearch] = useState("");
   const combobox = useCombobox({
@@ -104,11 +104,11 @@ const DropdownComponent = ({
     onDropdownClose: () => {
       handleSearch(options?.withSearch ? "" : value || "");
       combobox.resetSelectedOption();
-      setUiConfig({ navigation: { id, disable: false } });
+      setNavigation({ navigation: { id, disable: false } });
     },
     onDropdownOpen: () => {
       if (options?.withSearch) combobox.focusSearchInput();
-      setUiConfig({ navigation: { id, disable: true } });
+      setNavigation({ navigation: { id, disable: true } });
     },
   });
 
@@ -149,7 +149,7 @@ const DropdownComponent = ({
               e.preventDefault();
               handleDelete();
               textInput?.blur();
-              setUiConfig((p) => {
+              setNavigation((p) => {
                 const operation = createOperationFromFile(
                   useProjectStore.getState().getCurrentFile()
                 );
@@ -190,10 +190,18 @@ const DropdownComponent = ({
   }, [combobox.dropdownOpened]);
 
   useEffect(() => {
-    if (isFocused && result) {
-      setUiConfig({ result });
+    if (!result) return;
+    if (detailsPanelLockedId ? detailsPanelLockedId === id : isFocused) {
+      setNavigation({ result, skipExecution: context.skipExecution });
     }
-  }, [isFocused, result, setUiConfig]);
+  }, [
+    detailsPanelLockedId,
+    id,
+    isFocused,
+    result,
+    setNavigation,
+    context.skipExecution,
+  ]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -241,9 +249,7 @@ const DropdownComponent = ({
         <div
           className={[
             "flex items-start relative p-px",
-            forceDisplayBorder || isFocused || isHovered
-              ? "outline outline-border"
-              : "",
+            isFocused || isHovered ? "outline outline-border" : "",
             context.skipExecution && context.skipExecution.kind !== "error"
               ? "opacity-50 "
               : "",
@@ -279,22 +285,15 @@ const DropdownComponent = ({
                 e.stopPropagation();
                 if (options?.focusOnClick) {
                   if (e.target === e.currentTarget) {
-                    setUiConfig({
-                      navigation: { id },
-                      skipExecution: context.skipExecution,
-                    });
+                    setNavigation({ navigation: { id } });
                   }
                 } else combobox?.openDropdown();
               },
-              onFocus: () =>
-                setUiConfig({
-                  navigation: { id },
-                  skipExecution: context.skipExecution,
-                }),
+              onFocus: () => setNavigation({ navigation: { id } }),
             })}
           </Combobox.EventsTarget>
           {(isDataOfType(data, "reference") || operationResult) &&
-            currentProject?.files.find((f) => f.name === value) && (
+            isOperationFile && (
               <IconButton
                 tabIndex={-1}
                 size={8}

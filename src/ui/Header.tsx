@@ -5,26 +5,23 @@ import {
   FaRegCopy,
   FaRegPaste,
   FaCheck,
-  FaGear,
 } from "react-icons/fa6";
 import {
   fileHistoryActions,
-  uiConfigStore,
+  useUiConfigStore,
   useProjectStore,
   jsonParseReviver,
   jsonStringifyReplacer,
+  useNavigationStore,
 } from "../lib/store";
 import { IconButton } from "./IconButton";
 import { useClipboard, useTimeout } from "@mantine/hooks";
-import { createData, createFileFromOperation } from "../lib/utils";
+import { createFileFromOperation } from "../lib/utils";
 import { useState } from "react";
 import { IData, OperationType, Project } from "../lib/types";
 import { OperationValueSchema } from "../lib/schemas";
-import { Popover } from "@mantine/core";
 import { BaseInput } from "@/components/Input/BaseInput";
-import { preferenceOptions } from "@/lib/data";
 import { updateFiles } from "@/lib/update";
-import { BooleanInput } from "@/components/Input/BooleanInput";
 
 export function Header({
   currentProject,
@@ -33,11 +30,8 @@ export function Header({
   currentOperation?: IData<OperationType>;
   currentProject: Project;
 }) {
-  const uiConfig = uiConfigStore((s) => ({
-    highlightOperation: s.highlightOperation,
-    showDetailsPanel: s.showDetailsPanel,
-  }));
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const updateProject = useProjectStore((s) => s.updateProject);
@@ -50,45 +44,18 @@ export function Header({
 
   return (
     <div className="border-b p-2 flex items-center justify-between gap-4">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 w-[88px]">
         <IconButton
           icon={FaBars}
           size={16}
           onClick={() => setUiConfig((p) => ({ hideSidebar: !p.hideSidebar }))}
         />
-        <Popover>
-          <Popover.Target>
-            <IconButton title="Settings" className="w-5 h-5" icon={FaGear} />
-          </Popover.Target>
-          <Popover.Dropdown
-            classNames={{ dropdown: "absolute bg-editor border" }}
-          >
-            {preferenceOptions.map((item) => (
-              <div
-                className="flex justify-between items-center gap-4 py-1 px-2 border-b"
-                key={item.id}
-              >
-                <label className="cursor-pointer" htmlFor={item.id}>
-                  {item.label}
-                </label>
-                <BooleanInput
-                  id={item.id}
-                  data={createData({
-                    type: { kind: "boolean" },
-                    value: uiConfig[item.id] ?? false,
-                  })}
-                  handleData={({ value }) => setUiConfig({ [item.id]: value })}
-                />
-              </div>
-            ))}
-          </Popover.Dropdown>
-        </Popover>
       </div>
       {currentProject && (
         <BaseInput
           className="focus:outline hover:outline outline-white"
           defaultValue={currentProject.name}
-          onFocus={() => setUiConfig({ navigation: undefined })}
+          onFocus={() => setNavigation({ navigation: undefined })}
           onBlur={(e) =>
             e.target.value &&
             updateProject(currentProject.id, { name: e.target.value })

@@ -14,7 +14,7 @@ import { DataTypes } from "@/lib/data";
 import { Menu, Tooltip } from "@mantine/core";
 import { IconButton } from "@/ui/IconButton";
 import { Data } from "../Data";
-import { uiConfigStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 
 export interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<UnionType>;
@@ -26,10 +26,10 @@ const UnionInputComponent = (
   { data, handleData, context, ...props }: UnionInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const isIconFocused = uiConfigStore(
+  const isIconFocused = useNavigationStore(
     (s) => s.navigation?.id === `${data.id}_options`
   );
-  const setUiConfig = uiConfigStore((s) => s.setUiConfig);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
   const [menuOpened, setMenuOpened] = useState(false);
 
   const activeType = useMemo(() => {
@@ -118,7 +118,7 @@ const UnionInputComponent = (
         classNames={{ dropdown: "absolute bg-editor border" }}
         opened={menuOpened}
         onChange={(opened) => {
-          setUiConfig(() => ({
+          setNavigation(() => ({
             navigation: { id: `${data.id}_options`, disable: opened },
           }));
           setMenuOpened(opened);

@@ -15,7 +15,11 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { LoadingFallback } from "./ui/LoadingFallback";
-import { useProjectStore, waitForHydration } from "./lib/store";
+import {
+  useNavigationStore,
+  useProjectStore,
+  waitForHydration,
+} from "./lib/store";
 import { Notifications } from "@mantine/notifications";
 
 const theme = createTheme({
@@ -57,6 +61,7 @@ const router = createBrowserRouter([
       await waitForHydration();
       useProjectStore.getState().setCurrentProjectId(params.id!);
       useProjectStore.getState().setCurrentFileId(fileName ?? undefined);
+      useNavigationStore.getState().setNavigation({ result: undefined });
       return null;
     },
     HydrateFallback: LoadingFallback,

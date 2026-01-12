@@ -4,13 +4,14 @@ import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
 import { SiGithub } from "react-icons/si";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { Button } from "@mantine/core";
 
 function SidebarComponent({ reservedNames }: { reservedNames: string[] }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [editingId, setEditingId] = useState<string>();
   const [hoveringId, setHoveringId] = useState<string>();
   const addFile = useProjectStore((s) => s.addFile);
@@ -108,6 +109,9 @@ function SidebarComponent({ reservedNames }: { reservedNames: string[] }) {
                 onClick={(e) => {
                   e.stopPropagation();
                   deleteFile(item.id);
+                  if (currentProject) {
+                    navigate(`/project/${currentProject?.id}`);
+                  }
                 }}
               />
             )}
