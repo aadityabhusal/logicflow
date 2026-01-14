@@ -89,14 +89,12 @@ export type DataValue<T extends DataType> = T extends UnionType & {
 
 export interface IData<T extends DataType = DataType> {
   id: string;
-  entityType: "data";
   type: T;
   value: DataValue<T>;
 }
 
 export interface IStatement {
   id: string;
-  entityType: "statement";
   data: IData;
   operations: IData<OperationType>[];
   name?: string;

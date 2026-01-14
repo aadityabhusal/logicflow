@@ -164,45 +164,42 @@ export const DataTypeSchema: z.ZodType<DataType> = z.union([
   ErrorTypeSchema,
 ]);
 
-export const IDataSchema: z.ZodType<IData> = z
-  .object({ id: z.string(), entityType: z.literal("data") })
-  .and(
-    // Note: We use z.union instead of z.discriminatedUnion because the discriminator (kind) is nested inside the type object.
-    z.union([
-      z.object({ type: UnknownTypeSchema, value: z.unknown() }),
-      z.object({ type: NeverTypeSchema, value: z.never() }),
-      z.object({ type: UndefinedTypeSchema, value: z.undefined() }),
-      z.object({ type: StringTypeSchema, value: z.string() }),
-      z.object({ type: NumberTypeSchema, value: z.number() }),
-      z.object({ type: BooleanTypeSchema, value: z.boolean() }),
-      z.object({ type: ArrayTypeSchema, value: ArrayValueSchema }),
-      z.object({ type: ObjectTypeSchema, value: ObjectValueSchema }),
-      z.object({
-        type: UnionTypeSchema,
-        get value() {
-          return z.union([
-            z.undefined(),
-            z.string(),
-            z.number(),
-            z.boolean(),
-            ArrayValueSchema,
-            ObjectValueSchema,
-            OperationValueSchema,
-            ConditionValueSchema,
-            ReferenceValueSchema,
-            ErrorValueSchema,
-          ]);
-        },
-      }),
-      z.object({ type: OperationTypeSchema, value: OperationValueSchema }),
-      z.object({ type: ConditionTypeSchema, value: ConditionValueSchema }),
-      z.object({ type: ReferenceTypeSchema, value: ReferenceValueSchema }),
-      z.object({ type: ErrorTypeSchema, value: ErrorValueSchema }),
-    ])
-  );
+export const IDataSchema: z.ZodType<IData> = z.object({ id: z.string() }).and(
+  // Note: We use z.union instead of z.discriminatedUnion because the discriminator (kind) is nested inside the type object.
+  z.union([
+    z.object({ type: UnknownTypeSchema, value: z.unknown() }),
+    z.object({ type: NeverTypeSchema, value: z.never() }),
+    z.object({ type: UndefinedTypeSchema, value: z.undefined() }),
+    z.object({ type: StringTypeSchema, value: z.string() }),
+    z.object({ type: NumberTypeSchema, value: z.number() }),
+    z.object({ type: BooleanTypeSchema, value: z.boolean() }),
+    z.object({ type: ArrayTypeSchema, value: ArrayValueSchema }),
+    z.object({ type: ObjectTypeSchema, value: ObjectValueSchema }),
+    z.object({
+      type: UnionTypeSchema,
+      get value() {
+        return z.union([
+          z.undefined(),
+          z.string(),
+          z.number(),
+          z.boolean(),
+          ArrayValueSchema,
+          ObjectValueSchema,
+          OperationValueSchema,
+          ConditionValueSchema,
+          ReferenceValueSchema,
+          ErrorValueSchema,
+        ]);
+      },
+    }),
+    z.object({ type: OperationTypeSchema, value: OperationValueSchema }),
+    z.object({ type: ConditionTypeSchema, value: ConditionValueSchema }),
+    z.object({ type: ReferenceTypeSchema, value: ReferenceValueSchema }),
+    z.object({ type: ErrorTypeSchema, value: ErrorValueSchema }),
+  ])
+);
 export const IStatementSchema: z.ZodType<IStatement> = z.object({
   id: z.string(),
-  entityType: z.literal("statement"),
   name: z.string().optional(),
   isOptional: z.boolean().optional(),
   get data() {

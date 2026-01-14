@@ -22,7 +22,6 @@ export function createData<T extends DataType>(
   const type = (props?.type ?? inferTypeFromValue(props?.value)) as T;
   return {
     id: props?.id ?? nanoid(),
-    entityType: "data",
     type,
     value:
       props?.value !== undefined ||
@@ -38,7 +37,6 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
   return {
     id: newId,
     name: props?.name,
-    entityType: "statement",
     data: newData,
     operations: props?.operations || [],
     isOptional: props?.isOptional,
@@ -124,7 +122,6 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "condition": {
       const createStatement = (): IStatement => ({
         id: nanoid(),
-        entityType: "statement",
         operations: [],
         data: createData(),
       });
@@ -181,7 +178,6 @@ export function createOperationFromFile(file?: ProjectFile) {
   if (!file || !isFileOfType(file, "operation")) return undefined;
   return {
     id: file.id,
-    entityType: "data",
     type: file.content.type,
     value: { ...file.content.value, name: file.name },
   } as IData<OperationType>;

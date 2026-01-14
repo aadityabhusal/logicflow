@@ -57,12 +57,11 @@ Build an expressive, recursive type system supporting:
 
 ### Asynchronous Execution Model
 
-**Use promise chaining, not async/await**. Promises align with the "operations on data" philosophy:
+**Use promise chaining**. Promises align with the "operations on data" philosophy:
 
 - `.then()` and `.catch()` are visible operations on promise data
-- Each chain step is explicit and visual
-- Natural fit for block-based representation
-- Easier to generate clean TypeScript code
+- Maybe allow `.await()` operation that would return and object with data or error, if appropriate.
+- After adding namespace support, we can add `Promise.all`, `Promise.allSettled` etc. as well.
 
 **No traditional loops**—they introduce imperative control flow incompatible with the functional paradigm. Use `range` + `forEach`/`map`/`reduce` instead.
 
@@ -118,23 +117,6 @@ Implement **ternary operator-style components** for conditional logic:
 - Support `map`, `filter`, `reduce`, `forEach` as operations
 - Combine with `range` for counted iterations
 - Make each iteration's transformation visible
-
-### Parallel Execution
-
-Support `Promise.all` for parallel operations:
-
-- Visual representation of multiple promise chains merging
-- Type-safe return of array/tuple of results
-- Makes parallelism explicit in the visual flow
-
-## Error Handling Strategy
-
-**No try-catch blocks**. Instead:
-
-- Use React error boundaries per entity
-- Display errors inline where they occur during real-time execution
-- Support `.catch()` on promises for error recovery
-- Allow `.catch()` to transform errors into valid data, updating types accordingly
 
 ## Code Generation Requirements
 
@@ -223,9 +205,7 @@ Auto-generate from visual flows:
 ## What to Avoid
 
 - **Node-based graph editors**—this is block-based, text-like
-- **Async/await syntax**—use promise chaining instead
 - **Traditional loops**—use functional array operations
-- **Try-catch blocks**—use error boundaries and promise `.catch()`
 - **Generics in type system**—unnecessary complexity for visual contexts
 - **Currying/partial application**—adds complexity without value for visual contexts
 - **Custom integration nodes**—leverage npm packages instead

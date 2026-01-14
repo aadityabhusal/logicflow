@@ -810,7 +810,6 @@ export function createOperationCall({
 
   return {
     id: nanoid(),
-    entityType: "data",
     type: {
       kind: "operation",
       parameters: operationParameters,

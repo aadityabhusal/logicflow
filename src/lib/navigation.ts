@@ -123,6 +123,7 @@ export function handleNavigation({
           e.operationId === entities[itemIndex].operationId &&
           (delta === -1 ? i < itemIndex : i > itemIndex)
       );
+      if (!targetEntity) targetEntity = entities[itemIndex + delta];
     } else {
       targetEntity = entities[itemIndex + delta];
     }
@@ -145,6 +146,7 @@ export function handleNavigation({
           e.operationId === entities[itemIndex].operationId &&
           e.statementIndex === entities[itemIndex].statementIndex + delta
       );
+      if (!targetEntity) targetEntity = entities[itemIndex + delta];
     }
   }
 
