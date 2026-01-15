@@ -20,7 +20,7 @@ import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { memo, useMemo, type ReactNode } from "react";
-import { useNavigationStore } from "@/lib/store";
+import { useNavigationStore, useResultsStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
 
@@ -53,6 +53,7 @@ const StatementComponent = ({
   const isAddFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_add`
   );
+  const getResult = useResultsStore((s) => s.getResult);
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
@@ -231,7 +232,7 @@ const StatementComponent = ({
         {
           statement.operations.reduce(
             (acc, operation, i, operationsList) => {
-              const data = getStatementResult(statement, i, true);
+              const data = getStatementResult(statement, getResult, i, true);
               acc.narrowedTypes = applyTypeNarrowing(
                 context,
                 acc.narrowedTypes,
@@ -273,7 +274,7 @@ const StatementComponent = ({
                         !options?.isParameter && !skipExecution
                           ? () =>
                               addOperationCall(
-                                operation.value.result ?? data,
+                                getResult(operation.id) ?? data,
                                 i + 1
                               )
                           : undefined

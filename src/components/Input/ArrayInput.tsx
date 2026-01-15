@@ -1,8 +1,8 @@
-import { ArrayType, Context, IData, IStatement } from "../../lib/types";
+import { ArrayType, Context, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
-import { inferTypeFromValue } from "../../lib/utils";
+import { inferTypeFromValue } from "@/lib/utils";
 
 export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType>;
@@ -21,7 +21,7 @@ const ArrayInputComponent = (
     else newValue[index] = result;
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue),
+      type: inferTypeFromValue(newValue, context),
       value: newValue,
     });
   }
@@ -64,7 +64,7 @@ const ArrayInputComponent = (
           const newVal = [...data.value, value];
           handleData({
             ...data,
-            type: inferTypeFromValue(newVal),
+            type: inferTypeFromValue(newVal, context),
             value: newVal,
           });
         }}

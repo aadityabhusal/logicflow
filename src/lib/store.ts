@@ -233,6 +233,7 @@ const createCurrentProjectSlice: StateCreator<
       focusId,
     });
     const lastItem = history.past.pop()!;
+    useResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: lastItem.content,
     } as Partial<ProjectFile>);
@@ -253,6 +254,7 @@ const createCurrentProjectSlice: StateCreator<
       focusId: currentFocusId,
     });
     const nextItem = history.future.pop()!;
+    useResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: nextItem.content,
     } as Partial<ProjectFile>);
@@ -310,6 +312,39 @@ export const useUiConfigStore = createWithEqualityFn(
     }),
     { name: "uiConfig", storage: createIDbStorage("uiConfig") }
   ),
+  shallow
+);
+
+interface ResultsState {
+  results: Map<string, IData>;
+  setResult: (entityId: string, result: IData) => void;
+  getResult: (entityId: string) => IData | undefined;
+  removeAll: () => void;
+  removeResult: (entityId: string) => void;
+}
+
+export const useResultsStore = createWithEqualityFn<ResultsState>(
+  (set, get) => ({
+    results: new Map(),
+    setResult: (entityId, result) => {
+      set((state) => {
+        const newResults = new Map(state.results);
+        newResults.set(entityId, result);
+        return { results: newResults };
+      });
+    },
+    getResult: (entityId) => {
+      return get().results.get(entityId);
+    },
+    removeAll: () => set({ results: new Map() }),
+    removeResult: (entityId) => {
+      set((state) => {
+        const newResults = new Map(state.results);
+        newResults.delete(entityId);
+        return { results: newResults };
+      });
+    },
+  }),
   shallow
 );
 

@@ -97,7 +97,10 @@ const OperationComponent = (
               isOptional: param.isOptional,
             };
           }),
-          result: getOperationResultType(updatedStatementsList),
+          result: getOperationResultType(
+            updatedStatementsList,
+            context.getResult
+          ),
         },
         value: {
           ...operation.value,
@@ -118,11 +121,14 @@ const OperationComponent = (
         .concat(operation.value.statements.slice(_index));
       handleChange({
         ...operation,
-        type: { ...operation.type, result: getOperationResultType(statements) },
+        type: {
+          ...operation.type,
+          result: getOperationResultType(statements, context.getResult),
+        },
         value: { ...operation.value, statements },
       });
     },
-    [handleChange, operation]
+    [handleChange, operation, context.getResult]
   );
 
   const addParameter = useCallback(
@@ -191,6 +197,8 @@ const OperationComponent = (
                 })(),
               }}
               context={{
+                getResult: context.getResult,
+                setResult: context.setResult,
                 variables: new Map(),
                 reservedNames,
                 currentStatementId: parameter.id,
@@ -235,6 +243,8 @@ const OperationComponent = (
           operation.value.statements.reduce(
             (acc, statement, index) => {
               const _context: Context = {
+                getResult: context.getResult,
+                setResult: context.setResult,
                 currentStatementId: statement.id,
                 reservedNames,
                 variables: acc.variables,
@@ -246,7 +256,7 @@ const OperationComponent = (
 
               acc.variables = createContextVariables(
                 [statement],
-                acc.variables,
+                _context,
                 operation
               );
 
@@ -273,7 +283,7 @@ const OperationComponent = (
               elements: [] as ReactNode[],
               variables: createContextVariables(
                 operation.value.parameters.toReversed(),
-                context.variables,
+                context,
                 operation
               ),
             }

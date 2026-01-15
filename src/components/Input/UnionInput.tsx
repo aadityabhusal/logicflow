@@ -1,5 +1,5 @@
 import { forwardRef, HTMLAttributes, memo, useMemo, useState } from "react";
-import { UnionType, IData, DataType, Context } from "../../lib/types";
+import { UnionType, IData, DataType, Context } from "@/lib/types";
 import {
   createData,
   createDefaultValue,
@@ -8,7 +8,7 @@ import {
   inferTypeFromValue,
   isTypeCompatible,
   resolveUnionType,
-} from "../../lib/utils";
+} from "@/lib/utils";
 import { FaChevronDown, FaX } from "react-icons/fa6";
 import { DataTypes } from "@/lib/data";
 import { Menu, Tooltip } from "@mantine/core";

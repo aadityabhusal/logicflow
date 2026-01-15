@@ -89,7 +89,6 @@ const OperationCallComponent = ({
   return (
     <Dropdown
       id={operation.id}
-      operationResult={operation.value.result}
       items={filteredOperations.map(([groupName, groupItems]) => [
         groupName,
         groupItems.map((item) => ({

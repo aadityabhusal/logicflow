@@ -65,15 +65,13 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   ? {
       parameters: IStatement[];
       statements: IStatement[];
-      result?: IData; // for operation calls
-      name?: string; // for non-statement operations
+      name?: string; // for operations calls
     }
   : T extends ConditionType
   ? {
       condition: IStatement;
       true: IStatement;
       false: IStatement;
-      result?: IData;
     }
   : T extends ReferenceType
   ? { name: string; id: string }
@@ -145,6 +143,8 @@ export type Context = {
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
+  getResult: (entityId: string) => IData | undefined;
+  setResult: (entityId: string, result: IData) => void;
 };
 
 export type OperationListItem = {

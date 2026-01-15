@@ -4,6 +4,7 @@ import {
   executeStatement,
   resolveParameters,
 } from "./operation";
+import { useResultsStore } from "./store";
 import {
   IStatement,
   IData,
@@ -38,7 +39,12 @@ export function updateOperationCalls(
   return statement.operations.reduce(
     (acc, operation, operationIndex) => {
       const updatedStatement = { ...statement, operations: acc.operations };
-      const data = getStatementResult(updatedStatement, operationIndex, true);
+      const data = getStatementResult(
+        updatedStatement,
+        _context.getResult,
+        operationIndex,
+        true
+      );
       acc.narrowedTypes = applyTypeNarrowing(
         _context,
         acc.narrowedTypes,
@@ -102,17 +108,20 @@ export function updateOperationCalls(
           })
           .filter((p): p is IStatement => p !== null);
 
-        result = {
-          ...executeOperation(foundOperation, data, updatedParameters, context),
-          ...(operation.value.result && { id: operation.value.result?.id }),
-        };
+        result = executeOperation(
+          foundOperation,
+          data,
+          updatedParameters,
+          context
+        );
       }
+      useResultsStore.getState().setResult(operation.id, result);
       acc.operations = [
         ...acc.operations,
         {
           ...operation,
           type: { ...operation.type, parameters: updatedTypeParameters },
-          value: { ...operation.value, parameters: updatedParameters, result },
+          value: { ...operation.value, parameters: updatedParameters },
         },
       ];
       return acc;
@@ -141,7 +150,7 @@ function updateDataValue(
     ? updateOperationValue(data, context) ?? data.value
     : isDataOfType(data, "union")
     ? updateDataValue(
-        { ...data, type: inferTypeFromValue(data.value) },
+        { ...data, type: inferTypeFromValue(data.value, context) },
         context
       )
     : isDataOfType(data, "condition")
@@ -226,10 +235,12 @@ export function updateStatements({
 
     const variables = createContextVariables(
       prevStatements,
-      context.variables,
+      context,
       operation
     );
-    const _context = {
+    const _context: Context = {
+      getResult: context.getResult,
+      setResult: context.setResult,
       currentStatementId: statementToProcess.id,
       variables,
       skipExecution: getSkipExecution({
@@ -260,6 +271,7 @@ function updateOperationValue(
 export function updateFiles(
   files: ProjectFile[],
   pushHistory: (fileId: string, content: ProjectFile["content"]) => void,
+  context: Context,
   changedFile?: ProjectFile
 ): ProjectFile[] {
   const updatedFiles = files.map((file) =>
@@ -271,18 +283,23 @@ export function updateFiles(
       pushHistory(fileToProcess.id, fileToProcess.content);
       return [...prevFiles, changedFile];
     }
-    const context = {
+    const _context: Context = {
       variables: createFileVariables(updatedFiles, fileToProcess.id),
+      getResult: context.getResult,
+      setResult: context.setResult,
     };
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {
-      const value = updateOperationValue(operation, context);
+      const value = updateOperationValue(operation, _context);
       if (!isEqual(value, operation.value)) {
         const operationFile = createFileFromOperation({
           ...operation,
           type: {
             ...operation.type,
-            result: getOperationResultType(value.statements),
+            result: getOperationResultType(
+              value.statements,
+              _context.getResult
+            ),
           },
           value,
         });

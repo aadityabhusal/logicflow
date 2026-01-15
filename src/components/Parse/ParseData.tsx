@@ -7,6 +7,7 @@ import {
   inferTypeFromValue,
   isDataOfType,
 } from "@/lib/utils";
+import { useResultsStore } from "@/lib/store";
 
 export function ParseData({
   data,
@@ -17,6 +18,8 @@ export function ParseData({
   showData?: boolean;
   nest?: number;
 }) {
+  const getResult = useResultsStore((s) => s.getResult);
+  const setResult = useResultsStore((s) => s.setResult);
   if (!showData && isDataOfType(data, "reference")) {
     return <span className="text-variable">{data.value.name}</span>;
   }
@@ -29,7 +32,7 @@ export function ParseData({
   if (isDataOfType(data, "condition")) {
     return (
       <ParseData
-        data={getConditionResult(data.value)}
+        data={getConditionResult(data.value, getResult)}
         showData={showData}
         nest={nest}
       />
@@ -38,7 +41,14 @@ export function ParseData({
   if (isDataOfType(data, "union")) {
     return (
       <ParseData
-        data={{ ...data, type: inferTypeFromValue(data.value) }}
+        data={{
+          ...data,
+          type: inferTypeFromValue(data.value, {
+            variables: new Map(),
+            getResult,
+            setResult,
+          }),
+        }}
         showData={showData}
         nest={nest}
       />

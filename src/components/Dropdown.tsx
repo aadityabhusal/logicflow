@@ -20,6 +20,7 @@ import {
   useProjectStore,
   useNavigationStore,
   useUiConfigStore,
+  useResultsStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
 import { Context, IData, IDropdownItem } from "../lib/types";
@@ -44,7 +45,6 @@ const DropdownComponent = ({
   id,
   value,
   data,
-  operationResult,
   items,
   handleDelete,
   addOperationCall,
@@ -56,7 +56,6 @@ const DropdownComponent = ({
 }: {
   id: string;
   data?: IData;
-  operationResult?: IData;
   value?: string;
   items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
@@ -85,6 +84,7 @@ const DropdownComponent = ({
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
   );
+  const operationResult = useResultsStore((s) => s.getResult(id));
 
   const _result = useMemo(
     () =>
@@ -154,7 +154,7 @@ const DropdownComponent = ({
                   useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
-                const newEntities = getOperationEntities(operation);
+                const newEntities = getOperationEntities(operation, context);
                 const oldEntities = p.navigationEntities || [];
                 return {
                   navigationEntities: newEntities,

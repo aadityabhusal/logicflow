@@ -94,9 +94,6 @@ export const OperationValueSchema: z.ZodType<DataValue<OperationType>> =
     get parameters() {
       return z.array(IStatementSchema);
     },
-    get result() {
-      return IDataSchema.optional();
-    },
     name: z.string().optional(),
   });
 
@@ -116,9 +113,6 @@ export const ConditionValueSchema: z.ZodType<DataValue<ConditionType>> =
     },
     get false() {
       return IStatementSchema;
-    },
-    get result() {
-      return IDataSchema.optional();
     },
   });
 

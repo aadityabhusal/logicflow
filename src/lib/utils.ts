@@ -19,7 +19,12 @@ import { MouseEvent } from "react";
 export function createData<T extends DataType>(
   props?: Partial<IData<T>>
 ): IData<T> {
-  const type = (props?.type ?? inferTypeFromValue(props?.value)) as T;
+  const type = (props?.type ??
+    inferTypeFromValue(props?.value, {
+      variables: new Map(),
+      getResult: () => undefined,
+      setResult: () => undefined,
+    })) as T;
   return {
     id: props?.id ?? nanoid(),
     type,
@@ -194,13 +199,16 @@ export function createFileFromOperation(operation: IData<OperationType>) {
 
 export function createContextVariables(
   statements: IStatement[],
-  variables: Context["variables"],
+  context: Context,
   operation?: IData<OperationType>
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
-      const data = resolveReference(statement.data, variables);
-      const result = getStatementResult({ ...statement, data });
+      const data = resolveReference(statement.data, context.variables);
+      const result = getStatementResult(
+        { ...statement, data },
+        context.getResult
+      );
 
       const isOptional = operation?.type.parameters.find(
         (param) => param.name === statement.name && param.isOptional
@@ -217,7 +225,7 @@ export function createContextVariables(
       });
     }
     return variables;
-  }, new Map(variables));
+  }, new Map(context.variables));
 }
 
 export function createFileVariables(
@@ -407,7 +415,7 @@ export function applyTypeNarrowing(
       const resolvedParamData = resolveReference(param.data, context.variables);
       narrowedType = narrowType(
         reference.data.type,
-        inferTypeFromValue(resolvedParamData.value)
+        inferTypeFromValue(resolvedParamData.value, context)
       );
     }
   }
@@ -533,11 +541,14 @@ function getArrayElementType(elements: IStatement[]): DataType {
   return resolveUnionType(unionTypes);
 }
 
-export function getOperationResultType(statements: IStatement[]): DataType {
+export function getOperationResultType(
+  statements: IStatement[],
+  getResult: Context["getResult"]
+): DataType {
   let resultType: DataType = { kind: "undefined" };
   if (statements.length > 0) {
     const lastStatement = statements[statements.length - 1];
-    resultType = getStatementResult(lastStatement).type;
+    resultType = getStatementResult(lastStatement, getResult).type;
   }
   return resultType;
 }
@@ -580,8 +591,8 @@ export function resolveReference(
 }
 
 export function inferTypeFromValue<T extends DataType>(
-  value?: DataValue<T>,
-  context?: Context
+  value: DataValue<T> | undefined,
+  context: Context
 ): T {
   if (value === undefined) return { kind: "undefined" } as T;
   if (typeof value === "string") return { kind: "string" } as T;
@@ -615,18 +626,24 @@ export function inferTypeFromValue<T extends DataType>(
         name: param.name,
         type: param.data.type,
       })),
-      result: getOperationResultType(value.statements),
+      result: getOperationResultType(value.statements, context.getResult),
     } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
-    const trueType = getStatementResult(value.true as IStatement).type;
-    const falseType = getStatementResult(value.false as IStatement).type;
+    const trueType = getStatementResult(
+      value.true as IStatement,
+      context.getResult
+    ).type;
+    const falseType = getStatementResult(
+      value.false as IStatement,
+      context.getResult
+    ).type;
     const unionType = resolveUnionType(
       isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
     );
     return { kind: "condition", resultType: unionType } as T;
   }
-  if (isObject(value, ["name"]) && typeof value.name === "string" && context) {
+  if (isObject(value, ["name"]) && typeof value.name === "string") {
     const type = context.variables.get(value.name)?.data.type;
     return { kind: "reference", dataType: type ?? { kind: "unknown" } } as T;
   }
@@ -696,6 +713,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
 
 export function getStatementResult(
   statement: IStatement,
+  getResult: Context["getResult"],
   index?: number,
   prevEntity?: boolean
   // TODO: Make use of the data type to create a better type for result e.g. a union type
@@ -704,20 +722,24 @@ export function getStatementResult(
   if (isDataOfType(result, "error")) return { ...result, id: statement.id };
   const lastOperation = statement.operations[statement.operations.length - 1];
   if (index) {
-    const statementResult = statement.operations[index - 1]?.value.result;
-    result = statementResult ?? createData();
+    result = getResult(statement.operations[index - 1]?.id) ?? createData();
   } else if (!prevEntity && lastOperation) {
-    result = lastOperation.value.result ?? createData();
+    result = getResult(lastOperation.id) ?? createData();
   } else if (isDataOfType(result, "condition")) {
-    result = result.value.result ?? getConditionResult(result.value);
+    result =
+      getResult(result.id) ?? getConditionResult(result.value, getResult);
   }
   return { ...result, id: statement.id };
 }
 
-export function getConditionResult(condition: DataValue<ConditionType>): IData {
-  const conditionResult = getStatementResult(condition.condition);
+export function getConditionResult(
+  condition: DataValue<ConditionType>,
+  getResult: Context["getResult"]
+): IData {
+  const conditionResult = getStatementResult(condition.condition, getResult);
   return getStatementResult(
-    conditionResult.value ? condition.true : condition.false
+    conditionResult.value ? condition.true : condition.false,
+    getResult
   );
 }
 

@@ -4,6 +4,7 @@ import {
   useUiConfigStore,
   useProjectStore,
   useNavigationStore,
+  useResultsStore,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
@@ -32,6 +33,8 @@ export default function Project() {
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
+  const getResult = useResultsStore((s) => s.getResult);
+  const setResult = useResultsStore((s) => s.setResult);
 
   const currentOperation = useMemo(
     () =>
@@ -41,34 +44,7 @@ export default function Project() {
     [currentProject?.files, currentFileId]
   );
 
-  const handleOperationChange = useCallback(
-    (operation: IData<OperationType>, remove?: boolean) => {
-      if (!currentProject) return;
-      if (remove) deleteFile(operation.id);
-      else {
-        updateProject(currentProject.id, {
-          files: updateFiles(
-            currentProject.files,
-            fileHistoryActions.pushState,
-            createFileFromOperation(operation)
-          ),
-        });
-      }
-    },
-    [currentProject, updateProject, deleteFile]
-  );
-
-  useEffect(() => {
-    if (currentOperation) {
-      setNavigation({
-        navigationEntities: getOperationEntities(currentOperation),
-      });
-    }
-  }, [currentOperation, setNavigation]);
-
-  useHotkeys(useCustomHotkeys(), []);
-
-  const context = useMemo(() => {
+  const context = useMemo<Context>(() => {
     return {
       variables: createFileVariables(
         currentProject?.files,
@@ -90,8 +66,38 @@ export default function Project() {
             }))
           )
       ),
+      getResult,
+      setResult,
     } as Context;
-  }, [currentProject?.files, currentOperation?.id]);
+  }, [currentProject?.files, currentOperation?.id, getResult, setResult]);
+
+  const handleOperationChange = useCallback(
+    (operation: IData<OperationType>, remove?: boolean) => {
+      if (!currentProject) return;
+      if (remove) deleteFile(operation.id);
+      else {
+        updateProject(currentProject.id, {
+          files: updateFiles(
+            currentProject.files,
+            fileHistoryActions.pushState,
+            context,
+            createFileFromOperation(operation)
+          ),
+        });
+      }
+    },
+    [currentProject, updateProject, deleteFile, context]
+  );
+
+  useEffect(() => {
+    if (currentOperation) {
+      setNavigation({
+        navigationEntities: getOperationEntities(currentOperation, context),
+      });
+    }
+  }, [currentOperation, setNavigation, context]);
+
+  useHotkeys(useCustomHotkeys(), []);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
@@ -104,20 +110,17 @@ export default function Project() {
     [currentOperation?.id, setNavigation]
   );
 
-  const reservedNames = useMemo(() => {
-    return Array.from(context.reservedNames ?? []).map((r) => r.name);
-  }, [context.reservedNames]);
-
   if (!currentProject) return <Navigate to="/" replace />;
 
   return (
     <div className="flex flex-col h-screen">
       <Header
+        context={context}
         currentOperation={currentOperation}
         currentProject={currentProject}
       />
       <div className="flex flex-1 min-h-0 relative">
-        {!hideSidebar && <Sidebar reservedNames={reservedNames} />}
+        {!hideSidebar && <Sidebar context={context} />}
         <div
           className={
             "relative flex-1 overflow-y-auto scroll flex flex-col md:flex-row"

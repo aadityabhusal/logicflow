@@ -1,9 +1,9 @@
-import { Context, IData, IStatement, ObjectType } from "../../lib/types";
+import { Context, IData, IStatement, ObjectType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo } from "react";
-import { createVariableName, inferTypeFromValue } from "../../lib/utils";
+import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 
 export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
@@ -29,7 +29,7 @@ const ObjectInputComponent = (
     const newValue = new Map(dataArray);
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue),
+      type: inferTypeFromValue(newValue, context),
       value: newValue,
     });
   }
@@ -44,7 +44,7 @@ const ObjectInputComponent = (
       const newValue = new Map(dataArray);
       handleData({
         ...data,
-        type: inferTypeFromValue(newValue),
+        type: inferTypeFromValue(newValue, context),
         value: newValue,
       });
     }
@@ -110,7 +110,7 @@ const ObjectInputComponent = (
               );
               handleData({
                 ...data,
-                type: inferTypeFromValue(newMap),
+                type: inferTypeFromValue(newMap, context),
                 value: newMap,
               });
             }
