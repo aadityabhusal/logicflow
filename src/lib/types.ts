@@ -212,9 +212,8 @@ export interface DependencyBase {
   }[];
 }
 export interface Dependencies {
-  npm: (DependencyBase & { name: string })[];
-  logicflow: (DependencyBase & { projectId: string })[];
-  deno: DependencyBase & { url: string }[];
+  npm?: (DependencyBase & { name: string })[];
+  logicflow?: (DependencyBase & { projectId: string })[];
 }
 
 export type DeploymentConfig = {

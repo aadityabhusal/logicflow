@@ -1,10 +1,8 @@
 import {
   getFilteredOperations,
-  executeOperation,
   executeStatement,
   resolveParameters,
 } from "./operation";
-import { useResultsStore } from "./store";
 import {
   IStatement,
   IData,
@@ -25,14 +23,13 @@ import {
   createFileFromOperation,
   createFileVariables,
   applyTypeNarrowing,
-  resolveReference,
   getOperationResultType,
   getSkipExecution,
   updateContextWithNarrowedTypes,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
-export function updateOperationCalls(
+function updateOperationCalls(
   statement: IStatement,
   _context: Context
 ): IData<OperationType>[] {
@@ -51,30 +48,14 @@ export function updateOperationCalls(
         data,
         operation
       );
-      const context = {
-        ..._context,
-        narrowedTypes: acc.narrowedTypes,
-        skipExecution: getSkipExecution({
-          context: _context,
-          data,
-          operationName: operation.value.name,
-        }),
-      };
+      const context = { ..._context, narrowedTypes: acc.narrowedTypes };
 
       const foundOperation = getFilteredOperations(
         data,
         context.variables
       ).find((op) => op.name === operation.value.name);
 
-      let result: IData = createData({
-        type: { kind: "error", errorType: "type_error" },
-        value: {
-          reason: `Cannot chain '${operation.value.name}' after '${
-            resolveReference(data, context.variables).type.kind
-          }' type`,
-        },
-      });
-      let updatedParameters: IStatement[] = operation.value.parameters;
+      let updatedParameters = operation.value.parameters;
       let updatedTypeParameters = operation.type.parameters;
 
       if (foundOperation) {
@@ -107,15 +88,7 @@ export function updateOperationCalls(
             );
           })
           .filter((p): p is IStatement => p !== null);
-
-        result = executeOperation(
-          foundOperation,
-          data,
-          updatedParameters,
-          context
-        );
       }
-      useResultsStore.getState().setResult(operation.id, result);
       acc.operations = [
         ...acc.operations,
         {

@@ -834,6 +834,14 @@ export function createOperationCall({
 
 /* Execution */
 
+function createRuntimeError(error: unknown): IData {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  return createData({
+    type: { kind: "error", errorType: "runtime_error" },
+    value: { reason: `Runtime error: ${errorMessage}` },
+  });
+}
+
 export function executeStatement(
   statement: IStatement,
   context: Context
@@ -857,33 +865,25 @@ export function executeStatement(
     const foundOp = builtInOperations.find(
       (op) => op.name === operation.value.name
     );
+    let operationResult: IData;
     if (foundOp) {
-      const operationResult = executeOperation(
+      operationResult = executeOperation(
         foundOp,
         acc,
         operation.value.parameters,
         context
       );
-      return operationResult;
     } else {
-      const cachedResult = context.getResult(operation.id);
-      if (cachedResult) return cachedResult;
-      return acc;
+      operationResult = context.getResult(operation.id) ?? acc;
     }
+    context.setResult(operation.id, operationResult);
+    return operationResult;
   }, currentData);
   if (statement.name) context.setResult(statement.id, result);
   return result;
 }
 
-function createRuntimeError(error: unknown): IData {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  return createData({
-    type: { kind: "error", errorType: "runtime_error" },
-    value: { reason: `Runtime error: ${errorMessage}` },
-  });
-}
-
-export function executeOperation(
+function executeOperation(
   operation: OperationListItem,
   _data: IData,
   _parameters: IStatement[],
@@ -976,4 +976,25 @@ export function executeOperation(
   }
 
   return createData();
+}
+
+export function executeOperationFile(
+  operation: IData<OperationType>,
+  context: Context
+): IData {
+  const opListItem: OperationListItem = {
+    name: operation.value.name ?? "",
+    parameters: [
+      { name: "_", type: { kind: "undefined" } }, // Dummy first param
+      ...operation.type.parameters,
+    ],
+    statements: operation.value.statements,
+  };
+
+  return executeOperation(
+    opListItem,
+    createData(), // undefined as "this"
+    operation.value.parameters,
+    context
+  );
 }

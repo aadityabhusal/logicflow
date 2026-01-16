@@ -1,6 +1,5 @@
 import { Operation } from "@/components/Operation";
 import {
-  fileHistoryActions,
   useUiConfigStore,
   useProjectStore,
   useNavigationStore,
@@ -21,15 +20,14 @@ import {
   createOperationFromFile,
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
-import { updateFiles } from "@/lib/update";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DataTypes } from "@/lib/data";
-import { builtInOperations } from "@/lib/operation";
+import { builtInOperations, executeOperationFile } from "@/lib/operation";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
   const deleteFile = useProjectStore((s) => s.deleteFile);
-  const updateProject = useProjectStore((s) => s.updateProject);
+  const updateFile = useProjectStore((s) => s.updateFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
@@ -75,22 +73,15 @@ export default function Project() {
     (operation: IData<OperationType>, remove?: boolean) => {
       if (!currentProject) return;
       if (remove) deleteFile(operation.id);
-      else {
-        updateProject(currentProject.id, {
-          files: updateFiles(
-            currentProject.files,
-            fileHistoryActions.pushState,
-            context,
-            createFileFromOperation(operation)
-          ),
-        });
-      }
+      else updateFile(operation.id, createFileFromOperation(operation));
     },
-    [currentProject, updateProject, deleteFile, context]
+    [currentProject, deleteFile, updateFile]
   );
 
   useEffect(() => {
     if (currentOperation) {
+      useResultsStore.getState().removeAll();
+      executeOperationFile(currentOperation, context);
       setNavigation({
         navigationEntities: getOperationEntities(currentOperation, context),
       });
