@@ -11,6 +11,7 @@ import {
   Context,
   UnionType,
   ProjectFile,
+  ReferenceType,
 } from "./types";
 import { MouseEvent } from "react";
 
@@ -204,7 +205,7 @@ export function createContextVariables(
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
-      const data = resolveReference(statement.data, context.variables);
+      const data = resolveReference(statement.data, context);
       const result = getStatementResult(
         { ...statement, data },
         context.getResult
@@ -218,7 +219,8 @@ export function createContextVariables(
       }
 
       variables.set(statement.name, {
-        data: { ...result, id: statement.id },
+        id: result.id,
+        type: result.type,
         reference: isDataOfType(statement.data, "reference")
           ? statement.data.value
           : undefined,
@@ -237,9 +239,7 @@ export function createFileVariables(
     if (!operation || operationFile.id === currentOperationId) {
       return acc;
     }
-    acc.set(operationFile.name, {
-      data: { ...operation, id: operationFile.id },
-    });
+    acc.set(operationFile.name, { id: operationFile.id, type: operation.type });
     return acc;
   }, new Map() as Context["variables"]);
 }
@@ -340,23 +340,20 @@ export function getInverseTypes(
   return narrowedTypes.entries().reduce((acc, [key, value]) => {
     const variable = originalTypes.get(key);
     if (!variable) return acc;
-    let excludedType: DataType = variable.data.type;
+    let excludedType: DataType = variable.type;
 
-    if (variable.data.type.kind === "union") {
-      const remainingTypes = variable.data.type.types.filter(
-        (t) => !isTypeCompatible(t, value.data.type)
+    if (variable.type.kind === "union") {
+      const remainingTypes = variable.type.types.filter(
+        (t) => !isTypeCompatible(t, value.type)
       );
       if (remainingTypes.length === 0) excludedType = { kind: "never" };
       else excludedType = resolveUnionType(remainingTypes);
-    } else if (isTypeCompatible(variable.data.type, value.data.type)) {
+    } else if (isTypeCompatible(variable.type, value.type)) {
       excludedType = { kind: "never" }; // If not a union and types are compatible
     }
 
     if (excludedType.kind !== "never") {
-      acc.set(key, {
-        ...variable,
-        data: { ...variable.data, type: excludedType },
-      });
+      acc.set(key, { id: variable.id, type: excludedType });
     }
     return acc;
   }, new Map(originalTypes));
@@ -401,7 +398,7 @@ export function applyTypeNarrowing(
   if (!operation) return narrowedTypes;
   const param = operation.value.parameters[0];
   let narrowedType: DataType | undefined;
-  let referenceName: string | undefined;
+  let reference: DataValue<ReferenceType> | undefined;
 
   if (
     (operation.value.name === "isTypeOf" ||
@@ -409,12 +406,12 @@ export function applyTypeNarrowing(
     param &&
     isDataOfType(data, "reference")
   ) {
-    referenceName = data.value.name;
-    const reference = context.variables.get(referenceName);
-    if (reference) {
-      const resolvedParamData = resolveReference(param.data, context.variables);
+    reference = { id: data.id, name: data.value.name };
+    const referenceResult = context.getResult(reference.id);
+    if (referenceResult) {
+      const resolvedParamData = resolveReference(param.data, context);
       narrowedType = narrowType(
-        reference.data.type,
+        referenceResult.type,
         inferTypeFromValue(resolvedParamData.value, context)
       );
     }
@@ -433,10 +430,10 @@ export function applyTypeNarrowing(
       param.data,
       param.operations[0]
     );
-    referenceName = param.data.value.name;
+    reference = { id: param.data.id, name: param.data.value.name };
     const types = [
-      narrowedTypes.get(referenceName)?.data.type,
-      resultType.get(referenceName)?.data.type,
+      narrowedTypes.get(reference.name)?.type,
+      resultType.get(reference.name)?.type,
     ].filter(Boolean) as DataType[];
 
     if (types.length > 0) narrowedType = resolveUnionType(types);
@@ -446,12 +443,12 @@ export function applyTypeNarrowing(
     narrowedTypes = getInverseTypes(context.variables, narrowedTypes);
   }
 
-  if (referenceName) {
-    const variable = context.variables.get(referenceName);
+  if (reference) {
+    const variable = context.getResult(reference.id);
     if (variable) {
-      narrowedTypes.set(referenceName, {
-        ...variable,
-        data: { ...variable.data, type: narrowedType ?? { kind: "never" } },
+      narrowedTypes.set(reference.name, {
+        id: variable.id,
+        type: narrowedType ?? { kind: "never" },
       });
     }
   }
@@ -467,7 +464,7 @@ export function mergeNarrowedTypes(
   return operationName === "or"
     ? originalTypes
     : narrowedTypes.entries().reduce((acc, [key, value]) => {
-        if (value.data.type.kind === "never") acc.delete(key);
+        if (value.type.kind === "never") acc.delete(key);
         else acc.set(key, value);
         return acc;
       }, new Map(originalTypes));
@@ -553,12 +550,9 @@ export function getOperationResultType(
   return resultType;
 }
 
-export function resolveReference(
-  data: IData,
-  variables: Context["variables"]
-): IData {
+export function resolveReference(data: IData, context: Context): IData {
   if (isDataOfType(data, "reference")) {
-    const variable = variables.get(data.value.name);
+    const variable = context.getResult(data.value.id);
     if (!variable) {
       return createData({
         id: data.id,
@@ -566,14 +560,14 @@ export function resolveReference(
         value: { reason: `'${data.value.name}' not found` },
       });
     }
-    return resolveReference(variable.data, variables);
+    return resolveReference(variable, context);
   }
   if (isDataOfType(data, "array")) {
     return createData({
       ...data,
       value: data.value.map((statement) => ({
         ...statement,
-        data: resolveReference(statement.data, variables),
+        data: resolveReference(statement.data, context),
       })),
     });
   }
@@ -582,7 +576,7 @@ export function resolveReference(
     data.value.forEach((statement, key) => {
       newMap.set(key, {
         ...statement,
-        data: resolveReference(statement.data, variables),
+        data: resolveReference(statement.data, context),
       });
     });
     return createData({ ...data, value: newMap });
@@ -643,8 +637,8 @@ export function inferTypeFromValue<T extends DataType>(
     );
     return { kind: "condition", resultType: unionType } as T;
   }
-  if (isObject(value, ["name"]) && typeof value.name === "string") {
-    const type = context.variables.get(value.name)?.data.type;
+  if (isObject(value, ["id"]) && typeof value.id === "string") {
+    const type = context.getResult(value.id)?.type;
     return { kind: "reference", dataType: type ?? { kind: "unknown" } } as T;
   }
 
@@ -755,7 +749,7 @@ export function getSkipExecution({
   paramIndex?: number;
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
-  const data = resolveReference(_data, context.variables);
+  const data = resolveReference(_data, context);
   if (isDataOfType(data, "error"))
     return { reason: data.value.reason, kind: "error" };
   if (!operationName) return undefined;
@@ -853,21 +847,21 @@ export function getDataDropdownList({
 
   context.variables.entries().forEach(([name, variable]) => {
     const option: IDropdownItem = {
-      value: name,
-      secondaryLabel: variable.data.type.kind,
-      type: variable.data.type,
+      label: name,
+      value: `${name}-${variable.id}`,
+      secondaryLabel: variable.type.kind,
+      type: variable.type,
       entityType: "data",
       onClick: () =>
         onSelect({
-          ...variable.data,
           id: data.id,
-          type: { kind: "reference", dataType: variable.data.type },
-          value: { name, id: variable.data.id },
+          type: { kind: "reference", dataType: variable.type },
+          value: { name, id: variable.id },
         }),
     };
     if (
       !context.expectedType ||
-      isTypeCompatible(variable.data.type, context.expectedType)
+      isTypeCompatible(variable.type, context.expectedType)
     ) {
       allowedOptions.unshift(option);
     } else if (!context.enforceExpectedType) {
