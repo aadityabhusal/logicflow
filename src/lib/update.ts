@@ -50,9 +50,10 @@ function updateOperationCalls(
       );
       const context = { ..._context, narrowedTypes: acc.narrowedTypes };
 
-      const foundOperation = getFilteredOperations(data, context).find(
-        (op) => op.name === operation.value.name
-      );
+      const foundOperation = getFilteredOperations(
+        data,
+        context.variables
+      ).find((op) => op.name === operation.value.name);
 
       let updatedParameters = operation.value.parameters;
       let updatedTypeParameters = operation.type.parameters;
@@ -61,7 +62,7 @@ function updateOperationCalls(
         const sourceParameters = resolveParameters(
           foundOperation,
           data,
-          context
+          context.variables
         );
         updatedTypeParameters = sourceParameters;
 
@@ -105,10 +106,10 @@ function updateOperationCalls(
 function updateDataValue(
   data: IData,
   context: Context,
-  reference?: { name: string; id: string }
+  reference?: { name: string; data: IData<DataType> }
 ): DataValue<DataType> {
   return reference
-    ? reference
+    ? { name: reference.name, id: reference.data.id }
     : isDataOfType(data, "array")
     ? updateStatements({ statements: data.value, context })
     : isDataOfType(data, "object")
@@ -154,10 +155,17 @@ function updateStatement(
 
   const foundReference = context.variables
     .entries()
-    .find(([, item]) => item.id === currentReference?.id);
+    .find(([, item]) => item.data?.id === currentReference?.id);
+
+  const foundByName =
+    !foundReference && currentReference
+      ? context.variables.get(currentReference.name)
+      : undefined;
 
   const reference = foundReference
-    ? { name: foundReference[0], id: foundReference[1].id }
+    ? { name: foundReference[0], data: foundReference[1].data }
+    : foundByName
+    ? { name: currentReference!.name, data: foundByName.data }
     : undefined;
 
   const newStatement = {

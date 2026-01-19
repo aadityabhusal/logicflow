@@ -75,31 +75,26 @@ const DropdownComponent = ({
   const navigationDirection = useNavigationStore(
     (s) => s.navigation?.direction
   );
+  const currentFileId = useProjectStore((s) => s.currentFileId);
   const navigationModifier = useNavigationStore((s) => s.navigation?.modifier);
+  const detailsPanelLockedId = useUiConfigStore(
+    (s) => currentFileId && s.detailsPanel.lockedIds?.[currentFileId]
+  );
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
   );
-  const currentFileId = useProjectStore((s) => s.currentFileId);
-  const detailsPanelLockedId = useUiConfigStore((s) => {
-    const lockedId = currentFileId && s.detailsPanel.lockedIds?.[currentFileId];
-    if (!lockedId || !useResultsStore.getState().results.has(lockedId)) {
-      return undefined;
-    }
-    return lockedId;
-  });
   const operationResult = useResultsStore((s) => s.getResult(id));
-  // Avoided resolveReference in store selector to keep it pure
-  const referenceResult = useResultsStore((s) =>
-    isDataOfType(data, "reference") ? s.getResult(data.value.id) : undefined
-  );
 
-  const _result = useMemo(() => {
-    if (operationResult) return resolveReference(operationResult, context);
-    if (referenceResult) return referenceResult;
-    if (data) return resolveReference(data, context);
-    return undefined;
-  }, [operationResult, referenceResult, data, context]);
+  const _result = useMemo(
+    () =>
+      operationResult
+        ? resolveReference(operationResult, context.variables)
+        : data
+        ? resolveReference(data, context.variables)
+        : undefined,
+    [operationResult, data, context.variables]
+  );
   const result = useDeferredValue(_result);
 
   const [isHovered, setHovered] = useState(false);

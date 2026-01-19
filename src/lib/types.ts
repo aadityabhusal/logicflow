@@ -132,7 +132,7 @@ export type INavigation = {
 export type Context = {
   variables: Map<
     string,
-    { id: string; type: DataType; reference?: { name: string; id: string } }
+    { data: IData; reference?: { name: string; id: string } }
   >;
   reservedNames?: Set<{
     kind: "data-type" | "operation" | "variable";

@@ -219,7 +219,7 @@ const StatementComponent = ({
             addOperationCall={
               !options?.isParameter &&
               !context.skipExecution &&
-              getFilteredOperations(statement.data, context).length
+              getFilteredOperations(statement.data, context.variables).length
                 ? () => addOperationCall(statement.data, 0)
                 : undefined
             }

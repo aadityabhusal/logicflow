@@ -31,8 +31,8 @@ const OperationCallComponent = ({
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   const filteredOperations = useMemo(
-    () => getFilteredOperations(data, context, true),
-    [data, context]
+    () => getFilteredOperations(data, context.variables, true),
+    [data, context.variables]
   );
 
   const originalParameters = useMemo(() => {
@@ -40,8 +40,8 @@ const OperationCallComponent = ({
       .flatMap(([_, items]) => items)
       .find((item) => item.name === operation.value.name);
     if (!originalOperation) return undefined;
-    return resolveParameters(originalOperation, data, context);
-  }, [context, data, filteredOperations, operation.value.name]);
+    return resolveParameters(originalOperation, data, context.variables);
+  }, [context.variables, data, filteredOperations, operation.value.name]);
 
   function handleDropdown(name: string) {
     if (operation.value.name === name) return;
