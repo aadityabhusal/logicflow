@@ -1,8 +1,4 @@
-import {
-  getFilteredOperations,
-  executeStatement,
-  resolveParameters,
-} from "./operation";
+import { getFilteredOperations, resolveParameters } from "./operation";
 import {
   IStatement,
   IData,
@@ -24,36 +20,44 @@ import {
   createFileVariables,
   applyTypeNarrowing,
   getOperationResultType,
-  getSkipExecution,
   updateContextWithNarrowedTypes,
+  getSkipExecution,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
 function updateOperationCalls(
   statement: IStatement,
-  _context: Context
+  context: Context
 ): IData<OperationType>[] {
   return statement.operations.reduce(
     (acc, operation, operationIndex) => {
       const updatedStatement = { ...statement, operations: acc.operations };
       const data = getStatementResult(
         updatedStatement,
-        _context.getResult,
+        context.getResult,
         operationIndex,
         true
       );
+      /* Type narrowing and finding operation is needed for updating parameters especially of user-defined operations */
       acc.narrowedTypes = applyTypeNarrowing(
-        _context,
+        context,
         acc.narrowedTypes,
         data,
         operation
       );
-      const context = { ..._context, narrowedTypes: acc.narrowedTypes };
+      const _context = {
+        ...context,
+        narrowedTypes: acc.narrowedTypes,
+        skipExecution: getSkipExecution({
+          context: context,
+          data,
+          operationName: operation.value.name,
+        }),
+      };
 
-      const foundOperation = getFilteredOperations(
-        data,
-        context.variables
-      ).find((op) => op.name === operation.value.name);
+      const foundOperation = getFilteredOperations(data, _context).find(
+        (op) => op.name === operation.value.name
+      );
 
       let updatedParameters = operation.value.parameters;
       let updatedTypeParameters = operation.type.parameters;
@@ -62,7 +66,7 @@ function updateOperationCalls(
         const sourceParameters = resolveParameters(
           foundOperation,
           data,
-          context.variables
+          _context
         );
         updatedTypeParameters = sourceParameters;
 
@@ -80,7 +84,7 @@ function updateOperationCalls(
             return updateStatement(
               { ...param, isOptional: sourceParam.isOptional },
               updateContextWithNarrowedTypes(
-                context,
+                _context,
                 data,
                 operation.value.name,
                 sourceParamIndex
@@ -131,16 +135,7 @@ function updateDataValue(
         const condition = updateStatement(data.value.condition, context);
         const _true = updateStatement(data.value.true, context);
         const _false = updateStatement(data.value.false, context);
-        const result = executeStatement(
-          createStatement({
-            data: createData({
-              type: data.type,
-              value: { condition, true: _true, false: _false },
-            }),
-          }),
-          context
-        );
-        return { condition, true: _true, false: _false, result };
+        return { condition, true: _true, false: _false };
       })()
     : data.value;
 }
@@ -213,8 +208,6 @@ export function updateStatements({
     );
     const _context: Context = {
       getResult: context.getResult,
-      setResult: context.setResult,
-      currentStatementId: statementToProcess.id,
       variables,
       skipExecution: getSkipExecution({
         context: { ...context, variables },
@@ -259,7 +252,6 @@ export function updateFiles(
     const _context: Context = {
       variables: createFileVariables(updatedFiles, fileToProcess.id),
       getResult: context.getResult,
-      setResult: context.setResult,
     };
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {

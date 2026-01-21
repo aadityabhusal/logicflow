@@ -9,7 +9,7 @@ import {
 import { updateContextWithNarrowedTypes } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
-import { useNavigationStore } from "@/lib/store";
+import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 
 const OperationCallComponent = ({
@@ -29,10 +29,10 @@ const OperationCallComponent = ({
   context: Context;
 }) => {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-
+  const setResult = useExecutionResultsStore((s) => s.setResult);
   const filteredOperations = useMemo(
-    () => getFilteredOperations(data, context.variables, true),
-    [data, context.variables]
+    () => getFilteredOperations(data, context, true),
+    [data, context]
   );
 
   const originalParameters = useMemo(() => {
@@ -40,8 +40,8 @@ const OperationCallComponent = ({
       .flatMap(([_, items]) => items)
       .find((item) => item.name === operation.value.name);
     if (!originalOperation) return undefined;
-    return resolveParameters(originalOperation, data, context.variables);
-  }, [context.variables, data, filteredOperations, operation.value.name]);
+    return resolveParameters(originalOperation, data, context);
+  }, [context, data, filteredOperations, operation.value.name]);
 
   function handleDropdown(name: string) {
     if (operation.value.name === name) return;
@@ -50,6 +50,8 @@ const OperationCallComponent = ({
       name,
       parameters: operation.value.parameters,
       context,
+      operationId: operation.id,
+      setResult,
     });
     operationCall.id = operation.id;
     handleOperationCall(operationCall);

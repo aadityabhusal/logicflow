@@ -198,10 +198,8 @@ const OperationComponent = (
               }}
               context={{
                 getResult: context.getResult,
-                setResult: context.setResult,
                 variables: new Map(),
                 reservedNames,
-                currentStatementId: parameter.id,
                 ...(expectedParameterType && {
                   expectedType: expectedParameterType[i]?.type,
                   enforceExpectedType: true,
@@ -244,8 +242,6 @@ const OperationComponent = (
             (acc, statement, index) => {
               const _context: Context = {
                 getResult: context.getResult,
-                setResult: context.setResult,
-                currentStatementId: statement.id,
                 reservedNames,
                 variables: acc.variables,
                 skipExecution: getSkipExecution({

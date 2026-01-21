@@ -138,13 +138,12 @@ export type Context = {
     kind: "data-type" | "operation" | "variable";
     name: string;
   }>;
-  currentStatementId?: string;
   narrowedTypes?: Context["variables"];
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   getResult: (entityId: string) => IData | undefined;
-  setResult: (entityId: string, result: IData) => void;
+  setResult?: (entityId: string, result: IData) => void; // Only for async execution of operation calls inside an operation definition
 };
 
 export type OperationListItem = {

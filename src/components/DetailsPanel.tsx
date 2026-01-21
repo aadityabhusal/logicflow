@@ -9,6 +9,7 @@ import { IconButton } from "../ui/IconButton";
 import {
   useNavigationStore,
   useProjectStore,
+  useExecutionResultsStore,
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -35,11 +36,16 @@ function DetailsPanelComponent() {
     () => getTypeSignature(result?.type ?? { kind: "undefined" }),
     [result?.type]
   );
-  const panelLockedId = useMemo(
-    () => operationId && detailsPanel?.lockedIds?.[operationId],
-    [detailsPanel?.lockedIds, operationId]
-  );
-
+  const panelLockedId = useUiConfigStore((s) => {
+    const lockedId = operationId && s.detailsPanel.lockedIds?.[operationId];
+    if (
+      !lockedId ||
+      !useExecutionResultsStore.getState().results.has(lockedId)
+    ) {
+      return undefined;
+    }
+    return lockedId;
+  });
   useHotkeys([["Escape", () => setNavigation({ result: undefined })]]);
 
   if (!result) return null;
@@ -119,21 +125,25 @@ function DetailsPanelComponent() {
               }}
             />
           ) : null}
-          <IconButton
-            icon={panelLockedId ? FaLock : FaUnlock}
-            title={panelLockedId ? "Unlock" : "Lock"}
-            className={panelLockedId ? "text-reserved" : ""}
-            size={12}
-            onClick={() => {
-              setUiConfig((p) => {
-                if (!operationId) return p;
-                const lockedIds = { ...(p.detailsPanel?.lockedIds ?? {}) };
-                if (panelLockedId) delete lockedIds[operationId];
-                else lockedIds[operationId] = navigationId!;
-                return { detailsPanel: { ...p.detailsPanel, lockedIds } };
-              });
-            }}
-          />
+          {useExecutionResultsStore
+            .getState()
+            .results.has(panelLockedId ?? navigationId!) && (
+            <IconButton
+              icon={panelLockedId ? FaLock : FaUnlock}
+              title={panelLockedId ? "Unlock" : "Lock"}
+              className={panelLockedId ? "text-reserved" : ""}
+              size={12}
+              onClick={() => {
+                setUiConfig((p) => {
+                  if (!operationId) return p;
+                  const lockedIds = { ...(p.detailsPanel?.lockedIds ?? {}) };
+                  if (panelLockedId) delete lockedIds[operationId];
+                  else lockedIds[operationId] = navigationId!;
+                  return { detailsPanel: { ...p.detailsPanel, lockedIds } };
+                });
+              }}
+            />
+          )}
           <IconButton
             icon={FaX}
             title="Close"

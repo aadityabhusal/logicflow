@@ -3,12 +3,19 @@ import {
   useUiConfigStore,
   useProjectStore,
   useNavigationStore,
-  useResultsStore,
+  useExecutionResultsStore,
+  fileHistoryActions,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { Sidebar } from "@/ui/Sidebar";
 import { NoteText } from "@/ui/NoteText";
-import { MouseEvent, useCallback, useEffect, useMemo } from "react";
+import {
+  MouseEvent,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+} from "react";
 import { useHotkeys } from "@mantine/hooks";
 import { DetailsPanel } from "@/components/DetailsPanel";
 import { Navigate } from "react-router";
@@ -22,7 +29,7 @@ import {
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DataTypes } from "@/lib/data";
-import { builtInOperations, executeOperationFile } from "@/lib/operation";
+import { builtInOperations, setOperationResults } from "@/lib/operation";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -31,8 +38,7 @@ export default function Project() {
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const getResult = useResultsStore((s) => s.getResult);
-  const setResult = useResultsStore((s) => s.setResult);
+  const setResult = useExecutionResultsStore((s) => s.setResult);
 
   const currentOperation = useMemo(
     () =>
@@ -64,29 +70,42 @@ export default function Project() {
             }))
           )
       ),
-      getResult,
-      setResult,
+      getResult: (id: string) =>
+        useExecutionResultsStore.getState().results.get(id),
     } as Context;
-  }, [currentProject?.files, currentOperation?.id, getResult, setResult]);
+  }, [currentProject?.files, currentOperation?.id]);
 
   const handleOperationChange = useCallback(
     (operation: IData<OperationType>, remove?: boolean) => {
       if (!currentProject) return;
       if (remove) deleteFile(operation.id);
-      else updateFile(operation.id, createFileFromOperation(operation));
+      else {
+        if (currentOperation) {
+          const lastContent = createFileFromOperation(currentOperation).content;
+          fileHistoryActions.pushState(operation.id, lastContent);
+        }
+        updateFile(operation.id, createFileFromOperation(operation));
+      }
     },
-    [currentProject, deleteFile, updateFile]
+    [currentProject, deleteFile, updateFile, currentOperation]
   );
 
   useEffect(() => {
     if (currentOperation) {
-      useResultsStore.getState().removeAll();
-      executeOperationFile(currentOperation, context);
       setNavigation({
         navigationEntities: getOperationEntities(currentOperation, context),
       });
     }
   }, [currentOperation, setNavigation, context]);
+
+  const deferredOperation = useDeferredValue(currentOperation);
+  const deferredContext = useDeferredValue(context);
+  useEffect(() => {
+    if (deferredOperation) {
+      useExecutionResultsStore.getState().removeAll();
+      setOperationResults(deferredOperation, { ...deferredContext, setResult });
+    }
+  }, [deferredContext, deferredOperation, setResult]);
 
   useHotkeys(useCustomHotkeys(), []);
 

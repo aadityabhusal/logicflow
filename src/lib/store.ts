@@ -233,7 +233,7 @@ const createCurrentProjectSlice: StateCreator<
       focusId,
     });
     const lastItem = history.past.pop()!;
-    useResultsStore.getState().removeAll();
+    useExecutionResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: lastItem.content,
     } as Partial<ProjectFile>);
@@ -254,7 +254,7 @@ const createCurrentProjectSlice: StateCreator<
       focusId: currentFocusId,
     });
     const nextItem = history.future.pop()!;
-    useResultsStore.getState().removeAll();
+    useExecutionResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: nextItem.content,
     } as Partial<ProjectFile>);
@@ -315,7 +315,7 @@ export const useUiConfigStore = createWithEqualityFn(
   shallow
 );
 
-interface ResultsState {
+interface ExecutionResultsState {
   results: Map<string, IData>;
   setResult: (entityId: string, result: IData) => void;
   getResult: (entityId: string) => IData | undefined;
@@ -323,30 +323,31 @@ interface ResultsState {
   removeResult: (entityId: string) => void;
 }
 
-export const useResultsStore = createWithEqualityFn<ResultsState>(
-  (set, get) => ({
-    results: new Map(),
-    setResult: (entityId, result) => {
-      set((state) => {
-        const newResults = new Map(state.results);
-        newResults.set(entityId, result);
-        return { results: newResults };
-      });
-    },
-    getResult: (entityId) => {
-      return get().results.get(entityId);
-    },
-    removeAll: () => set({ results: new Map() }),
-    removeResult: (entityId) => {
-      set((state) => {
-        const newResults = new Map(state.results);
-        newResults.delete(entityId);
-        return { results: newResults };
-      });
-    },
-  }),
-  shallow
-);
+export const useExecutionResultsStore =
+  createWithEqualityFn<ExecutionResultsState>(
+    (set, get) => ({
+      results: new Map(),
+      setResult: (entityId, result) => {
+        set((state) => {
+          const newResults = new Map(state.results);
+          newResults.set(entityId, result);
+          return { results: newResults };
+        });
+      },
+      getResult: (entityId) => {
+        return get().results.get(entityId);
+      },
+      removeAll: () => set({ results: new Map() }),
+      removeResult: (entityId) => {
+        set((state) => {
+          const newResults = new Map(state.results);
+          newResults.delete(entityId);
+          return { results: newResults };
+        });
+      },
+    }),
+    shallow
+  );
 
 type NavigationStore = {
   navigation?: INavigation;

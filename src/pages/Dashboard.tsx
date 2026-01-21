@@ -10,7 +10,7 @@ import {
 import { Link, useNavigate } from "react-router";
 import relativeTime from "dayjs/plugin/relativeTime";
 import dayjs from "dayjs";
-import { useProjectStore, useResultsStore } from "@/lib/store";
+import { useProjectStore, useExecutionResultsStore } from "@/lib/store";
 import {
   createContextVariables,
   createData,
@@ -28,8 +28,8 @@ export default function Dashboard() {
   const projects = useProjectStore((s) => s.projects);
   const createProject = useProjectStore((s) => s.createProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
-  const getResult = useResultsStore((s) => s.getResult);
-  const setResult = useResultsStore((s) => s.setResult);
+  const getResult = useExecutionResultsStore((s) => s.getResult);
+  const setResult = useExecutionResultsStore((s) => s.setResult);
 
   const sortedProjects = useMemo(
     () =>
@@ -62,11 +62,10 @@ export default function Dashboard() {
         variables: createContextVariables([nameParam], {
           variables: new Map(),
           getResult,
-          setResult,
         }),
         getResult,
-        setResult,
       },
+      setResult,
     });
     const greetOperationFile = createFileFromOperation(
       createData({
@@ -106,8 +105,8 @@ export default function Dashboard() {
                   context: {
                     variables: createFileVariables([greetOperationFile]),
                     getResult,
-                    setResult,
                   },
+                  setResult,
                 }),
               ],
             }),

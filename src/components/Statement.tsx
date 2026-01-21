@@ -20,7 +20,7 @@ import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { memo, useMemo, type ReactNode } from "react";
-import { useNavigationStore, useResultsStore } from "@/lib/store";
+import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
 
@@ -53,7 +53,7 @@ const StatementComponent = ({
   const isAddFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_add`
   );
-  const getResult = useResultsStore((s) => s.getResult);
+  const setResult = useExecutionResultsStore((s) => s.setResult);
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
@@ -77,7 +77,7 @@ const StatementComponent = ({
 
   // TODO: should context be passed as a parameter?
   function addOperationCall(data: IData, index: number) {
-    const operation = createOperationCall({ data, context });
+    const operation = createOperationCall({ data, context, setResult });
     const operations = [...statement.operations];
     operations.splice(index, 0, operation);
     handleStatement({ ...statement, operations });
@@ -219,7 +219,7 @@ const StatementComponent = ({
             addOperationCall={
               !options?.isParameter &&
               !context.skipExecution &&
-              getFilteredOperations(statement.data, context.variables).length
+              getFilteredOperations(statement.data, context).length
                 ? () => addOperationCall(statement.data, 0)
                 : undefined
             }
@@ -232,7 +232,12 @@ const StatementComponent = ({
         {
           statement.operations.reduce(
             (acc, operation, i, operationsList) => {
-              const data = getStatementResult(statement, getResult, i, true);
+              const data = getStatementResult(
+                statement,
+                context.getResult,
+                i,
+                true
+              );
               acc.narrowedTypes = applyTypeNarrowing(
                 context,
                 acc.narrowedTypes,
@@ -274,7 +279,7 @@ const StatementComponent = ({
                         !options?.isParameter && !skipExecution
                           ? () =>
                               addOperationCall(
-                                getResult(operation.id) ?? data,
+                                context.getResult(operation.id) ?? data,
                                 i + 1
                               )
                           : undefined

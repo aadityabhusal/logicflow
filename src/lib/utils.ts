@@ -23,7 +23,6 @@ export function createData<T extends DataType>(
     inferTypeFromValue(props?.value, {
       variables: new Map(),
       getResult: () => undefined,
-      setResult: () => undefined,
     })) as T;
   return {
     id: props?.id ?? nanoid(),
@@ -204,7 +203,7 @@ export function createContextVariables(
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
-      const data = resolveReference(statement.data, context.variables);
+      const data = resolveReference(statement.data, context);
       const result = getStatementResult(
         { ...statement, data },
         context.getResult
@@ -412,7 +411,7 @@ export function applyTypeNarrowing(
     referenceName = data.value.name;
     const reference = context.variables.get(referenceName);
     if (reference) {
-      const resolvedParamData = resolveReference(param.data, context.variables);
+      const resolvedParamData = resolveReference(param.data, context);
       narrowedType = narrowType(
         reference.data.type,
         inferTypeFromValue(resolvedParamData.value, context)
@@ -524,16 +523,22 @@ export function resolveUnionType(
   return { kind: "union", types: sortedTypes };
 }
 
-function getArrayElementType(elements: IStatement[]): DataType {
+function getArrayElementType(
+  elements: IStatement[],
+  context: Context
+): DataType {
   if (elements.length === 0) return { kind: "unknown" };
-  const firstType = elements[0].data.type;
+  const firstType = getStatementResult(elements[0], context.getResult).type;
   const allSameType = elements.every((element) => {
-    return isTypeCompatible(element.data.type, firstType);
+    return isTypeCompatible(
+      getStatementResult(element, context.getResult).type,
+      firstType
+    );
   });
   if (allSameType) return firstType;
 
   const unionTypes = elements.reduce((acc, element) => {
-    const elementType = element.data.type;
+    const elementType = getStatementResult(element, context.getResult).type;
     const exists = acc.some((t) => isTypeCompatible(t, elementType));
     if (!exists) acc.push(elementType);
     return acc;
@@ -553,12 +558,9 @@ export function getOperationResultType(
   return resultType;
 }
 
-export function resolveReference(
-  data: IData,
-  variables: Context["variables"]
-): IData {
+export function resolveReference(data: IData, context: Context): IData {
   if (isDataOfType(data, "reference")) {
-    const variable = variables.get(data.value.name);
+    const variable = context.variables.get(data.value.name);
     if (!variable) {
       return createData({
         id: data.id,
@@ -566,14 +568,14 @@ export function resolveReference(
         value: { reason: `'${data.value.name}' not found` },
       });
     }
-    return resolveReference(variable.data, variables);
+    return resolveReference(variable.data, context);
   }
   if (isDataOfType(data, "array")) {
     return createData({
       ...data,
       value: data.value.map((statement) => ({
         ...statement,
-        data: resolveReference(statement.data, variables),
+        data: resolveReference(statement.data, context),
       })),
     });
   }
@@ -582,7 +584,7 @@ export function resolveReference(
     data.value.forEach((statement, key) => {
       newMap.set(key, {
         ...statement,
-        data: resolveReference(statement.data, variables),
+        data: resolveReference(statement.data, context),
       });
     });
     return createData({ ...data, value: newMap });
@@ -602,7 +604,7 @@ export function inferTypeFromValue<T extends DataType>(
   if (Array.isArray(value)) {
     return {
       kind: "array",
-      elementType: getArrayElementType(value),
+      elementType: getArrayElementType(value, context),
     } as T;
   }
   if (value instanceof Map) {
@@ -755,7 +757,7 @@ export function getSkipExecution({
   paramIndex?: number;
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
-  const data = resolveReference(_data, context.variables);
+  const data = resolveReference(_data, context);
   if (isDataOfType(data, "error"))
     return { reason: data.value.reason, kind: "error" };
   if (!operationName) return undefined;

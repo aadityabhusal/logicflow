@@ -7,7 +7,7 @@ import {
   inferTypeFromValue,
   isDataOfType,
 } from "@/lib/utils";
-import { useResultsStore } from "@/lib/store";
+import { useExecutionResultsStore } from "@/lib/store";
 
 export function ParseData({
   data,
@@ -18,8 +18,7 @@ export function ParseData({
   showData?: boolean;
   nest?: number;
 }) {
-  const getResult = useResultsStore((s) => s.getResult);
-  const setResult = useResultsStore((s) => s.setResult);
+  const getResult = useExecutionResultsStore((s) => s.getResult);
   if (!showData && isDataOfType(data, "reference")) {
     return <span className="text-variable">{data.value.name}</span>;
   }
@@ -46,7 +45,6 @@ export function ParseData({
           type: inferTypeFromValue(data.value, {
             variables: new Map(),
             getResult,
-            setResult,
           }),
         }}
         showData={showData}

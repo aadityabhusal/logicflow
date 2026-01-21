@@ -2,7 +2,7 @@ import { IStatement } from "@/lib/types";
 import { ParseData } from "./ParseData";
 import { ParseOperation } from "./ParseOperation";
 import { getStatementResult, isDataOfType } from "@/lib/utils";
-import { useResultsStore } from "@/lib/store";
+import { useExecutionResultsStore } from "@/lib/store";
 
 export function ParseStatement({
   statement,
@@ -13,7 +13,7 @@ export function ParseStatement({
   showData?: boolean;
   nest?: number;
 }) {
-  const getResult = useResultsStore((s) => s.getResult);
+  const getResult = useExecutionResultsStore((s) => s.getResult);
 
   if (showData) {
     const result = getStatementResult(statement, getResult);

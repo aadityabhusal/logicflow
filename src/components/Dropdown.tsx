@@ -20,7 +20,7 @@ import {
   useProjectStore,
   useNavigationStore,
   useUiConfigStore,
-  useResultsStore,
+  useExecutionResultsStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
 import { Context, IData, IDropdownItem } from "../lib/types";
@@ -75,25 +75,31 @@ const DropdownComponent = ({
   const navigationDirection = useNavigationStore(
     (s) => s.navigation?.direction
   );
-  const currentFileId = useProjectStore((s) => s.currentFileId);
   const navigationModifier = useNavigationStore((s) => s.navigation?.modifier);
-  const detailsPanelLockedId = useUiConfigStore(
-    (s) => currentFileId && s.detailsPanel.lockedIds?.[currentFileId]
-  );
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
   );
-  const operationResult = useResultsStore((s) => s.getResult(id));
-
+  const currentFileId = useProjectStore((s) => s.currentFileId);
+  const detailsPanelLockedId = useUiConfigStore((s) => {
+    const lockedId = currentFileId && s.detailsPanel.lockedIds?.[currentFileId];
+    if (
+      !lockedId ||
+      !useExecutionResultsStore.getState().results.has(lockedId)
+    ) {
+      return undefined;
+    }
+    return lockedId;
+  });
+  const operationResult = useExecutionResultsStore((s) => s.getResult(id));
   const _result = useMemo(
     () =>
       operationResult
-        ? resolveReference(operationResult, context.variables)
+        ? resolveReference(operationResult, context)
         : data
-        ? resolveReference(data, context.variables)
+        ? resolveReference(data, context)
         : undefined,
-    [operationResult, data, context.variables]
+    [operationResult, data, context]
   );
   const result = useDeferredValue(_result);
 
