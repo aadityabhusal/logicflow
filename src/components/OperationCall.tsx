@@ -1,12 +1,11 @@
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
+import { createOperationCall, getFilteredOperations } from "../lib/operation";
 import {
-  createOperationCall,
-  getFilteredOperations,
+  updateContextWithNarrowedTypes,
   resolveParameters,
-} from "../lib/operation";
-import { updateContextWithNarrowedTypes } from "../lib/utils";
+} from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
 import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";

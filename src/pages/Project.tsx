@@ -90,22 +90,20 @@ export default function Project() {
     [currentProject, deleteFile, updateFile, currentOperation]
   );
 
-  useEffect(() => {
-    if (currentOperation) {
-      setNavigation({
-        navigationEntities: getOperationEntities(currentOperation, context),
-      });
-    }
-  }, [currentOperation, setNavigation, context]);
-
   const deferredOperation = useDeferredValue(currentOperation);
   const deferredContext = useDeferredValue(context);
   useEffect(() => {
     if (deferredOperation) {
       useExecutionResultsStore.getState().removeAll();
       setOperationResults(deferredOperation, { ...deferredContext, setResult });
+      setNavigation({
+        navigationEntities: getOperationEntities(
+          deferredOperation,
+          deferredContext
+        ),
+      });
     }
-  }, [deferredContext, deferredOperation, setResult]);
+  }, [deferredContext, deferredOperation, setNavigation, setResult]);
 
   useHotkeys(useCustomHotkeys(), []);
 

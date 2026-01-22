@@ -1,4 +1,4 @@
-import { getFilteredOperations, resolveParameters } from "./operation";
+import { getFilteredOperations } from "./operation";
 import {
   IStatement,
   IData,
@@ -22,6 +22,7 @@ import {
   getOperationResultType,
   updateContextWithNarrowedTypes,
   getSkipExecution,
+  resolveParameters,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
@@ -49,7 +50,7 @@ function updateOperationCalls(
         ...context,
         narrowedTypes: acc.narrowedTypes,
         skipExecution: getSkipExecution({
-          context: context,
+          context,
           data,
           operationName: operation.value.name,
         }),

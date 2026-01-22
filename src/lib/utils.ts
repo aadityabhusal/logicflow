@@ -11,6 +11,7 @@ import {
   Context,
   UnionType,
   ProjectFile,
+  OperationListItem,
 } from "./types";
 import { MouseEvent } from "react";
 
@@ -241,6 +242,38 @@ export function createFileVariables(
     });
     return acc;
   }, new Map() as Context["variables"]);
+}
+
+export function createParamData(
+  item: OperationType["parameters"][number]
+): IStatement["data"] {
+  if (item.type.kind !== "operation") {
+    return createData({
+      type: item.type.kind === "unknown" ? { kind: "undefined" } : item.type,
+    });
+  }
+
+  const parameters = item.type.parameters
+    .filter((param) => !param.isOptional)
+    .reduce((prev, paramSpec) => {
+      prev.push(
+        createStatement({
+          name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
+          data: createParamData({ type: paramSpec.type }),
+          isOptional: paramSpec.isOptional,
+        })
+      );
+      return prev;
+    }, [] as IStatement[]);
+
+  return createData({
+    type: {
+      kind: "operation",
+      parameters: item.type.parameters,
+      result: { kind: "undefined" },
+    },
+    value: { parameters: parameters, statements: [] },
+  });
 }
 
 /* Types */
@@ -709,6 +742,26 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     default:
       return "unknown";
   }
+}
+
+export function resolveParameters(
+  operationListItem: OperationListItem,
+  _data: IData,
+  context: Context
+) {
+  const data = resolveReference(_data, context);
+  const params =
+    typeof operationListItem.parameters === "function"
+      ? operationListItem.parameters(data)
+      : operationListItem.parameters;
+  return params.map((param) => {
+    if (param.isOptional)
+      return {
+        ...param,
+        type: resolveUnionType([param.type, { kind: "undefined" }]),
+      };
+    return param;
+  });
 }
 
 /* Execution */

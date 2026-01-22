@@ -14,7 +14,7 @@ import {
 import {
   createData,
   createStatement,
-  createVariableName,
+  createParamData,
   getStatementResult,
   inferTypeFromValue,
   isDataOfType,
@@ -25,6 +25,7 @@ import {
   createContextVariables,
   applyTypeNarrowing,
   getSkipExecution,
+  resolveParameters,
 } from "./utils";
 
 const unknownOperations: OperationListItem[] = [
@@ -156,7 +157,7 @@ const booleanOperations: OperationListItem[] = [
         executeStatement(...trueWithContext).type,
         ...(falseWithContext
           ? [executeStatement(...falseWithContext).type]
-          : []),
+          : [createData({ type: { kind: "undefined" } }).type]),
       ]);
       const selectedBranch =
         !data.value && falseWithContext ? falseWithContext : trueWithContext;
@@ -723,57 +724,6 @@ export function getFilteredOperations<T extends boolean = false>(
     : (builtInOps.concat(userDefinedOps) as FilteredOperationsReturn<T>);
 }
 
-export function resolveParameters(
-  operationListItem: OperationListItem,
-  _data: IData,
-  context: Context
-) {
-  const data = resolveReference(_data, context);
-  const params =
-    typeof operationListItem.parameters === "function"
-      ? operationListItem.parameters(data)
-      : operationListItem.parameters;
-  return params.map((param) => {
-    if (param.isOptional)
-      return {
-        ...param,
-        type: resolveUnionType([param.type, { kind: "undefined" }]),
-      };
-    return param;
-  });
-}
-
-export function createParamData(
-  item: OperationType["parameters"][number],
-  data: IData
-): IStatement["data"] {
-  if (item.type.kind !== "operation") {
-    return createData({ type: item.type || data.type });
-  }
-
-  const parameters = item.type.parameters
-    .filter((param) => !param.isOptional)
-    .reduce((prev, paramSpec) => {
-      prev.push(
-        createStatement({
-          name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
-          data: createParamData({ type: paramSpec.type }, data),
-          isOptional: paramSpec.isOptional,
-        })
-      );
-      return prev;
-    }, [] as IStatement[]);
-
-  return createData({
-    type: {
-      kind: "operation",
-      parameters: item.type.parameters,
-      result: { kind: "undefined" },
-    },
-    value: { parameters: parameters, statements: [] },
-  });
-}
-
 export function createOperationCall({
   data: _data,
   name,
@@ -801,7 +751,7 @@ export function createOperationCall({
     .filter((param) => !param?.isOptional)
     .map((item, index) => {
       const newParam = createStatement({
-        data: createParamData(item, data),
+        data: createParamData({ ...item, type: item.type || data.type }),
         isOptional: item.isOptional,
       });
       const prevParam = parameters?.[index];
@@ -931,9 +881,9 @@ export function executeStatement(
       context.setResult?.(operation.id, operationResult);
       return { data: operationResult, narrowedTypes: acc.narrowedTypes };
     },
-    { data: currentData, narrowedTypes: new Map() }
+    { data: statement.data, narrowedTypes: new Map() }
   ).data;
-  return result;
+  return resolveReference(result, context);
 }
 
 export function setOperationResults(
