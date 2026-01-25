@@ -3,17 +3,19 @@ export type StringType = { kind: "string" };
 export type NumberType = { kind: "number" };
 export type BooleanType = { kind: "boolean" };
 export type ArrayType = { kind: "array"; elementType: DataType };
+export type TupleType = { kind: "tuple"; elements: DataType[] };
 export type ObjectType = {
   kind: "object";
   properties: { [key: string]: DataType };
 };
+export type DictionaryType = { kind: "dictionary"; elementType: DataType };
 export type UnionType = { kind: "union"; types: DataType[] };
 export type OperationType = {
   kind: "operation";
   parameters: { type: DataType; name?: string; isOptional?: boolean }[];
   result: DataType;
 };
-export type ConditionType = { kind: "condition"; resultType: DataType };
+export type ConditionType = { kind: "condition"; result: DataType };
 export type UnknownType = { kind: "unknown" };
 export type NeverType = { kind: "never" };
 export type ReferenceType = {
@@ -38,7 +40,9 @@ export type DataType =
   | NumberType
   | BooleanType
   | ArrayType
+  | TupleType
   | ObjectType
+  | DictionaryType
   | UnionType
   | OperationType
   | ConditionType
@@ -59,8 +63,12 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   ? boolean
   : T extends ArrayType
   ? IStatement[]
+  : T extends TupleType
+  ? IStatement[]
   : T extends ObjectType
   ? Map<keyof T["properties"] & string, IStatement>
+  : T extends DictionaryType
+  ? Map<string, IStatement>
   : T extends OperationType
   ? {
       parameters: IStatement[];

@@ -26,7 +26,7 @@ const ConditionInputComponent = (
     );
     handleData({
       ...data,
-      type: { kind: "condition", resultType: unionType },
+      type: { kind: "condition", result: unionType },
       value,
     });
   }

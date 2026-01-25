@@ -228,14 +228,20 @@ function getStatementEntities(
   const dataId = statement.data.id;
   entities.push({ id: dataId, depth, ...parent });
 
-  if (isDataOfType(statement.data, "array")) {
+  if (
+    isDataOfType(statement.data, "array") ||
+    isDataOfType(statement.data, "tuple")
+  ) {
     statement.data.value.forEach((arrayItem) => {
       entities.push(
         ...getStatementEntities(arrayItem, depth + 1, parent, context)
       );
     });
     entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
-  } else if (isDataOfType(statement.data, "object")) {
+  } else if (
+    isDataOfType(statement.data, "object") ||
+    isDataOfType(statement.data, "dictionary")
+  ) {
     statement.data.value.forEach((property) => {
       entities.push({ id: `${property.id}_key`, depth: depth + 1, ...parent });
       entities.push(

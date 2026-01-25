@@ -18,6 +18,8 @@ import type {
   ReferenceType,
   DataValue,
   ErrorType,
+  TupleType,
+  DictionaryType,
 } from "./types";
 
 /**
@@ -58,6 +60,13 @@ export const ArrayValueSchema: z.ZodType<DataValue<ArrayType>> = z.lazy(() =>
   z.array(IStatementSchema)
 );
 
+export const TupleTypeSchema: z.ZodType<TupleType> = z.object({
+  kind: z.literal("tuple"),
+  get elements() {
+    return z.array(DataTypeSchema);
+  },
+});
+
 const ObjectTypeSchema: z.ZodType<ObjectType> = z.object({
   kind: z.literal("object"),
   get properties() {
@@ -67,6 +76,13 @@ const ObjectTypeSchema: z.ZodType<ObjectType> = z.object({
 export const ObjectValueSchema: z.ZodType<DataValue<ObjectType>> = z.lazy(() =>
   z.map(z.string(), IStatementSchema)
 );
+
+export const DictionaryTypeSchema: z.ZodType<DictionaryType> = z.object({
+  kind: z.literal("dictionary"),
+  get elementType() {
+    return DataTypeSchema;
+  },
+});
 
 const UnionTypeSchema: z.ZodType<UnionType> = z.object({
   kind: z.literal("union"),
@@ -99,7 +115,7 @@ export const OperationValueSchema: z.ZodType<DataValue<OperationType>> =
 
 const ConditionTypeSchema: z.ZodType<ConditionType> = z.object({
   kind: z.literal("condition"),
-  get resultType() {
+  get result() {
     return DataTypeSchema;
   },
 });
@@ -150,7 +166,9 @@ export const DataTypeSchema: z.ZodType<DataType> = z.union([
   NumberTypeSchema,
   BooleanTypeSchema,
   ArrayTypeSchema,
+  TupleTypeSchema,
   ObjectTypeSchema,
+  DictionaryTypeSchema,
   UnionTypeSchema,
   OperationTypeSchema,
   ConditionTypeSchema,
@@ -168,7 +186,9 @@ export const IDataSchema: z.ZodType<IData> = z.object({ id: z.string() }).and(
     z.object({ type: NumberTypeSchema, value: z.number() }),
     z.object({ type: BooleanTypeSchema, value: z.boolean() }),
     z.object({ type: ArrayTypeSchema, value: ArrayValueSchema }),
+    z.object({ type: TupleTypeSchema, value: ArrayValueSchema }),
     z.object({ type: ObjectTypeSchema, value: ObjectValueSchema }),
+    z.object({ type: DictionaryTypeSchema, value: ObjectValueSchema }),
     z.object({
       type: UnionTypeSchema,
       get value() {

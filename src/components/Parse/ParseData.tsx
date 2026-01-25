@@ -1,6 +1,13 @@
 import { Fragment } from "react";
 import { theme } from "@/lib/theme";
-import { ArrayType, ConditionType, IData, ObjectType } from "@/lib/types";
+import {
+  ArrayType,
+  ConditionType,
+  DictionaryType,
+  IData,
+  ObjectType,
+  TupleType,
+} from "@/lib/types";
 import { ParseStatement } from "./ParseStatement";
 import {
   getConditionResult,
@@ -22,10 +29,10 @@ export function ParseData({
   if (!showData && isDataOfType(data, "reference")) {
     return <span className="text-variable">{data.value.name}</span>;
   }
-  if (isDataOfType(data, "array")) {
+  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return <ParseArray data={data} showData={showData} nest={nest} />;
   }
-  if (isDataOfType(data, "object")) {
+  if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     return <ParseObject data={data} showData={showData} nest={nest} />;
   }
   if (isDataOfType(data, "condition")) {
@@ -76,7 +83,7 @@ function ParseObject({
   showData,
   nest = 0,
 }: {
-  data: IData<ObjectType>;
+  data: IData<ObjectType | DictionaryType>;
   showData?: boolean;
   nest?: number;
 }) {
@@ -102,7 +109,7 @@ function ParseArray({
   showData,
   nest = 0,
 }: {
-  data: IData<ArrayType>;
+  data: IData<ArrayType | TupleType>;
   showData?: boolean;
   nest?: number;
 }) {

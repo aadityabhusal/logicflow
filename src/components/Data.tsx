@@ -43,7 +43,9 @@ const DataComponent = ({
   const dropdownOptions = useMemo(() => {
     const showDropdownIcon =
       isDataOfType(data, "array") ||
+      isDataOfType(data, "tuple") ||
       isDataOfType(data, "object") ||
+      isDataOfType(data, "dictionary") ||
       isDataOfType(data, "boolean") ||
       isDataOfType(data, "union") ||
       isDataOfType(data, "condition") ||
@@ -83,14 +85,14 @@ const DataComponent = ({
             handleChange={handleChange}
             context={context}
           />
-        ) : isDataOfType(data, "array") ? (
+        ) : isDataOfType(data, "array") || isDataOfType(data, "tuple") ? (
           <ArrayInput
             data={data}
             handleData={handleChange}
             context={context}
             onClick={props.onClick}
           />
-        ) : isDataOfType(data, "object") ? (
+        ) : isDataOfType(data, "object") || isDataOfType(data, "dictionary") ? (
           <ObjectInput
             data={data}
             handleData={handleChange}
@@ -161,8 +163,8 @@ const DataComponent = ({
                   }
                 : _val.startsWith("{")
                 ? {
-                    type: "object",
-                    value: createDefaultValue(DataTypes["object"].type),
+                    type: "dictionary",
+                    value: createDefaultValue(DataTypes["dictionary"].type),
                   }
                 : _val
                 ? { type: "string", value: _val }

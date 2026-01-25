@@ -29,8 +29,14 @@ export const DataTypes: {
   array: {
     type: { kind: "array", elementType: { kind: "undefined" } },
   },
+  tuple: {
+    type: { kind: "tuple", elements: [{ kind: "undefined" }] },
+  },
   object: {
     type: { kind: "object", properties: { key: { kind: "undefined" } } },
+  },
+  dictionary: {
+    type: { kind: "dictionary", elementType: { kind: "undefined" } },
   },
   union: {
     type: { kind: "union", types: [{ kind: "undefined" }] },
@@ -45,7 +51,7 @@ export const DataTypes: {
   condition: {
     type: {
       kind: "condition",
-      resultType: { kind: "union", types: [{ kind: "undefined" }] },
+      result: { kind: "union", types: [{ kind: "undefined" }] },
     },
     hideFromDropdown: true,
   },
@@ -55,7 +61,6 @@ export const DataTypes: {
   },
   error: {
     type: { kind: "error", errorType: "custom_error" },
-    // hideFromDropdown: true,
   },
 };
 

@@ -115,9 +115,9 @@ function updateDataValue(
 ): DataValue<DataType> {
   return reference
     ? { name: reference.name, id: reference.data.id }
-    : isDataOfType(data, "array")
-    ? updateStatements({ statements: data.value, context })
-    : isDataOfType(data, "object")
+    : isDataOfType(data, "array") || isDataOfType(data, "tuple")
+    ? updateStatements({ statements: data.value as IStatement[], context })
+    : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
     ? new Map(
         [...data.value.entries()].map(([name, statement]) => [
           name,

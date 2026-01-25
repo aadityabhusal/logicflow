@@ -1,4 +1,10 @@
-import { Context, IData, IStatement, ObjectType } from "@/lib/types";
+import {
+  Context,
+  IData,
+  IStatement,
+  ObjectType,
+  DictionaryType,
+} from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
@@ -7,8 +13,8 @@ import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 
 export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
-  data: IData<ObjectType>;
-  handleData: (data: IData<ObjectType>) => void;
+  data: IData<ObjectType | DictionaryType>;
+  handleData: (data: IData<ObjectType | DictionaryType>) => void;
   context: Context;
 }
 const ObjectInputComponent = (
@@ -29,7 +35,10 @@ const ObjectInputComponent = (
     const newValue = new Map(dataArray);
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue, context),
+      type: inferTypeFromValue(newValue, {
+        ...context,
+        expectedType: context.expectedType ?? data.type,
+      }),
       value: newValue,
     });
   }
@@ -44,7 +53,10 @@ const ObjectInputComponent = (
       const newValue = new Map(dataArray);
       handleData({
         ...data,
-        type: inferTypeFromValue(newValue, context),
+        type: inferTypeFromValue(newValue, {
+          ...context,
+          expectedType: context.expectedType ?? data.type,
+        }),
         value: newValue,
       });
     }
@@ -88,14 +100,20 @@ const ObjectInputComponent = (
                 expectedType:
                   context.expectedType?.kind === "object"
                     ? context.expectedType.properties[key]
+                    : context.expectedType?.kind === "dictionary"
+                    ? context.expectedType.elementType
                     : undefined,
+              }}
+              options={{
+                disableDelete:
+                  data.type.kind === "object" && !!context.expectedType,
               }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
-      {!context.expectedType && (
+      {(data.type.kind === "dictionary" || !context.expectedType) && (
         <AddStatement
           id={data.id}
           onSelect={(value) => {
@@ -110,7 +128,10 @@ const ObjectInputComponent = (
               );
               handleData({
                 ...data,
-                type: inferTypeFromValue(newMap, context),
+                type: inferTypeFromValue(newMap, {
+                  ...context,
+                  expectedType: context.expectedType ?? data.type,
+                }),
                 value: newMap,
               });
             }

@@ -12,6 +12,11 @@ import {
   UnionType,
   ProjectFile,
   OperationListItem,
+  ArrayType,
+  ObjectType,
+  ErrorType,
+  DictionaryType,
+  TupleType,
 } from "./types";
 import { MouseEvent } from "react";
 
@@ -101,12 +106,30 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
       return [createStatementFromType(type.elementType)] as DataValue<T>;
     }
 
+    case "tuple": {
+      return type.elements.map((element) =>
+        createStatementFromType(element)
+      ) as DataValue<T>;
+    }
+
     case "object": {
       const map = new Map<string, IStatement>();
       for (const [key, propType] of Object.entries(type.properties)) {
         map.set(key, createStatementFromType(propType));
       }
       return map as DataValue<T>;
+    }
+
+    case "dictionary": {
+      if (
+        type.elementType.kind === "unknown" ||
+        type.elementType.kind === "never"
+      ) {
+        return new Map() as DataValue<T>;
+      }
+      return new Map([
+        ["key", createStatementFromType(type.elementType)],
+      ]) as DataValue<T>;
     }
 
     case "union": {
@@ -301,6 +324,14 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     return isTypeCompatible(first.elementType, second.elementType);
   }
 
+  if (first.kind === "tuple" && second.kind === "tuple") {
+    return first.elements.every((firstElement) =>
+      second.elements.some((secondElement) =>
+        isTypeCompatible(firstElement, secondElement)
+      )
+    );
+  }
+
   if (first.kind === "object" && second.kind === "object") {
     const firstKeys = Object.keys(first.properties);
     const secondKeys = Object.keys(second.properties);
@@ -310,6 +341,10 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
         first.properties[key] &&
         isTypeCompatible(first.properties[key], second.properties[key])
     );
+  }
+
+  if (first.kind === "dictionary" && second.kind === "dictionary") {
+    return isTypeCompatible(first.elementType, second.elementType);
   }
 
   if (first.kind === "union" && second.kind === "union") {
@@ -603,16 +638,16 @@ export function resolveReference(data: IData, context: Context): IData {
     }
     return resolveReference(variable.data, context);
   }
-  if (isDataOfType(data, "array")) {
+  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return createData({
       ...data,
       value: data.value.map((statement) => ({
         ...statement,
         data: resolveReference(statement.data, context),
       })),
-    });
+    } as IData<ArrayType | TupleType>);
   }
-  if (isDataOfType(data, "object")) {
+  if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     const newMap = new Map();
     data.value.forEach((statement, key) => {
       newMap.set(key, {
@@ -620,7 +655,9 @@ export function resolveReference(data: IData, context: Context): IData {
         data: resolveReference(statement.data, context),
       });
     });
-    return createData({ ...data, value: newMap });
+    return createData({ ...data, value: newMap } as IData<
+      ObjectType | DictionaryType
+    >);
   }
   return data;
 }
@@ -635,19 +672,31 @@ export function inferTypeFromValue<T extends DataType>(
   if (typeof value === "boolean") return { kind: "boolean" } as T;
 
   if (Array.isArray(value)) {
-    return {
-      kind: "array",
-      elementType: getArrayElementType(value, context),
-    } as T;
+    return context.expectedType?.kind === "tuple"
+      ? ({
+          kind: "tuple",
+          elements: value.map(
+            (element) => getStatementResult(element, context.getResult).type
+          ),
+        } as T)
+      : ({
+          kind: "array",
+          elementType: getArrayElementType(value, context),
+        } as T);
   }
   if (value instanceof Map) {
-    return {
-      kind: "object",
-      properties: value.entries().reduce((acc, [key, statement]) => {
-        acc[key] = statement.data.type;
-        return acc;
-      }, {} as { [key: string]: DataType }),
-    } as T;
+    return context.expectedType?.kind === "object"
+      ? ({
+          kind: "object",
+          properties: value.entries().reduce((acc, [key, statement]) => {
+            acc[key] = getStatementResult(statement, context.getResult).type;
+            return acc;
+          }, {} as { [key: string]: DataType }),
+        } as T)
+      : ({
+          kind: "dictionary",
+          elementType: getArrayElementType(Array.from(value.values()), context),
+        } as T);
   }
   if (
     isObject(value, ["parameters", "statements"]) &&
@@ -676,7 +725,7 @@ export function inferTypeFromValue<T extends DataType>(
     const unionType = resolveUnionType(
       isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
     );
-    return { kind: "condition", resultType: unionType } as T;
+    return { kind: "condition", result: unionType } as T;
   }
   if (isObject(value, ["name"]) && typeof value.name === "string") {
     const type = context.variables.get(value.name)?.data.type;
@@ -707,6 +756,11 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     case "array":
       return `array<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
 
+    case "tuple":
+      return `[${type.elements
+        .map((element) => getTypeSignature(element, maxDepth - 1))
+        .join(", ")}]`;
+
     case "object": {
       const maxEntries = 3;
       const entries = Object.entries(type.properties).slice(0, maxEntries);
@@ -715,6 +769,8 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
         .join(", ");
       return `{ ${props} ${entries.length > maxEntries ? ", ..." : ""} }`;
     }
+    case "dictionary":
+      return `dictionary<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
 
     case "union":
       return resolveUnionType(type.types, true)
@@ -735,7 +791,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     }
 
     case "condition":
-      return getTypeSignature(type.resultType, maxDepth - 1);
+      return getTypeSignature(type.result, maxDepth - 1);
 
     case "reference":
       return getTypeSignature(type.dataType, maxDepth - 1);
@@ -833,6 +889,56 @@ export function getSkipExecution({
   }
 
   return undefined;
+}
+
+export function getRawValue(data: IData, context: Context): unknown {
+  switch (data.type.kind) {
+    case "never":
+    case "undefined":
+    case "string":
+    case "number":
+    case "boolean":
+    case "unknown":
+      return data.value;
+
+    case "error":
+      return new Error((data.value as DataValue<ErrorType>).reason);
+
+    case "array":
+    case "tuple":
+      return (data.value as DataValue<ArrayType>).map((element) =>
+        getRawValue(getStatementResult(element, context.getResult), context)
+      );
+
+    case "object":
+    case "dictionary":
+      return Object.fromEntries(
+        (data.value as DataValue<ObjectType>)
+          .entries()
+          .map(([key, value]) => [
+            key,
+            getRawValue(getStatementResult(value, context.getResult), context),
+          ])
+      );
+
+    case "union":
+      return getRawValue(
+        createData({
+          type: inferTypeFromValue(data.value, context),
+          value: data.value,
+        }),
+        context
+      );
+
+    case "operation":
+    case "condition":
+      return data.type;
+
+    case "reference":
+      return getRawValue(createData(resolveReference(data, context)), context);
+    default:
+      return "unknown";
+  }
 }
 
 /* Others */
