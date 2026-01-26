@@ -895,9 +895,9 @@ function createRuntimeError(error: unknown): IData {
 }
 
 export function executeDataValue(data: IData, context: Context): void {
-  if (isDataOfType(data, "array")) {
+  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     data.value.forEach((item) => executeStatement(item, context));
-  } else if (isDataOfType(data, "object")) {
+  } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     data.value.forEach((item) => executeStatement(item, context));
   } else if (isDataOfType(data, "operation")) {
     setOperationResults(data, context);

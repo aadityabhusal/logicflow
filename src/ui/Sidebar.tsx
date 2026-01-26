@@ -29,14 +29,14 @@ function SidebarComponent({ context }: { context: Context }) {
           size={16}
           icon={FaPlus}
           title="Add operation"
-          onClick={() =>
-            addFile(
-              createProjectFile(
-                { type: "operation" },
-                Array.from(context.reservedNames ?? []).map((r) => r.name)
-              )
-            )
-          }
+          onClick={() => {
+            const newFile = createProjectFile(
+              { type: "operation" },
+              Array.from(context.reservedNames ?? []).map((r) => r.name)
+            );
+            addFile(newFile);
+            navigate(`/project/${currentProject?.id}?file=${newFile.name}`);
+          }}
         >
           Add
         </IconButton>

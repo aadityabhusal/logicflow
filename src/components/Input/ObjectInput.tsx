@@ -1,20 +1,17 @@
-import {
-  Context,
-  IData,
-  IStatement,
-  ObjectType,
-  DictionaryType,
-} from "@/lib/types";
+import { Context, IData, IStatement, ObjectType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo } from "react";
+import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
 import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
+import { IconButton } from "@/ui/IconButton";
+import { FaQuestion } from "react-icons/fa6";
+import { Dropdown } from "../Dropdown";
 
 export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
-  data: IData<ObjectType | DictionaryType>;
-  handleData: (data: IData<ObjectType | DictionaryType>) => void;
+  data: IData<ObjectType>;
+  handleData: (data: IData<ObjectType>) => void;
   context: Context;
 }
 const ObjectInputComponent = (
@@ -23,6 +20,7 @@ const ObjectInputComponent = (
 ) => {
   const isMultiline = data.value.size > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   function handleUpdate(
     dataArray: [string, IStatement][],
@@ -43,24 +41,39 @@ const ObjectInputComponent = (
     });
   }
 
-  function handleKeyUpdate(
-    dataArray: [string, IStatement][],
-    index: number,
-    value: string
-  ) {
-    if (typeof value === "string" && !data.value.has(value)) {
-      dataArray[index] = [value, dataArray[index][1]];
-      const newValue = new Map(dataArray);
-      handleData({
-        ...data,
-        type: inferTypeFromValue(newValue, {
-          ...context,
-          expectedType: context.expectedType ?? data.type,
-        }),
-        value: newValue,
-      });
-    }
-  }
+  const remainingOptionalProperties = useMemo(() => {
+    const originalProperties =
+      context.expectedType?.kind === "object"
+        ? context.expectedType.properties
+        : data.type.properties;
+    return Object.entries(originalProperties).filter(
+      ([key]) => !data.value.has(key)
+    );
+  }, [context.expectedType, data.type.properties, data.value]);
+
+  const optionalKeyOptions = useMemo(() => {
+    const oldKey = navigationId?.slice(data.id.length + 1);
+    return remainingOptionalProperties.map(([key, type]) => ({
+      value: key,
+      entityType: "data" as const,
+      type,
+      onClick: () => {
+        const newValue = new Map(data.value);
+        const oldKeyValue = newValue.get(oldKey || "");
+        if (!oldKeyValue || !oldKey) return;
+        newValue.set(key, oldKeyValue);
+        newValue.delete(oldKey);
+        handleData({
+          ...data,
+          type: inferTypeFromValue(newValue, {
+            ...context,
+            expectedType: context.expectedType ?? data.type,
+          }),
+          value: newValue,
+        });
+      },
+    }));
+  }, [navigationId, data, remainingOptionalProperties, handleData, context]);
 
   return (
     <div
@@ -74,57 +87,90 @@ const ObjectInputComponent = (
     >
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
-        const isNameFocused = navigationId === `${value.id}_key`;
+        const isOptional = !data.type.required?.includes(key);
+        const expectedType =
+          context.expectedType?.kind === "object"
+            ? context.expectedType.properties[key]
+            : undefined;
         return (
           <div
             key={value.id}
-            style={{ display: "flex", marginLeft: isMultiline ? 8 : 0 }}
+            className={["relative flex", isMultiline ? "ml-2" : ""].join(" ")}
           >
-            <BaseInput
-              ref={(elem) => isNameFocused && elem?.focus()}
-              className={[
-                "text-property",
-                isNameFocused ? "outline outline-border" : "",
-              ].join(" ")}
+            <Dropdown
+              id={`${data.id}_${key}`}
               value={key}
-              onChange={(value) => handleKeyUpdate(arr, i, value)}
+              items={
+                isOptional ? [["Properties", optionalKeyOptions]] : undefined
+              }
+              context={context}
+              isInputTarget={true}
+              target={(props) => (
+                <BaseInput {...props} className={["text-property"].join(" ")} />
+              )}
             />
-            <span style={{ marginRight: 4 }}>:</span>
+            <IconButton
+              ref={(elem) => {
+                if (navigationId === `${data.id}_${key}_colon`) elem?.focus();
+              }}
+              icon={
+                isOptional ? FaQuestion : () => <span className="px-1">:</span>
+              }
+              className={[
+                "hover:outline hover:outline-border",
+                navigationId === `${data.id}_${key}_colon`
+                  ? "outline outline-border"
+                  : "",
+                expectedType ? "text-disabled" : "",
+              ].join(" ")}
+              title={
+                expectedType
+                  ? isOptional
+                    ? "Optional property"
+                    : undefined
+                  : isOptional
+                  ? "Make required"
+                  : "Make optional"
+              }
+              onClick={() => {
+                if (expectedType) return;
+                const required = isOptional
+                  ? [...(data.type.required ?? []), key]
+                  : (data.type.required ?? []).filter((k) => k !== key);
+                handleData({ ...data, type: { ...data.type, required } });
+                setNavigation(() => ({
+                  navigation: { id: `${data.id}_${key}_colon` },
+                }));
+              }}
+            />
             <Statement
               statement={value}
               handleStatement={(val, remove) =>
                 handleUpdate(arr, i, val, remove)
               }
-              context={{
-                ...context,
-                expectedType:
-                  context.expectedType?.kind === "object"
-                    ? context.expectedType.properties[key]
-                    : context.expectedType?.kind === "dictionary"
-                    ? context.expectedType.elementType
-                    : undefined,
-              }}
+              context={{ ...context, expectedType }}
               options={{
-                disableDelete:
-                  data.type.kind === "object" && !!context.expectedType,
+                disableDelete: !!context.expectedType && !isOptional,
               }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
-      {(data.type.kind === "dictionary" || !context.expectedType) && (
+      {(!context.expectedType || remainingOptionalProperties.length > 0) && (
         <AddStatement
           id={data.id}
           onSelect={(value) => {
             if (!data.value.has("")) {
               const newMap = new Map(data.value);
               newMap.set(
-                createVariableName({
-                  prefix: "key",
-                  prev: Array.from(data.value.keys()),
-                }),
-                value
+                remainingOptionalProperties[0]
+                  ? remainingOptionalProperties[0][0]
+                  : createVariableName({
+                      prefix: "key",
+                      prev: Array.from(data.value.keys()),
+                    }),
+                { ...value, name: undefined }
               );
               handleData({
                 ...data,
@@ -137,6 +183,15 @@ const ObjectInputComponent = (
             }
           }}
           iconProps={{ title: "Add object item" }}
+          config={
+            remainingOptionalProperties[0]
+              ? {
+                  type: remainingOptionalProperties[0][1],
+                  name: remainingOptionalProperties[0][0],
+                  isOptional: true,
+                }
+              : undefined
+          }
         />
       )}
       <span>{"}"}</span>

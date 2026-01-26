@@ -168,6 +168,7 @@ function updateStatement(
     ...currentStatement,
     data: {
       ...currentStatement.data,
+      // TODO: might need to update type based on the updated value
       value: updateDataValue(currentStatement.data, context, reference),
     },
   };

@@ -72,6 +72,7 @@ const ObjectTypeSchema: z.ZodType<ObjectType> = z.object({
   get properties() {
     return z.record(z.string(), DataTypeSchema);
   },
+  required: z.array(z.string()).optional(),
 });
 export const ObjectValueSchema: z.ZodType<DataValue<ObjectType>> = z.lazy(() =>
   z.map(z.string(), IStatementSchema)

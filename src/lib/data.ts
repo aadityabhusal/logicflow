@@ -62,6 +62,10 @@ export const DataTypes: {
   error: {
     type: { kind: "error", errorType: "custom_error" },
   },
+  promise: {
+    type: { kind: "promise", result: { kind: "undefined" }, state: "pending" },
+    hideFromDropdown: true,
+  },
 };
 
 export const ErrorTypesData: {

@@ -115,7 +115,9 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "object": {
       const map = new Map<string, IStatement>();
       for (const [key, propType] of Object.entries(type.properties)) {
-        map.set(key, createStatementFromType(propType));
+        if (type.required?.includes(key)) {
+          map.set(key, createStatementFromType(propType));
+        }
       }
       return map as DataValue<T>;
     }
@@ -692,6 +694,7 @@ export function inferTypeFromValue<T extends DataType>(
             acc[key] = getStatementResult(statement, context.getResult).type;
             return acc;
           }, {} as { [key: string]: DataType }),
+          required: context.expectedType?.required ?? [],
         } as T)
       : ({
           kind: "dictionary",
@@ -765,7 +768,13 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       const maxEntries = 3;
       const entries = Object.entries(type.properties).slice(0, maxEntries);
       const props = entries
-        .map(([k, v]) => `${k}: ${getTypeSignature(v, maxDepth - 1)}`)
+        .map(
+          ([k, v]) =>
+            `${k}${type.required?.includes(k) ? "" : "?"}: ${getTypeSignature(
+              v,
+              maxDepth - 1
+            )}`
+        )
         .join(", ");
       return `{ ${props} ${entries.length > maxEntries ? ", ..." : ""} }`;
     }

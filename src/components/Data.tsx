@@ -17,6 +17,7 @@ import { ConditionInput } from "./Input/ConditionInput";
 import { UnionInput } from "./Input/UnionInput";
 import { Operation } from "./Operation";
 import { ErrorInput } from "./Input/ErrorInput";
+import { DictionaryInput } from "./Input/Dictionary";
 import { useNavigationStore } from "@/lib/store";
 
 interface IProps {
@@ -92,8 +93,15 @@ const DataComponent = ({
             context={context}
             onClick={props.onClick}
           />
-        ) : isDataOfType(data, "object") || isDataOfType(data, "dictionary") ? (
+        ) : isDataOfType(data, "object") ? (
           <ObjectInput
+            data={data}
+            handleData={handleChange}
+            context={context}
+            onClick={props.onClick}
+          />
+        ) : isDataOfType(data, "dictionary") ? (
+          <DictionaryInput
             data={data}
             handleData={handleChange}
             context={context}

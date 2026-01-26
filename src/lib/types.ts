@@ -7,6 +7,7 @@ export type TupleType = { kind: "tuple"; elements: DataType[] };
 export type ObjectType = {
   kind: "object";
   properties: { [key: string]: DataType };
+  required?: string[];
 };
 export type DictionaryType = { kind: "dictionary"; elementType: DataType };
 export type UnionType = { kind: "union"; types: DataType[] };

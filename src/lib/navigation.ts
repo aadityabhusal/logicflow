@@ -237,18 +237,26 @@ function getStatementEntities(
         ...getStatementEntities(arrayItem, depth + 1, parent, context)
       );
     });
-    entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
+    if (statement.data.type.kind === "array" || !context.expectedType) {
+      entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
+    }
   } else if (
     isDataOfType(statement.data, "object") ||
     isDataOfType(statement.data, "dictionary")
   ) {
-    statement.data.value.forEach((property) => {
-      entities.push({ id: `${property.id}_key`, depth: depth + 1, ...parent });
+    Array.from(statement.data.value).forEach(([key, property]) => {
+      const keyId = `${statement.data.id}_${key}`;
+      entities.push({ id: keyId, depth: depth + 1, ...parent });
+      if (isDataOfType(statement.data, "object")) {
+        entities.push({ id: `${keyId}_colon`, depth: depth + 1, ...parent });
+      }
       entities.push(
         ...getStatementEntities(property, depth + 1, parent, context)
       );
     });
-    entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
+    if (statement.data.type.kind === "dictionary" || !context.expectedType) {
+      entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
+    }
   } else if (isDataOfType(statement.data, "operation")) {
     entities.push(...getOperationEntities(statement.data, context, depth + 1));
   } else if (isDataOfType(statement.data, "condition")) {
