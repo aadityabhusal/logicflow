@@ -10,7 +10,11 @@ export type ObjectType = {
   required?: string[];
 };
 export type DictionaryType = { kind: "dictionary"; elementType: DataType };
-export type UnionType = { kind: "union"; types: DataType[] };
+export type UnionType = {
+  kind: "union";
+  types: DataType[];
+  activeIndex?: number;
+};
 export type OperationType = {
   kind: "operation";
   parameters: { type: DataType; name?: string; isOptional?: boolean }[];

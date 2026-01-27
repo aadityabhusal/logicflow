@@ -41,6 +41,25 @@ const ObjectInputComponent = (
     });
   }
 
+  function handleKeyUpdate(
+    dataArray: [string, IStatement][],
+    index: number,
+    value: string
+  ) {
+    if (typeof value === "string" && !data.value.has(value)) {
+      dataArray[index] = [value, dataArray[index][1]];
+      const newValue = new Map(dataArray);
+      handleData({
+        ...data,
+        type: inferTypeFromValue(newValue, {
+          ...context,
+          expectedType: context.expectedType ?? data.type,
+        }),
+        value: newValue,
+      });
+    }
+  }
+
   const remainingOptionalProperties = useMemo(() => {
     const originalProperties =
       context.expectedType?.kind === "object"
@@ -92,23 +111,36 @@ const ObjectInputComponent = (
           context.expectedType?.kind === "object"
             ? context.expectedType.properties[key]
             : undefined;
+        const isKeyInputFocused = navigationId === `${data.id}_${key}`;
         return (
           <div
             key={value.id}
             className={["relative flex", isMultiline ? "ml-2" : ""].join(" ")}
           >
-            <Dropdown
-              id={`${data.id}_${key}`}
-              value={key}
-              items={
-                isOptional ? [["Properties", optionalKeyOptions]] : undefined
-              }
-              context={context}
-              isInputTarget={true}
-              target={(props) => (
-                <BaseInput {...props} className={["text-property"].join(" ")} />
-              )}
-            />
+            {context.expectedType ? (
+              <Dropdown
+                id={`${data.id}_${key}`}
+                value={key}
+                items={
+                  isOptional ? [["Properties", optionalKeyOptions]] : undefined
+                }
+                context={context}
+                isInputTarget={true}
+                target={(props) => (
+                  <BaseInput {...props} className={"text-property"} />
+                )}
+              />
+            ) : (
+              <BaseInput
+                ref={(elem) => isKeyInputFocused && elem?.focus()}
+                className={[
+                  "text-property",
+                  isKeyInputFocused ? "outline outline-border" : "",
+                ].join(" ")}
+                value={key}
+                onChange={(value) => handleKeyUpdate(arr, i, value)}
+              />
+            )}
             <IconButton
               ref={(elem) => {
                 if (navigationId === `${data.id}_${key}_colon`) elem?.focus();

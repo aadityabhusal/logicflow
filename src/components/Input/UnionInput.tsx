@@ -5,7 +5,7 @@ import {
   createDefaultValue,
   isDataOfType,
   getTypeSignature,
-  inferTypeFromValue,
+  getUnionActiveType,
   isTypeCompatible,
   resolveUnionType,
 } from "@/lib/utils";
@@ -33,23 +33,25 @@ const UnionInputComponent = (
   const [menuOpened, setMenuOpened] = useState(false);
 
   const activeType = useMemo(() => {
-    const type = inferTypeFromValue(data.value, context);
-    const index = data.type.types.findIndex((t) => isTypeCompatible(type, t));
+    const type = getUnionActiveType(data.type, data.value, context);
+    const index = data.type.activeIndex ?? 0;
     return {
       data: createData({
         id: `${data.id}_data`,
-        type: index === -1 ? data.type.types[0] : type,
+        type: type,
         value: data.value,
       }),
-      index: index === -1 ? 0 : index,
+      index: index,
     };
-  }, [context, data.id, data.type.types, data.value]);
+  }, [context, data.id, data.type, data.value]);
 
   function handleTypeAdd(newType: DataType) {
+    const newTypes = [...data.type.types, newType];
+    const newIndex = newTypes.length - 1;
     handleData({
       ...data,
-      type: resolveUnionType([...data.type.types, newType], true),
-      value: createDefaultValue(newType),
+      type: resolveUnionType(newTypes, true, newIndex),
+      value: createDefaultValue(newType, { includeOptionalProperties: true }),
     });
   }
 
@@ -61,14 +63,20 @@ const UnionInputComponent = (
 
     handleData({
       ...data,
-      type: resolveUnionType(updatedTypes, true),
+      type: resolveUnionType(updatedTypes, true, activeType.index),
       value: newData.value,
     });
   }
 
   function handleTypeSwitch(index: number) {
-    const defaultValue = createDefaultValue(data.type.types[index]);
-    handleData({ ...data, value: defaultValue });
+    const defaultValue = createDefaultValue(data.type.types[index], {
+      includeOptionalProperties: true,
+    });
+    handleData({
+      ...data,
+      type: { ...data.type, activeIndex: index },
+      value: defaultValue,
+    });
   }
 
   // Remove a type from the union
@@ -78,11 +86,21 @@ const UnionInputComponent = (
 
     // If removing the active type, switch to first type
     const wasActive = index === activeType.index;
-    const newValue = wasActive ? createDefaultValue(newTypes[0]) : data.value;
+    const newActiveIndex = wasActive
+      ? Math.min(activeType.index, newTypes.length - 1)
+      : index < activeType.index
+      ? activeType.index - 1
+      : activeType.index;
+
+    const newValue = wasActive
+      ? createDefaultValue(newTypes[newActiveIndex], {
+          includeOptionalProperties: true,
+        })
+      : data.value;
 
     handleData({
       ...data,
-      type: resolveUnionType(newTypes, true),
+      type: resolveUnionType(newTypes, true, newActiveIndex),
       value: newValue,
     });
   }

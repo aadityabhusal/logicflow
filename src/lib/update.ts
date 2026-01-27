@@ -11,7 +11,7 @@ import {
 import {
   getStatementResult,
   isDataOfType,
-  inferTypeFromValue,
+  getUnionActiveType,
   createContextVariables,
   createStatement,
   createData,
@@ -128,7 +128,7 @@ function updateDataValue(
     ? updateOperationValue(data, context) ?? data.value
     : isDataOfType(data, "union")
     ? updateDataValue(
-        { ...data, type: inferTypeFromValue(data.value, context) },
+        { ...data, type: getUnionActiveType(data.type, data.value, context) },
         context
       )
     : isDataOfType(data, "condition")

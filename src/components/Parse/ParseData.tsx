@@ -11,7 +11,7 @@ import {
 import { ParseStatement } from "./ParseStatement";
 import {
   getConditionResult,
-  inferTypeFromValue,
+  getUnionActiveType,
   isDataOfType,
 } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/store";
@@ -49,7 +49,7 @@ export function ParseData({
       <ParseData
         data={{
           ...data,
-          type: inferTypeFromValue(data.value, {
+          type: getUnionActiveType(data.type, data.value, {
             variables: new Map(),
             getResult,
           }),

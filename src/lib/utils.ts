@@ -34,8 +34,7 @@ export function createData<T extends DataType>(
     id: props?.id ?? nanoid(),
     type,
     value:
-      props?.value !== undefined ||
-      isTypeCompatible({ kind: "undefined" }, type)
+      props?.value !== undefined || type.kind === "undefined"
         ? (props?.value as DataValue<T>)
         : createDefaultValue(type),
   };
@@ -82,7 +81,10 @@ function createStatementFromType(
   return createStatement({ data, name, isOptional });
 }
 
-export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
+export function createDefaultValue<T extends DataType>(
+  type: T,
+  options?: { includeOptionalProperties?: boolean }
+): DataValue<T> {
   switch (type.kind) {
     case "never":
       return undefined as DataValue<T>;
@@ -115,7 +117,10 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "object": {
       const map = new Map<string, IStatement>();
       for (const [key, propType] of Object.entries(type.properties)) {
-        if (type.required?.includes(key)) {
+        if (
+          type.required?.includes(key) ||
+          options?.includeOptionalProperties
+        ) {
           map.set(key, createStatementFromType(propType));
         }
       }
@@ -135,8 +140,11 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     }
 
     case "union": {
-      // Use first type's default (could be enhanced to pick "most specific")
-      return createDefaultValue(type.types[0]) as DataValue<T>;
+      // Find first non-undefined type, or fall back to first type
+      const defaultIndex =
+        type.activeIndex ?? type.types.findIndex((t) => t.kind !== "undefined");
+      const index = defaultIndex >= 0 ? defaultIndex : 0;
+      return createDefaultValue(type.types[index], options) as DataValue<T>;
     }
 
     case "operation": {
@@ -335,14 +343,16 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
   }
 
   if (first.kind === "object" && second.kind === "object") {
-    const firstKeys = Object.keys(first.properties);
-    const secondKeys = Object.keys(second.properties);
-    if (firstKeys.length !== secondKeys.length) return false;
-    return secondKeys.every(
-      (key) =>
-        first.properties[key] &&
-        isTypeCompatible(first.properties[key], second.properties[key])
-    );
+    const firstRequired = first.required ?? Object.keys(first.properties);
+    const secondRequired = second.required ?? Object.keys(second.properties);
+    for (const key of Object.keys(second.properties)) {
+      const firstProp = first.properties[key];
+      if (!firstProp && secondRequired.includes(key)) return false;
+      if (firstProp && !isTypeCompatible(firstProp, second.properties[key])) {
+        return false;
+      }
+    }
+    return firstRequired.every((key) => second.properties[key]);
   }
 
   if (first.kind === "dictionary" && second.kind === "dictionary") {
@@ -482,10 +492,14 @@ export function applyTypeNarrowing(
     const reference = context.variables.get(referenceName);
     if (reference) {
       const resolvedParamData = resolveReference(param.data, context);
-      narrowedType = narrowType(
-        reference.data.type,
-        inferTypeFromValue(resolvedParamData.value, context)
-      );
+      const targetType = isDataOfType(resolvedParamData, "union")
+        ? getUnionActiveType(
+            resolvedParamData.type,
+            resolvedParamData.value,
+            context
+          )
+        : resolvedParamData.type;
+      narrowedType = narrowType(reference.data.type, targetType);
     }
   }
 
@@ -567,11 +581,16 @@ export function updateContextWithNarrowedTypes(
   };
 }
 
-export function resolveUnionType(types: DataType[], union: true): UnionType;
+export function resolveUnionType(
+  types: DataType[],
+  union: true,
+  activeIndex?: number
+): UnionType;
 export function resolveUnionType(types: DataType[], union?: false): DataType;
 export function resolveUnionType(
   types: DataType[],
-  forceUnion = false
+  forceUnion = false,
+  activeIndex?: number
 ): DataType | UnionType {
   const flattenedTypes = types.flatMap((type) => {
     if (!type) return [];
@@ -589,8 +608,7 @@ export function resolveUnionType(
 
   if (uniqueTypes.length === 0) return { kind: "never" };
   if (uniqueTypes.length === 1 && !forceUnion) return uniqueTypes[0];
-  const sortedTypes = uniqueTypes.sort((a, b) => a.kind.localeCompare(b.kind));
-  return { kind: "union", types: sortedTypes };
+  return { kind: "union", types: uniqueTypes, activeIndex: activeIndex ?? 0 };
 }
 
 function getArrayElementType(
@@ -739,6 +757,21 @@ export function inferTypeFromValue<T extends DataType>(
     return { kind: "error", errorType: "custom_error" } as T;
   }
   return { kind: "unknown" } as T;
+}
+
+export function getUnionActiveType(
+  unionType: UnionType,
+  value: unknown,
+  context: Context
+): DataType {
+  if (unionType.activeIndex !== undefined) {
+    return unionType.types[unionType.activeIndex] ?? unionType.types[0];
+  }
+  const inferredType = inferTypeFromValue(value, context);
+  const index = unionType.types.findIndex((t) =>
+    isTypeCompatible(inferredType, t)
+  );
+  return index === -1 ? unionType.types[0] : unionType.types[index];
 }
 
 export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
@@ -933,7 +966,7 @@ export function getRawValue(data: IData, context: Context): unknown {
     case "union":
       return getRawValue(
         createData({
-          type: inferTypeFromValue(data.value, context),
+          type: getUnionActiveType(data.type, data.value, context),
           value: data.value,
         }),
         context

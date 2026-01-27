@@ -13,7 +13,7 @@ import {
 import {
   createData,
   createStatement,
-  inferTypeFromValue,
+  getUnionActiveType,
   isDataOfType,
   isTextInput,
 } from "./utils";
@@ -267,7 +267,11 @@ function getStatementEntities(
       );
     });
   } else if (isDataOfType(statement.data, "union")) {
-    const valueType = inferTypeFromValue(statement.data.value, context);
+    const valueType = getUnionActiveType(
+      statement.data.type,
+      statement.data.value,
+      context
+    );
     const dataStatement = createStatement({
       data: createData({
         id: `${dataId}_data`,

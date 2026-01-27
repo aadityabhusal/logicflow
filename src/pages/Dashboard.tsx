@@ -33,7 +33,7 @@ export default function Dashboard() {
 
   const sortedProjects = useMemo(
     () =>
-      Object.values(projects).sort(
+      Object.values(projects).toSorted(
         (a, b) =>
           new Date(b.updatedAt ?? b.createdAt).getTime() -
           new Date(a.updatedAt ?? a.createdAt).getTime()

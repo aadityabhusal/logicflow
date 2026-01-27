@@ -12,13 +12,14 @@ import {
   OperationListItem,
   DictionaryType,
   TupleType,
+  UnionType,
 } from "./types";
 import {
   createData,
   createStatement,
   createParamData,
   getStatementResult,
-  inferTypeFromValue,
+  getUnionActiveType,
   isDataOfType,
   isTypeCompatible,
   resolveUnionType,
@@ -69,12 +70,12 @@ const unionOperations: OperationListItem[] = [
       },
       { type: data.type },
     ],
-    handler: (context, data: IData, typeData: IData) => {
+    handler: (context, data: IData<UnionType>, typeData: IData<UnionType>) => {
       return createData({
         type: { kind: "boolean" },
         value: isTypeCompatible(
-          inferTypeFromValue(data.value, context),
-          inferTypeFromValue(typeData.value, context)
+          getUnionActiveType(data.type, data.value, context),
+          getUnionActiveType(typeData.type, typeData.value, context)
         ),
       });
     },
@@ -492,7 +493,7 @@ const arrayOperations: OperationListItem[] = [
     },
   },
   {
-    name: "sort",
+    name: "toSorted",
     parameters: (data) => [
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       {
@@ -903,7 +904,7 @@ export function executeDataValue(data: IData, context: Context): void {
     setOperationResults(data, context);
   } else if (isDataOfType(data, "union")) {
     executeDataValue(
-      { ...data, type: inferTypeFromValue(data.value, context) },
+      { ...data, type: getUnionActiveType(data.type, data.value, context) },
       context
     );
   } else if (isDataOfType(data, "condition")) {

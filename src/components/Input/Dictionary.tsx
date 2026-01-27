@@ -68,17 +68,17 @@ const DictionaryInputComponent = (
     >
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
-        const isNameFocused = navigationId === `${value.id}_key`;
+        const isKeyInputFocused = navigationId === `${data.id}_${key}`;
         return (
           <div
             key={value.id}
-            style={{ display: "flex", marginLeft: isMultiline ? 8 : 0 }}
+            className={["flex", isMultiline ? "ml-2" : ""].join(" ")}
           >
             <BaseInput
-              ref={(elem) => isNameFocused && elem?.focus()}
+              ref={(elem) => isKeyInputFocused && elem?.focus()}
               className={[
                 "text-property",
-                isNameFocused ? "outline outline-border" : "",
+                isKeyInputFocused ? "outline outline-border" : "",
               ].join(" ")}
               value={key}
               onChange={(value) => handleKeyUpdate(arr, i, value)}
