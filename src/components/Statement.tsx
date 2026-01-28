@@ -75,9 +75,8 @@ const StatementComponent = ({
     [openDropdown, closeDropdown]
   );
 
-  // TODO: should context be passed as a parameter?
-  function addOperationCall(data: IData, index: number) {
-    const operation = createOperationCall({ data, context, setResult });
+  async function addOperationCall(data: IData, index: number) {
+    const operation = await createOperationCall({ data, context, setResult });
     const operations = [...statement.operations];
     operations.splice(index, 0, operation);
     handleStatement({ ...statement, operations });
@@ -279,7 +278,7 @@ const StatementComponent = ({
                         !options?.isParameter && !skipExecution
                           ? () =>
                               addOperationCall(
-                                context.getResult(operation.id) ?? data,
+                                context.getResult(operation.id)?.data ?? data,
                                 i + 1
                               )
                           : undefined

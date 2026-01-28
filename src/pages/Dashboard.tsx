@@ -41,13 +41,13 @@ export default function Dashboard() {
     [projects]
   );
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const nameParam = createStatement({
       data: createData({ value: "Test name" }),
       name: "name",
     });
     const helloData = createData({ value: "Hello! " });
-    const concatOperation = createOperationCall({
+    const concatOperation = await createOperationCall({
       data: helloData,
       name: "concat",
       parameters: [
@@ -98,7 +98,7 @@ export default function Dashboard() {
             createStatement({
               data: nameData,
               operations: [
-                createOperationCall({
+                await createOperationCall({
                   data: nameData,
                   name: "greet",
                   parameters: [nameParam],

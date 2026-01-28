@@ -875,12 +875,13 @@ export function getStatementResult(
   if (isDataOfType(result, "error")) return { ...result, id: statement.id };
   const lastOperation = statement.operations[statement.operations.length - 1];
   if (index) {
-    result = getResult(statement.operations[index - 1]?.id) ?? createData();
+    result =
+      getResult(statement.operations[index - 1]?.id)?.data ?? createData();
   } else if (!prevEntity && lastOperation) {
-    result = getResult(lastOperation.id) ?? createData();
+    result = getResult(lastOperation.id)?.data ?? createData();
   } else if (isDataOfType(result, "condition")) {
     result =
-      getResult(result.id) ?? getConditionResult(result.value, getResult);
+      getResult(result.id)?.data ?? getConditionResult(result.value, getResult);
   }
   return { ...result, id: statement.id };
 }

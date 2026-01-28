@@ -1,7 +1,12 @@
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
-import { createOperationCall, getFilteredOperations } from "../lib/operation";
+import {
+  createOperationCall,
+  getFilteredOperations,
+  executeOperation,
+} from "../lib/operation";
+import { FaArrowRotateRight, FaPlay } from "react-icons/fa6";
 import {
   updateContextWithNarrowedTypes,
   resolveParameters,
@@ -10,6 +15,7 @@ import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
 import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
+import { IconButton } from "@/ui/IconButton";
 
 const OperationCallComponent = ({
   data,
@@ -34,17 +40,35 @@ const OperationCallComponent = ({
     [data, context]
   );
 
-  const originalParameters = useMemo(() => {
-    const originalOperation = filteredOperations
+  const originalOperation = useMemo(() => {
+    return filteredOperations
       .flatMap(([_, items]) => items)
       .find((item) => item.name === operation.value.name);
+  }, [filteredOperations, operation.value.name]);
+
+  const originalParameters = useMemo(() => {
     if (!originalOperation) return undefined;
     return resolveParameters(originalOperation, data, context);
-  }, [context, data, filteredOperations, operation.value.name]);
+  }, [context, data, originalOperation]);
 
-  function handleDropdown(name: string) {
+  async function handleManualExecute() {
+    if (!originalOperation) return;
+    const result = await executeOperation(
+      originalOperation,
+      data,
+      operation.value.parameters,
+      context
+    );
+    setResult(operation.id, result);
+    handleOperationCall({
+      ...operation,
+      type: { ...operation.type, result: result.type },
+    });
+  }
+
+  async function handleDropdown(name: string) {
     if (operation.value.name === name) return;
-    const operationCall = createOperationCall({
+    const operationCall = await createOperationCall({
       data,
       name,
       parameters: operation.value.parameters,
@@ -107,7 +131,26 @@ const OperationCallComponent = ({
       }
       handleDelete={() => handleOperationCall(operation, true)}
       isInputTarget
-      target={(props) => <BaseInput {...props} className="text-method" />}
+      target={(props) => (
+        <div className="flex items-center">
+          <BaseInput {...props} className="text-method" />
+          {originalOperation?.isManual && (
+            <IconButton
+              icon={
+                context.getResult(operation.id)?.data?.value
+                  ? FaArrowRotateRight
+                  : FaPlay
+              }
+              title="Run operation"
+              className="mx-0.5"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleManualExecute();
+              }}
+            />
+          )}
+        </div>
+      )}
     >
       <span>{"("}</span>
       {operation.value.parameters.map((item, paramIndex, arr) => {

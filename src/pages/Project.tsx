@@ -39,6 +39,7 @@ export default function Project() {
   const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setResult = useExecutionResultsStore((s) => s.setResult);
+  const setPending = useExecutionResultsStore((s) => s.setPending);
 
   const currentOperation = useMemo(
     () =>
@@ -95,7 +96,12 @@ export default function Project() {
   useEffect(() => {
     if (deferredOperation) {
       useExecutionResultsStore.getState().removeAll();
-      setOperationResults(deferredOperation, { ...deferredContext, setResult });
+      setOperationResults(deferredOperation, {
+        ...deferredContext,
+        setResult,
+        setPending,
+        fileId: currentFileId || undefined,
+      });
       setNavigation({
         navigationEntities: getOperationEntities(
           deferredOperation,
@@ -103,7 +109,14 @@ export default function Project() {
         ),
       });
     }
-  }, [deferredContext, deferredOperation, setNavigation, setResult]);
+  }, [
+    currentFileId,
+    deferredContext,
+    deferredOperation,
+    setNavigation,
+    setPending,
+    setResult,
+  ]);
 
   useHotkeys(useCustomHotkeys(), []);
 

@@ -8,6 +8,7 @@ import {
   ProjectFile,
   NavigationEntity,
   DataType,
+  ExecutionResult,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
@@ -316,9 +317,10 @@ export const useUiConfigStore = createWithEqualityFn(
 );
 
 interface ExecutionResultsState {
-  results: Map<string, IData>;
+  results: Map<string, ExecutionResult>;
   setResult: (entityId: string, result: IData) => void;
-  getResult: (entityId: string) => IData | undefined;
+  setPending: (entityId: string, isPending: boolean) => void;
+  getResult: (entityId: string) => ExecutionResult | undefined;
   removeAll: () => void;
   removeResult: (entityId: string) => void;
 }
@@ -327,10 +329,19 @@ export const useExecutionResultsStore =
   createWithEqualityFn<ExecutionResultsState>(
     (set, get) => ({
       results: new Map(),
-      setResult: (entityId, result) => {
+      setResult: (entityId, data) => {
         set((state) => {
           const newResults = new Map(state.results);
-          newResults.set(entityId, result);
+          const current = newResults.get(entityId) || {};
+          newResults.set(entityId, { ...current, data, isPending: false });
+          return { results: newResults };
+        });
+      },
+      setPending: (entityId, isPending) => {
+        set((state) => {
+          const newResults = new Map(state.results);
+          const current = newResults.get(entityId) || {};
+          newResults.set(entityId, { ...current, isPending });
           return { results: newResults };
         });
       },

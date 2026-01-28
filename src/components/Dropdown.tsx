@@ -91,7 +91,9 @@ const DropdownComponent = ({
     }
     return lockedId;
   });
-  const operationResult = useExecutionResultsStore((s) => s.getResult(id));
+  const operationResult = useExecutionResultsStore(
+    (s) => s.getResult(id)?.data
+  );
   const _result = useMemo(
     () =>
       operationResult

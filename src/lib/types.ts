@@ -142,6 +142,7 @@ export type INavigation = {
 
 /* Context and Execution */
 
+export type ExecutionResult = { data?: IData; isPending?: boolean };
 export type Context = {
   variables: Map<
     string,
@@ -155,8 +156,10 @@ export type Context = {
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
-  getResult: (entityId: string) => IData | undefined;
+  getResult: (entityId: string) => ExecutionResult | undefined;
   setResult?: (entityId: string, result: IData) => void; // Only for async execution of operation calls inside an operation definition
+  setPending?: (id: string, isPending: boolean) => void;
+  fileId?: string;
 };
 
 export type OperationListItem = {
@@ -164,11 +167,15 @@ export type OperationListItem = {
   parameters:
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
-  isResultTypeFixed?: boolean; // TODO: Show error when type mismatches in the UI
+  isManual?: boolean;
 } & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { handler: (...args: [Context, ...IData<any>[]]) => IData }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { lazyHandler: (...args: [Context, IData<any>, ...IStatement[]]) => IData }
+  | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
+  | {
+      lazyHandler: (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...args: [Context, IData<any>, ...IStatement[]]
+      ) => Promise<IData> | IData;
+    }
   | { statements: IStatement[] }
 );
 

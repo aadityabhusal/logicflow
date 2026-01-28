@@ -88,7 +88,7 @@ const booleanOperations: OperationListItem[] = [
   {
     name: "and",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: (
+    lazyHandler: async (
       context,
       data: IData<BooleanType>,
       trueStatement: IStatement
@@ -96,7 +96,7 @@ const booleanOperations: OperationListItem[] = [
       if (!data.value) {
         return createData({ type: { kind: "boolean" }, value: false });
       }
-      const result = executeStatement(
+      const result = await executeStatement(
         trueStatement,
         updateContextWithNarrowedTypes(context, data)
       );
@@ -110,7 +110,7 @@ const booleanOperations: OperationListItem[] = [
   {
     name: "or",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: (
+    lazyHandler: async (
       context,
       data: IData<BooleanType>,
       falseStatement: IStatement
@@ -118,7 +118,7 @@ const booleanOperations: OperationListItem[] = [
       if (data.value) {
         return createData({ type: { kind: "boolean" }, value: true });
       }
-      const result = executeStatement(
+      const result = await executeStatement(
         falseStatement,
         updateContextWithNarrowedTypes(context, data)
       );
@@ -143,7 +143,7 @@ const booleanOperations: OperationListItem[] = [
       { type: { kind: "unknown" } },
       { type: { kind: "unknown" }, isOptional: true },
     ],
-    lazyHandler: (
+    lazyHandler: async (
       context,
       data: IData<BooleanType>,
       trueBranch: IStatement,
@@ -159,17 +159,18 @@ const booleanOperations: OperationListItem[] = [
             updateContextWithNarrowedTypes(context, data, "thenElse", 1),
           ] as const)
         : undefined;
-      const resultType = resolveUnionType([
-        executeStatement(...trueWithContext).type,
-        ...(falseWithContext
-          ? [executeStatement(...falseWithContext).type]
-          : [createData({ type: { kind: "undefined" } }).type]),
-      ]);
-      const selectedBranch =
-        !data.value && falseWithContext ? falseWithContext : trueWithContext;
-      const executedResult = executeStatement(...selectedBranch);
-      if (isDataOfType(executedResult, "error")) return executedResult;
-      return createData({ type: resultType, value: executedResult.value });
+
+      const trueResult = await executeStatement(...trueWithContext);
+      const falseResult = falseWithContext
+        ? await executeStatement(...falseWithContext)
+        : createData({ type: { kind: "undefined" } });
+
+      const resultType = resolveUnionType([trueResult.type, falseResult.type]);
+
+      const selectedResult =
+        !data.value && falseResult ? falseResult : trueResult;
+      if (isDataOfType(selectedResult, "error")) return selectedResult;
+      return createData({ type: resultType, value: selectedResult.value });
     },
   },
 ];
@@ -451,12 +452,12 @@ const arrayOperations: OperationListItem[] = [
   {
     name: "map",
     parameters: getArrayCallbackParameters,
-    handler: (
+    handler: async (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const results = executeArrayOperation(data, operation, context);
+      const results = await executeArrayOperation(data, operation, context);
       return createData({
         type: {
           kind: "array",
@@ -469,12 +470,12 @@ const arrayOperations: OperationListItem[] = [
   {
     name: "find",
     parameters: getArrayCallbackParameters,
-    handler: (
+    handler: async (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const results = executeArrayOperation(data, operation, context);
+      const results = await executeArrayOperation(data, operation, context);
       const found = results.find((r) => Boolean(r.value));
       return createData({ type: found?.type, value: found?.value });
     },
@@ -482,18 +483,18 @@ const arrayOperations: OperationListItem[] = [
   {
     name: "filter",
     parameters: getArrayCallbackParameters,
-    handler: (
+    handler: async (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const results = executeArrayOperation(data, operation, context);
+      const results = await executeArrayOperation(data, operation, context);
       const filtered = data.value.filter((_, i) => Boolean(results[i].value));
       return createData({ type: data.type, value: filtered });
     },
   },
   {
-    name: "toSorted",
+    name: "sort",
     parameters: (data) => [
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       {
@@ -509,13 +510,13 @@ const arrayOperations: OperationListItem[] = [
         },
       },
     ],
-    handler: (
+    handler: async (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const sorted = data.value.toSorted((a, b) => {
-        const result = executeOperation(
+      const sorted = await asyncSort(data.value, async (a, b) => {
+        const result = await executeOperation(
           operationToListItem(operation),
           getStatementResult(a, context.getResult),
           [b],
@@ -527,6 +528,29 @@ const arrayOperations: OperationListItem[] = [
     },
   },
 ];
+
+// Async merge sort utility for handling async comparison functions
+async function asyncSort<T>(
+  arr: T[],
+  compare: (a: T, b: T) => Promise<number>
+): Promise<T[]> {
+  if (arr.length <= 1) return [...arr];
+  const mid = Math.floor(arr.length / 2);
+  const left = await asyncSort(arr.slice(0, mid), compare);
+  const right = await asyncSort(arr.slice(mid), compare);
+
+  const sorted: T[] = [];
+  let l = 0;
+  let r = 0;
+  while (l < left.length && r < right.length) {
+    if ((await compare(left[l], right[r])) <= 0) {
+      sorted.push(left[l++]);
+    } else {
+      sorted.push(right[r++]);
+    }
+  }
+  return [...sorted, ...left.slice(l), ...right.slice(r)];
+}
 
 const getObjectOperations = (
   dataType: OperationType["parameters"][number]
@@ -646,7 +670,7 @@ const dictionaryOperations: OperationListItem[] = [
     type: { kind: "dictionary", elementType: { kind: "unknown" } },
   }),
   {
-    name: "assign",
+    name: "merged",
     parameters: [
       { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
       { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
@@ -707,36 +731,44 @@ export const builtInOperations: OperationListItem[] = [
   ...unionOperations,
 ];
 
-function executeArrayOperation(
+async function executeArrayOperation(
   data: IData<ArrayType>,
   operation: IData<OperationType>,
   context: Context
-): IData[] {
-  return data.value.map((item, index) => {
-    const itemData = getStatementResult(item, context.getResult);
-    return executeOperation(
-      operationToListItem({
-        ...operation,
-        type: {
-          ...operation.type,
-          parameters: [
-            { type: data.type.elementType },
-            ...operation.type.parameters,
-          ],
-        },
-      }),
-      data,
-      [
-        createStatement({ data: createData(itemData), isOptional: true }),
-        createStatement({
-          data: createData({ type: { kind: "number" }, value: index }),
-          isOptional: true,
+): Promise<IData[]> {
+  const settledResults = await Promise.allSettled(
+    data.value.map((item, index) => {
+      const itemData = getStatementResult(item, context.getResult);
+      return executeOperation(
+        operationToListItem({
+          ...operation,
+          type: {
+            ...operation.type,
+            parameters: [
+              { type: data.type.elementType },
+              ...operation.type.parameters,
+            ],
+          },
         }),
-        createStatement({ data }),
-      ],
-      context
-    );
-  });
+        data,
+        [
+          createStatement({ data: createData(itemData), isOptional: true }),
+          createStatement({
+            data: createData({ type: { kind: "number" }, value: index }),
+            isOptional: true,
+          }),
+          createStatement({ data }),
+        ],
+        context
+      );
+    })
+  );
+
+  return settledResults.map((result) =>
+    result.status === "fulfilled"
+      ? result.value
+      : createRuntimeError(result.reason)
+  );
 }
 
 function getArrayCallbackParameters(data: IData) {
@@ -823,7 +855,7 @@ export function getFilteredOperations<T extends boolean = false>(
     : (builtInOps.concat(userDefinedOps) as FilteredOperationsReturn<T>);
 }
 
-export function createOperationCall({
+export async function createOperationCall({
   data: _data,
   name,
   parameters,
@@ -837,7 +869,7 @@ export function createOperationCall({
   context: Context;
   setResult: Required<Context>["setResult"];
   operationId?: string;
-}): IData<OperationType> {
+}): Promise<IData<OperationType>> {
   const data = resolveReference(_data, context);
   const operations = getFilteredOperations(data, context);
   const operationByName = operations.find(
@@ -867,9 +899,12 @@ export function createOperationCall({
       return newParam;
     });
 
-  const result = executeOperation(newOperation, data, newParameters, context);
+  const result = newOperation.isManual
+    ? createData({ type: { kind: "undefined" } })
+    : await executeOperation(newOperation, data, newParameters, context);
+
   const _operationId = operationId ?? nanoid();
-  setResult(_operationId, result);
+  if (!newOperation.isManual) setResult(_operationId, result);
   return {
     id: _operationId,
     type: {
@@ -891,127 +926,162 @@ function createRuntimeError(error: unknown): IData {
   const errorMessage = error instanceof Error ? error.message : String(error);
   return createData({
     type: { kind: "error", errorType: "runtime_error" },
-    value: { reason: `Runtime error: ${errorMessage}` },
+    value: { reason: errorMessage },
   });
 }
 
-export function executeDataValue(data: IData, context: Context): void {
+export async function executeDataValue(
+  data: IData,
+  context: Context
+): Promise<void> {
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
-    data.value.forEach((item) => executeStatement(item, context));
+    await Promise.allSettled(
+      data.value.map((item) => executeStatement(item, context))
+    );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    data.value.forEach((item) => executeStatement(item, context));
+    await Promise.allSettled(
+      Array.from(data.value.values()).map((item) =>
+        executeStatement(item, context)
+      )
+    );
   } else if (isDataOfType(data, "operation")) {
-    setOperationResults(data, context);
+    await setOperationResults(data, context);
   } else if (isDataOfType(data, "union")) {
-    executeDataValue(
+    await executeDataValue(
       { ...data, type: getUnionActiveType(data.type, data.value, context) },
       context
     );
   } else if (isDataOfType(data, "condition")) {
-    executeStatement(data.value.condition, context);
-    executeStatement(data.value.true, context);
-    executeStatement(data.value.false, context);
+    await Promise.allSettled([
+      executeStatement(data.value.condition, context),
+      executeStatement(data.value.true, context),
+      executeStatement(data.value.false, context),
+    ]);
   }
 }
 
-export function executeStatement(
+export async function executeStatement(
   statement: IStatement,
   context: Context
-): IData {
+): Promise<IData> {
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "error")) return currentData;
 
   if (isDataOfType(currentData, "condition")) {
     const conditionValue = currentData.value;
-    const conditionResult = executeStatement(conditionValue.condition, context);
+    const conditionResult = await executeStatement(
+      conditionValue.condition,
+      context
+    );
     if (isDataOfType(conditionResult, "error")) return conditionResult;
-    currentData = executeStatement(
+    currentData = await executeStatement(
       conditionResult.value ? conditionValue.true : conditionValue.false,
       context
     );
     if (isDataOfType(currentData, "error")) return currentData;
   }
 
-  executeDataValue(statement.data, context);
+  // For showing result values of operation calls used inside complex data.
+  executeDataValue(statement.data, { ...context, fileId: statement.id });
 
-  const result = statement.operations.reduce(
-    (acc, operation) => {
-      if (isDataOfType(acc.data, "error")) return acc;
+  let narrowedTypes = new Map();
+  let resultData = statement.data;
 
-      acc.narrowedTypes = applyTypeNarrowing(
+  for (const operation of statement.operations) {
+    if (isDataOfType(resultData, "error")) break;
+
+    narrowedTypes = applyTypeNarrowing(
+      context,
+      narrowedTypes,
+      resultData,
+      operation
+    );
+
+    const _context: Context = {
+      ...context,
+      fileId: operation.id,
+      narrowedTypes: narrowedTypes,
+      skipExecution: getSkipExecution({
         context,
-        acc.narrowedTypes,
-        acc.data,
-        operation
-      );
+        data: resultData,
+        operationName: operation.value.name,
+      }),
+    };
 
-      const _context: Context = {
-        ...context,
-        narrowedTypes: acc.narrowedTypes,
-        skipExecution: getSkipExecution({
-          context,
-          data: acc.data,
-          operationName: operation.value.name,
-        }),
-      };
+    let operationResult: IData = createData({
+      type: { kind: "error", errorType: "type_error" },
+      value: {
+        reason: `Cannot chain '${operation.value.name}' after '${
+          resolveReference(resultData, _context).type.kind
+        }' type`,
+      },
+    });
 
-      let operationResult: IData = createData({
-        type: { kind: "error", errorType: "type_error" },
-        value: {
-          reason: `Cannot chain '${operation.value.name}' after '${
-            resolveReference(acc.data, _context).type.kind
-          }' type`,
-        },
-      });
+    const foundOp = getFilteredOperations(resultData, _context).find(
+      (op) => op.name === operation.value.name
+    );
 
-      const foundOp = getFilteredOperations(acc.data, _context).find(
-        (op) => op.name === operation.value.name
-      );
+    if (foundOp) {
+      const resultType = operation.type.result;
+      const existingResult = context.getResult?.(operation.id)?.data;
 
-      if (foundOp) {
-        operationResult = executeOperation(
+      const shouldExecute =
+        !foundOp.isManual ||
+        (foundOp.isManual &&
+          resultType.kind !== "undefined" &&
+          !existingResult);
+
+      if (shouldExecute) {
+        operationResult = await executeOperation(
           foundOp,
-          acc.data,
+          resultData,
           operation.value.parameters,
           _context
         );
+      } else if (existingResult) {
+        operationResult = existingResult;
+      } else if (foundOp.isManual) {
+        // For yet-to-execute manual operations, return an undefined type placeholder result.
+        operationResult = createData({ type: { kind: "undefined" } });
       }
+    }
 
-      context.setResult?.(operation.id, operationResult);
-      return { data: operationResult, narrowedTypes: acc.narrowedTypes };
-    },
-    { data: statement.data, narrowedTypes: new Map() }
-  ).data;
-  return resolveReference(result, context);
+    context.setResult?.(operation.id, operationResult);
+    resultData = operationResult;
+  }
+
+  return resolveReference(resultData, context);
 }
 
-export function setOperationResults(
+export async function setOperationResults(
   operation: IData<OperationType>,
   context: Context
-) {
+): Promise<void> {
   const _context: Context = {
     getResult: context.getResult,
     setResult: context.setResult,
+    setPending: context.setPending,
+    fileId: context.fileId,
     variables: createContextVariables(
       operation.value.parameters,
       context,
       operation
     ),
   };
-  operation.value.statements.forEach((statement) => {
-    const result = executeStatement(statement, _context);
+  for (const statement of operation.value.statements) {
+    const result = await executeStatement(statement, _context);
     if (!isDataOfType(result, "error") && statement.name) {
       _context.variables.set(statement.name, { data: result });
     }
-  });
+  }
 }
 
-function executeOperation(
+export async function executeOperation(
   operation: OperationListItem,
   _data: IData,
   _parameters: IStatement[],
   prevContext: Context
-): IData {
+): Promise<IData> {
   if (prevContext.skipExecution) return createData();
   const data = resolveReference(_data, prevContext);
   if (
@@ -1023,22 +1093,30 @@ function executeOperation(
 
   if ("lazyHandler" in operation) {
     try {
-      return operation.lazyHandler(prevContext, data, ..._parameters);
+      return await operation.lazyHandler(prevContext, data, ..._parameters);
     } catch (error) {
       return createRuntimeError(error);
     }
   }
 
   const resolvedParams = resolveParameters(operation, data, prevContext);
-  const parameters = resolvedParams.slice(1).map((p, index) => {
-    const hasParam = _parameters[index];
-    if (!hasParam)
-      return createData({
-        type: resolveUnionType([p.type, { kind: "undefined" }]),
-        value: undefined,
-      });
-    return executeStatement(hasParam, prevContext);
-  });
+  const settledParams = await Promise.allSettled(
+    resolvedParams.slice(1).map((p, index) => {
+      const hasParam = _parameters[index];
+      if (!hasParam)
+        return createData({
+          type: resolveUnionType([p.type, { kind: "undefined" }]),
+          value: undefined,
+        });
+      return executeStatement(hasParam, prevContext);
+    })
+  );
+
+  const parameters = settledParams.map((result) =>
+    result.status === "fulfilled"
+      ? result.value
+      : createRuntimeError(result.reason)
+  );
   const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
     const hasError = isDataOfType(parameters[i], "error");
     const typeMismatch = !isTypeCompatible(parameters[i].type, p.type);
@@ -1057,7 +1135,8 @@ function executeOperation(
 
   if ("handler" in operation) {
     try {
-      return operation.handler(prevContext, data, ...parameters);
+      const result = operation.handler(prevContext, data, ...parameters);
+      return result instanceof Promise ? await result : result;
     } catch (error) {
       return createRuntimeError(error);
     }
@@ -1081,7 +1160,7 @@ function executeOperation(
     });
     let lastResult: IData = createData();
     for (const statement of operation.statements) {
-      lastResult = executeStatement(statement, context);
+      lastResult = await executeStatement(statement, context);
       if (isDataOfType(lastResult, "error")) return lastResult;
       if (statement.name) {
         context.variables.set(statement.name, {
