@@ -318,7 +318,7 @@ export const useUiConfigStore = createWithEqualityFn(
 
 interface ExecutionResultsState {
   results: Map<string, ExecutionResult>;
-  setResult: (entityId: string, result: IData) => void;
+  setResult: (entityId: string, result: IData, instance?: unknown) => void;
   setPending: (entityId: string, isPending: boolean) => void;
   getResult: (entityId: string) => ExecutionResult | undefined;
   removeAll: () => void;
@@ -329,11 +329,16 @@ export const useExecutionResultsStore =
   createWithEqualityFn<ExecutionResultsState>(
     (set, get) => ({
       results: new Map(),
-      setResult: (entityId, data) => {
+      setResult: (entityId, data, instance) => {
         set((state) => {
           const newResults = new Map(state.results);
           const current = newResults.get(entityId) || {};
-          newResults.set(entityId, { ...current, data, isPending: false });
+          newResults.set(entityId, {
+            ...current,
+            data,
+            instance,
+            isPending: false,
+          });
           return { results: newResults };
         });
       },

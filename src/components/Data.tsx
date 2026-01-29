@@ -18,6 +18,7 @@ import { UnionInput } from "./Input/UnionInput";
 import { Operation } from "./Operation";
 import { ErrorInput } from "./Input/ErrorInput";
 import { DictionaryInput } from "./Input/Dictionary";
+import { InstanceInput } from "./Input/InstanceInput";
 import { useNavigationStore } from "@/lib/store";
 
 interface IProps {
@@ -51,6 +52,7 @@ const DataComponent = ({
       isDataOfType(data, "union") ||
       isDataOfType(data, "condition") ||
       isDataOfType(data, "operation") ||
+      isDataOfType(data, "instance") ||
       isDataOfType(data, "error");
     return {
       withDropdownIcon: showDropdownIcon,
@@ -150,6 +152,13 @@ const DataComponent = ({
           />
         ) : isDataOfType(data, "error") ? (
           <ErrorInput
+            data={data}
+            handleData={handleChange}
+            context={context}
+            onClick={props.onClick}
+          />
+        ) : isDataOfType(data, "instance") ? (
+          <InstanceInput
             data={data}
             handleData={handleChange}
             context={context}

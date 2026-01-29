@@ -36,6 +36,11 @@ export type ErrorType = {
     | "runtime_error"
     | "custom_error";
 };
+export type InstanceType = {
+  kind: "instance";
+  className: string;
+  constructorArgs: DataType[];
+};
 
 export type DataType =
   | UnknownType
@@ -52,7 +57,8 @@ export type DataType =
   | OperationType
   | ConditionType
   | ReferenceType
-  | ErrorType;
+  | ErrorType
+  | InstanceType;
 
 type BaseDataValue<T extends DataType> = T extends UnknownType
   ? unknown
@@ -90,6 +96,8 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   ? { name: string; id: string }
   : T extends ErrorType
   ? { reason: string }
+  : T extends InstanceType
+  ? { className: string; constructorArgs: IStatement[] }
   : never;
 
 export type DataValue<T extends DataType> = T extends UnionType & {
@@ -142,7 +150,11 @@ export type INavigation = {
 
 /* Context and Execution */
 
-export type ExecutionResult = { data?: IData; isPending?: boolean };
+export type ExecutionResult = {
+  data?: IData;
+  isPending?: boolean;
+  instance?: unknown;
+};
 export type Context = {
   variables: Map<
     string,
@@ -157,7 +169,7 @@ export type Context = {
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   getResult: (entityId: string) => ExecutionResult | undefined;
-  setResult?: (entityId: string, result: IData) => void; // Only for async execution of operation calls inside an operation definition
+  setResult?: (entityId: string, result: IData, instance?: unknown) => void; // Only for async execution of operation calls inside an operation definition
   setPending?: (id: string, isPending: boolean) => void;
   fileId?: string;
 };

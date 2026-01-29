@@ -14,6 +14,7 @@ import {
   TupleType,
   UnionType,
 } from "./types";
+import { InstanceTypes } from "./data";
 import {
   createData,
   createStatement,
@@ -27,6 +28,7 @@ import {
   updateContextWithNarrowedTypes,
   createContextVariables,
   applyTypeNarrowing,
+  createInstance,
   getSkipExecution,
   resolveParameters,
   getRawValue,
@@ -813,6 +815,9 @@ const dataSupportsOperation = (
   if (data.type.kind === "never") return false;
   const operationParameters = resolveParameters(operationItem, data, context);
   const firstParam = operationParameters[0]?.type ?? { kind: "undefined" };
+  if (isDataOfType(data, "instance") && firstParam.kind === "instance") {
+    return firstParam.className === data.type.className;
+  }
   return data.type.kind === "union" && firstParam.kind !== "union"
     ? data.type.types.every((t) => t.kind === firstParam.kind)
     : data.type.kind === firstParam.kind || firstParam.kind === "unknown";
@@ -957,6 +962,30 @@ export async function executeDataValue(
       executeStatement(data.value.true, context),
       executeStatement(data.value.false, context),
     ]);
+  } else if (isDataOfType(data, "instance")) {
+    const settledArgs = await Promise.allSettled(
+      data.value.constructorArgs.map(async (arg) => {
+        const result = await executeStatement(arg, context);
+        return getRawValue(result, context);
+      })
+    );
+    try {
+      const args = settledArgs
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => result.value);
+      if (args.length !== data.value.constructorArgs.length) {
+        throw new Error("Error in constructor arguments");
+      }
+      const instance = createInstance(
+        data.type.className as keyof typeof InstanceTypes,
+        args as ConstructorParameters<
+          (typeof InstanceTypes)[keyof typeof InstanceTypes]["Constructor"]
+        >
+      );
+      context.setResult?.(data.id, data, instance);
+    } catch (e) {
+      console.error(`Failed to instantiate ${data.type.className}:`, e);
+    }
   }
 }
 

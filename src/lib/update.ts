@@ -116,7 +116,7 @@ function updateDataValue(
   return reference
     ? { name: reference.name, id: reference.data.id }
     : isDataOfType(data, "array") || isDataOfType(data, "tuple")
-    ? updateStatements({ statements: data.value as IStatement[], context })
+    ? updateStatements({ statements: data.value, context })
     : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
     ? new Map(
         [...data.value.entries()].map(([name, statement]) => [
@@ -138,6 +138,13 @@ function updateDataValue(
         const _false = updateStatement(data.value.false, context);
         return { condition, true: _true, false: _false };
       })()
+    : isDataOfType(data, "instance")
+    ? {
+        constructorArgs: updateStatements({
+          statements: data.value.constructorArgs,
+          context,
+        }),
+      }
     : data.value;
 }
 

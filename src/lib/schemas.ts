@@ -20,6 +20,7 @@ import type {
   ErrorType,
   TupleType,
   DictionaryType,
+  InstanceType,
 } from "./types";
 
 /**
@@ -159,6 +160,20 @@ export const ErrorValueSchema: z.ZodType<DataValue<ErrorType>> = z.object({
   reason: z.string(),
 });
 
+const InstanceTypeSchema: z.ZodType<InstanceType> = z.object({
+  kind: z.literal("instance"),
+  className: z.string(),
+  get constructorArgs() {
+    return z.array(DataTypeSchema);
+  },
+});
+
+export const InstanceValueSchema = z.object({
+  get constructorArgs() {
+    return z.array(IStatementSchema);
+  },
+});
+
 export const DataTypeSchema: z.ZodType<DataType> = z.union([
   UnknownTypeSchema,
   NeverTypeSchema,
@@ -175,6 +190,7 @@ export const DataTypeSchema: z.ZodType<DataType> = z.union([
   ConditionTypeSchema,
   ReferenceTypeSchema,
   ErrorTypeSchema,
+  InstanceTypeSchema,
 ]);
 
 export const IDataSchema: z.ZodType<IData> = z.object({ id: z.string() }).and(
@@ -204,6 +220,7 @@ export const IDataSchema: z.ZodType<IData> = z.object({ id: z.string() }).and(
           ConditionValueSchema,
           ReferenceValueSchema,
           ErrorValueSchema,
+          InstanceValueSchema,
         ]);
       },
     }),
@@ -211,6 +228,7 @@ export const IDataSchema: z.ZodType<IData> = z.object({ id: z.string() }).and(
     z.object({ type: ConditionTypeSchema, value: ConditionValueSchema }),
     z.object({ type: ReferenceTypeSchema, value: ReferenceValueSchema }),
     z.object({ type: ErrorTypeSchema, value: ErrorValueSchema }),
+    z.object({ type: InstanceTypeSchema, value: InstanceValueSchema }),
   ])
 );
 export const IStatementSchema: z.ZodType<IStatement> = z.object({

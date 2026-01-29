@@ -62,6 +62,63 @@ export const DataTypes: {
   error: {
     type: { kind: "error", errorType: "custom_error" },
   },
+  instance: {
+    type: { kind: "instance", className: "Object", constructorArgs: [] },
+    hideFromDropdown: true,
+  },
+};
+
+export const InstanceTypes = {
+  Promise: {
+    name: "Promise",
+    Constructor: Promise,
+    constructorArgs: [
+      {
+        kind: "operation",
+        parameters: [
+          {
+            name: "resolve",
+            type: {
+              kind: "operation",
+              parameters: [{ name: "value", type: { kind: "unknown" } }],
+              result: { kind: "undefined" },
+            },
+          },
+          {
+            name: "reject",
+            type: {
+              kind: "operation",
+              parameters: [{ name: "error", type: { kind: "unknown" } }],
+              result: { kind: "undefined" },
+            },
+          },
+        ],
+        result: { kind: "instance", className: "Promise", constructorArgs: [] },
+      },
+    ],
+  },
+  Date: {
+    name: "Date",
+    Constructor: Date,
+    constructorArgs: [{ kind: "string" }],
+  },
+  URL: { name: "URL", Constructor: URL, constructorArgs: [{ kind: "string" }] },
+  Request: {
+    name: "Request",
+    Constructor: Request,
+    constructorArgs: [
+      { kind: "string" },
+      { kind: "dictionary", elementType: { kind: "unknown" } },
+    ],
+  },
+  Response: {
+    name: "Response",
+    Constructor: Response,
+    constructorArgs: [
+      { kind: "string" },
+      { kind: "dictionary", elementType: { kind: "unknown" } },
+    ],
+  },
 };
 
 export const ErrorTypesData: {

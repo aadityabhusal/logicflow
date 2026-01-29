@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { DataTypes, ErrorTypesData } from "./data";
+import { DataTypes, ErrorTypesData, InstanceTypes } from "./data";
 import {
   IData,
   IStatement,
@@ -38,6 +38,16 @@ export function createData<T extends DataType>(
         ? (props?.value as DataValue<T>)
         : createDefaultValue(type),
   };
+}
+
+export function createInstance<
+  T extends keyof typeof InstanceTypes,
+  K extends (typeof InstanceTypes)[T]["Constructor"]
+>(className: T, args: ConstructorParameters<K>): InstanceType<K> {
+  const Constructor = InstanceTypes[className].Constructor as unknown as new (
+    ...args: ConstructorParameters<K>
+  ) => InstanceType<K>;
+  return new Constructor(...args);
 }
 
 export function createStatement(props?: Partial<IStatement>): IStatement {
@@ -174,6 +184,14 @@ export function createDefaultValue<T extends DataType>(
     case "error": {
       return {
         reason: ErrorTypesData[type.errorType]?.name ?? "Unknown Error",
+      } as DataValue<T>;
+    }
+    case "instance": {
+      return {
+        className: type.className,
+        constructorArgs: type.constructorArgs.map((arg) =>
+          createStatement({ data: createData({ type: arg }) })
+        ),
       } as DataValue<T>;
     }
 
@@ -756,7 +774,25 @@ export function inferTypeFromValue<T extends DataType>(
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {
     return { kind: "error", errorType: "custom_error" } as T;
   }
+  if (isObject(value, ["className", "constructorArgs"])) {
+    return {
+      kind: "instance",
+      className: value.className,
+      constructorArgs: value.constructorArgs,
+    } as T;
+  }
   return { kind: "unknown" } as T;
+}
+
+export function getTypeFromInstance(value: unknown) {
+  if (value == null || typeof value !== "object") return false;
+  try {
+    return Object.values(InstanceTypes).find(
+      (instance) => instance.name === value.constructor.name
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function getUnionActiveType(
@@ -837,6 +873,15 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
 
     case "reference":
       return getTypeSignature(type.dataType, maxDepth - 1);
+    case "instance": {
+      if (type.constructorArgs && type.constructorArgs.length > 0) {
+        const typeArgSignatures = type.constructorArgs
+          .map((t) => getTypeSignature(t, maxDepth - 1))
+          .join(", ");
+        return `${type.className}<${typeArgSignatures}>`;
+      }
+      return type.className;
+    }
     default:
       return "unknown";
   }
