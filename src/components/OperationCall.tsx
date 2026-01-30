@@ -59,7 +59,7 @@ const OperationCallComponent = ({
       operation.value.parameters,
       context
     );
-    setResult(operation.id, result);
+    setResult(operation.id, { data: result, isPending: false });
     handleOperationCall({
       ...operation,
       type: { ...operation.type, result: result.type },
@@ -118,7 +118,10 @@ const OperationCallComponent = ({
         groupName,
         groupItems.map((item) => ({
           label: item.name,
-          value: item.name,
+          value: `${
+            resolveParameters(item, data, context)?.[0]?.type.kind ??
+            "undefined"
+          }-${item.name}`,
           color: "method",
           entityType: "operationCall",
           onClick: () => handleDropdown(item.name),
@@ -131,27 +134,23 @@ const OperationCallComponent = ({
       }
       handleDelete={() => handleOperationCall(operation, true)}
       isInputTarget
-      target={(props) => (
-        <div className="flex items-center">
-          <BaseInput {...props} className="text-method" />
-          {originalOperation?.isManual && (
-            <IconButton
-              icon={
-                context.getResult(operation.id)?.data?.value
-                  ? FaArrowRotateRight
-                  : FaPlay
-              }
-              title="Run operation"
-              className="mx-0.5"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleManualExecute();
-              }}
-            />
-          )}
-        </div>
-      )}
+      target={(props) => <BaseInput {...props} className="text-method" />}
     >
+      {originalOperation?.isManual && (
+        <IconButton
+          icon={
+            context.getResult(operation.id)?.data?.value
+              ? FaArrowRotateRight
+              : FaPlay
+          }
+          title="Run operation"
+          className="mx-0.5"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleManualExecute();
+          }}
+        />
+      )}
       <span>{"("}</span>
       {operation.value.parameters.map((item, paramIndex, arr) => {
         return (

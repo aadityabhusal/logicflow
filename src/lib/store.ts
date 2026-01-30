@@ -318,9 +318,11 @@ export const useUiConfigStore = createWithEqualityFn(
 
 interface ExecutionResultsState {
   results: Map<string, ExecutionResult>;
-  setResult: (entityId: string, result: IData, instance?: unknown) => void;
-  setPending: (entityId: string, isPending: boolean) => void;
+  instances: Map<string, unknown>;
+  setResult: (entityId: string, result: Partial<ExecutionResult>) => void;
   getResult: (entityId: string) => ExecutionResult | undefined;
+  getInstance: (entityId: string) => unknown;
+  setInstance: (entityId: string, instance: unknown) => void;
   removeAll: () => void;
   removeResult: (entityId: string) => void;
 }
@@ -329,29 +331,27 @@ export const useExecutionResultsStore =
   createWithEqualityFn<ExecutionResultsState>(
     (set, get) => ({
       results: new Map(),
-      setResult: (entityId, data, instance) => {
+      instances: new Map(),
+      setResult: (entityId, result) => {
         set((state) => {
           const newResults = new Map(state.results);
           const current = newResults.get(entityId) || {};
-          newResults.set(entityId, {
-            ...current,
-            data,
-            instance,
-            isPending: false,
-          });
-          return { results: newResults };
-        });
-      },
-      setPending: (entityId, isPending) => {
-        set((state) => {
-          const newResults = new Map(state.results);
-          const current = newResults.get(entityId) || {};
-          newResults.set(entityId, { ...current, isPending });
+          newResults.set(entityId, { ...current, ...result });
           return { results: newResults };
         });
       },
       getResult: (entityId) => {
         return get().results.get(entityId);
+      },
+      getInstance: (entityId) => {
+        return get().instances.get(entityId);
+      },
+      setInstance: (entityId, instance) => {
+        set((state) => {
+          const newInstances = new Map(state.instances);
+          newInstances.set(entityId, instance);
+          return { instances: newInstances };
+        });
       },
       removeAll: () => set({ results: new Map() }),
       removeResult: (entityId) => {

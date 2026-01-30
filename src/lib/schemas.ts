@@ -169,6 +169,7 @@ const InstanceTypeSchema: z.ZodType<InstanceType> = z.object({
 });
 
 export const InstanceValueSchema = z.object({
+  className: z.string(),
   get constructorArgs() {
     return z.array(IStatementSchema);
   },

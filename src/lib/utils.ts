@@ -14,7 +14,6 @@ import {
   OperationListItem,
   ArrayType,
   ObjectType,
-  ErrorType,
   DictionaryType,
   TupleType,
 } from "./types";
@@ -29,6 +28,8 @@ export function createData<T extends DataType>(
     inferTypeFromValue(props?.value, {
       variables: new Map(),
       getResult: () => undefined,
+      getInstance: () => undefined,
+      setInstance: () => undefined,
     })) as T;
   return {
     id: props?.id ?? nanoid(),
@@ -43,11 +44,18 @@ export function createData<T extends DataType>(
 export function createInstance<
   T extends keyof typeof InstanceTypes,
   K extends (typeof InstanceTypes)[T]["Constructor"]
->(className: T, args: ConstructorParameters<K>): InstanceType<K> {
+>(
+  className: T,
+  constructorArgs: IStatement[],
+  context: Context
+): InstanceType<K> {
+  const rawArgs = constructorArgs.map((arg) =>
+    getRawValue(getStatementResult(arg, context), context)
+  ) as ConstructorParameters<K>;
   const Constructor = InstanceTypes[className].Constructor as unknown as new (
     ...args: ConstructorParameters<K>
   ) => InstanceType<K>;
-  return new Constructor(...args);
+  return new Constructor(...rawArgs);
 }
 
 export function createStatement(props?: Partial<IStatement>): IStatement {
@@ -188,9 +196,9 @@ export function createDefaultValue<T extends DataType>(
     }
     case "instance": {
       return {
-        className: type.className,
-        constructorArgs: type.constructorArgs.map((arg) =>
-          createStatement({ data: createData({ type: arg }) })
+        className: type.className as keyof typeof InstanceTypes,
+        constructorArgs: type.constructorArgs.map((argType) =>
+          createStatement({ data: createData({ type: argType }) })
         ),
       } as DataValue<T>;
     }
@@ -256,10 +264,7 @@ export function createContextVariables(
   return statements.reduce((variables, statement) => {
     if (statement.name) {
       const data = resolveReference(statement.data, context);
-      const result = getStatementResult(
-        { ...statement, data },
-        context.getResult
-      );
+      const result = getStatementResult({ ...statement, data }, context);
 
       const isOptional = operation?.type.parameters.find(
         (param) => param.name === statement.name && param.isOptional
@@ -634,17 +639,17 @@ function getArrayElementType(
   context: Context
 ): DataType {
   if (elements.length === 0) return { kind: "unknown" };
-  const firstType = getStatementResult(elements[0], context.getResult).type;
+  const firstType = getStatementResult(elements[0], context).type;
   const allSameType = elements.every((element) => {
     return isTypeCompatible(
-      getStatementResult(element, context.getResult).type,
+      getStatementResult(element, context).type,
       firstType
     );
   });
   if (allSameType) return firstType;
 
   const unionTypes = elements.reduce((acc, element) => {
-    const elementType = getStatementResult(element, context.getResult).type;
+    const elementType = getStatementResult(element, context).type;
     const exists = acc.some((t) => isTypeCompatible(t, elementType));
     if (!exists) acc.push(elementType);
     return acc;
@@ -654,12 +659,12 @@ function getArrayElementType(
 
 export function getOperationResultType(
   statements: IStatement[],
-  getResult: Context["getResult"]
+  context: Context
 ): DataType {
   let resultType: DataType = { kind: "undefined" };
   if (statements.length > 0) {
     const lastStatement = statements[statements.length - 1];
-    resultType = getStatementResult(lastStatement, getResult).type;
+    resultType = getStatementResult(lastStatement, context).type;
   }
   return resultType;
 }
@@ -714,7 +719,7 @@ export function inferTypeFromValue<T extends DataType>(
       ? ({
           kind: "tuple",
           elements: value.map(
-            (element) => getStatementResult(element, context.getResult).type
+            (element) => getStatementResult(element, context).type
           ),
         } as T)
       : ({
@@ -727,7 +732,7 @@ export function inferTypeFromValue<T extends DataType>(
       ? ({
           kind: "object",
           properties: value.entries().reduce((acc, [key, statement]) => {
-            acc[key] = getStatementResult(statement, context.getResult).type;
+            acc[key] = getStatementResult(statement, context).type;
             return acc;
           }, {} as { [key: string]: DataType }),
           required: context.expectedType?.required ?? [],
@@ -749,17 +754,14 @@ export function inferTypeFromValue<T extends DataType>(
         name: param.name,
         type: param.data.type,
       })),
-      result: getOperationResultType(value.statements, context.getResult),
+      result: getOperationResultType(value.statements, context),
     } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
-    const trueType = getStatementResult(
-      value.true as IStatement,
-      context.getResult
-    ).type;
+    const trueType = getStatementResult(value.true as IStatement, context).type;
     const falseType = getStatementResult(
       value.false as IStatement,
-      context.getResult
+      context
     ).type;
     const unionType = resolveUnionType(
       isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
@@ -911,7 +913,7 @@ export function resolveParameters(
 
 export function getStatementResult(
   statement: IStatement,
-  getResult: Context["getResult"],
+  context: Context,
   index?: number,
   prevEntity?: boolean
   // TODO: Make use of the data type to create a better type for result e.g. a union type
@@ -921,25 +923,38 @@ export function getStatementResult(
   const lastOperation = statement.operations[statement.operations.length - 1];
   if (index) {
     result =
-      getResult(statement.operations[index - 1]?.id)?.data ?? createData();
+      context.getResult(statement.operations[index - 1]?.id)?.data ??
+      createData();
   } else if (!prevEntity && lastOperation) {
-    result = getResult(lastOperation.id)?.data ?? createData();
+    result = context.getResult(lastOperation.id)?.data ?? createData();
   } else if (isDataOfType(result, "condition")) {
     result =
-      getResult(result.id)?.data ?? getConditionResult(result.value, getResult);
+      context.getResult(result.id)?.data ??
+      getConditionResult(result.value, context);
   }
   return { ...result, id: statement.id };
 }
 
 export function getConditionResult(
   condition: DataValue<ConditionType>,
-  getResult: Context["getResult"]
+  context: Context
 ): IData {
-  const conditionResult = getStatementResult(condition.condition, getResult);
+  const conditionResult = getStatementResult(condition.condition, context);
   return getStatementResult(
     conditionResult.value ? condition.true : condition.false,
-    getResult
+    context
   );
+}
+
+export function getOperationResult(
+  statements: IStatement[],
+  context: Context
+): IData {
+  if (statements.length > 0) {
+    const lastStatement = statements[statements.length - 1];
+    return getStatementResult(lastStatement, context);
+  }
+  return createData();
 }
 
 export function getSkipExecution({
@@ -980,53 +995,63 @@ export function getSkipExecution({
 }
 
 export function getRawValue(data: IData, context: Context): unknown {
-  switch (data.type.kind) {
-    case "never":
-    case "undefined":
-    case "string":
-    case "number":
-    case "boolean":
-    case "unknown":
-      return data.value;
-
-    case "error":
-      return new Error((data.value as DataValue<ErrorType>).reason);
-
-    case "array":
-    case "tuple":
-      return (data.value as DataValue<ArrayType>).map((element) =>
-        getRawValue(getStatementResult(element, context.getResult), context)
-      );
-
-    case "object":
-    case "dictionary":
-      return Object.fromEntries(
-        (data.value as DataValue<ObjectType>)
-          .entries()
-          .map(([key, value]) => [
-            key,
-            getRawValue(getStatementResult(value, context.getResult), context),
-          ])
-      );
-
-    case "union":
-      return getRawValue(
-        createData({
-          type: getUnionActiveType(data.type, data.value, context),
-          value: data.value,
-        }),
+  /* if-else used instead of switch for type narrowing */
+  if (
+    isDataOfType(data, "never") ||
+    isDataOfType(data, "undefined") ||
+    isDataOfType(data, "string") ||
+    isDataOfType(data, "number") ||
+    isDataOfType(data, "boolean") ||
+    isDataOfType(data, "unknown")
+  ) {
+    return data.value;
+  } else if (isDataOfType(data, "error")) {
+    return new Error(data.value.reason);
+  } else if (isDataOfType(data, "instance")) {
+    const instance = context.getInstance(data.id);
+    if (instance) return instance;
+    return createInstance(
+      data.value.className as keyof typeof InstanceTypes,
+      data.value.constructorArgs,
+      context
+    );
+  } else if (isDataOfType(data, "operation")) {
+    return {
+      parameters: data.value.parameters.map((parameter) =>
+        getRawValue(getStatementResult(parameter, context), context)
+      ),
+      result: getRawValue(
+        getOperationResult(data.value.statements, context),
         context
-      );
-
-    case "operation":
-    case "condition":
-      return data.type;
-
-    case "reference":
-      return getRawValue(createData(resolveReference(data, context)), context);
-    default:
-      return "unknown";
+      ),
+    };
+  } else if (isDataOfType(data, "condition")) {
+    return getRawValue(getConditionResult(data.value, context), context);
+  } else if (isDataOfType(data, "reference")) {
+    return getRawValue(createData(resolveReference(data, context)), context);
+  } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
+    return data.value.map((element) =>
+      getRawValue(getStatementResult(element, context), context)
+    );
+  } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
+    return Object.fromEntries(
+      data.value
+        .entries()
+        .map(([key, value]) => [
+          key,
+          getRawValue(getStatementResult(value, context), context),
+        ])
+    );
+  } else if (isDataOfType(data, "union")) {
+    return getRawValue(
+      createData({
+        type: getUnionActiveType(data.type, data.value, context),
+        value: data.value,
+      }),
+      context
+    );
   }
+  return "unknown";
 }
 
 /* Others */
@@ -1154,4 +1179,27 @@ export function didMouseEnterFromRight(e: MouseEvent) {
   const mouseX = e.clientX;
   const elementRight = rect.right;
   return mouseX >= elementRight - 5;
+}
+
+// Async merge sort utility for handling async comparison functions
+export async function asyncSort<T>(
+  arr: T[],
+  compare: (a: T, b: T) => Promise<number>
+): Promise<T[]> {
+  if (arr.length <= 1) return [...arr];
+  const mid = Math.floor(arr.length / 2);
+  const left = await asyncSort(arr.slice(0, mid), compare);
+  const right = await asyncSort(arr.slice(mid), compare);
+
+  const sorted: T[] = [];
+  let l = 0;
+  let r = 0;
+  while (l < left.length && r < right.length) {
+    if ((await compare(left[l], right[r])) <= 0) {
+      sorted.push(left[l++]);
+    } else {
+      sorted.push(right[r++]);
+    }
+  }
+  return [...sorted, ...left.slice(l), ...right.slice(r)];
 }

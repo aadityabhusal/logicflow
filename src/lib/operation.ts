@@ -28,7 +28,7 @@ import {
   updateContextWithNarrowedTypes,
   createContextVariables,
   applyTypeNarrowing,
-  createInstance,
+  asyncSort,
   getSkipExecution,
   resolveParameters,
   getRawValue,
@@ -402,7 +402,7 @@ const getTupleOperations = (
     handler: (context, data: IData<ArrayType>, p1: IData<NumberType>) => {
       const item = data.value.at(p1.value);
       if (!item) return createData();
-      const value = getStatementResult(item, context.getResult);
+      const value = getStatementResult(item, context);
       return createData({ type: value.type, value: value.value });
     },
   },
@@ -420,7 +420,7 @@ const getTupleOperations = (
       return createData({
         type: { kind: "string" },
         value: data.value
-          .map((item) => getStatementResult(item, context.getResult).value)
+          .map((item) => getStatementResult(item, context).value)
           .join(p1.value),
       });
     },
@@ -520,7 +520,7 @@ const arrayOperations: OperationListItem[] = [
       const sorted = await asyncSort(data.value, async (a, b) => {
         const result = await executeOperation(
           operationToListItem(operation),
-          getStatementResult(a, context.getResult),
+          getStatementResult(a, context),
           [b],
           context
         );
@@ -530,29 +530,6 @@ const arrayOperations: OperationListItem[] = [
     },
   },
 ];
-
-// Async merge sort utility for handling async comparison functions
-async function asyncSort<T>(
-  arr: T[],
-  compare: (a: T, b: T) => Promise<number>
-): Promise<T[]> {
-  if (arr.length <= 1) return [...arr];
-  const mid = Math.floor(arr.length / 2);
-  const left = await asyncSort(arr.slice(0, mid), compare);
-  const right = await asyncSort(arr.slice(mid), compare);
-
-  const sorted: T[] = [];
-  let l = 0;
-  let r = 0;
-  while (l < left.length && r < right.length) {
-    if ((await compare(left[l], right[r])) <= 0) {
-      sorted.push(left[l++]);
-    } else {
-      sorted.push(right[r++]);
-    }
-  }
-  return [...sorted, ...left.slice(l), ...right.slice(r)];
-}
 
 const getObjectOperations = (
   dataType: OperationType["parameters"][number]
@@ -567,7 +544,7 @@ const getObjectOperations = (
     ) => {
       const item = data.value.get(p1.value);
       if (!item) return createData();
-      const value = getStatementResult(item, context.getResult) as IData;
+      const value = getStatementResult(item, context) as IData;
       return createData({ type: value.type, value: value.value });
     },
   },
@@ -613,10 +590,7 @@ const getObjectOperations = (
           ),
         },
         value: [...data.value.values()].map((item) => {
-          const itemResult = getStatementResult(
-            item,
-            context.getResult
-          ) as IData;
+          const itemResult = getStatementResult(item, context) as IData;
           return createStatement({
             data: createData({
               type: itemResult.type,
@@ -632,7 +606,7 @@ const getObjectOperations = (
     parameters: [dataType],
     handler: (context, data: IData<ObjectType | DictionaryType>) => {
       const newValues = [...data.value.entries()].map(([key, value]) => {
-        const valueResult = getStatementResult(value, context.getResult);
+        const valueResult = getStatementResult(value, context);
         return createStatement({
           data: createData({
             type: {
@@ -740,7 +714,7 @@ async function executeArrayOperation(
 ): Promise<IData[]> {
   const settledResults = await Promise.allSettled(
     data.value.map((item, index) => {
-      const itemData = getStatementResult(item, context.getResult);
+      const itemData = getStatementResult(item, context);
       return executeOperation(
         operationToListItem({
           ...operation,
@@ -896,7 +870,7 @@ export async function createOperationCall({
         isTypeCompatible(newParam.data.type, prevParam.data.type) &&
         isTypeCompatible(
           newParam.data.type,
-          getStatementResult(prevParam, context.getResult).type
+          getStatementResult(prevParam, context).type
         )
       ) {
         return prevParam;
@@ -909,7 +883,9 @@ export async function createOperationCall({
     : await executeOperation(newOperation, data, newParameters, context);
 
   const _operationId = operationId ?? nanoid();
-  if (!newOperation.isManual) setResult(_operationId, result);
+  if (!newOperation.isManual) {
+    setResult(_operationId, { data: result, isPending: false });
+  }
   return {
     id: _operationId,
     type: {
@@ -963,29 +939,9 @@ export async function executeDataValue(
       executeStatement(data.value.false, context),
     ]);
   } else if (isDataOfType(data, "instance")) {
-    const settledArgs = await Promise.allSettled(
-      data.value.constructorArgs.map(async (arg) => {
-        const result = await executeStatement(arg, context);
-        return getRawValue(result, context);
-      })
+    await Promise.allSettled(
+      data.value.constructorArgs.map((arg) => executeStatement(arg, context))
     );
-    try {
-      const args = settledArgs
-        .filter((result) => result.status === "fulfilled")
-        .map((result) => result.value);
-      if (args.length !== data.value.constructorArgs.length) {
-        throw new Error("Error in constructor arguments");
-      }
-      const instance = createInstance(
-        data.type.className as keyof typeof InstanceTypes,
-        args as ConstructorParameters<
-          (typeof InstanceTypes)[keyof typeof InstanceTypes]["Constructor"]
-        >
-      );
-      context.setResult?.(data.id, data, instance);
-    } catch (e) {
-      console.error(`Failed to instantiate ${data.type.className}:`, e);
-    }
   }
 }
 
@@ -1074,8 +1030,10 @@ export async function executeStatement(
         operationResult = createData({ type: { kind: "undefined" } });
       }
     }
-
-    context.setResult?.(operation.id, operationResult);
+    context.setResult?.(operation.id, {
+      data: operationResult,
+      isPending: false,
+    });
     resultData = operationResult;
   }
 
@@ -1088,8 +1046,9 @@ export async function setOperationResults(
 ): Promise<void> {
   const _context: Context = {
     getResult: context.getResult,
+    getInstance: context.getInstance,
+    setInstance: context.setInstance,
     setResult: context.setResult,
-    setPending: context.setPending,
     fileId: context.fileId,
     variables: createContextVariables(
       operation.value.parameters,
@@ -1172,9 +1131,11 @@ export async function executeOperation(
   }
 
   if ("statements" in operation && operation.statements.length > 0) {
-    const context = {
+    const context: Context = {
       variables: new Map(prevContext.variables),
       getResult: prevContext.getResult,
+      getInstance: prevContext.getInstance,
+      setInstance: prevContext.setInstance,
     };
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {

@@ -35,7 +35,7 @@ function updateOperationCalls(
       const updatedStatement = { ...statement, operations: acc.operations };
       const data = getStatementResult(
         updatedStatement,
-        context.getResult,
+        context,
         operationIndex,
         true
       );
@@ -140,6 +140,7 @@ function updateDataValue(
       })()
     : isDataOfType(data, "instance")
     ? {
+        ...data.value,
         constructorArgs: updateStatements({
           statements: data.value.constructorArgs,
           context,
@@ -217,6 +218,8 @@ export function updateStatements({
     );
     const _context: Context = {
       getResult: context.getResult,
+      getInstance: context.getInstance,
+      setInstance: context.setInstance,
       variables,
       skipExecution: getSkipExecution({
         context: { ...context, variables },
@@ -261,6 +264,8 @@ export function updateFiles(
     const _context: Context = {
       variables: createFileVariables(updatedFiles, fileToProcess.id),
       getResult: context.getResult,
+      getInstance: context.getInstance,
+      setInstance: context.setInstance,
     };
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {
@@ -270,10 +275,7 @@ export function updateFiles(
           ...operation,
           type: {
             ...operation.type,
-            result: getOperationResultType(
-              value.statements,
-              _context.getResult
-            ),
+            result: getOperationResultType(value.statements, _context),
           },
           value,
         });

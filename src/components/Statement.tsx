@@ -231,12 +231,7 @@ const StatementComponent = ({
         {
           statement.operations.reduce(
             (acc, operation, i, operationsList) => {
-              const data = getStatementResult(
-                statement,
-                context.getResult,
-                i,
-                true
-              );
+              const data = getStatementResult(statement, context, i, true);
               acc.narrowedTypes = applyTypeNarrowing(
                 context,
                 acc.narrowedTypes,

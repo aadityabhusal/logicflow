@@ -150,11 +150,7 @@ export type INavigation = {
 
 /* Context and Execution */
 
-export type ExecutionResult = {
-  data?: IData;
-  isPending?: boolean;
-  instance?: unknown;
-};
+export type ExecutionResult = { data?: IData; isPending?: boolean };
 export type Context = {
   variables: Map<
     string,
@@ -169,8 +165,9 @@ export type Context = {
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   getResult: (entityId: string) => ExecutionResult | undefined;
-  setResult?: (entityId: string, result: IData, instance?: unknown) => void; // Only for async execution of operation calls inside an operation definition
-  setPending?: (id: string, isPending: boolean) => void;
+  getInstance: (entityId: string) => unknown;
+  setInstance: (entityId: string, instance: unknown) => void;
+  setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
   fileId?: string;
 };
 

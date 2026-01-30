@@ -1,13 +1,15 @@
 import { Fragment } from "react";
 import { ParseStatement } from "./ParseStatement";
-import { IData, OperationType } from "@/lib/types";
+import { Context, IData, OperationType } from "@/lib/types";
 
 export function ParseOperation({
   operation,
   nest = 0,
+  context,
 }: {
   operation: IData<OperationType>;
   nest?: number;
+  context: Context;
 }) {
   function getTabs(level: number) {
     if (level <= 0) return "";
@@ -36,7 +38,11 @@ export function ParseOperation({
             ) : (
               <ParseVariable name={statement.name} />
             )}
-            <ParseStatement statement={statement} nest={nest} />
+            <ParseStatement
+              statement={statement}
+              nest={nest}
+              context={context}
+            />
             {";\n"}
           </span>
         ))}

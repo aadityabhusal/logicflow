@@ -97,10 +97,7 @@ const OperationComponent = (
               isOptional: param.isOptional,
             };
           }),
-          result: getOperationResultType(
-            updatedStatementsList,
-            context.getResult
-          ),
+          result: getOperationResultType(updatedStatementsList, context),
         },
         value: {
           ...operation.value,
@@ -123,12 +120,12 @@ const OperationComponent = (
         ...operation,
         type: {
           ...operation.type,
-          result: getOperationResultType(statements, context.getResult),
+          result: getOperationResultType(statements, context),
         },
         value: { ...operation.value, statements },
       });
     },
-    [handleChange, operation, context.getResult]
+    [handleChange, operation, context]
   );
 
   const addParameter = useCallback(
@@ -198,6 +195,8 @@ const OperationComponent = (
               }}
               context={{
                 getResult: context.getResult,
+                getInstance: context.getInstance,
+                setInstance: context.setInstance,
                 variables: new Map(),
                 reservedNames,
                 ...(expectedParameterType && {
@@ -242,6 +241,8 @@ const OperationComponent = (
             (acc, statement, index) => {
               const _context: Context = {
                 getResult: context.getResult,
+                getInstance: context.getInstance,
+                setInstance: context.setInstance,
                 reservedNames,
                 variables: acc.variables,
                 skipExecution: getSkipExecution({

@@ -20,6 +20,7 @@ import {
   createVariableName,
 } from "@/lib/utils";
 import { createOperationCall } from "@/lib/operation";
+import { Context } from "@/lib/types";
 
 dayjs.extend(relativeTime);
 
@@ -28,8 +29,17 @@ export default function Dashboard() {
   const projects = useProjectStore((s) => s.projects);
   const createProject = useProjectStore((s) => s.createProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
-  const getResult = useExecutionResultsStore((s) => s.getResult);
   const setResult = useExecutionResultsStore((s) => s.setResult);
+
+  const context = useMemo<Context>(
+    () => ({
+      variables: new Map(),
+      getResult: useExecutionResultsStore.getState().getResult,
+      getInstance: useExecutionResultsStore.getState().getInstance,
+      setInstance: useExecutionResultsStore.getState().setInstance,
+    }),
+    []
+  );
 
   const sortedProjects = useMemo(
     () =>
@@ -59,11 +69,8 @@ export default function Dashboard() {
         }),
       ],
       context: {
-        variables: createContextVariables([nameParam], {
-          variables: new Map(),
-          getResult,
-        }),
-        getResult,
+        ...context,
+        variables: createContextVariables([nameParam], context),
       },
       setResult,
     });
@@ -103,8 +110,8 @@ export default function Dashboard() {
                   name: "greet",
                   parameters: [nameParam],
                   context: {
+                    ...context,
                     variables: createFileVariables([greetOperationFile]),
-                    getResult,
                   },
                   setResult,
                 }),

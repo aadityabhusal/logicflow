@@ -20,6 +20,7 @@ import { Tooltip } from "@mantine/core";
 import { memo, useMemo } from "react";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "@/ui/Resizer";
+import { Context } from "@/lib/types";
 
 function DetailsPanelComponent() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -46,6 +47,15 @@ function DetailsPanelComponent() {
     }
     return lockedId;
   });
+  const context = useMemo<Context>(
+    () => ({
+      variables: new Map(),
+      getResult: useExecutionResultsStore.getState().getResult,
+      getInstance: useExecutionResultsStore.getState().getInstance,
+      setInstance: useExecutionResultsStore.getState().setInstance,
+    }),
+    []
+  );
   useHotkeys([["Escape", () => setNavigation({ result: undefined })]]);
 
   if (!result) return null;
@@ -166,7 +176,7 @@ function DetailsPanelComponent() {
             <div className="text-gray-300 mb-1.5">Result</div>
             <ErrorBoundary displayError={true}>
               <pre className="overflow-x-auto dropdown-scrollbar text-wrap text-sm">
-                <ParseData data={result} showData={true} />
+                <ParseData data={result} showData={true} context={context} />
               </pre>
             </ErrorBoundary>
           </div>

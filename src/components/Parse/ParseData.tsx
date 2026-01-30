@@ -3,6 +3,7 @@ import { theme } from "@/lib/theme";
 import {
   ArrayType,
   ConditionType,
+  Context,
   DictionaryType,
   IData,
   ObjectType,
@@ -14,33 +15,48 @@ import {
   getUnionActiveType,
   isDataOfType,
 } from "@/lib/utils";
-import { useExecutionResultsStore } from "@/lib/store";
 
 export function ParseData({
   data,
   showData,
   nest = 0,
+  context,
 }: {
   data: IData;
   showData?: boolean;
   nest?: number;
+  context: Context;
 }) {
-  const getResult = useExecutionResultsStore((s) => s.getResult);
   if (!showData && isDataOfType(data, "reference")) {
     return <span className="text-variable">{data.value.name}</span>;
   }
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
-    return <ParseArray data={data} showData={showData} nest={nest} />;
+    return (
+      <ParseArray
+        data={data}
+        showData={showData}
+        nest={nest}
+        context={context}
+      />
+    );
   }
   if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    return <ParseObject data={data} showData={showData} nest={nest} />;
+    return (
+      <ParseObject
+        data={data}
+        showData={showData}
+        nest={nest}
+        context={context}
+      />
+    );
   }
   if (isDataOfType(data, "condition")) {
     return (
       <ParseData
-        data={getConditionResult(data.value, getResult)}
+        data={getConditionResult(data.value, context)}
         showData={showData}
         nest={nest}
+        context={context}
       />
     );
   }
@@ -49,13 +65,11 @@ export function ParseData({
       <ParseData
         data={{
           ...data,
-          type: getUnionActiveType(data.type, data.value, {
-            variables: new Map(),
-            getResult,
-          }),
+          type: getUnionActiveType(data.type, data.value, context),
         }}
         showData={showData}
         nest={nest}
+        context={context}
       />
     );
   }
@@ -63,6 +77,16 @@ export function ParseData({
     return (
       <span style={{ whiteSpace: "pre", color: theme.color.error }}>
         {data.value.reason}
+      </span>
+    );
+  }
+  if (isDataOfType(data, "instance")) {
+    return (
+      <span className="text-instance">
+        {data.value.className}
+        {"<"}
+        {JSON.stringify(data.value.instance)}
+        {">"}
       </span>
     );
   }
@@ -82,10 +106,12 @@ function ParseObject({
   data,
   showData,
   nest = 0,
+  context,
 }: {
   data: IData<ObjectType | DictionaryType>;
   showData?: boolean;
   nest?: number;
+  context: Context;
 }) {
   const val = Array.from(data.value);
   return (
@@ -95,7 +121,12 @@ function ParseObject({
         <Fragment key={val.id}>
           <span className="text-property">{key}</span>
           {": "}
-          <ParseStatement statement={val} showData={showData} nest={nest} />
+          <ParseStatement
+            statement={val}
+            showData={showData}
+            nest={nest}
+            context={context}
+          />
           {i + 1 < arr.length && ", "}
         </Fragment>
       ))}
@@ -108,17 +139,24 @@ function ParseArray({
   data,
   showData,
   nest = 0,
+  context,
 }: {
   data: IData<ArrayType | TupleType>;
   showData?: boolean;
   nest?: number;
+  context: Context;
 }) {
   return (
     <span className="gap-1">
       <span className="text-method">{"["}</span>
       {data.value.map((item, i, arr) => (
         <Fragment key={item.id}>
-          <ParseStatement statement={item} showData={showData} nest={nest} />
+          <ParseStatement
+            statement={item}
+            showData={showData}
+            nest={nest}
+            context={context}
+          />
           {i + 1 < arr.length && ", "}
         </Fragment>
       ))}
@@ -131,10 +169,12 @@ function _ParseCondition({
   data,
   showData,
   nest = 0,
+  context,
 }: {
   data: IData<ConditionType>;
   showData?: boolean;
   nest?: number;
+  context: Context;
 }) {
   return (
     <span className="gap-1">
@@ -142,18 +182,21 @@ function _ParseCondition({
         statement={data.value.condition}
         showData={showData}
         nest={nest}
+        context={context}
       />
       <span>{"?"}</span>
       <ParseStatement
         statement={data.value.true}
         showData={showData}
         nest={nest}
+        context={context}
       />
       <span>{":"}</span>
       <ParseStatement
         statement={data.value.false}
         showData={showData}
         nest={nest}
+        context={context}
       />
     </span>
   );

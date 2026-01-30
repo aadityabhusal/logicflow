@@ -39,7 +39,6 @@ export default function Project() {
   const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setResult = useExecutionResultsStore((s) => s.setResult);
-  const setPending = useExecutionResultsStore((s) => s.setPending);
 
   const currentOperation = useMemo(
     () =>
@@ -71,8 +70,9 @@ export default function Project() {
             }))
           )
       ),
-      getResult: (id: string) =>
-        useExecutionResultsStore.getState().results.get(id),
+      getResult: useExecutionResultsStore.getState().getResult,
+      getInstance: useExecutionResultsStore.getState().getInstance,
+      setInstance: useExecutionResultsStore.getState().setInstance,
     } as Context;
   }, [currentProject?.files, currentOperation?.id]);
 
@@ -99,7 +99,6 @@ export default function Project() {
       setOperationResults(deferredOperation, {
         ...deferredContext,
         setResult,
-        setPending,
         fileId: currentFileId || undefined,
       });
       setNavigation({
@@ -114,7 +113,6 @@ export default function Project() {
     deferredContext,
     deferredOperation,
     setNavigation,
-    setPending,
     setResult,
   ]);
 

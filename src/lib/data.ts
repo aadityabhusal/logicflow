@@ -63,7 +63,11 @@ export const DataTypes: {
     type: { kind: "error", errorType: "custom_error" },
   },
   instance: {
-    type: { kind: "instance", className: "Object", constructorArgs: [] },
+    type: {
+      kind: "instance",
+      className: "Date",
+      constructorArgs: [{ kind: "string" }],
+    },
     hideFromDropdown: true,
   },
 };
@@ -95,12 +99,12 @@ export const InstanceTypes = {
         ],
         result: { kind: "instance", className: "Promise", constructorArgs: [] },
       },
-    ],
+    ] as DataType[],
   },
   Date: {
     name: "Date",
     Constructor: Date,
-    constructorArgs: [{ kind: "string" }],
+    constructorArgs: [{ kind: "string" }] as DataType[],
   },
   URL: { name: "URL", Constructor: URL, constructorArgs: [{ kind: "string" }] },
   Request: {
@@ -109,7 +113,7 @@ export const InstanceTypes = {
     constructorArgs: [
       { kind: "string" },
       { kind: "dictionary", elementType: { kind: "unknown" } },
-    ],
+    ] as DataType[],
   },
   Response: {
     name: "Response",
@@ -117,7 +121,7 @@ export const InstanceTypes = {
     constructorArgs: [
       { kind: "string" },
       { kind: "dictionary", elementType: { kind: "unknown" } },
-    ],
+    ] as DataType[],
   },
 };
 
