@@ -44,13 +44,9 @@ export function createData<T extends DataType>(
 export function createInstance<
   T extends keyof typeof InstanceTypes,
   K extends (typeof InstanceTypes)[T]["Constructor"]
->(
-  className: T,
-  constructorArgs: IStatement[],
-  context: Context
-): InstanceType<K> {
+>(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
   const rawArgs = constructorArgs.map((arg) =>
-    getRawValue(getStatementResult(arg, context), context)
+    getRawValue(arg, context)
   ) as ConstructorParameters<K>;
   const Constructor = InstanceTypes[className].Constructor as unknown as new (
     ...args: ConstructorParameters<K>
@@ -274,7 +270,7 @@ export function createContextVariables(
       }
 
       variables.set(statement.name, {
-        data: { ...result, id: statement.id },
+        data: result,
         reference: isDataOfType(statement.data, "reference")
           ? statement.data.value
           : undefined,
@@ -919,7 +915,7 @@ export function getStatementResult(
   // TODO: Make use of the data type to create a better type for result e.g. a union type
 ): IData {
   let result = statement.data;
-  if (isDataOfType(result, "error")) return { ...result, id: statement.id };
+  if (isDataOfType(result, "error")) return result;
   const lastOperation = statement.operations[statement.operations.length - 1];
   if (index) {
     result =
@@ -932,7 +928,7 @@ export function getStatementResult(
       context.getResult(result.id)?.data ??
       getConditionResult(result.value, context);
   }
-  return { ...result, id: statement.id };
+  return result;
 }
 
 export function getConditionResult(
@@ -1012,7 +1008,7 @@ export function getRawValue(data: IData, context: Context): unknown {
     if (instance) return instance;
     return createInstance(
       data.value.className as keyof typeof InstanceTypes,
-      data.value.constructorArgs,
+      data.value.constructorArgs.map((arg) => getStatementResult(arg, context)),
       context
     );
   } else if (isDataOfType(data, "operation")) {

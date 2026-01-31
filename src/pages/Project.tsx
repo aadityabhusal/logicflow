@@ -99,7 +99,6 @@ export default function Project() {
       setOperationResults(deferredOperation, {
         ...deferredContext,
         setResult,
-        fileId: currentFileId || undefined,
       });
       setNavigation({
         navigationEntities: getOperationEntities(

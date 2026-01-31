@@ -167,8 +167,8 @@ export type Context = {
   getResult: (entityId: string) => ExecutionResult | undefined;
   getInstance: (entityId: string) => unknown;
   setInstance: (entityId: string, instance: unknown) => void;
+  operationId?: string; // Only for passing operation ids in the handler functions
   setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
-  fileId?: string;
 };
 
 export type OperationListItem = {

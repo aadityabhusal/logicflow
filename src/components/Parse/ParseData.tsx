@@ -85,7 +85,7 @@ export function ParseData({
       <span className="text-instance">
         {data.value.className}
         {"<"}
-        {JSON.stringify(data.value.instance)}
+        {JSON.stringify(context.getInstance(data.id))}
         {">"}
       </span>
     );

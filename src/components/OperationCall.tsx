@@ -57,9 +57,12 @@ const OperationCallComponent = ({
       originalOperation,
       data,
       operation.value.parameters,
-      context
+      { ...context, operationId: operation.id }
     );
-    setResult(operation.id, { data: result, isPending: false });
+    setResult(operation.id, {
+      data: { ...result, id: operation.id },
+      isPending: false,
+    });
     handleOperationCall({
       ...operation,
       type: { ...operation.type, result: result.type },

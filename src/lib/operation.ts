@@ -878,13 +878,20 @@ export async function createOperationCall({
       return newParam;
     });
 
+  const _operationId = operationId ?? nanoid();
+
   const result = newOperation.isManual
     ? createData({ type: { kind: "undefined" } })
-    : await executeOperation(newOperation, data, newParameters, context);
+    : await executeOperation(newOperation, data, newParameters, {
+        ...context,
+        operationId: _operationId,
+      });
 
-  const _operationId = operationId ?? nanoid();
   if (!newOperation.isManual) {
-    setResult(_operationId, { data: result, isPending: false });
+    setResult(_operationId, {
+      data: { ...result, id: _operationId },
+      isPending: false,
+    });
   }
   return {
     id: _operationId,
@@ -967,7 +974,7 @@ export async function executeStatement(
   }
 
   // For showing result values of operation calls used inside complex data.
-  executeDataValue(statement.data, { ...context, fileId: statement.id });
+  executeDataValue(statement.data, context);
 
   let narrowedTypes = new Map();
   let resultData = statement.data;
@@ -984,7 +991,7 @@ export async function executeStatement(
 
     const _context: Context = {
       ...context,
-      fileId: operation.id,
+      operationId: operation.id,
       narrowedTypes: narrowedTypes,
       skipExecution: getSkipExecution({
         context,
@@ -1008,7 +1015,7 @@ export async function executeStatement(
 
     if (foundOp) {
       const resultType = operation.type.result;
-      const existingResult = context.getResult?.(operation.id)?.data;
+      const existingResult = context.getResult(operation.id)?.data;
 
       const shouldExecute =
         !foundOp.isManual ||
@@ -1017,12 +1024,13 @@ export async function executeStatement(
           !existingResult);
 
       if (shouldExecute) {
-        operationResult = await executeOperation(
+        const result = await executeOperation(
           foundOp,
           resultData,
           operation.value.parameters,
           _context
         );
+        operationResult = { ...result, id: operation.id };
       } else if (existingResult) {
         operationResult = existingResult;
       } else if (foundOp.isManual) {
@@ -1049,7 +1057,6 @@ export async function setOperationResults(
     getInstance: context.getInstance,
     setInstance: context.setInstance,
     setResult: context.setResult,
-    fileId: context.fileId,
     variables: createContextVariables(
       operation.value.parameters,
       context,
