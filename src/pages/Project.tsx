@@ -29,7 +29,8 @@ import {
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DataTypes } from "@/lib/data";
-import { builtInOperations, setOperationResults } from "@/lib/operation";
+import { setOperationResults } from "@/lib/operation";
+import { builtInOperations } from "@/lib/built-in-operations";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());

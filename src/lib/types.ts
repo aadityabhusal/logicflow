@@ -171,18 +171,32 @@ export type Context = {
   setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
 };
 
+export type HandlerContext = Context & {
+  executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
+  executeOperation: (
+    operation: OperationListItem,
+    data: IData,
+    parameters: IStatement[],
+    context: Context
+  ) => Promise<IData>;
+};
 export type OperationListItem = {
   name: string;
   parameters:
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
   isManual?: boolean;
-} & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
+} & (
+  | {
+      handler: (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...args: [HandlerContext, ...IData<any>[]]
+      ) => Promise<IData> | IData;
+    }
   | {
       lazyHandler: (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...args: [Context, IData<any>, ...IStatement[]]
+        ...args: [HandlerContext, IData<any>, ...IStatement[]]
       ) => Promise<IData> | IData;
     }
   | { statements: IStatement[] }
