@@ -52,7 +52,6 @@ const DataComponent = ({
       isDataOfType(data, "union") ||
       isDataOfType(data, "condition") ||
       isDataOfType(data, "operation") ||
-      isDataOfType(data, "instance") ||
       isDataOfType(data, "error");
     return {
       withDropdownIcon: showDropdownIcon,
@@ -77,7 +76,7 @@ const DataComponent = ({
       }
       isInputTarget={
         isDataOfType(data, "reference") ||
-        ["string", "number", "undefined"].includes(data.type.kind)
+        ["string", "number", "undefined", "instance"].includes(data.type.kind)
       }
       target={({ onChange, ...props }: IDropdownTargetProps) =>
         isDataOfType(data, "reference") ? (
@@ -159,10 +158,11 @@ const DataComponent = ({
           />
         ) : isDataOfType(data, "instance") ? (
           <InstanceInput
+            {...props}
+            onChange={onChange}
             data={data}
             handleData={handleChange}
             context={context}
-            onClick={props.onClick}
           />
         ) : (
           // Undefined type

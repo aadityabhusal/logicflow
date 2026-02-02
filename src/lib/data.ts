@@ -1,4 +1,4 @@
-import { DataType, ErrorType } from "./types";
+import { DataType, ErrorType, OperationType } from "./types";
 
 export const DataTypes: {
   [K in DataType["kind"]]: {
@@ -78,50 +78,70 @@ export const InstanceTypes = {
     Constructor: Promise,
     constructorArgs: [
       {
-        kind: "operation",
-        parameters: [
-          {
-            name: "resolve",
-            type: {
-              kind: "operation",
-              parameters: [{ name: "value", type: { kind: "unknown" } }],
-              result: { kind: "undefined" },
+        type: {
+          kind: "operation",
+          parameters: [
+            {
+              name: "resolve",
+              type: {
+                kind: "operation",
+                parameters: [{ name: "value", type: { kind: "undefined" } }],
+                result: { kind: "undefined" },
+              },
             },
-          },
-          {
-            name: "reject",
-            type: {
-              kind: "operation",
-              parameters: [{ name: "error", type: { kind: "unknown" } }],
-              result: { kind: "undefined" },
+            {
+              name: "reject",
+              type: {
+                kind: "operation",
+                parameters: [{ name: "error", type: { kind: "undefined" } }],
+                result: { kind: "undefined" },
+              },
             },
+          ],
+          result: {
+            kind: "instance",
+            className: "Promise",
+            constructorArgs: [],
           },
-        ],
-        result: { kind: "instance", className: "Promise", constructorArgs: [] },
+        },
       },
-    ] as DataType[],
+    ] as OperationType["parameters"],
   },
   Date: {
     name: "Date",
     Constructor: Date,
-    constructorArgs: [{ kind: "string" }] as DataType[],
+    constructorArgs: [
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
   },
-  URL: { name: "URL", Constructor: URL, constructorArgs: [{ kind: "string" }] },
+  URL: {
+    name: "URL",
+    Constructor: URL,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+  },
   Request: {
     name: "Request",
     Constructor: Request,
     constructorArgs: [
-      { kind: "string" },
-      { kind: "dictionary", elementType: { kind: "unknown" } },
-    ] as DataType[],
+      { type: { kind: "string" } },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
   },
   Response: {
     name: "Response",
     Constructor: Response,
     constructorArgs: [
-      { kind: "string" },
-      { kind: "dictionary", elementType: { kind: "unknown" } },
-    ] as DataType[],
+      { type: { kind: "string" }, isOptional: true },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
   },
 };
 

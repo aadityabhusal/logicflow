@@ -266,6 +266,10 @@ function getStatementEntities(
         ...getStatementEntities(branch, depth + 1, parent, context)
       );
     });
+  } else if (isDataOfType(statement.data, "instance")) {
+    statement.data.value.constructorArgs.forEach((arg) => {
+      entities.push(...getStatementEntities(arg, depth + 1, parent, context));
+    });
   } else if (isDataOfType(statement.data, "union")) {
     const valueType = getUnionActiveType(
       statement.data.type,

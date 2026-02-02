@@ -36,7 +36,7 @@ export type ErrorType = {
     | "runtime_error"
     | "custom_error";
 };
-export type InstanceType = {
+export type InstanceDataType = {
   kind: "instance";
   className: string;
   constructorArgs: DataType[];
@@ -58,7 +58,7 @@ export type DataType =
   | ConditionType
   | ReferenceType
   | ErrorType
-  | InstanceType;
+  | InstanceDataType;
 
 type BaseDataValue<T extends DataType> = T extends UnknownType
   ? unknown
@@ -96,7 +96,7 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   ? { name: string; id: string }
   : T extends ErrorType
   ? { reason: string }
-  : T extends InstanceType
+  : T extends InstanceDataType
   ? { className: string; constructorArgs: IStatement[] }
   : never;
 

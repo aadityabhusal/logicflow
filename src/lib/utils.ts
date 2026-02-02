@@ -270,7 +270,7 @@ export function createContextVariables(
       }
 
       variables.set(statement.name, {
-        data: result,
+        data: { ...result, id: statement.id },
         reference: isDataOfType(statement.data, "reference")
           ? statement.data.value
           : undefined,
@@ -872,12 +872,6 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     case "reference":
       return getTypeSignature(type.dataType, maxDepth - 1);
     case "instance": {
-      if (type.constructorArgs && type.constructorArgs.length > 0) {
-        const typeArgSignatures = type.constructorArgs
-          .map((t) => getTypeSignature(t, maxDepth - 1))
-          .join(", ");
-        return `${type.className}<${typeArgSignatures}>`;
-      }
       return type.className;
     }
     default:
@@ -1004,13 +998,7 @@ export function getRawValue(data: IData, context: Context): unknown {
   } else if (isDataOfType(data, "error")) {
     return new Error(data.value.reason);
   } else if (isDataOfType(data, "instance")) {
-    const instance = context.getInstance(data.id);
-    if (instance) return instance;
-    return createInstance(
-      data.value.className as keyof typeof InstanceTypes,
-      data.value.constructorArgs.map((arg) => getStatementResult(arg, context)),
-      context
-    );
+    return context.getInstance(data.id);
   } else if (isDataOfType(data, "operation")) {
     return {
       parameters: data.value.parameters.map((parameter) =>
@@ -1121,6 +1109,35 @@ export function getDataDropdownList({
     }
   });
 
+  (Object.keys(InstanceTypes) as (keyof typeof InstanceTypes)[]).forEach(
+    (name) => {
+      const instanceConfig = InstanceTypes[name];
+      const instanceType: DataType = {
+        kind: "instance",
+        className: instanceConfig.name,
+        constructorArgs: instanceConfig.constructorArgs.map((arg) => arg.type),
+      };
+
+      const option: IDropdownItem = {
+        entityType: "data",
+        label: name,
+        value: `instance:${name}`,
+        type: instanceType,
+        onClick: () => {
+          onSelect(createData({ id: data.id, type: instanceType }));
+        },
+      };
+      if (
+        !context.expectedType ||
+        isTypeCompatible(instanceType, context.expectedType)
+      ) {
+        allowedOptions.push(option);
+      } else if (!context.enforceExpectedType) {
+        dataTypeOptions.push(option);
+      }
+    }
+  );
+
   context.variables.entries().forEach(([name, variable]) => {
     const option: IDropdownItem = {
       value: name,
@@ -1175,27 +1192,4 @@ export function didMouseEnterFromRight(e: MouseEvent) {
   const mouseX = e.clientX;
   const elementRight = rect.right;
   return mouseX >= elementRight - 5;
-}
-
-// Async merge sort utility for handling async comparison functions
-export async function asyncSort<T>(
-  arr: T[],
-  compare: (a: T, b: T) => Promise<number>
-): Promise<T[]> {
-  if (arr.length <= 1) return [...arr];
-  const mid = Math.floor(arr.length / 2);
-  const left = await asyncSort(arr.slice(0, mid), compare);
-  const right = await asyncSort(arr.slice(mid), compare);
-
-  const sorted: T[] = [];
-  let l = 0;
-  let r = 0;
-  while (l < left.length && r < right.length) {
-    if ((await compare(left[l], right[r])) <= 0) {
-      sorted.push(left[l++]);
-    } else {
-      sorted.push(right[r++]);
-    }
-  }
-  return [...sorted, ...left.slice(l), ...right.slice(r)];
 }

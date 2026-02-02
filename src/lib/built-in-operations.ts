@@ -11,6 +11,7 @@ import {
   DictionaryType,
   TupleType,
   UnionType,
+  InstanceDataType,
   HandlerContext,
 } from "./types";
 import { InstanceTypes } from "./data";
@@ -23,9 +24,7 @@ import {
   isTypeCompatible,
   resolveUnionType,
   updateContextWithNarrowedTypes,
-  asyncSort,
   getRawValue,
-  createInstance,
 } from "./utils";
 
 function getArrayCallbackParameters(data: IData) {
@@ -111,6 +110,28 @@ export function createRuntimeError(error: unknown): IData {
   });
 }
 
+async function asyncSort<T>(
+  arr: T[],
+  compare: (a: T, b: T) => Promise<number>
+): Promise<T[]> {
+  if (arr.length <= 1) return [...arr];
+  const mid = Math.floor(arr.length / 2);
+  const left = await asyncSort(arr.slice(0, mid), compare);
+  const right = await asyncSort(arr.slice(mid), compare);
+
+  const sorted: T[] = [];
+  let l = 0;
+  let r = 0;
+  while (l < left.length && r < right.length) {
+    if ((await compare(left[l], right[r])) <= 0) {
+      sorted.push(left[l++]);
+    } else {
+      sorted.push(right[r++]);
+    }
+  }
+  return [...sorted, ...left.slice(l), ...right.slice(r)];
+}
+
 const unknownOperations: OperationListItem[] = [
   {
     name: "isEqual",
@@ -161,26 +182,7 @@ const unionOperations: OperationListItem[] = [
   },
 ];
 
-const undefinedOperations: OperationListItem[] = [
-  {
-    name: "getDate",
-    parameters: [{ type: { kind: "string" } }],
-    handler: (context, data: IData<StringType>) => {
-      const instance = createInstance("Date", [data], context);
-      if (context.operationId) {
-        context.setInstance(context.operationId, instance);
-      }
-      return createData({
-        type: {
-          kind: "instance",
-          className: "Date",
-          constructorArgs: InstanceTypes.Date.constructorArgs,
-        },
-        // value; also need value—probably during edit
-      });
-    },
-  },
-];
+const undefinedOperations: OperationListItem[] = [];
 
 const booleanOperations: OperationListItem[] = [
   {
@@ -795,6 +797,107 @@ const operationOperations: OperationListItem[] = [
   },
 ];
 
+type InstanceValue<T extends keyof typeof InstanceTypes> = InstanceType<
+  (typeof InstanceTypes)[T]["Constructor"]
+>;
+function createInstanceOperation<T extends keyof typeof InstanceTypes>(
+  className: T,
+  name: string,
+  method: (instance: InstanceValue<T>) => Partial<IData>
+): OperationListItem {
+  return {
+    name,
+    parameters: [
+      { type: { kind: "instance", className, constructorArgs: [] } },
+    ],
+    handler: (context: HandlerContext, data: IData<InstanceDataType>) => {
+      const instance = getRawValue(data, context) as InstanceValue<T>;
+      if (!instance) {
+        return createRuntimeError(`${className} instance not found`);
+      }
+      return createData(method(instance));
+    },
+  };
+}
+
+const dateOperations: OperationListItem[] = [
+  createInstanceOperation("Date", "getFullYear", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getFullYear(),
+  })),
+  createInstanceOperation("Date", "getMonth", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getMonth(),
+  })),
+  createInstanceOperation("Date", "getDate", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getDate(),
+  })),
+  createInstanceOperation("Date", "getTime", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getTime(),
+  })),
+  createInstanceOperation("Date", "getHours", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getHours(),
+  })),
+  createInstanceOperation("Date", "getMinutes", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getMinutes(),
+  })),
+  createInstanceOperation("Date", "getSeconds", (instance) => ({
+    type: { kind: "number" },
+    value: instance.getSeconds(),
+  })),
+  createInstanceOperation("Date", "toISOString", (instance) => ({
+    type: { kind: "string" },
+    value: instance.toISOString(),
+  })),
+  createInstanceOperation("Date", "toDateString", (instance) => ({
+    type: { kind: "string" },
+    value: instance.toDateString(),
+  })),
+];
+
+const urlOperations: OperationListItem[] = [
+  createInstanceOperation("URL", "getHref", (instance) => ({
+    type: { kind: "string" },
+    value: instance.href,
+  })),
+  createInstanceOperation("URL", "getOrigin", (instance) => ({
+    type: { kind: "string" },
+    value: instance.origin,
+  })),
+  createInstanceOperation("URL", "getProtocol", (instance) => ({
+    type: { kind: "string" },
+    value: instance.protocol,
+  })),
+  createInstanceOperation("URL", "getHostname", (instance) => ({
+    type: { kind: "string" },
+    value: instance.hostname,
+  })),
+  createInstanceOperation("URL", "getPort", (instance) => ({
+    type: { kind: "string" },
+    value: instance.port,
+  })),
+  createInstanceOperation("URL", "getPathname", (instance) => ({
+    type: { kind: "string" },
+    value: instance.pathname,
+  })),
+  createInstanceOperation("URL", "getSearch", (instance) => ({
+    type: { kind: "string" },
+    value: instance.search,
+  })),
+  createInstanceOperation("URL", "getHash", (instance) => ({
+    type: { kind: "string" },
+    value: instance.hash,
+  })),
+  createInstanceOperation("URL", "toString", (instance) => ({
+    type: { kind: "string" },
+    value: instance.toString(),
+  })),
+];
+
 export const builtInOperations: OperationListItem[] = [
   ...undefinedOperations,
   ...stringOperations,
@@ -806,5 +909,7 @@ export const builtInOperations: OperationListItem[] = [
   ...dictionaryOperations,
   ...operationOperations,
   ...unionOperations,
+  ...dateOperations,
+  ...urlOperations,
   ...unknownOperations,
 ];

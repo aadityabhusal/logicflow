@@ -10,6 +10,7 @@ import {
   createData,
   createStatement,
   createParamData,
+  createInstance,
   getStatementResult,
   getUnionActiveType,
   isDataOfType,
@@ -26,6 +27,7 @@ import {
   createRuntimeError,
   operationToListItem,
 } from "./built-in-operations";
+import { InstanceTypes } from "./data";
 
 /* Operation List */
 
@@ -136,10 +138,9 @@ export async function createOperationCall({
       });
 
   if (!newOperation.isManual) {
-    setResult(_operationId, {
-      data: { ...result, id: _operationId },
-      isPending: false,
-    });
+    const operationResult = { ...result, id: _operationId };
+    setResult(_operationId, { data: operationResult, isPending: false });
+    storeInstance(operationResult, _operationId, context);
   }
   return {
     id: _operationId,
@@ -157,6 +158,21 @@ export async function createOperationCall({
 }
 
 /* Execution */
+
+export function storeInstance(data: IData, entityId: string, context: Context) {
+  if (!isDataOfType(data, "instance")) return;
+  const originalInstance = context.getInstance(data.id);
+  if (originalInstance) {
+    context.setInstance?.(entityId, originalInstance);
+  } else {
+    const instance = createInstance(
+      data.value.className as keyof typeof InstanceTypes,
+      data.value.constructorArgs.map((arg) => getStatementResult(arg, context)),
+      context
+    );
+    context.setInstance?.(entityId, instance);
+  }
+}
 
 export async function executeDataValue(
   data: IData,
@@ -186,9 +202,15 @@ export async function executeDataValue(
       executeStatement(data.value.false, context),
     ]);
   } else if (isDataOfType(data, "instance")) {
-    await Promise.allSettled(
+    const settledArgs = await Promise.all(
       data.value.constructorArgs.map((arg) => executeStatement(arg, context))
     );
+    const instance = createInstance(
+      data.value.className as keyof typeof InstanceTypes,
+      settledArgs,
+      context
+    );
+    context.setInstance?.(data.id, instance);
   }
 }
 
@@ -282,10 +304,12 @@ export async function executeStatement(
       data: operationResult,
       isPending: false,
     });
+    storeInstance(operationResult, operation.id, context);
     resultData = operationResult;
   }
-
-  return resolveReference(resultData, context);
+  const finalResult = resolveReference(resultData, context);
+  if (statement.name) storeInstance(finalResult, statement.id, context);
+  return finalResult;
 }
 
 export async function setOperationResults(
@@ -303,6 +327,10 @@ export async function setOperationResults(
       operation
     ),
   };
+  operation.value.parameters.forEach((param) => {
+    storeInstance(param.data, param.data.id, context);
+    storeInstance(getStatementResult(param, context), param.id, context);
+  });
   for (const statement of operation.value.statements) {
     const result = await executeStatement(statement, _context);
     if (!isDataOfType(result, "error") && statement.name) {

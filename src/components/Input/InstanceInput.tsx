@@ -1,16 +1,18 @@
-import { IData, Context, InstanceType, IStatement } from "@/lib/types";
-import { forwardRef, HTMLAttributes, memo } from "react";
+import { IData, Context, InstanceDataType, IStatement } from "@/lib/types";
+import { forwardRef, memo } from "react";
 import { Statement } from "../Statement";
+import { BaseInput } from "./BaseInput";
+import { IDropdownTargetProps } from "../Dropdown";
 
-export interface InstanceInputProps extends HTMLAttributes<HTMLDivElement> {
-  data: IData<InstanceType>;
-  handleData: (data: IData<InstanceType>) => void;
+export interface InstanceInputProps extends IDropdownTargetProps {
+  data: IData<InstanceDataType>;
+  handleData: (data: IData<InstanceDataType>) => void;
   context: Context;
 }
 
 const InstanceInputComponent = (
-  { data, handleData, context, ...props }: InstanceInputProps,
-  ref: React.ForwardedRef<HTMLDivElement>
+  { data, handleData, context, onChange, ...props }: InstanceInputProps,
+  ref: React.ForwardedRef<HTMLInputElement>
 ) => {
   function handleConstructorArgs(item: IStatement, index: number) {
     const constructorArgs = [...data.value.constructorArgs];
@@ -21,8 +23,13 @@ const InstanceInputComponent = (
     });
   }
   return (
-    <div {...props} ref={ref} className="flex items-center gap-1">
-      <span>{data.type.className}</span>
+    <div className="flex items-start gap-1">
+      <BaseInput
+        {...props}
+        ref={ref}
+        className="text-type"
+        onChange={onChange}
+      />
       <span>{"("}</span>
       {data.value.constructorArgs.map((item, paramIndex, arr) => {
         return (

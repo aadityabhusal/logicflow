@@ -20,7 +20,7 @@ import type {
   ErrorType,
   TupleType,
   DictionaryType,
-  InstanceType,
+  InstanceDataType,
 } from "./types";
 
 /**
@@ -160,7 +160,7 @@ export const ErrorValueSchema: z.ZodType<DataValue<ErrorType>> = z.object({
   reason: z.string(),
 });
 
-const InstanceTypeSchema: z.ZodType<InstanceType> = z.object({
+const InstanceTypeSchema: z.ZodType<InstanceDataType> = z.object({
   kind: z.literal("instance"),
   className: z.string(),
   get constructorArgs() {

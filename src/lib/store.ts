@@ -353,12 +353,14 @@ export const useExecutionResultsStore =
           return { instances: newInstances };
         });
       },
-      removeAll: () => set({ results: new Map() }),
+      removeAll: () => set({ results: new Map(), instances: new Map() }),
       removeResult: (entityId) => {
         set((state) => {
           const newResults = new Map(state.results);
           newResults.delete(entityId);
-          return { results: newResults };
+          const newInstances = new Map(state.instances);
+          newInstances.delete(entityId);
+          return { results: newResults, instances: newInstances };
         });
       },
     }),
