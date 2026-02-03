@@ -193,9 +193,14 @@ export function createDefaultValue<T extends DataType>(
     case "instance": {
       return {
         className: type.className as keyof typeof InstanceTypes,
-        constructorArgs: type.constructorArgs.map((argType) =>
-          createStatement({ data: createData({ type: argType }) })
-        ),
+        constructorArgs: type.constructorArgs
+          .filter((param) => !param.isOptional)
+          .map((argType) =>
+            createStatement({
+              data: createParamData({ ...argType, type: argType.type }),
+              isOptional: argType.isOptional,
+            })
+          ),
       } as DataValue<T>;
     }
 
@@ -440,7 +445,7 @@ export function getInverseTypes(
     if (!variable) return acc;
     let excludedType: DataType = variable.data.type;
 
-    if (variable.data.type.kind === "union") {
+    if (isDataOfType(variable.data, "union")) {
       const remainingTypes = variable.data.type.types.filter(
         (t) => !isTypeCompatible(t, value.data.type)
       );
@@ -569,7 +574,7 @@ export function mergeNarrowedTypes(
   return operationName === "or"
     ? originalTypes
     : narrowedTypes.entries().reduce((acc, [key, value]) => {
-        if (value.data.type.kind === "never") acc.delete(key);
+        if (isDataOfType(value.data, "never")) acc.delete(key);
         else acc.set(key, value);
         return acc;
       }, new Map(originalTypes));
@@ -1115,7 +1120,7 @@ export function getDataDropdownList({
       const instanceType: DataType = {
         kind: "instance",
         className: instanceConfig.name,
-        constructorArgs: instanceConfig.constructorArgs.map((arg) => arg.type),
+        constructorArgs: instanceConfig.constructorArgs,
       };
 
       const option: IDropdownItem = {
@@ -1192,4 +1197,11 @@ export function didMouseEnterFromRight(e: MouseEvent) {
   const mouseX = e.clientX;
   const elementRight = rect.right;
   return mouseX >= elementRight - 5;
+}
+
+export function getChildContext(context: Context): Context {
+  if (context.expectedTypeScope === "self") {
+    return { ...context, expectedType: undefined };
+  }
+  return context;
 }

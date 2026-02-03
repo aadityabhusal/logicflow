@@ -3,7 +3,11 @@ import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo } from "react";
-import { createVariableName, inferTypeFromValue } from "@/lib/utils";
+import {
+  createVariableName,
+  inferTypeFromValue,
+  getChildContext,
+} from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 
 export interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
@@ -69,6 +73,7 @@ const DictionaryInputComponent = (
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
         const isKeyInputFocused = navigationId === `${data.id}_${key}`;
+        const childContext = getChildContext(context);
         return (
           <div
             key={value.id}
@@ -90,10 +95,10 @@ const DictionaryInputComponent = (
                 handleUpdate(arr, i, val, remove)
               }
               context={{
-                ...context,
+                ...childContext,
                 expectedType:
-                  context.expectedType?.kind === "dictionary"
-                    ? context.expectedType.elementType
+                  childContext.expectedType?.kind === "dictionary"
+                    ? childContext.expectedType.elementType
                     : undefined,
               }}
             />

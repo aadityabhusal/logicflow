@@ -22,6 +22,7 @@ import type {
   DictionaryType,
   InstanceDataType,
 } from "./types";
+import { isDataOfType } from "./utils";
 
 /**
  * Note: Zod schemas are derived from types because the type relations are complex and some not possible to express in Zod.
@@ -93,12 +94,19 @@ const UnionTypeSchema: z.ZodType<UnionType> = z.object({
   },
 });
 
+const ParameterSchema: z.ZodType<OperationType["parameters"][number]> =
+  z.object({
+    name: z.string().optional(),
+    get type() {
+      return DataTypeSchema;
+    },
+    isOptional: z.boolean().optional(),
+  });
+
 const OperationTypeSchema: z.ZodType<OperationType> = z.object({
   kind: z.literal("operation"),
   get parameters() {
-    return z.array(
-      z.object({ name: z.string().optional(), type: DataTypeSchema })
-    );
+    return z.array(ParameterSchema);
   },
   get result() {
     return DataTypeSchema;
@@ -164,7 +172,7 @@ const InstanceTypeSchema: z.ZodType<InstanceDataType> = z.object({
   kind: z.literal("instance"),
   className: z.string(),
   get constructorArgs() {
-    return z.array(DataTypeSchema);
+    return z.array(ParameterSchema);
   },
 });
 
@@ -242,7 +250,7 @@ export const IStatementSchema: z.ZodType<IStatement> = z.object({
   get operations() {
     return z
       .array(IDataSchema)
-      .refine((ops) => ops.every((op) => op.type.kind === "operation"), {
+      .refine((ops) => ops.every((op) => isDataOfType(op, "operation")), {
         message: "All operations must have type.kind === 'operation'",
       }) as z.ZodType<IData<OperationType>[]>;
   },

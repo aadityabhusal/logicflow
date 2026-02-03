@@ -66,7 +66,7 @@ export const DataTypes: {
     type: {
       kind: "instance",
       className: "Date",
-      constructorArgs: [{ kind: "string" }],
+      constructorArgs: [{ type: { kind: "string" } }],
     },
     hideFromDropdown: true,
   },
@@ -96,6 +96,7 @@ export const InstanceTypes = {
                 parameters: [{ name: "error", type: { kind: "undefined" } }],
                 result: { kind: "undefined" },
               },
+              isOptional: true,
             },
           ],
           result: {
@@ -119,17 +120,6 @@ export const InstanceTypes = {
     Constructor: URL,
     constructorArgs: [
       { type: { kind: "string" } },
-    ] as OperationType["parameters"],
-  },
-  Request: {
-    name: "Request",
-    Constructor: Request,
-    constructorArgs: [
-      { type: { kind: "string" } },
-      {
-        type: { kind: "dictionary", elementType: { kind: "unknown" } },
-        isOptional: true,
-      },
     ] as OperationType["parameters"],
   },
   Response: {

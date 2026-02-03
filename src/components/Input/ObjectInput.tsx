@@ -3,7 +3,11 @@ import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
-import { createVariableName, inferTypeFromValue } from "@/lib/utils";
+import {
+  createVariableName,
+  inferTypeFromValue,
+  getChildContext,
+} from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
@@ -112,6 +116,7 @@ const ObjectInputComponent = (
             ? context.expectedType.properties[key]
             : undefined;
         const isKeyInputFocused = navigationId === `${data.id}_${key}`;
+        const childContext = getChildContext(context);
         return (
           <div
             key={value.id}
@@ -180,7 +185,12 @@ const ObjectInputComponent = (
               handleStatement={(val, remove) =>
                 handleUpdate(arr, i, val, remove)
               }
-              context={{ ...context, expectedType }}
+              context={{
+                ...childContext,
+                expectedType: childContext.expectedType
+                  ? expectedType
+                  : undefined,
+              }}
               options={{
                 disableDelete: !!context.expectedType && !isOptional,
               }}

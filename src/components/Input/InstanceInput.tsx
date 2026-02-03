@@ -39,10 +39,11 @@ const InstanceInputComponent = (
               handleStatement={(val) =>
                 val && handleConstructorArgs(val, paramIndex)
               }
-              options={{ disableDelete: true }}
+              options={{ disableDelete: !item.isOptional }}
               context={{
                 ...context,
-                expectedType: data.type.constructorArgs[paramIndex + 1],
+                expectedTypeScope: "self",
+                expectedType: data.type.constructorArgs[paramIndex].type,
               }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}

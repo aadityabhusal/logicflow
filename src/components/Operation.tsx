@@ -20,6 +20,7 @@ import {
   createContextVariables,
   getOperationResultType,
   getSkipExecution,
+  getChildContext,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
@@ -199,10 +200,17 @@ const OperationComponent = (
                 setInstance: context.setInstance,
                 variables: new Map(),
                 reservedNames,
-                ...(expectedParameterType && {
-                  expectedType: expectedParameterType[i]?.type,
-                  enforceExpectedType: true,
-                }),
+                ...(getChildContext(context).expectedType &&
+                expectedParameterType
+                  ? {
+                      expectedType: expectedParameterType[i]?.type,
+                      enforceExpectedType: true,
+                    }
+                  : {
+                      expectedType: undefined,
+                      enforceExpectedType: undefined,
+                      expectedTypeScope: undefined,
+                    }),
               }}
               addStatement={(statement, position) => {
                 addParameter(

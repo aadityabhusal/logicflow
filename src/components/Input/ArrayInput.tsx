@@ -2,7 +2,7 @@ import { ArrayType, TupleType, Context, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
-import { inferTypeFromValue } from "@/lib/utils";
+import { inferTypeFromValue, isDataOfType, getChildContext } from "@/lib/utils";
 
 export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
@@ -51,6 +51,7 @@ const ArrayInputComponent = (
     >
       <span>{"["}</span>
       {data.value.map((item, i, arr) => {
+        const childContext = getChildContext(context);
         return (
           <div
             key={item.id}
@@ -59,17 +60,22 @@ const ArrayInputComponent = (
             <Statement
               statement={item}
               handleStatement={(val, remove) => handleUpdate(val, i, remove)}
-              context={{ ...context, expectedType: getExpectedType(i) }}
+              context={{
+                ...childContext,
+                expectedType: childContext.expectedType
+                  ? getExpectedType(i)
+                  : undefined,
+              }}
               options={{
                 disableDelete:
-                  data.type.kind === "tuple" && !!context.expectedType,
+                  isDataOfType(data, "tuple") && !!context.expectedType,
               }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
-      {(data.type.kind === "array" || !context.expectedType) && (
+      {(isDataOfType(data, "array") || !context.expectedType) && (
         <AddStatement
           id={data.id}
           onSelect={(value) => {

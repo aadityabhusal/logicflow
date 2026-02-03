@@ -36,15 +36,15 @@ const dataSupportsOperation = (
   operationItem: OperationListItem,
   context: Context
 ) => {
-  if (data.type.kind === "never") return false;
+  if (isDataOfType(data, "never")) return false;
   const operationParameters = resolveParameters(operationItem, data, context);
   const firstParam = operationParameters[0]?.type ?? { kind: "undefined" };
   if (isDataOfType(data, "instance") && firstParam.kind === "instance") {
     return firstParam.className === data.type.className;
   }
-  return data.type.kind === "union" && firstParam.kind !== "union"
+  return isDataOfType(data, "union") && firstParam.kind !== "union"
     ? data.type.types.every((t) => t.kind === firstParam.kind)
-    : data.type.kind === firstParam.kind || firstParam.kind === "unknown";
+    : isDataOfType(data, firstParam.kind) || firstParam.kind === "unknown";
 };
 
 type FilteredOperationsReturn<T extends boolean> = T extends true

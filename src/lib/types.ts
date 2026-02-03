@@ -39,7 +39,7 @@ export type ErrorType = {
 export type InstanceDataType = {
   kind: "instance";
   className: string;
-  constructorArgs: DataType[];
+  constructorArgs: OperationType["parameters"];
 };
 
 export type DataType =
@@ -162,6 +162,7 @@ export type Context = {
   }>;
   narrowedTypes?: Context["variables"];
   expectedType?: DataType;
+  expectedTypeScope?: "self" | "descendants";
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   getResult: (entityId: string) => ExecutionResult | undefined;

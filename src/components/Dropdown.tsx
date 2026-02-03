@@ -150,7 +150,7 @@ const DropdownComponent = ({
               if (!handleDelete) return;
               if (
                 textInput &&
-                textInput.value.length > (data?.type.kind === "number" ? 1 : 0)
+                textInput.value.length > (isDataOfType(data, "number") ? 1 : 0)
               ) {
                 return;
               }
