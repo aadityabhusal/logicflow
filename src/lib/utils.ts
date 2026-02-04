@@ -30,6 +30,8 @@ export function createData<T extends DataType>(
       getResult: () => undefined,
       getInstance: () => undefined,
       setInstance: () => undefined,
+      executeOperation: () => Promise.resolve(createData()),
+      executeStatement: () => Promise.resolve(createData()),
     })) as T;
   return {
     id: props?.id ?? nanoid(),
@@ -255,6 +257,46 @@ export function createFileFromOperation(operation: IData<OperationType>) {
     type: "operation",
     content: { type: operation.type, value: operation.value },
   } as ProjectFile;
+}
+
+export function createContext(
+  context: Context,
+  overrides?: Partial<Context>
+): Context {
+  const baseContext: Context = {
+    getResult: context.getResult,
+    setResult: context.setResult,
+    getInstance: context.getInstance,
+    setInstance: context.setInstance,
+    executeOperation: context.executeOperation,
+    executeStatement: context.executeStatement,
+    operationId: context.operationId,
+    reservedNames: context.reservedNames,
+    variables: context.variables,
+  };
+  return { ...baseContext, ...overrides };
+}
+
+export function getContextExpectedTypes({
+  context,
+  expectedType,
+  enforceExpectedType,
+}: {
+  context: Context;
+  expectedType: DataType | undefined;
+  enforceExpectedType?: boolean;
+}) {
+  const _enforceExpectedType =
+    enforceExpectedType ?? context.enforceExpectedType;
+
+  return {
+    ...(expectedType === undefined || expectedType.kind === "unknown"
+      ? { expectedType: undefined, enforceExpectedType: undefined }
+      : {
+          expectedType,
+          enforceExpectedType: _enforceExpectedType,
+        }),
+  };
 }
 
 export function createContextVariables(
@@ -750,10 +792,10 @@ export function inferTypeFromValue<T extends DataType>(
   ) {
     return {
       kind: "operation",
-      // TODO: Add optional parameters support
       parameters: value.parameters.map((param) => ({
         name: param.name,
         type: param.data.type,
+        isOptional: param.isOptional,
       })),
       result: getOperationResultType(value.statements, context),
     } as T;
@@ -777,25 +819,21 @@ export function inferTypeFromValue<T extends DataType>(
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {
     return { kind: "error", errorType: "custom_error" } as T;
   }
-  if (isObject(value, ["className", "constructorArgs"])) {
+  if (
+    isObject(value, ["className", "constructorArgs"]) &&
+    Array.isArray(value.constructorArgs)
+  ) {
     return {
       kind: "instance",
       className: value.className,
-      constructorArgs: value.constructorArgs,
+      constructorArgs: value.constructorArgs.map((arg) => ({
+        name: arg.name,
+        type: arg.data.type,
+        isOptional: arg.isOptional,
+      })),
     } as T;
   }
   return { kind: "unknown" } as T;
-}
-
-export function getTypeFromInstance(value: unknown) {
-  if (value == null || typeof value !== "object") return false;
-  try {
-    return Object.values(InstanceTypes).find(
-      (instance) => instance.name === value.constructor.name
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function getUnionActiveType(
@@ -1197,11 +1235,4 @@ export function didMouseEnterFromRight(e: MouseEvent) {
   const mouseX = e.clientX;
   const elementRight = rect.right;
   return mouseX >= elementRight - 5;
-}
-
-export function getChildContext(context: Context): Context {
-  if (context.expectedTypeScope === "self") {
-    return { ...context, expectedType: undefined };
-  }
-  return context;
 }

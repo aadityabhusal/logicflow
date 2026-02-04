@@ -19,7 +19,11 @@ import {
   createStatement,
   createVariableName,
 } from "@/lib/utils";
-import { createOperationCall } from "@/lib/operation";
+import {
+  createOperationCall,
+  executeOperation,
+  executeStatement,
+} from "@/lib/operation";
 import { Context } from "@/lib/types";
 
 dayjs.extend(relativeTime);
@@ -37,6 +41,8 @@ export default function Dashboard() {
       getResult: useExecutionResultsStore.getState().getResult,
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
+      executeOperation,
+      executeStatement,
     }),
     []
   );

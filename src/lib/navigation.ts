@@ -16,7 +16,6 @@ import {
   getUnionActiveType,
   isDataOfType,
   isTextInput,
-  getChildContext,
 } from "./utils";
 
 function shouldFocusInInput(
@@ -165,7 +164,6 @@ export function getOperationEntities(
   context: Context,
   depth = 0
 ): NavigationEntity[] {
-  const childContext = getChildContext(context);
   const parameterEntities = operation.value.parameters.flatMap((item) =>
     getStatementEntities(
       item,
@@ -175,7 +173,7 @@ export function getOperationEntities(
         statementId: `${operation.id}_parameters`,
         statementIndex: 0,
       },
-      childContext,
+      context,
       true
     )
   );
@@ -188,7 +186,7 @@ export function getOperationEntities(
         statementId: statement.id,
         statementIndex: i + 1,
       },
-      childContext,
+      context,
       true
     )
   );
@@ -230,14 +228,13 @@ function getStatementEntities(
   const dataId = statement.data.id;
   entities.push({ id: dataId, depth, ...parent });
 
-  const childContext = getChildContext(context);
   if (
     isDataOfType(statement.data, "array") ||
     isDataOfType(statement.data, "tuple")
   ) {
     statement.data.value.forEach((arrayItem) => {
       entities.push(
-        ...getStatementEntities(arrayItem, depth + 1, parent, childContext)
+        ...getStatementEntities(arrayItem, depth + 1, parent, context)
       );
     });
     if (isDataOfType(statement.data, "array") || !context.expectedType) {
@@ -254,28 +251,24 @@ function getStatementEntities(
         entities.push({ id: `${keyId}_colon`, depth: depth + 1, ...parent });
       }
       entities.push(
-        ...getStatementEntities(property, depth + 1, parent, childContext)
+        ...getStatementEntities(property, depth + 1, parent, context)
       );
     });
     if (isDataOfType(statement.data, "dictionary") || !context.expectedType) {
       entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
     }
   } else if (isDataOfType(statement.data, "operation")) {
-    entities.push(
-      ...getOperationEntities(statement.data, childContext, depth + 1)
-    );
+    entities.push(...getOperationEntities(statement.data, context, depth + 1));
   } else if (isDataOfType(statement.data, "condition")) {
     (["condition", "true", "false"] as const).forEach((item) => {
       const branch = (statement.data.value as DataValue<ConditionType>)[item];
       entities.push(
-        ...getStatementEntities(branch, depth + 1, parent, childContext)
+        ...getStatementEntities(branch, depth + 1, parent, context)
       );
     });
   } else if (isDataOfType(statement.data, "instance")) {
     statement.data.value.constructorArgs.forEach((arg) => {
-      entities.push(
-        ...getStatementEntities(arg, depth + 1, parent, childContext)
-      );
+      entities.push(...getStatementEntities(arg, depth + 1, parent, context));
     });
   } else if (isDataOfType(statement.data, "union")) {
     const valueType = getUnionActiveType(
@@ -291,7 +284,7 @@ function getStatementEntities(
       }),
     });
     entities.push(
-      ...getStatementEntities(dataStatement, depth + 1, parent, childContext)
+      ...getStatementEntities(dataStatement, depth + 1, parent, context)
     );
     entities.push({ id: `${dataId}_options`, depth: depth + 1, ...parent });
   }
@@ -299,9 +292,7 @@ function getStatementEntities(
   statement.operations.forEach((operation) => {
     entities.push({ id: operation.id, depth, ...parent });
     operation.value.parameters.forEach((param) => {
-      entities.push(
-        ...getStatementEntities(param, depth + 1, parent, childContext)
-      );
+      entities.push(...getStatementEntities(param, depth + 1, parent, context));
     });
     if (
       operation.value.parameters.length + 1 <

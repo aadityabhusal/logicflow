@@ -9,6 +9,7 @@ import {
   ProjectFile,
 } from "./types";
 import {
+  createContext,
   getStatementResult,
   isDataOfType,
   getUnionActiveType,
@@ -46,15 +47,14 @@ function updateOperationCalls(
         data,
         operation
       );
-      const _context = {
-        ...context,
+      const _context = createContext(context, {
         narrowedTypes: acc.narrowedTypes,
         skipExecution: getSkipExecution({
           context,
           data,
           operationName: operation.value.name,
         }),
-      };
+      });
 
       const foundOperation = getFilteredOperations(data, _context).find(
         (op) => op.name === operation.value.name
@@ -216,17 +216,14 @@ export function updateStatements({
       context,
       operation
     );
-    const _context: Context = {
-      getResult: context.getResult,
-      getInstance: context.getInstance,
-      setInstance: context.setInstance,
+    const _context = createContext(context, {
       variables,
       skipExecution: getSkipExecution({
         context: { ...context, variables },
         data: statementToProcess.data,
         ...(operation ? { operation, paramIndex: index } : {}),
       }),
-    };
+    });
     return [...prevStatements, updateStatement(statementToProcess, _context)];
   }, [] as IStatement[]);
 }
@@ -261,12 +258,9 @@ export function updateFiles(
       pushHistory(fileToProcess.id, fileToProcess.content);
       return [...prevFiles, changedFile];
     }
-    const _context: Context = {
+    const _context = createContext(context, {
       variables: createFileVariables(updatedFiles, fileToProcess.id),
-      getResult: context.getResult,
-      getInstance: context.getInstance,
-      setInstance: context.setInstance,
-    };
+    });
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {
       const value = updateOperationValue(operation, _context);

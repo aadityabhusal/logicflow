@@ -2,7 +2,11 @@ import { ArrayType, TupleType, Context, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
-import { inferTypeFromValue, isDataOfType, getChildContext } from "@/lib/utils";
+import {
+  inferTypeFromValue,
+  isDataOfType,
+  getContextExpectedTypes,
+} from "@/lib/utils";
 
 export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
@@ -51,7 +55,6 @@ const ArrayInputComponent = (
     >
       <span>{"["}</span>
       {data.value.map((item, i, arr) => {
-        const childContext = getChildContext(context);
         return (
           <div
             key={item.id}
@@ -61,10 +64,11 @@ const ArrayInputComponent = (
               statement={item}
               handleStatement={(val, remove) => handleUpdate(val, i, remove)}
               context={{
-                ...childContext,
-                expectedType: childContext.expectedType
-                  ? getExpectedType(i)
-                  : undefined,
+                ...context,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: getExpectedType(i),
+                }),
               }}
               options={{
                 disableDelete:

@@ -6,7 +6,7 @@ import { forwardRef, HTMLAttributes, memo } from "react";
 import {
   createVariableName,
   inferTypeFromValue,
-  getChildContext,
+  getContextExpectedTypes,
 } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 
@@ -73,7 +73,6 @@ const DictionaryInputComponent = (
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
         const isKeyInputFocused = navigationId === `${data.id}_${key}`;
-        const childContext = getChildContext(context);
         return (
           <div
             key={value.id}
@@ -95,11 +94,14 @@ const DictionaryInputComponent = (
                 handleUpdate(arr, i, val, remove)
               }
               context={{
-                ...childContext,
-                expectedType:
-                  childContext.expectedType?.kind === "dictionary"
-                    ? childContext.expectedType.elementType
-                    : undefined,
+                ...context,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType:
+                    context.expectedType?.kind === "dictionary"
+                      ? context.expectedType.elementType
+                      : undefined,
+                }),
               }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}

@@ -20,7 +20,8 @@ import {
   createContextVariables,
   getOperationResultType,
   getSkipExecution,
-  getChildContext,
+  createContext,
+  getContextExpectedTypes,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
@@ -194,24 +195,15 @@ const OperationComponent = (
                   return false;
                 })(),
               }}
-              context={{
-                getResult: context.getResult,
-                getInstance: context.getInstance,
-                setInstance: context.setInstance,
+              context={createContext(context, {
                 variables: new Map(),
                 reservedNames,
-                ...(getChildContext(context).expectedType &&
-                expectedParameterType
-                  ? {
-                      expectedType: expectedParameterType[i]?.type,
-                      enforceExpectedType: true,
-                    }
-                  : {
-                      expectedType: undefined,
-                      enforceExpectedType: undefined,
-                      expectedTypeScope: undefined,
-                    }),
-              }}
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: expectedParameterType?.[i]?.type,
+                  enforceExpectedType: true,
+                }),
+              })}
               addStatement={(statement, position) => {
                 addParameter(
                   { ...statement, isOptional: paramList[i - 1]?.isOptional },
@@ -247,17 +239,14 @@ const OperationComponent = (
         {
           operation.value.statements.reduce(
             (acc, statement, index) => {
-              const _context: Context = {
-                getResult: context.getResult,
-                getInstance: context.getInstance,
-                setInstance: context.setInstance,
+              const _context = createContext(context, {
                 reservedNames,
                 variables: acc.variables,
                 skipExecution: getSkipExecution({
                   context: { ...context, variables: acc.variables },
                   data: statement.data,
                 }),
-              };
+              });
 
               acc.variables = createContextVariables(
                 [statement],

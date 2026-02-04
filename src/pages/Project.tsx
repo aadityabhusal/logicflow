@@ -29,7 +29,11 @@ import {
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DataTypes } from "@/lib/data";
-import { setOperationResults } from "@/lib/operation";
+import {
+  executeOperation,
+  executeStatement,
+  setOperationResults,
+} from "@/lib/operation";
 import { builtInOperations } from "@/lib/built-in-operations";
 
 export default function Project() {
@@ -74,6 +78,8 @@ export default function Project() {
       getResult: useExecutionResultsStore.getState().getResult,
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
+      executeOperation,
+      executeStatement,
     } as Context;
   }, [currentProject?.files, currentOperation?.id]);
 

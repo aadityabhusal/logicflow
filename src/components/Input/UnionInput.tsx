@@ -8,6 +8,7 @@ import {
   getUnionActiveType,
   isTypeCompatible,
   resolveUnionType,
+  getContextExpectedTypes,
 } from "@/lib/utils";
 import { FaChevronDown, FaX } from "react-icons/fa6";
 import { DataTypes } from "@/lib/data";
@@ -121,12 +122,14 @@ const UnionInputComponent = (
         disableDelete={!!context.expectedType}
         context={{
           ...context,
-          ...(context.expectedType?.kind === "union"
-            ? {
-                enforceExpectedType: true,
-                expectedType: context.expectedType.types[activeType.index],
-              }
-            : { expectedType: undefined }),
+          ...getContextExpectedTypes({
+            context,
+            expectedType:
+              context.expectedType?.kind === "union"
+                ? context.expectedType.types[activeType.index]
+                : undefined,
+            enforceExpectedType: true,
+          }),
         }}
       />
       <Menu

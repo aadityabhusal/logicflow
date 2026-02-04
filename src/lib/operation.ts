@@ -251,8 +251,7 @@ export async function executeStatement(
       operation
     );
 
-    const _context: Context = {
-      ...context,
+    const _context = createContext(context, {
       operationId: operation.id,
       narrowedTypes: narrowedTypes,
       skipExecution: getSkipExecution({
@@ -260,7 +259,7 @@ export async function executeStatement(
         data: resultData,
         operationName: operation.value.name,
       }),
-    };
+    });
 
     let operationResult: IData = createData({
       type: { kind: "error", errorType: "type_error" },
@@ -316,17 +315,13 @@ export async function setOperationResults(
   operation: IData<OperationType>,
   context: Context
 ): Promise<void> {
-  const _context: Context = {
-    getResult: context.getResult,
-    getInstance: context.getInstance,
-    setInstance: context.setInstance,
-    setResult: context.setResult,
+  const _context = createContext(context, {
     variables: createContextVariables(
       operation.value.parameters,
       context,
       operation
     ),
-  };
+  });
   operation.value.parameters.forEach((param) => {
     storeInstance(param.data, param.data.id, context);
     storeInstance(getStatementResult(param, context), param.id, context);
@@ -356,11 +351,7 @@ export async function executeOperation(
 
   if ("lazyHandler" in operation) {
     try {
-      return await operation.lazyHandler(
-        { ...prevContext, executeStatement, executeOperation },
-        data,
-        ..._parameters
-      );
+      return await operation.lazyHandler(prevContext, data, ..._parameters);
     } catch (error) {
       return createRuntimeError(error);
     }
@@ -402,11 +393,7 @@ export async function executeOperation(
 
   if ("handler" in operation) {
     try {
-      const result = operation.handler(
-        { ...prevContext, executeStatement, executeOperation },
-        data,
-        ...parameters
-      );
+      const result = operation.handler(prevContext, data, ...parameters);
       return result instanceof Promise ? await result : result;
     } catch (error) {
       return createRuntimeError(error);
@@ -414,12 +401,9 @@ export async function executeOperation(
   }
 
   if ("statements" in operation && operation.statements.length > 0) {
-    const context: Context = {
+    const context = createContext(prevContext, {
       variables: new Map(prevContext.variables),
-      getResult: prevContext.getResult,
-      getInstance: prevContext.getInstance,
-      setInstance: prevContext.setInstance,
-    };
+    });
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
       if (_param.name && allInputs[index]) {

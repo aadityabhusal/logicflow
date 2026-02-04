@@ -21,6 +21,7 @@ import { memo, useMemo } from "react";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "@/ui/Resizer";
 import { Context } from "@/lib/types";
+import { executeOperation, executeStatement } from "@/lib/operation";
 
 function DetailsPanelComponent() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -53,6 +54,8 @@ function DetailsPanelComponent() {
       getResult: useExecutionResultsStore.getState().getResult,
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
+      executeOperation,
+      executeStatement,
     }),
     []
   );

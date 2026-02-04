@@ -3,6 +3,7 @@ import { forwardRef, memo } from "react";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { IDropdownTargetProps } from "../Dropdown";
+import { getContextExpectedTypes } from "@/lib/utils";
 
 export interface InstanceInputProps extends IDropdownTargetProps {
   data: IData<InstanceDataType>;
@@ -42,8 +43,10 @@ const InstanceInputComponent = (
               options={{ disableDelete: !item.isOptional }}
               context={{
                 ...context,
-                expectedTypeScope: "self",
-                expectedType: data.type.constructorArgs[paramIndex].type,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: data.type.constructorArgs[paramIndex].type,
+                }),
               }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}

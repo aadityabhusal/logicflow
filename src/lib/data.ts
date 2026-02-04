@@ -85,7 +85,7 @@ export const InstanceTypes = {
               name: "resolve",
               type: {
                 kind: "operation",
-                parameters: [{ name: "value", type: { kind: "undefined" } }],
+                parameters: [{ name: "value", type: { kind: "unknown" } }],
                 result: { kind: "undefined" },
               },
             },
@@ -93,7 +93,7 @@ export const InstanceTypes = {
               name: "reject",
               type: {
                 kind: "operation",
-                parameters: [{ name: "error", type: { kind: "undefined" } }],
+                parameters: [{ name: "error", type: { kind: "unknown" } }],
                 result: { kind: "undefined" },
               },
               isOptional: true,
@@ -126,7 +126,7 @@ export const InstanceTypes = {
     name: "Response",
     Constructor: Response,
     constructorArgs: [
-      { type: { kind: "string" }, isOptional: true },
+      { type: { kind: "unknown" }, isOptional: true },
       {
         type: { kind: "dictionary", elementType: { kind: "unknown" } },
         isOptional: true,

@@ -162,7 +162,6 @@ export type Context = {
   }>;
   narrowedTypes?: Context["variables"];
   expectedType?: DataType;
-  expectedTypeScope?: "self" | "descendants";
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   getResult: (entityId: string) => ExecutionResult | undefined;
@@ -170,9 +169,6 @@ export type Context = {
   setInstance: (entityId: string, instance: unknown) => void;
   operationId?: string; // Only for passing operation ids in the handler functions
   setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
-};
-
-export type HandlerContext = Context & {
   executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
   executeOperation: (
     operation: OperationListItem,
@@ -187,17 +183,12 @@ export type OperationListItem = {
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
   isManual?: boolean;
-} & (
-  | {
-      handler: (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...args: [HandlerContext, ...IData<any>[]]
-      ) => Promise<IData> | IData;
-    }
+} & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
   | {
       lazyHandler: (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...args: [HandlerContext, IData<any>, ...IStatement[]]
+        ...args: [Context, IData<any>, ...IStatement[]]
       ) => Promise<IData> | IData;
     }
   | { statements: IStatement[] }

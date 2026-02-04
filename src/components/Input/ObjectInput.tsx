@@ -6,7 +6,7 @@ import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
 import {
   createVariableName,
   inferTypeFromValue,
-  getChildContext,
+  getContextExpectedTypes,
 } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
@@ -116,7 +116,6 @@ const ObjectInputComponent = (
             ? context.expectedType.properties[key]
             : undefined;
         const isKeyInputFocused = navigationId === `${data.id}_${key}`;
-        const childContext = getChildContext(context);
         return (
           <div
             key={value.id}
@@ -186,10 +185,8 @@ const ObjectInputComponent = (
                 handleUpdate(arr, i, val, remove)
               }
               context={{
-                ...childContext,
-                expectedType: childContext.expectedType
-                  ? expectedType
-                  : undefined,
+                ...context,
+                ...getContextExpectedTypes({ context, expectedType }),
               }}
               options={{
                 disableDelete: !!context.expectedType && !isOptional,

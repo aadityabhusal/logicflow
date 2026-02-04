@@ -11,6 +11,7 @@ import { FaArrowRotateRight, FaPlay } from "react-icons/fa6";
 import {
   updateContextWithNarrowedTypes,
   resolveParameters,
+  getContextExpectedTypes,
 } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
@@ -171,7 +172,10 @@ const OperationCallComponent = ({
                   operation.value.name,
                   paramIndex
                 ),
-                expectedType: originalParameters?.[paramIndex + 1]?.type,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: originalParameters?.[paramIndex + 1]?.type,
+                }),
               }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
