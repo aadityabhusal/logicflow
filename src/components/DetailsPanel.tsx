@@ -15,13 +15,12 @@ import {
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ParseData } from "./Parse/ParseData";
 import { useHotkeys, useMediaQuery } from "@mantine/hooks";
-import { getTypeSignature } from "@/lib/utils";
+import { createData, getTypeSignature } from "@/lib/utils";
 import { Tooltip } from "@mantine/core";
 import { memo, useMemo } from "react";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "@/ui/Resizer";
 import { Context } from "@/lib/types";
-import { executeOperation, executeStatement } from "@/lib/operation";
 
 function DetailsPanelComponent() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -54,8 +53,8 @@ function DetailsPanelComponent() {
       getResult: useExecutionResultsStore.getState().getResult,
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
-      executeOperation,
-      executeStatement,
+      executeOperation: () => Promise.resolve(createData()),
+      executeStatement: () => Promise.resolve(createData()),
     }),
     []
   );

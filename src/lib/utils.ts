@@ -43,19 +43,6 @@ export function createData<T extends DataType>(
   };
 }
 
-export function createInstance<
-  T extends keyof typeof InstanceTypes,
-  K extends (typeof InstanceTypes)[T]["Constructor"]
->(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
-  const rawArgs = constructorArgs.map((arg) =>
-    getRawValue(arg, context)
-  ) as ConstructorParameters<K>;
-  const Constructor = InstanceTypes[className].Constructor as unknown as new (
-    ...args: ConstructorParameters<K>
-  ) => InstanceType<K>;
-  return new Constructor(...rawArgs);
-}
-
 export function createStatement(props?: Partial<IStatement>): IStatement {
   const newData = props?.data || createData();
   const newId = props?.id || nanoid();
@@ -195,6 +182,7 @@ export function createDefaultValue<T extends DataType>(
     case "instance": {
       return {
         className: type.className as keyof typeof InstanceTypes,
+        instanceId: nanoid(),
         constructorArgs: type.constructorArgs
           .filter((param) => !param.isOptional)
           .map((argType) =>
@@ -270,7 +258,6 @@ export function createContext(
     setInstance: context.setInstance,
     executeOperation: context.executeOperation,
     executeStatement: context.executeStatement,
-    operationId: context.operationId,
     reservedNames: context.reservedNames,
     variables: context.variables,
   };
@@ -373,6 +360,133 @@ export function createParamData(
     },
     value: { parameters: parameters, statements: [] },
   });
+}
+
+export function createInstance<
+  T extends keyof typeof InstanceTypes,
+  K extends (typeof InstanceTypes)[T]["Constructor"]
+>(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
+  const rawArgs = constructorArgs.map((arg) =>
+    getRawValueFromData(arg, context)
+  ) as ConstructorParameters<K>;
+  const Constructor = InstanceTypes[className].Constructor as unknown as new (
+    ...args: ConstructorParameters<K>
+  ) => InstanceType<K>;
+  return new Constructor(...rawArgs);
+}
+
+export function operationToListItem(
+  operation: IData<OperationType>,
+  name?: string
+) {
+  return {
+    name: name ?? operation.value.name ?? "anonymous",
+    parameters: operation.type.parameters,
+    statements: operation.value.statements,
+  } as OperationListItem;
+}
+
+// TODO: add expectedType instead of expectedKind when needed
+export function createDataFromRawValue(
+  value: unknown,
+  context: Context,
+  expectedKind?: DataType["kind"]
+): IData {
+  if (value === undefined || value === null) {
+    return createData({ type: { kind: "undefined" } });
+  }
+  if (typeof value === "string") {
+    return createData({ type: { kind: "string" }, value });
+  }
+  if (typeof value === "number") {
+    return createData({ type: { kind: "number" }, value });
+  }
+  if (typeof value === "boolean") {
+    return createData({ type: { kind: "boolean" }, value });
+  }
+  if (value instanceof Error) {
+    return createData({
+      type: { kind: "error", errorType: "runtime_error" },
+      value: { reason: value.message },
+    });
+  }
+
+  if (Array.isArray(value)) {
+    const _value = value.map((val) =>
+      createStatement({ data: createDataFromRawValue(val, context) })
+    );
+    return createData({
+      type:
+        expectedKind === "tuple"
+          ? { kind: "tuple", elements: _value.map((v) => v.data.type) }
+          : {
+              kind: "array",
+              elementType: resolveUnionType(_value.map((v) => v.data.type)),
+            },
+      value: _value,
+    });
+  }
+
+  if (isObject(value)) {
+    const instanceClass = Object.entries(InstanceTypes).find(
+      ([, config]) => value instanceof config.Constructor
+    );
+    if (instanceClass) {
+      const [className, config] = instanceClass;
+      const data = createData({
+        type: {
+          kind: "instance",
+          className,
+          constructorArgs: config.constructorArgs,
+        },
+      });
+      context.setInstance(data.value.instanceId, value);
+      return data;
+    }
+  }
+
+  if (isObject(value) || value instanceof Map) {
+    const _value = new Map(
+      Object.entries(value).map(([key, val]) => {
+        return [
+          key,
+          createStatement({ data: createDataFromRawValue(val, context) }),
+        ];
+      })
+    );
+    return createData({
+      type:
+        expectedKind === "object"
+          ? {
+              kind: "object",
+              properties: Array.from(_value).reduce((acc, [key, value]) => {
+                acc[key] = value.data.type;
+                return acc;
+              }, {} as Record<string, DataType>),
+            }
+          : {
+              kind: "dictionary",
+              elementType: resolveUnionType(
+                Array.from(_value).map(([, v]) => v.data.type)
+              ),
+            },
+      value: _value,
+    });
+  }
+  if (typeof value === "function") {
+    const data = createData({
+      type: {
+        kind: "operation",
+        parameters: Array.from({ length: value.length }, () => ({
+          type: { kind: "unknown" },
+        })),
+        result: { kind: "unknown" },
+      },
+    });
+    context.setInstance(`${data.id}-operation`, value);
+    return data;
+  }
+  return createData({ type: { kind: "unknown" }, value });
 }
 
 /* Types */
@@ -1027,7 +1141,7 @@ export function getSkipExecution({
   return undefined;
 }
 
-export function getRawValue(data: IData, context: Context): unknown {
+export function getRawValueFromData(data: IData, context: Context): unknown {
   /* if-else used instead of switch for type narrowing */
   if (
     isDataOfType(data, "never") ||
@@ -1041,24 +1155,33 @@ export function getRawValue(data: IData, context: Context): unknown {
   } else if (isDataOfType(data, "error")) {
     return new Error(data.value.reason);
   } else if (isDataOfType(data, "instance")) {
-    return context.getInstance(data.id);
+    return context.getInstance(data.value.instanceId);
   } else if (isDataOfType(data, "operation")) {
-    return {
-      parameters: data.value.parameters.map((parameter) =>
-        getRawValue(getStatementResult(parameter, context), context)
-      ),
-      result: getRawValue(
-        getOperationResult(data.value.statements, context),
+    return async (...rawParams: unknown[]): Promise<unknown> => {
+      const mappedParameters = data.value.parameters.map((param, index) =>
+        createDataFromRawValue(rawParams[index], context, param.data.type.kind)
+      );
+      const result = await context.executeOperation(
+        operationToListItem(data),
+        mappedParameters[0],
+        mappedParameters.slice(1).map((data) => createStatement({ data })),
         context
-      ),
+      );
+      return getRawValueFromData(result, context);
     };
   } else if (isDataOfType(data, "condition")) {
-    return getRawValue(getConditionResult(data.value, context), context);
+    return getRawValueFromData(
+      getConditionResult(data.value, context),
+      context
+    );
   } else if (isDataOfType(data, "reference")) {
-    return getRawValue(createData(resolveReference(data, context)), context);
+    return getRawValueFromData(
+      createData(resolveReference(data, context)),
+      context
+    );
   } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return data.value.map((element) =>
-      getRawValue(getStatementResult(element, context), context)
+      getRawValueFromData(getStatementResult(element, context), context)
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     return Object.fromEntries(
@@ -1066,11 +1189,11 @@ export function getRawValue(data: IData, context: Context): unknown {
         .entries()
         .map(([key, value]) => [
           key,
-          getRawValue(getStatementResult(value, context), context),
+          getRawValueFromData(getStatementResult(value, context), context),
         ])
     );
   } else if (isDataOfType(data, "union")) {
-    return getRawValue(
+    return getRawValueFromData(
       createData({
         type: getUnionActiveType(data.type, data.value, context),
         value: data.value,

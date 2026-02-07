@@ -12,7 +12,7 @@ import {
   TupleType,
   UnionType,
   InstanceDataType,
-  HandlerContext,
+  Context,
 } from "./types";
 import { InstanceTypes } from "./data";
 import {
@@ -24,7 +24,9 @@ import {
   isTypeCompatible,
   resolveUnionType,
   updateContextWithNarrowedTypes,
-  getRawValue,
+  getRawValueFromData,
+  operationToListItem,
+  createDataFromRawValue,
 } from "./utils";
 
 function getArrayCallbackParameters(data: IData) {
@@ -54,7 +56,7 @@ function getArrayCallbackParameters(data: IData) {
 async function executeArrayOperation(
   data: IData<ArrayType>,
   operation: IData<OperationType>,
-  context: HandlerContext
+  context: Context
 ): Promise<IData[]> {
   const settledResults = await Promise.allSettled(
     data.value.map((item, index) => {
@@ -89,17 +91,6 @@ async function executeArrayOperation(
       ? result.value
       : createRuntimeError(result.reason)
   );
-}
-
-export function operationToListItem(
-  operation: IData<OperationType>,
-  name?: string
-) {
-  return {
-    name: name ?? operation.value.name ?? "anonymous",
-    parameters: operation.type.parameters,
-    statements: operation.value.statements,
-  } as OperationListItem;
 }
 
 export function createRuntimeError(error: unknown): IData {
@@ -140,8 +131,8 @@ const unknownOperations: OperationListItem[] = [
       return createData({
         type: { kind: "boolean" },
         value:
-          JSON.stringify(getRawValue(data, context)) ===
-          JSON.stringify(getRawValue(p1, context)),
+          JSON.stringify(getRawValueFromData(data, context)) ===
+          JSON.stringify(getRawValueFromData(p1, context)),
       });
     },
   },
@@ -786,7 +777,18 @@ const operationOperations: OperationListItem[] = [
       },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
-    handler: (context, data: IData<OperationType>, ...p: IData[]) => {
+    handler: async (context, data: IData<OperationType>, ...p: IData[]) => {
+      const jsCallback = context.getInstance(`${data.id}-operation`);
+      if (typeof jsCallback === "function") {
+        const rawArgs = p.map((param) => getRawValueFromData(param, context));
+        try {
+          const result = await jsCallback(...rawArgs);
+          return createDataFromRawValue(result, context, data.type.result.kind);
+        } catch (error) {
+          return createRuntimeError(error);
+        }
+      }
+
       return context.executeOperation(
         operationToListItem(data, "call"),
         p[0],
@@ -803,19 +805,21 @@ type InstanceValue<T extends keyof typeof InstanceTypes> = InstanceType<
 function createInstanceOperation<T extends keyof typeof InstanceTypes>(
   className: T,
   name: string,
-  method: (instance: InstanceValue<T>) => Partial<IData>
+  method: (instance: InstanceValue<T>, context: Context) => Partial<IData>,
+  parameters: OperationListItem["parameters"] = []
 ): OperationListItem {
   return {
     name,
-    parameters: [
+    parameters: (data) => [
       { type: { kind: "instance", className, constructorArgs: [] } },
+      ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
-    handler: (context: HandlerContext, data: IData<InstanceDataType>) => {
-      const instance = getRawValue(data, context) as InstanceValue<T>;
+    handler: (context, data: IData<InstanceDataType>) => {
+      const instance = getRawValueFromData(data, context) as InstanceValue<T>;
       if (!instance) {
         return createRuntimeError(`${className} instance not found`);
       }
-      return createData(method(instance));
+      return createData(method(instance, context));
     },
   };
 }

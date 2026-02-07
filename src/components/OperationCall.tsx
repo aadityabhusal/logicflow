@@ -5,7 +5,6 @@ import {
   createOperationCall,
   getFilteredOperations,
   executeOperation,
-  storeInstance,
 } from "../lib/operation";
 import { FaArrowRotateRight, FaPlay } from "react-icons/fa6";
 import {
@@ -59,11 +58,12 @@ const OperationCallComponent = ({
       originalOperation,
       data,
       operation.value.parameters,
-      { ...context, operationId: operation.id }
+      context
     );
-    const operationResult = { ...result, id: operation.id };
-    setResult(operation.id, { data: operationResult, isPending: false });
-    storeInstance(operationResult, operation.id, context);
+    setResult(operation.id, {
+      data: { ...result, id: operation.id },
+      isPending: false,
+    });
     handleOperationCall({
       ...operation,
       type: { ...operation.type, result: result.type },

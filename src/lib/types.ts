@@ -97,7 +97,7 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   : T extends ErrorType
   ? { reason: string }
   : T extends InstanceDataType
-  ? { className: string; constructorArgs: IStatement[] }
+  ? { className: string; constructorArgs: IStatement[]; instanceId: string }
   : never;
 
 export type DataValue<T extends DataType> = T extends UnionType & {
@@ -167,7 +167,6 @@ export type Context = {
   getResult: (entityId: string) => ExecutionResult | undefined;
   getInstance: (entityId: string) => unknown;
   setInstance: (entityId: string, instance: unknown) => void;
-  operationId?: string; // Only for passing operation ids in the handler functions
   setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
   executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
   executeOperation: (

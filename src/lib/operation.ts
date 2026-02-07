@@ -21,12 +21,10 @@ import {
   applyTypeNarrowing,
   getSkipExecution,
   resolveParameters,
-} from "./utils";
-import {
-  builtInOperations,
-  createRuntimeError,
   operationToListItem,
-} from "./built-in-operations";
+  createContext,
+} from "./utils";
+import { builtInOperations, createRuntimeError } from "./built-in-operations";
 import { InstanceTypes } from "./data";
 
 /* Operation List */
@@ -132,15 +130,11 @@ export async function createOperationCall({
 
   const result = newOperation.isManual
     ? createData({ type: { kind: "undefined" } })
-    : await executeOperation(newOperation, data, newParameters, {
-        ...context,
-        operationId: _operationId,
-      });
+    : await executeOperation(newOperation, data, newParameters, context);
 
   if (!newOperation.isManual) {
     const operationResult = { ...result, id: _operationId };
     setResult(_operationId, { data: operationResult, isPending: false });
-    storeInstance(operationResult, _operationId, context);
   }
   return {
     id: _operationId,
@@ -159,19 +153,19 @@ export async function createOperationCall({
 
 /* Execution */
 
-export function storeInstance(data: IData, entityId: string, context: Context) {
+export async function storeInstance(data: IData, context: Context) {
   if (!isDataOfType(data, "instance")) return;
-  const originalInstance = context.getInstance(data.id);
-  if (originalInstance) {
-    context.setInstance?.(entityId, originalInstance);
-  } else {
-    const instance = createInstance(
+  const settledArgs = await Promise.all(
+    data.value.constructorArgs.map((arg) => executeStatement(arg, context))
+  );
+  const instance =
+    context.getInstance(data.value.instanceId) ??
+    createInstance(
       data.value.className as keyof typeof InstanceTypes,
-      data.value.constructorArgs.map((arg) => getStatementResult(arg, context)),
+      settledArgs,
       context
     );
-    context.setInstance?.(entityId, instance);
-  }
+  context.setInstance(data.value.instanceId, instance);
 }
 
 export async function executeDataValue(
@@ -202,15 +196,7 @@ export async function executeDataValue(
       executeStatement(data.value.false, context),
     ]);
   } else if (isDataOfType(data, "instance")) {
-    const settledArgs = await Promise.all(
-      data.value.constructorArgs.map((arg) => executeStatement(arg, context))
-    );
-    const instance = createInstance(
-      data.value.className as keyof typeof InstanceTypes,
-      settledArgs,
-      context
-    );
-    context.setInstance?.(data.id, instance);
+    await storeInstance(data, context);
   }
 }
 
@@ -252,7 +238,6 @@ export async function executeStatement(
     );
 
     const _context = createContext(context, {
-      operationId: operation.id,
       narrowedTypes: narrowedTypes,
       skipExecution: getSkipExecution({
         context,
@@ -303,11 +288,9 @@ export async function executeStatement(
       data: operationResult,
       isPending: false,
     });
-    storeInstance(operationResult, operation.id, context);
     resultData = operationResult;
   }
   const finalResult = resolveReference(resultData, context);
-  if (statement.name) storeInstance(finalResult, statement.id, context);
   return finalResult;
 }
 
@@ -322,10 +305,11 @@ export async function setOperationResults(
       operation
     ),
   });
-  operation.value.parameters.forEach((param) => {
-    storeInstance(param.data, param.data.id, context);
-    storeInstance(getStatementResult(param, context), param.id, context);
-  });
+  await Promise.allSettled(
+    operation.value.parameters.map((param) =>
+      storeInstance(param.data, context)
+    )
+  );
   for (const statement of operation.value.statements) {
     const result = await executeStatement(statement, _context);
     if (!isDataOfType(result, "error") && statement.name) {
