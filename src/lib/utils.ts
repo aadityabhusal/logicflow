@@ -866,6 +866,7 @@ export function inferTypeFromValue<T extends DataType>(
   value: DataValue<T> | undefined,
   context: Context
 ): T {
+  // TODO: handle union types using context.expectedType
   if (value === undefined) return { kind: "undefined" } as T;
   if (typeof value === "string") return { kind: "string" } as T;
   if (typeof value === "number") return { kind: "number" } as T;
@@ -1061,25 +1062,30 @@ export function resolveParameters(
 export function getStatementResult(
   statement: IStatement,
   context: Context,
-  index?: number,
-  prevEntity?: boolean
+  options?: {
+    index?: number;
+    prevEntity?: boolean;
+    skipResolveReference?: boolean;
+  }
   // TODO: Make use of the data type to create a better type for result e.g. a union type
 ): IData {
   let result = statement.data;
   if (isDataOfType(result, "error")) return result;
   const lastOperation = statement.operations[statement.operations.length - 1];
-  if (index) {
+  if (options?.index) {
     result =
-      context.getResult(statement.operations[index - 1]?.id)?.data ??
+      context.getResult(statement.operations[options.index - 1]?.id)?.data ??
       createData();
-  } else if (!prevEntity && lastOperation) {
+  } else if (!options?.prevEntity && lastOperation) {
     result = context.getResult(lastOperation.id)?.data ?? createData();
   } else if (isDataOfType(result, "condition")) {
     result =
       context.getResult(result.id)?.data ??
       getConditionResult(result.value, context);
   }
-  return result;
+  return options?.skipResolveReference
+    ? result
+    : resolveReference(result, context);
 }
 
 export function getConditionResult(
@@ -1091,17 +1097,6 @@ export function getConditionResult(
     conditionResult.value ? condition.true : condition.false,
     context
   );
-}
-
-export function getOperationResult(
-  statements: IStatement[],
-  context: Context
-): IData {
-  if (statements.length > 0) {
-    const lastStatement = statements[statements.length - 1];
-    return getStatementResult(lastStatement, context);
-  }
-  return createData();
 }
 
 export function getSkipExecution({

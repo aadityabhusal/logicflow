@@ -34,12 +34,11 @@ function updateOperationCalls(
   return statement.operations.reduce(
     (acc, operation, operationIndex) => {
       const updatedStatement = { ...statement, operations: acc.operations };
-      const data = getStatementResult(
-        updatedStatement,
-        context,
-        operationIndex,
-        true
-      );
+      const data = getStatementResult(updatedStatement, context, {
+        index: operationIndex,
+        prevEntity: true,
+        skipResolveReference: true,
+      });
       /* Type narrowing and finding operation is needed for updating parameters especially of user-defined operations */
       acc.narrowedTypes = applyTypeNarrowing(
         context,
@@ -176,7 +175,8 @@ function updateStatement(
     ...currentStatement,
     data: {
       ...currentStatement.data,
-      // TODO: might need to update type based on the updated value
+      // TODO: might need to update type based on the updated value,
+      // inferring type from value doesn't work for union data
       value: updateDataValue(currentStatement.data, context, reference),
     },
   };

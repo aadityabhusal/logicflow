@@ -72,41 +72,52 @@ export const DataTypes: {
   },
 };
 
+export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
+  return [
+    {
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            name: "resolve",
+            type: {
+              kind: "operation",
+              parameters: resolveType ?? [
+                { name: "value", type: { kind: "unknown" } },
+              ],
+              result: { kind: "undefined" },
+            },
+          },
+          {
+            name: "reject",
+            type: {
+              kind: "operation",
+              parameters: [
+                {
+                  name: "err",
+                  type: { kind: "error", errorType: "custom_error" },
+                },
+              ],
+              result: { kind: "undefined" },
+            },
+            isOptional: true,
+          },
+        ],
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+        },
+      },
+    },
+  ] as OperationType["parameters"];
+}
+
 export const InstanceTypes = {
   Promise: {
     name: "Promise",
     Constructor: Promise,
-    constructorArgs: [
-      {
-        type: {
-          kind: "operation",
-          parameters: [
-            {
-              name: "resolve",
-              type: {
-                kind: "operation",
-                parameters: [{ name: "value", type: { kind: "unknown" } }],
-                result: { kind: "undefined" },
-              },
-            },
-            {
-              name: "reject",
-              type: {
-                kind: "operation",
-                parameters: [{ name: "error", type: { kind: "unknown" } }],
-                result: { kind: "undefined" },
-              },
-              isOptional: true,
-            },
-          ],
-          result: {
-            kind: "instance",
-            className: "Promise",
-            constructorArgs: [],
-          },
-        },
-      },
-    ] as OperationType["parameters"],
+    constructorArgs: getPromiseArgsType(),
   },
   Date: {
     name: "Date",

@@ -115,7 +115,6 @@ export async function createOperationCall({
       const prevParam = parameters?.[index];
       if (
         prevParam &&
-        isTypeCompatible(newParam.data.type, prevParam.data.type) &&
         isTypeCompatible(
           newParam.data.type,
           getStatementResult(prevParam, context).type
@@ -153,7 +152,7 @@ export async function createOperationCall({
 
 /* Execution */
 
-export async function storeInstance(data: IData, context: Context) {
+export async function storeDataInstance(data: IData, context: Context) {
   if (!isDataOfType(data, "instance")) return;
   const settledArgs = await Promise.all(
     data.value.constructorArgs.map((arg) => executeStatement(arg, context))
@@ -196,7 +195,7 @@ export async function executeDataValue(
       executeStatement(data.value.false, context),
     ]);
   } else if (isDataOfType(data, "instance")) {
-    await storeInstance(data, context);
+    await storeDataInstance(data, context);
   }
 }
 
@@ -222,7 +221,7 @@ export async function executeStatement(
   }
 
   // For showing result values of operation calls used inside complex data.
-  executeDataValue(statement.data, context);
+  await executeDataValue(statement.data, context);
 
   let narrowedTypes = new Map();
   let resultData = statement.data;
@@ -307,7 +306,7 @@ export async function setOperationResults(
   });
   await Promise.allSettled(
     operation.value.parameters.map((param) =>
-      storeInstance(param.data, context)
+      storeDataInstance(param.data, context)
     )
   );
   for (const statement of operation.value.statements) {

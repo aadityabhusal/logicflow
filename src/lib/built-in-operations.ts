@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import {
   IData,
   IStatement,
@@ -14,7 +15,7 @@ import {
   InstanceDataType,
   Context,
 } from "./types";
-import { InstanceTypes } from "./data";
+import { getPromiseArgsType, InstanceTypes } from "./data";
 import {
   createData,
   createStatement,
@@ -503,7 +504,7 @@ const getTupleOperations = (
   },
   {
     name: "getLength",
-    parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
+    parameters: [dataType],
     handler: (_, data: IData<ArrayType>) => {
       return createData({ type: { kind: "number" }, value: data.value.length });
     },
@@ -819,6 +820,8 @@ function createInstanceOperation<T extends keyof typeof InstanceTypes>(
       if (!instance) {
         return createRuntimeError(`${className} instance not found`);
       }
+      // TODO: use this like when this function works with a persistent instance
+      // context.setInstance(data.value.instanceId, instance);
       return createData(method(instance, context));
     },
   };
@@ -902,6 +905,157 @@ const urlOperations: OperationListItem[] = [
   })),
 ];
 
+function getResolveCallbackType(data: IData): OperationType {
+  const fallback: OperationType = {
+    kind: "operation",
+    parameters: [{ name: "value", type: { kind: "unknown" } }],
+    result: { kind: "undefined" },
+  };
+  if (!isDataOfType(data, "instance")) return fallback;
+  const resolveCallback = data.value.constructorArgs?.[0]?.data;
+  if (!isDataOfType(resolveCallback, "operation")) return fallback;
+  return isDataOfType(resolveCallback.value.parameters[0].data, "operation")
+    ? resolveCallback.value.parameters[0].data.type
+    : fallback;
+}
+
+const promiseOperations: OperationListItem[] = [
+  {
+    name: "then",
+    parameters: (data) => [
+      { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
+      { type: getResolveCallbackType(data) },
+    ],
+    lazyHandler: async (
+      context,
+      promiseData: IData<InstanceDataType>,
+      callback: IStatement
+    ) => {
+      try {
+        const promiseValue = getRawValueFromData(
+          promiseData,
+          context
+        ) as Promise<unknown>;
+        const callbackOp = callback.data as IData<OperationType>;
+        const newPromise = promiseValue.then(async (resolvedValue) => {
+          const updatedCallback = {
+            ...callbackOp.type,
+            parameters: [
+              { type: promiseData.type },
+              ...callbackOp.type.parameters,
+            ],
+          };
+          const resolvedData = createDataFromRawValue(resolvedValue, context);
+          const result = await context.executeOperation(
+            operationToListItem({ ...callbackOp, type: updatedCallback }),
+            promiseData,
+            [createStatement({ data: resolvedData })],
+            context
+          );
+          return getRawValueFromData(result, context);
+        });
+        const newInstanceId = nanoid();
+        context.setInstance(newInstanceId, newPromise);
+        const resultData = createData({
+          type: {
+            kind: "instance",
+            className: "Promise",
+            constructorArgs: getPromiseArgsType([
+              { type: callbackOp.type.result, name: "value" },
+            ]),
+          },
+        });
+        return {
+          ...resultData,
+          value: { ...resultData.value, instanceId: newInstanceId },
+        };
+      } catch (error) {
+        return createRuntimeError(error);
+      }
+    },
+  },
+  {
+    name: "catch",
+    parameters: [
+      { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
+      {
+        type: {
+          kind: "operation",
+          parameters: [
+            { name: "err", type: { kind: "error", errorType: "custom_error" } },
+          ],
+          result: { kind: "undefined" },
+        },
+      },
+    ],
+    lazyHandler: async (
+      context,
+      promiseData: IData<InstanceDataType>,
+      errorCallback: IStatement
+    ) => {
+      try {
+        const promiseValue = getRawValueFromData(
+          promiseData,
+          context
+        ) as Promise<unknown>;
+        const errorCallbackOp = errorCallback.data as IData<OperationType>;
+        const newPromise = promiseValue.catch(async (error) => {
+          const updatedCallback = {
+            ...errorCallbackOp.type,
+            parameters: [
+              { type: promiseData.type },
+              ...errorCallbackOp.type.parameters,
+            ],
+          };
+          const errorData = createDataFromRawValue(error, context);
+          const callbackResult = await context.executeOperation(
+            operationToListItem({ ...errorCallbackOp, type: updatedCallback }),
+            promiseData,
+            [createStatement({ data: errorData })],
+            context
+          );
+          return callbackResult.value;
+        });
+        const newInstanceId = nanoid();
+        context.setInstance(newInstanceId, newPromise);
+        const resultData = createData({
+          type: {
+            kind: "instance",
+            className: "Promise",
+            constructorArgs: getPromiseArgsType([
+              { type: { kind: "unknown" }, name: "value" },
+            ]),
+          },
+        });
+        return {
+          ...resultData,
+          value: { ...resultData.value, instanceId: newInstanceId },
+        };
+      } catch (error) {
+        return createRuntimeError(error);
+      }
+    },
+  },
+  {
+    name: "await",
+    parameters: [
+      { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
+    ],
+    lazyHandler: async (context, promiseData: IData<InstanceDataType>) => {
+      try {
+        const promiseValue = getRawValueFromData(
+          promiseData,
+          context
+        ) as Promise<unknown>;
+        const resolvedValue = await promiseValue;
+        return createDataFromRawValue(resolvedValue, context);
+      } catch (error) {
+        return createRuntimeError(error);
+      }
+    },
+  },
+];
+
 export const builtInOperations: OperationListItem[] = [
   ...undefinedOperations,
   ...stringOperations,
@@ -915,5 +1069,6 @@ export const builtInOperations: OperationListItem[] = [
   ...unionOperations,
   ...dateOperations,
   ...urlOperations,
+  ...promiseOperations,
   ...unknownOperations,
 ];

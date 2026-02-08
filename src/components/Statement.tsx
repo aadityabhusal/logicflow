@@ -231,7 +231,11 @@ const StatementComponent = ({
         {
           statement.operations.reduce(
             (acc, operation, i, operationsList) => {
-              const data = getStatementResult(statement, context, i, true);
+              const data = getStatementResult(statement, context, {
+                index: i,
+                prevEntity: true,
+                skipResolveReference: true,
+              });
               acc.narrowedTypes = applyTypeNarrowing(
                 context,
                 acc.narrowedTypes,

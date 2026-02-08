@@ -154,6 +154,7 @@ export type ExecutionResult = { data?: IData; isPending?: boolean };
 export type Context = {
   variables: Map<
     string,
+    // TODO: remove the reference property since we resolve the statement result by default
     { data: IData; reference?: { name: string; id: string } }
   >;
   reservedNames?: Set<{
