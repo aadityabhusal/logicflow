@@ -258,8 +258,8 @@ export function createContext(
     setInstance: context.setInstance,
     executeOperation: context.executeOperation,
     executeStatement: context.executeStatement,
-    reservedNames: context.reservedNames,
-    variables: context.variables,
+    reservedNames: new Set(context.reservedNames),
+    variables: new Map(context.variables),
   };
   return { ...baseContext, ...overrides };
 }

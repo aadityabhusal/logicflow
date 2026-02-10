@@ -150,7 +150,7 @@ export type INavigation = {
 
 /* Context and Execution */
 
-export type ExecutionResult = { data?: IData; isPending?: boolean };
+export type ExecutionResult = { data?: IData; shouldCacheResult?: boolean };
 export type Context = {
   variables: Map<
     string,
@@ -182,7 +182,7 @@ export type OperationListItem = {
   parameters:
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
-  isManual?: boolean;
+  shouldCacheResult?: boolean;
 } & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
   | {

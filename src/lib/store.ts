@@ -15,6 +15,7 @@ import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
 import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
+import { isDataOfType } from "./utils";
 
 const IDbStore = openDB("logicflow", 1, {
   upgrade(db) {
@@ -353,7 +354,21 @@ export const useExecutionResultsStore =
           return { instances: newInstances };
         });
       },
-      removeAll: () => set({ results: new Map(), instances: new Map() }),
+      removeAll: () =>
+        set((state) => {
+          const newResults = new Map();
+          const newInstances = new Map();
+          for (const [key, value] of state.results) {
+            if (value.shouldCacheResult) {
+              newResults.set(key, value);
+              if (isDataOfType(value.data, "instance")) {
+                const instanceId = value.data.value.instanceId;
+                newInstances.set(instanceId, state.instances.get(instanceId));
+              }
+            }
+          }
+          return { results: newResults, instances: newInstances };
+        }),
       removeResult: (entityId) => {
         set((state) => {
           const newResults = new Map(state.results);

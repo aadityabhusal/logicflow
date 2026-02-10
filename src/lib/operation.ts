@@ -23,6 +23,7 @@ import {
   resolveParameters,
   operationToListItem,
   createContext,
+  updateContextWithNarrowedTypes,
 } from "./utils";
 import { builtInOperations, createRuntimeError } from "./built-in-operations";
 import { InstanceTypes } from "./data";
@@ -127,13 +128,13 @@ export async function createOperationCall({
 
   const _operationId = operationId ?? nanoid();
 
-  const result = newOperation.isManual
+  const result = newOperation.shouldCacheResult
     ? createData({ type: { kind: "undefined" } })
     : await executeOperation(newOperation, data, newParameters, context);
 
-  if (!newOperation.isManual) {
+  if (!newOperation.shouldCacheResult) {
     const operationResult = { ...result, id: _operationId };
-    setResult(_operationId, { data: operationResult, isPending: false });
+    setResult(_operationId, { data: operationResult });
   }
   return {
     id: _operationId,
@@ -237,7 +238,7 @@ export async function executeStatement(
     );
 
     const _context = createContext(context, {
-      narrowedTypes: narrowedTypes,
+      narrowedTypes,
       skipExecution: getSkipExecution({
         context,
         data: resultData,
@@ -263,29 +264,28 @@ export async function executeStatement(
       const existingResult = context.getResult(operation.id)?.data;
 
       const shouldExecute =
-        !foundOp.isManual ||
-        (foundOp.isManual &&
+        !foundOp.shouldCacheResult ||
+        (foundOp.shouldCacheResult &&
           resultType.kind !== "undefined" &&
           !existingResult);
 
       if (shouldExecute) {
-        const result = await executeOperation(
+        operationResult = await executeOperation(
           foundOp,
           resultData,
           operation.value.parameters,
           _context
         );
-        operationResult = { ...result, id: operation.id };
       } else if (existingResult) {
         operationResult = existingResult;
-      } else if (foundOp.isManual) {
+      } else if (foundOp.shouldCacheResult) {
         // For yet-to-execute manual operations, return an undefined type placeholder result.
         operationResult = createData({ type: { kind: "undefined" } });
       }
     }
     context.setResult?.(operation.id, {
       data: operationResult,
-      isPending: false,
+      shouldCacheResult: foundOp?.shouldCacheResult,
     });
     resultData = operationResult;
   }
@@ -349,7 +349,10 @@ export async function executeOperation(
           type: resolveUnionType([p.type, { kind: "undefined" }]),
           value: undefined,
         });
-      return executeStatement(hasParam, prevContext);
+      return executeStatement(
+        hasParam,
+        updateContextWithNarrowedTypes(prevContext, data, operation.name, index)
+      );
     })
   );
 
@@ -384,9 +387,7 @@ export async function executeOperation(
   }
 
   if ("statements" in operation && operation.statements.length > 0) {
-    const context = createContext(prevContext, {
-      variables: new Map(prevContext.variables),
-    });
+    const context = createContext(prevContext);
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
       if (_param.name && allInputs[index]) {

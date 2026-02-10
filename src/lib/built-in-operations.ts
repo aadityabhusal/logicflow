@@ -1054,6 +1054,115 @@ const promiseOperations: OperationListItem[] = [
       }
     },
   },
+  {
+    name: "fetch",
+    shouldCacheResult: true,
+    parameters: [
+      { type: { kind: "string" } },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        name: "options",
+        isOptional: true,
+      },
+    ],
+    handler: (context, url: IData<StringType>, options?: IData<ObjectType>) => {
+      const fetchOptions = options?.value
+        ? (getRawValueFromData(options, context) as Record<string, unknown>)
+        : undefined;
+      const fetchPromise = fetch(url.value, fetchOptions);
+      const newInstanceId = nanoid();
+      context.setInstance(newInstanceId, fetchPromise);
+      const responseType: InstanceDataType = {
+        kind: "instance",
+        className: "Response",
+        constructorArgs: InstanceTypes.Response.constructorArgs,
+      };
+      const resultData = createData({
+        type: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: getPromiseArgsType([
+            { type: responseType, name: "value" },
+          ]),
+        },
+      });
+      return {
+        ...resultData,
+        value: { ...resultData.value, instanceId: newInstanceId },
+      };
+    },
+  },
+];
+
+const responseOperations: OperationListItem[] = [
+  {
+    name: "json",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Response", constructorArgs: [] },
+      },
+    ],
+    handler: async (context, data: IData<InstanceDataType>) => {
+      const instance = getRawValueFromData(data, context) as Response;
+      if (!instance) return createRuntimeError("Response instance not found");
+      const newInstanceId = nanoid();
+      context.setInstance(newInstanceId, instance.clone().json());
+      const resultData = createData({
+        type: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: getPromiseArgsType(),
+        },
+      });
+      return {
+        ...resultData,
+        value: { ...resultData.value, instanceId: newInstanceId },
+      };
+    },
+  },
+  {
+    name: "text",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Response", constructorArgs: [] },
+      },
+    ],
+    handler: (context, data: IData<InstanceDataType>) => {
+      const instance = getRawValueFromData(data, context) as Response;
+      if (!instance) return createRuntimeError("Response instance not found");
+      const newInstanceId = nanoid();
+      context.setInstance(newInstanceId, instance.clone().text());
+      const resultData = createData({
+        type: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: getPromiseArgsType([
+            { type: { kind: "string" }, name: "value" },
+          ]),
+        },
+      });
+      return {
+        ...resultData,
+        value: { ...resultData.value, instanceId: newInstanceId },
+      };
+    },
+  },
+  {
+    name: "getStatus",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Response", constructorArgs: [] },
+      },
+    ],
+    handler: (context, data: IData<InstanceDataType>) => {
+      const instance = getRawValueFromData(data, context) as Response;
+      if (!instance) return createRuntimeError("Response instance not found");
+      return createData({
+        type: { kind: "number" },
+        value: instance.status,
+      });
+    },
+  },
 ];
 
 export const builtInOperations: OperationListItem[] = [
@@ -1070,5 +1179,6 @@ export const builtInOperations: OperationListItem[] = [
   ...dateOperations,
   ...urlOperations,
   ...promiseOperations,
+  ...responseOperations,
   ...unknownOperations,
 ];

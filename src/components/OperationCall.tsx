@@ -62,7 +62,7 @@ const OperationCallComponent = ({
     );
     setResult(operation.id, {
       data: { ...result, id: operation.id },
-      isPending: false,
+      shouldCacheResult: originalOperation.shouldCacheResult,
     });
     handleOperationCall({
       ...operation,
@@ -140,7 +140,7 @@ const OperationCallComponent = ({
       isInputTarget
       target={(props) => <BaseInput {...props} className="text-method" />}
     >
-      {originalOperation?.isManual && (
+      {originalOperation?.shouldCacheResult && (
         <IconButton
           icon={
             context.getResult(operation.id)?.data?.value
