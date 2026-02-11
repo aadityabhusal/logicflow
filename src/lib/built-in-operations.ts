@@ -29,6 +29,7 @@ import {
   operationToListItem,
   createDataFromRawValue,
 } from "./utils";
+import { wretchOperations } from "./operations/wretch";
 
 function getArrayCallbackParameters(data: IData) {
   const elementType = (data.type as ArrayType).elementType ?? {
@@ -145,6 +146,14 @@ const unknownOperations: OperationListItem[] = [
         type: { kind: "string" },
         value: JSON.stringify(data.value),
       });
+    },
+  },
+  {
+    name: "log",
+    parameters: [{ type: { kind: "unknown" } }],
+    handler: (context, data: IData) => {
+      console.log({ data, raw: getRawValueFromData(data, context) });
+      return createData();
     },
   },
   // TODO: add isTypeOf operation for unknown type here. Or maybe separate operations accepting 'unknown' and 'any' type.
@@ -1180,5 +1189,6 @@ export const builtInOperations: OperationListItem[] = [
   ...urlOperations,
   ...promiseOperations,
   ...responseOperations,
+  ...wretchOperations,
   ...unknownOperations,
 ];

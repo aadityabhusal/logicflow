@@ -9,6 +9,7 @@ import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { Button } from "@mantine/core";
 import { Context } from "@/lib/types";
+import { notifications } from "@mantine/notifications";
 
 function SidebarComponent({ context }: { context: Context }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -67,6 +68,18 @@ function SidebarComponent({ context }: { context: Context }) {
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={({ target }) => {
+                  const isReserved = Array.from(
+                    context.reservedNames ?? []
+                  ).find(
+                    (r) => r.name === target.value && item.name !== target.value
+                  );
+                  if (isReserved) {
+                    notifications.show({
+                      message: `Cannot use the ${isReserved.kind} '${target.value}' as an operation name`,
+                    });
+                    setEditingId(undefined);
+                    return;
+                  }
                   const file = getFile(item.id);
                   if (target.value && currentProject && file) {
                     updateProject(currentProject.id, {

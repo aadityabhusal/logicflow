@@ -81,14 +81,7 @@ export function ParseData({
     );
   }
   if (isDataOfType(data, "instance")) {
-    return (
-      <span className="text-instance">
-        {data.value.className}
-        {"<"}
-        {JSON.stringify(context.getInstance(data.id))}
-        {">"}
-      </span>
-    );
+    return <span className="text-instance">{data.value.className}</span>;
   }
   return (
     <span

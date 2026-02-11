@@ -369,7 +369,7 @@ export function createInstance<
   const rawArgs = constructorArgs.map((arg) =>
     getRawValueFromData(arg, context)
   ) as ConstructorParameters<K>;
-  const Constructor = InstanceTypes[className].Constructor as unknown as new (
+  const Constructor = InstanceTypes[className].Constructor as new (
     ...args: ConstructorParameters<K>
   ) => InstanceType<K>;
   return new Constructor(...rawArgs);
@@ -406,7 +406,7 @@ export function createDataFromRawValue(
   }
   if (value instanceof Error) {
     return createData({
-      type: { kind: "error", errorType: "runtime_error" },
+      type: { kind: "error", errorType: "custom_error" },
       value: { reason: value.message },
     });
   }
@@ -1272,6 +1272,7 @@ export function getDataDropdownList({
 
   (Object.keys(InstanceTypes) as (keyof typeof InstanceTypes)[]).forEach(
     (name) => {
+      if (InstanceTypes[name].hideFromDropdown) return;
       const instanceConfig = InstanceTypes[name];
       const instanceType: DataType = {
         kind: "instance",
