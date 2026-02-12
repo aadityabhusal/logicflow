@@ -8,8 +8,10 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { memo, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { Button } from "@mantine/core";
+import { Context } from "@/lib/types";
+import { notifications } from "@mantine/notifications";
 
-function SidebarComponent({ reservedNames }: { reservedNames: string[] }) {
+function SidebarComponent({ context }: { context: Context }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [editingId, setEditingId] = useState<string>();
@@ -28,9 +30,14 @@ function SidebarComponent({ reservedNames }: { reservedNames: string[] }) {
           size={16}
           icon={FaPlus}
           title="Add operation"
-          onClick={() =>
-            addFile(createProjectFile({ type: "operation" }, reservedNames))
-          }
+          onClick={() => {
+            const newFile = createProjectFile(
+              { type: "operation" },
+              Array.from(context.reservedNames ?? []).map((r) => r.name)
+            );
+            addFile(newFile);
+            navigate(`/project/${currentProject?.id}?file=${newFile.name}`);
+          }}
         >
           Add
         </IconButton>
@@ -61,12 +68,25 @@ function SidebarComponent({ reservedNames }: { reservedNames: string[] }) {
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={({ target }) => {
+                  const isReserved = Array.from(
+                    context.reservedNames ?? []
+                  ).find(
+                    (r) => r.name === target.value && item.name !== target.value
+                  );
+                  if (isReserved) {
+                    notifications.show({
+                      message: `Cannot use the ${isReserved.kind} '${target.value}' as an operation name`,
+                    });
+                    setEditingId(undefined);
+                    return;
+                  }
                   const file = getFile(item.id);
                   if (target.value && currentProject && file) {
                     updateProject(currentProject.id, {
                       files: updateFiles(
                         currentProject.files,
                         fileHistoryActions.pushState,
+                        context,
                         { ...file, name: target.value }
                       ),
                     });

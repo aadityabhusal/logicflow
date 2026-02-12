@@ -20,6 +20,8 @@ import {
   createContextVariables,
   getOperationResultType,
   getSkipExecution,
+  createContext,
+  getContextExpectedTypes,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
@@ -97,7 +99,7 @@ const OperationComponent = (
               isOptional: param.isOptional,
             };
           }),
-          result: getOperationResultType(updatedStatementsList),
+          result: getOperationResultType(updatedStatementsList, context),
         },
         value: {
           ...operation.value,
@@ -118,11 +120,14 @@ const OperationComponent = (
         .concat(operation.value.statements.slice(_index));
       handleChange({
         ...operation,
-        type: { ...operation.type, result: getOperationResultType(statements) },
+        type: {
+          ...operation.type,
+          result: getOperationResultType(statements, context),
+        },
         value: { ...operation.value, statements },
       });
     },
-    [handleChange, operation]
+    [handleChange, operation, context]
   );
 
   const addParameter = useCallback(
@@ -190,15 +195,15 @@ const OperationComponent = (
                   return false;
                 })(),
               }}
-              context={{
+              context={createContext(context, {
                 variables: new Map(),
                 reservedNames,
-                currentStatementId: parameter.id,
-                ...(expectedParameterType && {
-                  expectedType: expectedParameterType[i]?.type,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: expectedParameterType?.[i]?.type,
                   enforceExpectedType: true,
                 }),
-              }}
+              })}
               addStatement={(statement, position) => {
                 addParameter(
                   { ...statement, isOptional: paramList[i - 1]?.isOptional },
@@ -234,19 +239,18 @@ const OperationComponent = (
         {
           operation.value.statements.reduce(
             (acc, statement, index) => {
-              const _context: Context = {
-                currentStatementId: statement.id,
+              const _context = createContext(context, {
                 reservedNames,
                 variables: acc.variables,
                 skipExecution: getSkipExecution({
                   context: { ...context, variables: acc.variables },
                   data: statement.data,
                 }),
-              };
+              });
 
               acc.variables = createContextVariables(
                 [statement],
-                acc.variables,
+                _context,
                 operation
               );
 
@@ -273,7 +277,7 @@ const OperationComponent = (
               elements: [] as ReactNode[],
               variables: createContextVariables(
                 operation.value.parameters.toReversed(),
-                context.variables,
+                context,
                 operation
               ),
             }

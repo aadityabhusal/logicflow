@@ -5080,6 +5080,11 @@ word-wrap@^1.2.5:
   resolved "https://registry.yarnpkg.com/word-wrap/-/word-wrap-1.2.5.tgz#d2c45c6dd4fbce621a66f136cbe328afd0410b34"
   integrity sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==
 
+wretch@^3.0.6:
+  version "3.0.6"
+  resolved "https://registry.yarnpkg.com/wretch/-/wretch-3.0.6.tgz#69724569ebca12c7cfb52da47ec3ea3a65027f63"
+  integrity sha512-qshuQ0s5973Mu9mL5PG6QYG/bD0jihX9bovq7jgGE8r6ndH+JPOzzxihh/gaanKKsrFvvIdZ+KN4BoFyTj4PWg==
+
 ws@^8.13.0:
   version "8.17.1"
   resolved "https://registry.yarnpkg.com/ws/-/ws-8.17.1.tgz#9293da530bb548febc95371d90f9c878727d919b"

@@ -1,10 +1,17 @@
-import { Context, IData, IStatement, ObjectType } from "../../lib/types";
+import { Context, IData, IStatement, ObjectType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo } from "react";
-import { createVariableName, inferTypeFromValue } from "../../lib/utils";
+import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
+import {
+  createVariableName,
+  inferTypeFromValue,
+  getContextExpectedTypes,
+} from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
+import { IconButton } from "@/ui/IconButton";
+import { FaQuestion } from "react-icons/fa6";
+import { Dropdown } from "../Dropdown";
 
 export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
@@ -17,6 +24,7 @@ const ObjectInputComponent = (
 ) => {
   const isMultiline = data.value.size > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   function handleUpdate(
     dataArray: [string, IStatement][],
@@ -29,7 +37,10 @@ const ObjectInputComponent = (
     const newValue = new Map(dataArray);
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue),
+      type: inferTypeFromValue(newValue, {
+        ...context,
+        expectedType: context.expectedType ?? data.type,
+      }),
       value: newValue,
     });
   }
@@ -44,11 +55,48 @@ const ObjectInputComponent = (
       const newValue = new Map(dataArray);
       handleData({
         ...data,
-        type: inferTypeFromValue(newValue),
+        type: inferTypeFromValue(newValue, {
+          ...context,
+          expectedType: context.expectedType ?? data.type,
+        }),
         value: newValue,
       });
     }
   }
+
+  const remainingOptionalProperties = useMemo(() => {
+    const originalProperties =
+      context.expectedType?.kind === "object"
+        ? context.expectedType.properties
+        : data.type.properties;
+    return Object.entries(originalProperties).filter(
+      ([key]) => !data.value.has(key)
+    );
+  }, [context.expectedType, data.type.properties, data.value]);
+
+  const optionalKeyOptions = useMemo(() => {
+    const oldKey = navigationId?.slice(data.id.length + 1);
+    return remainingOptionalProperties.map(([key, type]) => ({
+      value: key,
+      entityType: "data" as const,
+      type,
+      onClick: () => {
+        const newValue = new Map(data.value);
+        const oldKeyValue = newValue.get(oldKey || "");
+        if (!oldKeyValue || !oldKey) return;
+        newValue.set(key, oldKeyValue);
+        newValue.delete(oldKey);
+        handleData({
+          ...data,
+          type: inferTypeFromValue(newValue, {
+            ...context,
+            expectedType: context.expectedType ?? data.type,
+          }),
+          value: newValue,
+        });
+      },
+    }));
+  }, [navigationId, data, remainingOptionalProperties, handleData, context]);
 
   return (
     <div
@@ -62,22 +110,75 @@ const ObjectInputComponent = (
     >
       <span>{"{"}</span>
       {Array.from(data.value).map(([key, value], i, arr) => {
-        const isNameFocused = navigationId === `${value.id}_key`;
+        const isOptional = !data.type.required?.includes(key);
+        const expectedType =
+          context.expectedType?.kind === "object"
+            ? context.expectedType.properties[key]
+            : undefined;
+        const isKeyInputFocused = navigationId === `${data.id}_${key}`;
         return (
           <div
             key={value.id}
-            style={{ display: "flex", marginLeft: isMultiline ? 8 : 0 }}
+            className={["relative flex", isMultiline ? "ml-2" : ""].join(" ")}
           >
-            <BaseInput
-              ref={(elem) => isNameFocused && elem?.focus()}
+            {context.expectedType ? (
+              <Dropdown
+                id={`${data.id}_${key}`}
+                value={key}
+                items={
+                  isOptional ? [["Properties", optionalKeyOptions]] : undefined
+                }
+                context={context}
+                isInputTarget={true}
+                target={(props) => (
+                  <BaseInput {...props} className={"text-property"} />
+                )}
+              />
+            ) : (
+              <BaseInput
+                ref={(elem) => isKeyInputFocused && elem?.focus()}
+                className={[
+                  "text-property",
+                  isKeyInputFocused ? "outline outline-border" : "",
+                ].join(" ")}
+                value={key}
+                onChange={(value) => handleKeyUpdate(arr, i, value)}
+              />
+            )}
+            <IconButton
+              ref={(elem) => {
+                if (navigationId === `${data.id}_${key}_colon`) elem?.focus();
+              }}
+              icon={
+                isOptional ? FaQuestion : () => <span className="px-1">:</span>
+              }
               className={[
-                "text-property",
-                isNameFocused ? "outline outline-border" : "",
+                "hover:outline hover:outline-border",
+                navigationId === `${data.id}_${key}_colon`
+                  ? "outline outline-border"
+                  : "",
+                expectedType ? "text-disabled" : "",
               ].join(" ")}
-              value={key}
-              onChange={(value) => handleKeyUpdate(arr, i, value)}
+              title={
+                expectedType
+                  ? isOptional
+                    ? "Optional property"
+                    : undefined
+                  : isOptional
+                  ? "Make required"
+                  : "Make optional"
+              }
+              onClick={() => {
+                if (expectedType) return;
+                const required = isOptional
+                  ? [...(data.type.required ?? []), key]
+                  : (data.type.required ?? []).filter((k) => k !== key);
+                handleData({ ...data, type: { ...data.type, required } });
+                setNavigation(() => ({
+                  navigation: { id: `${data.id}_${key}_colon` },
+                }));
+              }}
             />
-            <span style={{ marginRight: 4 }}>:</span>
             <Statement
               statement={value}
               handleStatement={(val, remove) =>
@@ -85,37 +186,51 @@ const ObjectInputComponent = (
               }
               context={{
                 ...context,
-                expectedType:
-                  context.expectedType?.kind === "object"
-                    ? context.expectedType.properties[key]
-                    : undefined,
+                ...getContextExpectedTypes({ context, expectedType }),
+              }}
+              options={{
+                disableDelete: !!context.expectedType && !isOptional,
               }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
-      {!context.expectedType && (
+      {(!context.expectedType || remainingOptionalProperties.length > 0) && (
         <AddStatement
           id={data.id}
           onSelect={(value) => {
             if (!data.value.has("")) {
               const newMap = new Map(data.value);
               newMap.set(
-                createVariableName({
-                  prefix: "key",
-                  prev: Array.from(data.value.keys()),
-                }),
-                value
+                remainingOptionalProperties[0]
+                  ? remainingOptionalProperties[0][0]
+                  : createVariableName({
+                      prefix: "key",
+                      prev: Array.from(data.value.keys()),
+                    }),
+                { ...value, name: undefined }
               );
               handleData({
                 ...data,
-                type: inferTypeFromValue(newMap),
+                type: inferTypeFromValue(newMap, {
+                  ...context,
+                  expectedType: context.expectedType ?? data.type,
+                }),
                 value: newMap,
               });
             }
           }}
           iconProps={{ title: "Add object item" }}
+          config={
+            remainingOptionalProperties[0]
+              ? {
+                  type: remainingOptionalProperties[0][1],
+                  name: remainingOptionalProperties[0][0],
+                  isOptional: true,
+                }
+              : undefined
+          }
         />
       )}
       <span>{"}"}</span>

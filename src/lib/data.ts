@@ -1,4 +1,5 @@
-import { DataType, ErrorType } from "./types";
+import { DataType, ErrorType, OperationType } from "./types";
+import wretch from "wretch";
 
 export const DataTypes: {
   [K in DataType["kind"]]: {
@@ -29,8 +30,14 @@ export const DataTypes: {
   array: {
     type: { kind: "array", elementType: { kind: "undefined" } },
   },
+  tuple: {
+    type: { kind: "tuple", elements: [{ kind: "undefined" }] },
+  },
   object: {
     type: { kind: "object", properties: { key: { kind: "undefined" } } },
+  },
+  dictionary: {
+    type: { kind: "dictionary", elementType: { kind: "undefined" } },
   },
   union: {
     type: { kind: "union", types: [{ kind: "undefined" }] },
@@ -45,7 +52,7 @@ export const DataTypes: {
   condition: {
     type: {
       kind: "condition",
-      resultType: { kind: "union", types: [{ kind: "undefined" }] },
+      result: { kind: "union", types: [{ kind: "undefined" }] },
     },
     hideFromDropdown: true,
   },
@@ -55,7 +62,122 @@ export const DataTypes: {
   },
   error: {
     type: { kind: "error", errorType: "custom_error" },
-    // hideFromDropdown: true,
+  },
+  instance: {
+    type: {
+      kind: "instance",
+      className: "Date",
+      constructorArgs: [{ type: { kind: "string" } }],
+    },
+    hideFromDropdown: true,
+  },
+};
+
+export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
+  return [
+    {
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            name: "resolve",
+            type: {
+              kind: "operation",
+              parameters: resolveType ?? [
+                { name: "value", type: { kind: "unknown" } },
+              ],
+              result: { kind: "undefined" },
+            },
+          },
+          {
+            name: "reject",
+            type: {
+              kind: "operation",
+              parameters: [
+                {
+                  name: "err",
+                  type: { kind: "error", errorType: "custom_error" },
+                },
+              ],
+              result: { kind: "undefined" },
+            },
+            isOptional: true,
+          },
+        ],
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+        },
+      },
+    },
+  ] as OperationType["parameters"];
+}
+
+export type InstanceTypeConfig<
+  K extends string = string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  C extends new (...args: any[]) => any = new (...args: any[]) => any
+> = {
+  readonly name: K;
+  readonly Constructor: C;
+  readonly constructorArgs: OperationType["parameters"];
+  readonly hideFromDropdown?: boolean;
+};
+
+export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
+  Promise: {
+    name: "Promise",
+    Constructor: Promise,
+    constructorArgs: getPromiseArgsType(),
+  },
+  Date: {
+    name: "Date",
+    Constructor: Date,
+    constructorArgs: [
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
+  },
+  URL: {
+    name: "URL",
+    Constructor: URL,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+  },
+  Response: {
+    name: "Response",
+    Constructor: Response,
+    constructorArgs: [
+      { type: { kind: "unknown" }, isOptional: true },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
+  },
+  Wretch: {
+    name: "Wretch",
+    Constructor: function (...args: Parameters<typeof wretch>) {
+      return wretch(...args);
+    } as unknown as new (...args: Parameters<typeof wretch>) => ReturnType<
+      typeof wretch
+    >,
+    constructorArgs: [
+      { type: { kind: "string" } },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
+  },
+  WretchResponseChain: {
+    name: "WretchResponseChain",
+    Constructor: class WretchResponseChain {} as unknown as new (
+      ...args: unknown[]
+    ) => unknown,
+    constructorArgs: [],
+    hideFromDropdown: true,
   },
 };
 

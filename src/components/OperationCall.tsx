@@ -4,13 +4,19 @@ import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
   getFilteredOperations,
-  resolveParameters,
+  executeOperation,
 } from "../lib/operation";
-import { updateContextWithNarrowedTypes } from "../lib/utils";
+import { FaArrowRotateRight } from "react-icons/fa6";
+import {
+  updateContextWithNarrowedTypes,
+  resolveParameters,
+  getContextExpectedTypes,
+} from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
-import { useNavigationStore } from "@/lib/store";
+import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
+import { IconButton } from "@/ui/IconButton";
 
 const OperationCallComponent = ({
   data,
@@ -29,27 +35,50 @@ const OperationCallComponent = ({
   context: Context;
 }) => {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-
+  const setResult = useExecutionResultsStore((s) => s.setResult);
   const filteredOperations = useMemo(
-    () => getFilteredOperations(data, context.variables, true),
-    [data, context.variables]
+    () => getFilteredOperations(data, context, true),
+    [data, context]
   );
 
-  const originalParameters = useMemo(() => {
-    const originalOperation = filteredOperations
+  const originalOperation = useMemo(() => {
+    return filteredOperations
       .flatMap(([_, items]) => items)
       .find((item) => item.name === operation.value.name);
-    if (!originalOperation) return undefined;
-    return resolveParameters(originalOperation, data, context.variables);
-  }, [context.variables, data, filteredOperations, operation.value.name]);
+  }, [filteredOperations, operation.value.name]);
 
-  function handleDropdown(name: string) {
+  const originalParameters = useMemo(() => {
+    if (!originalOperation) return undefined;
+    return resolveParameters(originalOperation, data, context);
+  }, [context, data, originalOperation]);
+
+  async function handleManualExecute() {
+    if (!originalOperation) return;
+    const result = await executeOperation(
+      originalOperation,
+      data,
+      operation.value.parameters,
+      context
+    );
+    setResult(operation.id, {
+      data: { ...result, id: operation.id },
+      shouldCacheResult: originalOperation.shouldCacheResult,
+    });
+    handleOperationCall({
+      ...operation,
+      type: { ...operation.type, result: result.type },
+    });
+  }
+
+  async function handleDropdown(name: string) {
     if (operation.value.name === name) return;
-    const operationCall = createOperationCall({
+    const operationCall = await createOperationCall({
       data,
       name,
       parameters: operation.value.parameters,
       context,
+      operationId: operation.id,
+      setResult,
     });
     operationCall.id = operation.id;
     handleOperationCall(operationCall);
@@ -89,12 +118,14 @@ const OperationCallComponent = ({
   return (
     <Dropdown
       id={operation.id}
-      operationResult={operation.value.result}
       items={filteredOperations.map(([groupName, groupItems]) => [
         groupName,
         groupItems.map((item) => ({
           label: item.name,
-          value: item.name,
+          value: `${
+            resolveParameters(item, data, context)?.[0]?.type.kind ??
+            "undefined"
+          }-${item.name}`,
           color: "method",
           entityType: "operationCall",
           onClick: () => handleDropdown(item.name),
@@ -109,6 +140,18 @@ const OperationCallComponent = ({
       isInputTarget
       target={(props) => <BaseInput {...props} className="text-method" />}
     >
+      {originalOperation?.shouldCacheResult && (
+        <IconButton
+          icon={FaArrowRotateRight}
+          title="Re-run operation"
+          className="mx-0.5"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleManualExecute();
+          }}
+          size={12}
+        />
+      )}
       <span>{"("}</span>
       {operation.value.parameters.map((item, paramIndex, arr) => {
         return (
@@ -126,7 +169,10 @@ const OperationCallComponent = ({
                   operation.value.name,
                   paramIndex
                 ),
-                expectedType: originalParameters?.[paramIndex + 1]?.type,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: originalParameters?.[paramIndex + 1]?.type,
+                }),
               }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}

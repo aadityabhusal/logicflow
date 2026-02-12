@@ -1,9 +1,4 @@
-import {
-  getFilteredOperations,
-  executeOperation,
-  executeStatement,
-  resolveParameters,
-} from "./operation";
+import { getFilteredOperations } from "./operation";
 import {
   IStatement,
   IData,
@@ -14,9 +9,10 @@ import {
   ProjectFile,
 } from "./types";
 import {
+  createContext,
   getStatementResult,
   isDataOfType,
-  inferTypeFromValue,
+  getUnionActiveType,
   createContextVariables,
   createStatement,
   createData,
@@ -24,58 +20,53 @@ import {
   createFileFromOperation,
   createFileVariables,
   applyTypeNarrowing,
-  resolveReference,
   getOperationResultType,
-  getSkipExecution,
   updateContextWithNarrowedTypes,
+  getSkipExecution,
+  resolveParameters,
 } from "./utils";
 import isEqual from "react-fast-compare";
 
-export function updateOperationCalls(
+function updateOperationCalls(
   statement: IStatement,
-  _context: Context
+  context: Context
 ): IData<OperationType>[] {
   return statement.operations.reduce(
     (acc, operation, operationIndex) => {
       const updatedStatement = { ...statement, operations: acc.operations };
-      const data = getStatementResult(updatedStatement, operationIndex, true);
+      const data = getStatementResult(updatedStatement, context, {
+        index: operationIndex,
+        prevEntity: true,
+        skipResolveReference: true,
+      });
+      /* Type narrowing and finding operation is needed for updating parameters especially of user-defined operations */
       acc.narrowedTypes = applyTypeNarrowing(
-        _context,
+        context,
         acc.narrowedTypes,
         data,
         operation
       );
-      const context = {
-        ..._context,
+      const _context = createContext(context, {
         narrowedTypes: acc.narrowedTypes,
         skipExecution: getSkipExecution({
-          context: _context,
+          context,
           data,
           operationName: operation.value.name,
         }),
-      };
-
-      const foundOperation = getFilteredOperations(
-        data,
-        context.variables
-      ).find((op) => op.name === operation.value.name);
-
-      let result: IData = createData({
-        type: { kind: "error", errorType: "type_error" },
-        value: {
-          reason: `Cannot chain '${operation.value.name}' after '${
-            resolveReference(data, context.variables).type.kind
-          }' type`,
-        },
       });
-      let updatedParameters: IStatement[] = operation.value.parameters;
+
+      const foundOperation = getFilteredOperations(data, _context).find(
+        (op) => op.name === operation.value.name
+      );
+
+      let updatedParameters = operation.value.parameters;
       let updatedTypeParameters = operation.type.parameters;
 
       if (foundOperation) {
         const sourceParameters = resolveParameters(
           foundOperation,
           data,
-          context.variables
+          _context
         );
         updatedTypeParameters = sourceParameters;
 
@@ -93,7 +84,7 @@ export function updateOperationCalls(
             return updateStatement(
               { ...param, isOptional: sourceParam.isOptional },
               updateContextWithNarrowedTypes(
-                context,
+                _context,
                 data,
                 operation.value.name,
                 sourceParamIndex
@@ -101,18 +92,13 @@ export function updateOperationCalls(
             );
           })
           .filter((p): p is IStatement => p !== null);
-
-        result = {
-          ...executeOperation(foundOperation, data, updatedParameters, context),
-          ...(operation.value.result && { id: operation.value.result?.id }),
-        };
       }
       acc.operations = [
         ...acc.operations,
         {
           ...operation,
           type: { ...operation.type, parameters: updatedTypeParameters },
-          value: { ...operation.value, parameters: updatedParameters, result },
+          value: { ...operation.value, parameters: updatedParameters },
         },
       ];
       return acc;
@@ -128,9 +114,9 @@ function updateDataValue(
 ): DataValue<DataType> {
   return reference
     ? { name: reference.name, id: reference.data.id }
-    : isDataOfType(data, "array")
+    : isDataOfType(data, "array") || isDataOfType(data, "tuple")
     ? updateStatements({ statements: data.value, context })
-    : isDataOfType(data, "object")
+    : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
     ? new Map(
         [...data.value.entries()].map(([name, statement]) => [
           name,
@@ -141,7 +127,7 @@ function updateDataValue(
     ? updateOperationValue(data, context) ?? data.value
     : isDataOfType(data, "union")
     ? updateDataValue(
-        { ...data, type: inferTypeFromValue(data.value) },
+        { ...data, type: getUnionActiveType(data.type, data.value, context) },
         context
       )
     : isDataOfType(data, "condition")
@@ -149,17 +135,16 @@ function updateDataValue(
         const condition = updateStatement(data.value.condition, context);
         const _true = updateStatement(data.value.true, context);
         const _false = updateStatement(data.value.false, context);
-        const result = executeStatement(
-          createStatement({
-            data: createData({
-              type: data.type,
-              value: { condition, true: _true, false: _false },
-            }),
-          }),
-          context
-        );
-        return { condition, true: _true, false: _false, result };
+        return { condition, true: _true, false: _false };
       })()
+    : isDataOfType(data, "instance")
+    ? {
+        ...data.value,
+        constructorArgs: updateStatements({
+          statements: data.value.constructorArgs,
+          context,
+        }),
+      }
     : data.value;
 }
 
@@ -190,6 +175,8 @@ function updateStatement(
     ...currentStatement,
     data: {
       ...currentStatement.data,
+      // TODO: might need to update type based on the updated value,
+      // inferring type from value doesn't work for union data
       value: updateDataValue(currentStatement.data, context, reference),
     },
   };
@@ -226,18 +213,17 @@ export function updateStatements({
 
     const variables = createContextVariables(
       prevStatements,
-      context.variables,
+      context,
       operation
     );
-    const _context = {
-      currentStatementId: statementToProcess.id,
+    const _context = createContext(context, {
       variables,
       skipExecution: getSkipExecution({
         context: { ...context, variables },
         data: statementToProcess.data,
         ...(operation ? { operation, paramIndex: index } : {}),
       }),
-    };
+    });
     return [...prevStatements, updateStatement(statementToProcess, _context)];
   }, [] as IStatement[]);
 }
@@ -260,6 +246,7 @@ function updateOperationValue(
 export function updateFiles(
   files: ProjectFile[],
   pushHistory: (fileId: string, content: ProjectFile["content"]) => void,
+  context: Context,
   changedFile?: ProjectFile
 ): ProjectFile[] {
   const updatedFiles = files.map((file) =>
@@ -271,18 +258,18 @@ export function updateFiles(
       pushHistory(fileToProcess.id, fileToProcess.content);
       return [...prevFiles, changedFile];
     }
-    const context = {
+    const _context = createContext(context, {
       variables: createFileVariables(updatedFiles, fileToProcess.id),
-    };
+    });
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {
-      const value = updateOperationValue(operation, context);
+      const value = updateOperationValue(operation, _context);
       if (!isEqual(value, operation.value)) {
         const operationFile = createFileFromOperation({
           ...operation,
           type: {
             ...operation.type,
-            result: getOperationResultType(value.statements),
+            result: getOperationResultType(value.statements, _context),
           },
           value,
         });

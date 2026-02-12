@@ -17,6 +17,8 @@ import { ConditionInput } from "./Input/ConditionInput";
 import { UnionInput } from "./Input/UnionInput";
 import { Operation } from "./Operation";
 import { ErrorInput } from "./Input/ErrorInput";
+import { DictionaryInput } from "./Input/Dictionary";
+import { InstanceInput } from "./Input/InstanceInput";
 import { useNavigationStore } from "@/lib/store";
 
 interface IProps {
@@ -43,7 +45,9 @@ const DataComponent = ({
   const dropdownOptions = useMemo(() => {
     const showDropdownIcon =
       isDataOfType(data, "array") ||
+      isDataOfType(data, "tuple") ||
       isDataOfType(data, "object") ||
+      isDataOfType(data, "dictionary") ||
       isDataOfType(data, "boolean") ||
       isDataOfType(data, "union") ||
       isDataOfType(data, "condition") ||
@@ -72,7 +76,7 @@ const DataComponent = ({
       }
       isInputTarget={
         isDataOfType(data, "reference") ||
-        ["string", "number", "undefined"].includes(data.type.kind)
+        ["string", "number", "undefined", "instance"].includes(data.type.kind)
       }
       target={({ onChange, ...props }: IDropdownTargetProps) =>
         isDataOfType(data, "reference") ? (
@@ -83,7 +87,7 @@ const DataComponent = ({
             handleChange={handleChange}
             context={context}
           />
-        ) : isDataOfType(data, "array") ? (
+        ) : isDataOfType(data, "array") || isDataOfType(data, "tuple") ? (
           <ArrayInput
             data={data}
             handleData={handleChange}
@@ -92,6 +96,13 @@ const DataComponent = ({
           />
         ) : isDataOfType(data, "object") ? (
           <ObjectInput
+            data={data}
+            handleData={handleChange}
+            context={context}
+            onClick={props.onClick}
+          />
+        ) : isDataOfType(data, "dictionary") ? (
+          <DictionaryInput
             data={data}
             handleData={handleChange}
             context={context}
@@ -145,6 +156,14 @@ const DataComponent = ({
             context={context}
             onClick={props.onClick}
           />
+        ) : isDataOfType(data, "instance") ? (
+          <InstanceInput
+            {...props}
+            onChange={onChange}
+            data={data}
+            handleData={handleChange}
+            context={context}
+          />
         ) : (
           // Undefined type
           <BaseInput
@@ -161,8 +180,8 @@ const DataComponent = ({
                   }
                 : _val.startsWith("{")
                 ? {
-                    type: "object",
-                    value: createDefaultValue(DataTypes["object"].type),
+                    type: "dictionary",
+                    value: createDefaultValue(DataTypes["dictionary"].type),
                   }
                 : _val
                 ? { type: "string", value: _val }

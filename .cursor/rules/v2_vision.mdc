@@ -3,7 +3,7 @@ description: These rules give a top-level idea and direction while building feat
 alwaysApply: false
 ---
 
-# Logicflow - Cursor Rules
+# Logicflow Vision & Roadmap
 
 ## Core Philosophy
 
@@ -12,74 +12,191 @@ Logicflow is a block-based (not node-based) visual programming environment built
 ### Key Principles
 
 - Operations transform data from one type to another
-- Visual blocks map 1-to-1 with code statements/expressions
 - Real-time execution shows results inline at each step
-- Type safety drives the development experience
+- Type safety first—types drive the development experience
 - Functional composition over imperative control flow
+- Testing and debugging happen in-place, no separate mode
 
-## Vision: Next Version
+---
 
-The next version transforms Logicflow from a simple logic builder into a **complete serverless/edge function development platform** while maintaining its core simplicity and visual-first approach.
+## Current State (Implemented)
+
+### Type System
+
+Logicflow has a complete, expressive type system supporting:
+
+- **Primitive types**: string, number, boolean, undefined
+- **Complex types**: array (with element types), object (with property types)
+- **Advanced types**: union, operation, error, reference
+- **Type narrowing**: Automatic type refinement based on `isTypeOf` checks
+
+**No generics**—use concrete union types instead (e.g., `Array<string|number>`).
+
+### Operations as First-Class Data
+
+Operations are themselves a data type that can be:
+
+- Passed as parameters to higher-order operations (map, filter, reduce, sort)
+- Created as user-defined operations from files
+- Chained after data based on first parameter type compatibility
+- Stored and referenced as values
+
+Built-in and user-defined operations appear in the same operation list.
+
+### Control Flow
+
+#### Conditionals
+
+The `thenElse` operation replaces traditional if-else blocks or ternary syntax:
+
+- Takes operation types as parameters for each branch
+- Supports type narrowing based on `isTypeOf` usage
+- Only executes the reachable branch (lazy evaluation)
+
+#### Iteration
+
+**No traditional for/while loops**—use declarative array operations:
+
+- `map`, `filter`, `reduce`, `forEach` for transformations
+- Combine with `range` for counted iterations
+- Each transformation is visible in real-time
+
+### User Experience
+
+#### Real-time Execution
+
+- Execute code as users build visually
+- Show results inline at each operation
+- Use inline errors with error boundaries per entity
+
+#### Error Handling
+
+- **Error type**: First-class data type (reference, type, runtime, custom)
+- **Error propagation**: Errors bubble through chains without executing subsequent operations
+- **Error boundaries**: Per-entity isolation prevents entire app breakage
+- **No try-catch blocks**: Errors are data that can be checked using type operations
+
+#### Block-Based Layout
+
+Text-like linear structure (not graph-based):
+
+- Statement-based UI with 1-to-1 correspondence to generated code
+- Collapsible blocks for deep nesting
+- Visual depth indicators
+- Keyboard navigation with arrow keys and modifiers
+
+#### Keyboard Navigation
+
+Comprehensive system for efficient workflow:
+
+- Arrow keys for navigation through statements, data, operations
+- Alt + Arrow for jumping between major elements
+- Cmd/Ctrl + Arrow for first/last element navigation
+- Automatic focus management
+
+### Project Structure
+
+Projects contain:
+
+- Multiple operation files with dependency tracking
+- User-defined operations callable from other files
+- Project-level variables
+- Real-time execution context
+
+---
+
+## Next Phase (Near-Term Development)
+
+This phase transforms Logicflow into a **complete serverless/edge function development platform**.
 
 ### Target Capability
 
 Users should be able to visually create production-ready serverless/edge functions with:
 
 - Full TypeScript type safety
-- External service integrations via npm packages
 - Asynchronous operations through promise chaining
-- Platform-agnostic code generation
-- Professional-grade error handling and security
+- Deployment to multiple platforms with platform-agnostic code generation
+- Native debugger with stepper and variable inspection
 
-## Architectural Direction
+### 1. Asynchronous Execution Model
 
-### Type System Evolution
+**Support both promise chaining and await operation**:
 
-Build an expressive, recursive type system supporting:
+#### Promise Chaining
 
-- Primitive types (string, number, boolean)
-- Complex types (array with item types, objects with property types, tuples)
-- Advanced types (union, literal, promise, date, undefined, any, file)
-- **Operation types** with parameter and return type signatures
-- Type narrowing based on the usage of 'typof' operation
-- Skip generics—use concrete union types instead (e.g., `Array<string|number>`)
+- `.then()` and `.catch()` as visible operations on promise data
+- `Promise.all`, `Promise.allSettled` (after namespace support)
+- Promise type: `Promise<T>` with wrapped type visible
 
-### Operations as First-Class Data
+#### Await Operation
 
-**Unify methods and operations into a single "operation" entity** that is itself a data type. This enables:
+- `.await()` operation returns an object with data or error
+- Explicit async handling in visual format
+- Compatible with the operations-on-data philosophy
 
-- Higher-order operations (map, filter, reduce taking operations as parameters)
-- Operations filtered by first parameter type (`data.operation(params)`)
-- Storing and passing operations as values
-- Built-in and user-defined operations in the same list
+**Promises align with our paradigm**: asynchronous operations are just another data transformation.
 
-**No currying or partial application**—adds unnecessary complexity for visual contexts. All parameters required when chaining.
+### 2. Code Generation and Deployment
 
-### Asynchronous Execution Model
+Generate **production-ready TypeScript** with:
 
-**Use promise chaining, not async/await**. Promises align with the "operations on data" philosophy:
+#### Core Output
 
-- `.then()` and `.catch()` are visible operations on promise data
-- Each chain step is explicit and visual
-- Natural fit for block-based representation
-- Easier to generate clean TypeScript code
+- Proper import statements based on used packages
+- Type-safe variable declarations
+- Clean, readable code matching visual structure
+- Environment variable references
 
-**No traditional loops**—they introduce imperative control flow incompatible with the functional paradigm. Use `range` + `forEach`/`map`/`reduce` instead.
+#### Platform-Specific Templates
 
-## NPM Package Integration Strategy
+Create handlers for developer-focused serverless/edge platforms:
 
-This is the **killer feature** that differentiates Logicflow from other visual programming tools.
+- **Supabase Edge Functions**
+- **Vercel Functions**
+- **Cloudflare Workers**
+- **Netlify Functions**
 
-### Implementation Approach
+Each template includes:
 
-- Users import npm packages into their Projects
-- Extract TypeScript type definitions automatically from `.d.ts` files
+- Platform-specific handler signature
+- Context object handling
+- Callback vs Promise vs async handler patterns
+- Proper error responses for each platform
+
+#### Deployment Configuration
+
+- Auto-generated package.json with dependencies
+- Infrastructure-as-code files (serverless.yml, SAM templates, Terraform)
+- Platform configuration files
+
+### 3. Native Debugger
+
+Enhance real-time execution with debugging capabilities:
+
+- Breakpoint support at any statement
+- Step-through execution mode
+- Variable inspection at each step
+- Execution history playback
+- Performance profiling
+
+---
+
+## Future Vision (Long-Term)
+
+### NPM Package Integration
+
+This is the **killer feature** differentiating Logicflow.
+
+#### Implementation Approach
+
+- Users import npm packages into projects
+- Extract TypeScript type definitions from `.d.ts` files automatically
 - Generate visual operations from package exports
 - Preserve type information for IntelliSense-like experiences
 
-### Entity Generation Rules
+#### Entity Generation Rules
 
-From imported packages, generate operations:
+From imported packages, generate:
 
 - Top-level functions as operations filtered by first parameter type
 - Named exports as importable operations
@@ -87,114 +204,21 @@ From imported packages, generate operations:
 - Zero-parameter functions chainable from `undefined`
 - Proper namespace handling for scoped operations
 
-### Type Safety Integration
+#### Type Safety Integration
 
-- Use TypeScript compiler API for type inference, don't reimplement
+- Use TypeScript compiler API for type inference (don't reimplement)
 - Validate runtime results match expected types during development
 - Extract JSDoc comments for inline documentation
 - Support discriminated unions from package types
 
-### Security Considerations
+#### Security Considerations
 
 - Sandbox npm package execution (Web Workers, isolated contexts)
 - Provide "mock mode" for packages returning typed mock data
 - Consider allowlist approach for untrusted packages
 - Validate type definitions match runtime behavior
 
-## Control Flow Philosophy
-
-### Conditionals
-
-Implement **ternary operator-style components** for conditional logic:
-
-- No if-else blocks or ternary operators, instead create a 'thenElse' operation
-- 'thenElse' will have 'operation' type as paramter for each branch
-- Implement type narrowing based on how 'typeof' is used in previous operation calls
-- The operation call after 'typeof', should have the type-narrowed data in their context
-
-### Iteration
-
-- **No traditional for/while loops**—use declarative array operations
-- Support `map`, `filter`, `reduce`, `forEach` as operations
-- Combine with `range` for counted iterations
-- Make each iteration's transformation visible
-
-### Parallel Execution
-
-Support `Promise.all` for parallel operations:
-
-- Visual representation of multiple promise chains merging
-- Type-safe return of array/tuple of results
-- Makes parallelism explicit in the visual flow
-
-## Error Handling Strategy
-
-**No try-catch blocks**. Instead:
-
-- Use React error boundaries per entity
-- Display errors inline where they occur during real-time execution
-- Support `.catch()` on promises for error recovery
-- Allow `.catch()` to transform errors into valid data, updating types accordingly
-
-## Code Generation Requirements
-
-### Target Output
-
-Generate **production-ready TypeScript** with:
-
-- Proper import statements based on used packages
-- Platform-specific handler signatures for developer focused serverless/edge platforms like Supabase, Vercel, Cloudflare, Netlify etc.
-- Environment variable references
-- Infrastructure-as-code files (serverless.yml, SAM templates, Terraform)
-- Auto-generated package.json with dependencies
-
-### Platform Adaptability
-
-Create templates for developer focused serverless/edge platforms like Supabase, Vercel, Cloudflare, Netlify etc.:
-
-- Each platform's specific handler signature
-- Context object handling
-- Callback vs Promise vs async handler patterns
-- Proper error responses for each platform
-
-## Built-in Type Extensions
-
-Add specialized types to the type registry:
-
-- **Operation**: parameter types and return type
-- **HTTP Request**: headers, body, query params, path params, method
-- **HTTP Response**: status code, headers, body
-- **Promise<T>**: wrapped type visible, unwrapping on `.then()`
-- **Environment/Secret Variables**: special variable type for configuration
-
-## User Experience Principles
-
-### Real-time Execution
-
-- Execute code as users build visually
-- Show results inline at each operation
-- Use inline errors with error boundaries per entity
-- Testing and debugging happen in-place, no separate mode
-
-### Block-Based Layout
-
-Design for a **text-like linear structure**, not graph-based:
-
-- 1-to-1 correspondence with generated code
-- Handle deep nesting with collapsible blocks
-- Support wide operations with multi-line parameters
-- Show nesting depth with visual indicators
-
-## Project Structure
-
-Projects are collections of operations and configurations containing:
-
-- Multiple operations with dependency tracking
-- Project-level constants separate from environment variables
-- NPM package dependencies and imports
-- Platform deployment configurations
-
-## Version Control Integration
+### Version Control Integration
 
 Implement lightweight Git integration:
 
@@ -203,13 +227,12 @@ Implement lightweight Git integration:
 - Branching and merging support
 - Deployment versioning
 
-## Future Extensibility
-
 ### Library/Marketplace
 
-- Share complete Projects (collections of operations)
+- Share complete projects (collections of operations)
 - Community-contributed operation libraries
 - Template projects for common use cases
+- Rating and discovery system
 
 ### Documentation Generation
 
@@ -220,26 +243,39 @@ Auto-generate from visual flows:
 - Real-time execution examples as documentation
 - JSDoc integration from imported packages
 
+### Enhanced Project Features
+
+- Project-level constants separate from environment variables
+- Cross-file dependency visualization
+- Automated testing framework
+- CI/CD integration
+
+---
+
 ## What to Avoid
 
+These patterns conflict with Logicflow's philosophy:
+
 - **Node-based graph editors**—this is block-based, text-like
-- **Async/await syntax**—use promise chaining instead
 - **Traditional loops**—use functional array operations
-- **Try-catch blocks**—use error boundaries and promise `.catch()`
 - **Generics in type system**—unnecessary complexity for visual contexts
 - **Currying/partial application**—adds complexity without value for visual contexts
 - **Custom integration nodes**—leverage npm packages instead
 - **Imperative control flow**—maintain functional, expression-based paradigm
+
+---
 
 ## Development Priorities
 
 When building features, prioritize in this order:
 
 1. **Type system correctness**—types drive everything
-2. **Visual-to-code fidelity**—blocks must map clearly to TypeScript
-3. **Real-time execution accuracy**—results must match generated code behavior
+2. **Real-time execution accuracy**—results must match generated code behavior
+3. **Visual-to-code fidelity**—blocks must map clearly to TypeScript
 4. **NPM integration robustness**—this is the differentiation factor
 5. **Code generation quality**—output must be production-ready
+
+---
 
 ## Decision Framework
 
@@ -252,4 +288,4 @@ When evaluating new features or approaches, ask:
 5. Can real-time execution show meaningful results?
 6. Does this add genuine capability or just complexity?
 
-Favor solutions that maintain simplicity while adding power. Logicflow's strength is making programming more accessible to non-developers and no-code developers without sacrificing capability—every feature should serve this goal.
+**Core principle**: Logicflow's strength is making programming more accessible to non-developers and no-code developers without sacrificing capability—every feature should serve this goal.

@@ -3,17 +3,24 @@ export type StringType = { kind: "string" };
 export type NumberType = { kind: "number" };
 export type BooleanType = { kind: "boolean" };
 export type ArrayType = { kind: "array"; elementType: DataType };
+export type TupleType = { kind: "tuple"; elements: DataType[] };
 export type ObjectType = {
   kind: "object";
   properties: { [key: string]: DataType };
+  required?: string[];
 };
-export type UnionType = { kind: "union"; types: DataType[] };
+export type DictionaryType = { kind: "dictionary"; elementType: DataType };
+export type UnionType = {
+  kind: "union";
+  types: DataType[];
+  activeIndex?: number;
+};
 export type OperationType = {
   kind: "operation";
   parameters: { type: DataType; name?: string; isOptional?: boolean }[];
   result: DataType;
 };
-export type ConditionType = { kind: "condition"; resultType: DataType };
+export type ConditionType = { kind: "condition"; result: DataType };
 export type UnknownType = { kind: "unknown" };
 export type NeverType = { kind: "never" };
 export type ReferenceType = {
@@ -29,6 +36,11 @@ export type ErrorType = {
     | "runtime_error"
     | "custom_error";
 };
+export type InstanceDataType = {
+  kind: "instance";
+  className: string;
+  constructorArgs: OperationType["parameters"];
+};
 
 export type DataType =
   | UnknownType
@@ -38,12 +50,15 @@ export type DataType =
   | NumberType
   | BooleanType
   | ArrayType
+  | TupleType
   | ObjectType
+  | DictionaryType
   | UnionType
   | OperationType
   | ConditionType
   | ReferenceType
-  | ErrorType;
+  | ErrorType
+  | InstanceDataType;
 
 type BaseDataValue<T extends DataType> = T extends UnknownType
   ? unknown
@@ -59,26 +74,30 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   ? boolean
   : T extends ArrayType
   ? IStatement[]
+  : T extends TupleType
+  ? IStatement[]
   : T extends ObjectType
   ? Map<keyof T["properties"] & string, IStatement>
+  : T extends DictionaryType
+  ? Map<string, IStatement>
   : T extends OperationType
   ? {
       parameters: IStatement[];
       statements: IStatement[];
-      result?: IData; // for operation calls
-      name?: string; // for non-statement operations
+      name?: string; // for operations calls
     }
   : T extends ConditionType
   ? {
       condition: IStatement;
       true: IStatement;
       false: IStatement;
-      result?: IData;
     }
   : T extends ReferenceType
   ? { name: string; id: string }
   : T extends ErrorType
   ? { reason: string }
+  : T extends InstanceDataType
+  ? { className: string; constructorArgs: IStatement[]; instanceId: string }
   : never;
 
 export type DataValue<T extends DataType> = T extends UnionType & {
@@ -89,14 +108,12 @@ export type DataValue<T extends DataType> = T extends UnionType & {
 
 export interface IData<T extends DataType = DataType> {
   id: string;
-  entityType: "data";
   type: T;
   value: DataValue<T>;
 }
 
 export interface IStatement {
   id: string;
-  entityType: "statement";
   data: IData;
   operations: IData<OperationType>[];
   name?: string;
@@ -133,32 +150,47 @@ export type INavigation = {
 
 /* Context and Execution */
 
+export type ExecutionResult = { data?: IData; shouldCacheResult?: boolean };
 export type Context = {
   variables: Map<
     string,
+    // TODO: remove the reference property since we resolve the statement result by default
     { data: IData; reference?: { name: string; id: string } }
   >;
   reservedNames?: Set<{
     kind: "data-type" | "operation" | "variable";
     name: string;
   }>;
-  currentStatementId?: string;
   narrowedTypes?: Context["variables"];
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
+  getResult: (entityId: string) => ExecutionResult | undefined;
+  getInstance: (entityId: string) => unknown;
+  setInstance: (entityId: string, instance: unknown) => void;
+  setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
+  executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
+  executeOperation: (
+    operation: OperationListItem,
+    data: IData,
+    parameters: IStatement[],
+    context: Context
+  ) => Promise<IData>;
 };
-
 export type OperationListItem = {
   name: string;
   parameters:
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
-  isResultTypeFixed?: boolean; // TODO: Show error when type mismatches in the UI
+  shouldCacheResult?: boolean;
 } & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { handler: (...args: [Context, ...IData<any>[]]) => IData }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { lazyHandler: (...args: [Context, IData<any>, ...IStatement[]]) => IData }
+  | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
+  | {
+      lazyHandler: (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...args: [Context, IData<any>, ...IStatement[]]
+      ) => Promise<IData> | IData;
+    }
   | { statements: IStatement[] }
 );
 
@@ -214,9 +246,8 @@ export interface DependencyBase {
   }[];
 }
 export interface Dependencies {
-  npm: (DependencyBase & { name: string })[];
-  logicflow: (DependencyBase & { projectId: string })[];
-  deno: DependencyBase & { url: string }[];
+  npm?: (DependencyBase & { name: string })[];
+  logicflow?: (DependencyBase & { projectId: string })[];
 }
 
 export type DeploymentConfig = {

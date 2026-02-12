@@ -10,7 +10,7 @@ import {
 import { Link, useNavigate } from "react-router";
 import relativeTime from "dayjs/plugin/relativeTime";
 import dayjs from "dayjs";
-import { useProjectStore } from "@/lib/store";
+import { useProjectStore, useExecutionResultsStore } from "@/lib/store";
 import {
   createContextVariables,
   createData,
@@ -19,7 +19,12 @@ import {
   createStatement,
   createVariableName,
 } from "@/lib/utils";
-import { createOperationCall } from "@/lib/operation";
+import {
+  createOperationCall,
+  executeOperation,
+  executeStatement,
+} from "@/lib/operation";
+import { Context } from "@/lib/types";
 
 dayjs.extend(relativeTime);
 
@@ -28,10 +33,23 @@ export default function Dashboard() {
   const projects = useProjectStore((s) => s.projects);
   const createProject = useProjectStore((s) => s.createProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
+  const setResult = useExecutionResultsStore((s) => s.setResult);
+
+  const context = useMemo<Context>(
+    () => ({
+      variables: new Map(),
+      getResult: useExecutionResultsStore.getState().getResult,
+      getInstance: useExecutionResultsStore.getState().getInstance,
+      setInstance: useExecutionResultsStore.getState().setInstance,
+      executeOperation,
+      executeStatement,
+    }),
+    []
+  );
 
   const sortedProjects = useMemo(
     () =>
-      Object.values(projects).sort(
+      Object.values(projects).toSorted(
         (a, b) =>
           new Date(b.updatedAt ?? b.createdAt).getTime() -
           new Date(a.updatedAt ?? a.createdAt).getTime()
@@ -39,13 +57,13 @@ export default function Dashboard() {
     [projects]
   );
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const nameParam = createStatement({
       data: createData({ value: "Test name" }),
       name: "name",
     });
     const helloData = createData({ value: "Hello! " });
-    const concatOperation = createOperationCall({
+    const concatOperation = await createOperationCall({
       data: helloData,
       name: "concat",
       parameters: [
@@ -56,7 +74,11 @@ export default function Dashboard() {
           }),
         }),
       ],
-      context: { variables: createContextVariables([nameParam], new Map()) },
+      context: {
+        ...context,
+        variables: createContextVariables([nameParam], context),
+      },
+      setResult,
     });
     const greetOperationFile = createFileFromOperation(
       createData({
@@ -74,7 +96,6 @@ export default function Dashboard() {
               operations: [concatOperation],
             }),
           ],
-          result: concatOperation.value.result,
         },
       })
     );
@@ -90,13 +111,15 @@ export default function Dashboard() {
             createStatement({
               data: nameData,
               operations: [
-                createOperationCall({
+                await createOperationCall({
                   data: nameData,
                   name: "greet",
                   parameters: [nameParam],
                   context: {
+                    ...context,
                     variables: createFileVariables([greetOperationFile]),
                   },
+                  setResult,
                 }),
               ],
             }),

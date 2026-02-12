@@ -1,12 +1,16 @@
-import { ArrayType, Context, IData, IStatement } from "../../lib/types";
+import { ArrayType, TupleType, Context, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
-import { inferTypeFromValue } from "../../lib/utils";
+import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
+import {
+  inferTypeFromValue,
+  isDataOfType,
+  getContextExpectedTypes,
+} from "@/lib/utils";
 
 export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
-  data: IData<ArrayType>;
-  handleData: (data: IData<ArrayType>) => void;
+  data: IData<ArrayType | TupleType>;
+  handleData: (data: IData<ArrayType | TupleType>) => void;
   context: Context;
 }
 
@@ -21,17 +25,24 @@ const ArrayInputComponent = (
     else newValue[index] = result;
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue),
+      type: inferTypeFromValue(newValue, {
+        ...context,
+        expectedType: context.expectedType ?? data.type,
+      }),
       value: newValue,
     });
   }
-  const expectedType = useMemo(
-    () =>
-      context.expectedType?.kind === "array"
+  const getExpectedType = useCallback(
+    (index: number = 0) => {
+      return context.expectedType?.kind === "array"
         ? context.expectedType.elementType
-        : undefined,
+        : context.expectedType?.kind === "tuple"
+        ? context.expectedType.elements[index]
+        : undefined;
+    },
     [context.expectedType]
   );
+
   return (
     <div
       {...props}
@@ -52,25 +63,40 @@ const ArrayInputComponent = (
             <Statement
               statement={item}
               handleStatement={(val, remove) => handleUpdate(val, i, remove)}
-              context={{ ...context, expectedType }}
+              context={{
+                ...context,
+                ...getContextExpectedTypes({
+                  context,
+                  expectedType: getExpectedType(i),
+                }),
+              }}
+              options={{
+                disableDelete:
+                  isDataOfType(data, "tuple") && !!context.expectedType,
+              }}
             />
             {i < arr.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
-      <AddStatement
-        id={data.id}
-        onSelect={(value) => {
-          const newVal = [...data.value, value];
-          handleData({
-            ...data,
-            type: inferTypeFromValue(newVal),
-            value: newVal,
-          });
-        }}
-        iconProps={{ title: "Add array item" }}
-        config={{ type: expectedType }}
-      />
+      {(isDataOfType(data, "array") || !context.expectedType) && (
+        <AddStatement
+          id={data.id}
+          onSelect={(value) => {
+            const newVal = [...data.value, value];
+            handleData({
+              ...data,
+              type: inferTypeFromValue(newVal, {
+                ...context,
+                expectedType: context.expectedType ?? data.type,
+              }),
+              value: newVal,
+            });
+          }}
+          iconProps={{ title: "Add array item" }}
+          config={{ type: getExpectedType() }}
+        />
+      )}
       <span>{"]"}</span>
     </div>
   );

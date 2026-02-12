@@ -20,6 +20,7 @@ import {
   useProjectStore,
   useNavigationStore,
   useUiConfigStore,
+  useExecutionResultsStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
 import { Context, IData, IDropdownItem } from "../lib/types";
@@ -44,7 +45,6 @@ const DropdownComponent = ({
   id,
   value,
   data,
-  operationResult,
   items,
   handleDelete,
   addOperationCall,
@@ -56,7 +56,6 @@ const DropdownComponent = ({
 }: {
   id: string;
   data?: IData;
-  operationResult?: IData;
   value?: string;
   items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
@@ -76,24 +75,33 @@ const DropdownComponent = ({
   const navigationDirection = useNavigationStore(
     (s) => s.navigation?.direction
   );
-  const currentFileId = useProjectStore((s) => s.currentFileId);
   const navigationModifier = useNavigationStore((s) => s.navigation?.modifier);
-  const detailsPanelLockedId = useUiConfigStore(
-    (s) => currentFileId && s.detailsPanel.lockedIds?.[currentFileId]
-  );
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
   );
-
+  const currentFileId = useProjectStore((s) => s.currentFileId);
+  const detailsPanelLockedId = useUiConfigStore((s) => {
+    const lockedId = currentFileId && s.detailsPanel.lockedIds?.[currentFileId];
+    if (
+      !lockedId ||
+      !useExecutionResultsStore.getState().results.has(lockedId)
+    ) {
+      return undefined;
+    }
+    return lockedId;
+  });
+  const operationResult = useExecutionResultsStore(
+    (s) => s.getResult(id)?.data
+  );
   const _result = useMemo(
     () =>
       operationResult
-        ? resolveReference(operationResult, context.variables)
+        ? resolveReference(operationResult, context)
         : data
-        ? resolveReference(data, context.variables)
+        ? resolveReference(data, context)
         : undefined,
-    [operationResult, data, context.variables]
+    [operationResult, data, context]
   );
   const result = useDeferredValue(_result);
 
@@ -142,7 +150,7 @@ const DropdownComponent = ({
               if (!handleDelete) return;
               if (
                 textInput &&
-                textInput.value.length > (data?.type.kind === "number" ? 1 : 0)
+                textInput.value.length > (isDataOfType(data, "number") ? 1 : 0)
               ) {
                 return;
               }
@@ -154,7 +162,7 @@ const DropdownComponent = ({
                   useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
-                const newEntities = getOperationEntities(operation);
+                const newEntities = getOperationEntities(operation, context);
                 const oldEntities = p.navigationEntities || [];
                 return {
                   navigationEntities: newEntities,

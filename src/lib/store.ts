@@ -8,12 +8,14 @@ import {
   ProjectFile,
   NavigationEntity,
   DataType,
+  ExecutionResult,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
 import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
+import { isDataOfType } from "./utils";
 
 const IDbStore = openDB("logicflow", 1, {
   upgrade(db) {
@@ -233,6 +235,7 @@ const createCurrentProjectSlice: StateCreator<
       focusId,
     });
     const lastItem = history.past.pop()!;
+    useExecutionResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: lastItem.content,
     } as Partial<ProjectFile>);
@@ -253,6 +256,7 @@ const createCurrentProjectSlice: StateCreator<
       focusId: currentFocusId,
     });
     const nextItem = history.future.pop()!;
+    useExecutionResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: nextItem.content,
     } as Partial<ProjectFile>);
@@ -312,6 +316,71 @@ export const useUiConfigStore = createWithEqualityFn(
   ),
   shallow
 );
+
+interface ExecutionResultsState {
+  results: Map<string, ExecutionResult>;
+  instances: Map<string, unknown>;
+  setResult: (entityId: string, result: Partial<ExecutionResult>) => void;
+  getResult: (entityId: string) => ExecutionResult | undefined;
+  getInstance: (entityId: string) => unknown;
+  setInstance: (entityId: string, instance: unknown) => void;
+  removeAll: () => void;
+  removeResult: (entityId: string) => void;
+}
+
+export const useExecutionResultsStore =
+  createWithEqualityFn<ExecutionResultsState>(
+    (set, get) => ({
+      results: new Map(),
+      instances: new Map(),
+      setResult: (entityId, result) => {
+        set((state) => {
+          const newResults = new Map(state.results);
+          const current = newResults.get(entityId) || {};
+          newResults.set(entityId, { ...current, ...result });
+          return { results: newResults };
+        });
+      },
+      getResult: (entityId) => {
+        return get().results.get(entityId);
+      },
+      getInstance: (entityId) => {
+        return get().instances.get(entityId);
+      },
+      setInstance: (entityId, instance) => {
+        set((state) => {
+          const newInstances = new Map(state.instances);
+          newInstances.set(entityId, instance);
+          return { instances: newInstances };
+        });
+      },
+      removeAll: () =>
+        set((state) => {
+          const newResults = new Map();
+          const newInstances = new Map();
+          for (const [key, value] of state.results) {
+            if (value.shouldCacheResult) {
+              newResults.set(key, value);
+              if (isDataOfType(value.data, "instance")) {
+                const instanceId = value.data.value.instanceId;
+                newInstances.set(instanceId, state.instances.get(instanceId));
+              }
+            }
+          }
+          return { results: newResults, instances: newInstances };
+        }),
+      removeResult: (entityId) => {
+        set((state) => {
+          const newResults = new Map(state.results);
+          newResults.delete(entityId);
+          const newInstances = new Map(state.instances);
+          newInstances.delete(entityId);
+          return { results: newResults, instances: newInstances };
+        });
+      },
+    }),
+    shallow
+  );
 
 type NavigationStore = {
   navigation?: INavigation;

@@ -9,16 +9,18 @@ import { IconButton } from "../ui/IconButton";
 import {
   useNavigationStore,
   useProjectStore,
+  useExecutionResultsStore,
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ParseData } from "./Parse/ParseData";
 import { useHotkeys, useMediaQuery } from "@mantine/hooks";
-import { getTypeSignature } from "@/lib/utils";
+import { createData, getTypeSignature } from "@/lib/utils";
 import { Tooltip } from "@mantine/core";
 import { memo, useMemo } from "react";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "@/ui/Resizer";
+import { Context } from "@/lib/types";
 
 function DetailsPanelComponent() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -35,11 +37,27 @@ function DetailsPanelComponent() {
     () => getTypeSignature(result?.type ?? { kind: "undefined" }),
     [result?.type]
   );
-  const panelLockedId = useMemo(
-    () => operationId && detailsPanel?.lockedIds?.[operationId],
-    [detailsPanel?.lockedIds, operationId]
+  const panelLockedId = useUiConfigStore((s) => {
+    const lockedId = operationId && s.detailsPanel.lockedIds?.[operationId];
+    if (
+      !lockedId ||
+      !useExecutionResultsStore.getState().results.has(lockedId)
+    ) {
+      return undefined;
+    }
+    return lockedId;
+  });
+  const context = useMemo<Context>(
+    () => ({
+      variables: new Map(),
+      getResult: useExecutionResultsStore.getState().getResult,
+      getInstance: useExecutionResultsStore.getState().getInstance,
+      setInstance: useExecutionResultsStore.getState().setInstance,
+      executeOperation: () => Promise.resolve(createData()),
+      executeStatement: () => Promise.resolve(createData()),
+    }),
+    []
   );
-
   useHotkeys([["Escape", () => setNavigation({ result: undefined })]]);
 
   if (!result) return null;
@@ -119,21 +137,25 @@ function DetailsPanelComponent() {
               }}
             />
           ) : null}
-          <IconButton
-            icon={panelLockedId ? FaLock : FaUnlock}
-            title={panelLockedId ? "Unlock" : "Lock"}
-            className={panelLockedId ? "text-reserved" : ""}
-            size={12}
-            onClick={() => {
-              setUiConfig((p) => {
-                if (!operationId) return p;
-                const lockedIds = { ...(p.detailsPanel?.lockedIds ?? {}) };
-                if (panelLockedId) delete lockedIds[operationId];
-                else lockedIds[operationId] = navigationId!;
-                return { detailsPanel: { ...p.detailsPanel, lockedIds } };
-              });
-            }}
-          />
+          {useExecutionResultsStore
+            .getState()
+            .results.has(panelLockedId ?? navigationId!) && (
+            <IconButton
+              icon={panelLockedId ? FaLock : FaUnlock}
+              title={panelLockedId ? "Unlock" : "Lock"}
+              className={panelLockedId ? "text-reserved" : ""}
+              size={12}
+              onClick={() => {
+                setUiConfig((p) => {
+                  if (!operationId) return p;
+                  const lockedIds = { ...(p.detailsPanel?.lockedIds ?? {}) };
+                  if (panelLockedId) delete lockedIds[operationId];
+                  else lockedIds[operationId] = navigationId!;
+                  return { detailsPanel: { ...p.detailsPanel, lockedIds } };
+                });
+              }}
+            />
+          )}
           <IconButton
             icon={FaX}
             title="Close"
@@ -156,7 +178,7 @@ function DetailsPanelComponent() {
             <div className="text-gray-300 mb-1.5">Result</div>
             <ErrorBoundary displayError={true}>
               <pre className="overflow-x-auto dropdown-scrollbar text-wrap text-sm">
-                <ParseData data={result} showData={true} />
+                <ParseData data={result} showData={true} context={context} />
               </pre>
             </ErrorBoundary>
           </div>

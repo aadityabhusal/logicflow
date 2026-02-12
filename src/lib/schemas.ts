@@ -18,7 +18,11 @@ import type {
   ReferenceType,
   DataValue,
   ErrorType,
+  TupleType,
+  DictionaryType,
+  InstanceDataType,
 } from "./types";
+import { isDataOfType } from "./utils";
 
 /**
  * Note: Zod schemas are derived from types because the type relations are complex and some not possible to express in Zod.
@@ -58,15 +62,30 @@ export const ArrayValueSchema: z.ZodType<DataValue<ArrayType>> = z.lazy(() =>
   z.array(IStatementSchema)
 );
 
+export const TupleTypeSchema: z.ZodType<TupleType> = z.object({
+  kind: z.literal("tuple"),
+  get elements() {
+    return z.array(DataTypeSchema);
+  },
+});
+
 const ObjectTypeSchema: z.ZodType<ObjectType> = z.object({
   kind: z.literal("object"),
   get properties() {
     return z.record(z.string(), DataTypeSchema);
   },
+  required: z.array(z.string()).optional(),
 });
 export const ObjectValueSchema: z.ZodType<DataValue<ObjectType>> = z.lazy(() =>
   z.map(z.string(), IStatementSchema)
 );
+
+export const DictionaryTypeSchema: z.ZodType<DictionaryType> = z.object({
+  kind: z.literal("dictionary"),
+  get elementType() {
+    return DataTypeSchema;
+  },
+});
 
 const UnionTypeSchema: z.ZodType<UnionType> = z.object({
   kind: z.literal("union"),
@@ -75,12 +94,19 @@ const UnionTypeSchema: z.ZodType<UnionType> = z.object({
   },
 });
 
+const ParameterSchema: z.ZodType<OperationType["parameters"][number]> =
+  z.object({
+    name: z.string().optional(),
+    get type() {
+      return DataTypeSchema;
+    },
+    isOptional: z.boolean().optional(),
+  });
+
 const OperationTypeSchema: z.ZodType<OperationType> = z.object({
   kind: z.literal("operation"),
   get parameters() {
-    return z.array(
-      z.object({ name: z.string().optional(), type: DataTypeSchema })
-    );
+    return z.array(ParameterSchema);
   },
   get result() {
     return DataTypeSchema;
@@ -94,15 +120,12 @@ export const OperationValueSchema: z.ZodType<DataValue<OperationType>> =
     get parameters() {
       return z.array(IStatementSchema);
     },
-    get result() {
-      return IDataSchema.optional();
-    },
     name: z.string().optional(),
   });
 
 const ConditionTypeSchema: z.ZodType<ConditionType> = z.object({
   kind: z.literal("condition"),
-  get resultType() {
+  get result() {
     return DataTypeSchema;
   },
 });
@@ -116,9 +139,6 @@ export const ConditionValueSchema: z.ZodType<DataValue<ConditionType>> =
     },
     get false() {
       return IStatementSchema;
-    },
-    get result() {
-      return IDataSchema.optional();
     },
   });
 
@@ -148,6 +168,21 @@ export const ErrorValueSchema: z.ZodType<DataValue<ErrorType>> = z.object({
   reason: z.string(),
 });
 
+const InstanceTypeSchema: z.ZodType<InstanceDataType> = z.object({
+  kind: z.literal("instance"),
+  className: z.string(),
+  get constructorArgs() {
+    return z.array(ParameterSchema);
+  },
+});
+
+export const InstanceValueSchema = z.object({
+  className: z.string(),
+  get constructorArgs() {
+    return z.array(IStatementSchema);
+  },
+});
+
 export const DataTypeSchema: z.ZodType<DataType> = z.union([
   UnknownTypeSchema,
   NeverTypeSchema,
@@ -156,53 +191,57 @@ export const DataTypeSchema: z.ZodType<DataType> = z.union([
   NumberTypeSchema,
   BooleanTypeSchema,
   ArrayTypeSchema,
+  TupleTypeSchema,
   ObjectTypeSchema,
+  DictionaryTypeSchema,
   UnionTypeSchema,
   OperationTypeSchema,
   ConditionTypeSchema,
   ReferenceTypeSchema,
   ErrorTypeSchema,
+  InstanceTypeSchema,
 ]);
 
-export const IDataSchema: z.ZodType<IData> = z
-  .object({ id: z.string(), entityType: z.literal("data") })
-  .and(
-    // Note: We use z.union instead of z.discriminatedUnion because the discriminator (kind) is nested inside the type object.
-    z.union([
-      z.object({ type: UnknownTypeSchema, value: z.unknown() }),
-      z.object({ type: NeverTypeSchema, value: z.never() }),
-      z.object({ type: UndefinedTypeSchema, value: z.undefined() }),
-      z.object({ type: StringTypeSchema, value: z.string() }),
-      z.object({ type: NumberTypeSchema, value: z.number() }),
-      z.object({ type: BooleanTypeSchema, value: z.boolean() }),
-      z.object({ type: ArrayTypeSchema, value: ArrayValueSchema }),
-      z.object({ type: ObjectTypeSchema, value: ObjectValueSchema }),
-      z.object({
-        type: UnionTypeSchema,
-        get value() {
-          return z.union([
-            z.undefined(),
-            z.string(),
-            z.number(),
-            z.boolean(),
-            ArrayValueSchema,
-            ObjectValueSchema,
-            OperationValueSchema,
-            ConditionValueSchema,
-            ReferenceValueSchema,
-            ErrorValueSchema,
-          ]);
-        },
-      }),
-      z.object({ type: OperationTypeSchema, value: OperationValueSchema }),
-      z.object({ type: ConditionTypeSchema, value: ConditionValueSchema }),
-      z.object({ type: ReferenceTypeSchema, value: ReferenceValueSchema }),
-      z.object({ type: ErrorTypeSchema, value: ErrorValueSchema }),
-    ])
-  );
+export const IDataSchema: z.ZodType<IData> = z.object({ id: z.string() }).and(
+  // Note: We use z.union instead of z.discriminatedUnion because the discriminator (kind) is nested inside the type object.
+  z.union([
+    z.object({ type: UnknownTypeSchema, value: z.unknown() }),
+    z.object({ type: NeverTypeSchema, value: z.never() }),
+    z.object({ type: UndefinedTypeSchema, value: z.undefined() }),
+    z.object({ type: StringTypeSchema, value: z.string() }),
+    z.object({ type: NumberTypeSchema, value: z.number() }),
+    z.object({ type: BooleanTypeSchema, value: z.boolean() }),
+    z.object({ type: ArrayTypeSchema, value: ArrayValueSchema }),
+    z.object({ type: TupleTypeSchema, value: ArrayValueSchema }),
+    z.object({ type: ObjectTypeSchema, value: ObjectValueSchema }),
+    z.object({ type: DictionaryTypeSchema, value: ObjectValueSchema }),
+    z.object({
+      type: UnionTypeSchema,
+      get value() {
+        return z.union([
+          z.undefined(),
+          z.string(),
+          z.number(),
+          z.boolean(),
+          ArrayValueSchema,
+          ObjectValueSchema,
+          OperationValueSchema,
+          ConditionValueSchema,
+          ReferenceValueSchema,
+          ErrorValueSchema,
+          InstanceValueSchema,
+        ]);
+      },
+    }),
+    z.object({ type: OperationTypeSchema, value: OperationValueSchema }),
+    z.object({ type: ConditionTypeSchema, value: ConditionValueSchema }),
+    z.object({ type: ReferenceTypeSchema, value: ReferenceValueSchema }),
+    z.object({ type: ErrorTypeSchema, value: ErrorValueSchema }),
+    z.object({ type: InstanceTypeSchema, value: InstanceValueSchema }),
+  ])
+);
 export const IStatementSchema: z.ZodType<IStatement> = z.object({
   id: z.string(),
-  entityType: z.literal("statement"),
   name: z.string().optional(),
   isOptional: z.boolean().optional(),
   get data() {
@@ -211,7 +250,7 @@ export const IStatementSchema: z.ZodType<IStatement> = z.object({
   get operations() {
     return z
       .array(IDataSchema)
-      .refine((ops) => ops.every((op) => op.type.kind === "operation"), {
+      .refine((ops) => ops.every((op) => isDataOfType(op, "operation")), {
         message: "All operations must have type.kind === 'operation'",
       }) as z.ZodType<IData<OperationType>[]>;
   },

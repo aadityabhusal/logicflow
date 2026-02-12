@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { DataTypes, ErrorTypesData } from "./data";
+import { DataTypes, ErrorTypesData, InstanceTypes } from "./data";
 import {
   IData,
   IStatement,
@@ -11,6 +11,11 @@ import {
   Context,
   UnionType,
   ProjectFile,
+  OperationListItem,
+  ArrayType,
+  ObjectType,
+  DictionaryType,
+  TupleType,
 } from "./types";
 import { MouseEvent } from "react";
 
@@ -19,14 +24,20 @@ import { MouseEvent } from "react";
 export function createData<T extends DataType>(
   props?: Partial<IData<T>>
 ): IData<T> {
-  const type = (props?.type ?? inferTypeFromValue(props?.value)) as T;
+  const type = (props?.type ??
+    inferTypeFromValue(props?.value, {
+      variables: new Map(),
+      getResult: () => undefined,
+      getInstance: () => undefined,
+      setInstance: () => undefined,
+      executeOperation: () => Promise.resolve(createData()),
+      executeStatement: () => Promise.resolve(createData()),
+    })) as T;
   return {
     id: props?.id ?? nanoid(),
-    entityType: "data",
     type,
     value:
-      props?.value !== undefined ||
-      isTypeCompatible({ kind: "undefined" }, type)
+      props?.value !== undefined || type.kind === "undefined"
         ? (props?.value as DataValue<T>)
         : createDefaultValue(type),
   };
@@ -38,7 +49,6 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
   return {
     id: newId,
     name: props?.name,
-    entityType: "statement",
     data: newData,
     operations: props?.operations || [],
     isOptional: props?.isOptional,
@@ -74,7 +84,10 @@ function createStatementFromType(
   return createStatement({ data, name, isOptional });
 }
 
-export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
+export function createDefaultValue<T extends DataType>(
+  type: T,
+  options?: { includeOptionalProperties?: boolean }
+): DataValue<T> {
   switch (type.kind) {
     case "never":
       return undefined as DataValue<T>;
@@ -98,17 +111,43 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
       return [createStatementFromType(type.elementType)] as DataValue<T>;
     }
 
+    case "tuple": {
+      return type.elements.map((element) =>
+        createStatementFromType(element)
+      ) as DataValue<T>;
+    }
+
     case "object": {
       const map = new Map<string, IStatement>();
       for (const [key, propType] of Object.entries(type.properties)) {
-        map.set(key, createStatementFromType(propType));
+        if (
+          type.required?.includes(key) ||
+          options?.includeOptionalProperties
+        ) {
+          map.set(key, createStatementFromType(propType));
+        }
       }
       return map as DataValue<T>;
     }
 
+    case "dictionary": {
+      if (
+        type.elementType.kind === "unknown" ||
+        type.elementType.kind === "never"
+      ) {
+        return new Map() as DataValue<T>;
+      }
+      return new Map([
+        ["key", createStatementFromType(type.elementType)],
+      ]) as DataValue<T>;
+    }
+
     case "union": {
-      // Use first type's default (could be enhanced to pick "most specific")
-      return createDefaultValue(type.types[0]) as DataValue<T>;
+      // Find first non-undefined type, or fall back to first type
+      const defaultIndex =
+        type.activeIndex ?? type.types.findIndex((t) => t.kind !== "undefined");
+      const index = defaultIndex >= 0 ? defaultIndex : 0;
+      return createDefaultValue(type.types[index], options) as DataValue<T>;
     }
 
     case "operation": {
@@ -124,7 +163,6 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "condition": {
       const createStatement = (): IStatement => ({
         id: nanoid(),
-        entityType: "statement",
         operations: [],
         data: createData(),
       });
@@ -139,6 +177,20 @@ export function createDefaultValue<T extends DataType>(type: T): DataValue<T> {
     case "error": {
       return {
         reason: ErrorTypesData[type.errorType]?.name ?? "Unknown Error",
+      } as DataValue<T>;
+    }
+    case "instance": {
+      return {
+        className: type.className as keyof typeof InstanceTypes,
+        instanceId: nanoid(),
+        constructorArgs: type.constructorArgs
+          .filter((param) => !param.isOptional)
+          .map((argType) =>
+            createStatement({
+              data: createParamData({ ...argType, type: argType.type }),
+              isOptional: argType.isOptional,
+            })
+          ),
       } as DataValue<T>;
     }
 
@@ -181,7 +233,6 @@ export function createOperationFromFile(file?: ProjectFile) {
   if (!file || !isFileOfType(file, "operation")) return undefined;
   return {
     id: file.id,
-    entityType: "data",
     type: file.content.type,
     value: { ...file.content.value, name: file.name },
   } as IData<OperationType>;
@@ -196,15 +247,62 @@ export function createFileFromOperation(operation: IData<OperationType>) {
   } as ProjectFile;
 }
 
+export function createContext(
+  context: Context,
+  overrides?: Partial<Context>,
+  scopedResults?: boolean
+): Context {
+  const baseContext: Context = {
+    getResult: context.getResult,
+    setResult: context.setResult,
+    getInstance: context.getInstance,
+    setInstance: context.setInstance,
+    executeOperation: context.executeOperation,
+    executeStatement: context.executeStatement,
+    reservedNames: new Set(context.reservedNames),
+    variables: new Map(context.variables),
+  };
+
+  if (scopedResults) {
+    const localResults = new Map<string, ReturnType<Context["getResult"]>>();
+    baseContext.setResult = (id, result) => localResults.set(id, result);
+    baseContext.getResult = (id) =>
+      localResults.get(id) ?? context.getResult(id);
+  }
+  return { ...baseContext, ...overrides };
+}
+
+export function getContextExpectedTypes({
+  context,
+  expectedType,
+  enforceExpectedType,
+}: {
+  context: Context;
+  expectedType: DataType | undefined;
+  enforceExpectedType?: boolean;
+}) {
+  const _enforceExpectedType =
+    enforceExpectedType ?? context.enforceExpectedType;
+
+  return {
+    ...(expectedType === undefined || expectedType.kind === "unknown"
+      ? { expectedType: undefined, enforceExpectedType: undefined }
+      : {
+          expectedType,
+          enforceExpectedType: _enforceExpectedType,
+        }),
+  };
+}
+
 export function createContextVariables(
   statements: IStatement[],
-  variables: Context["variables"],
+  context: Context,
   operation?: IData<OperationType>
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
-      const data = resolveReference(statement.data, variables);
-      const result = getStatementResult({ ...statement, data });
+      const data = resolveReference(statement.data, context);
+      const result = getStatementResult({ ...statement, data }, context);
 
       const isOptional = operation?.type.parameters.find(
         (param) => param.name === statement.name && param.isOptional
@@ -221,7 +319,7 @@ export function createContextVariables(
       });
     }
     return variables;
-  }, new Map(variables));
+  }, new Map(context.variables));
 }
 
 export function createFileVariables(
@@ -238,6 +336,165 @@ export function createFileVariables(
     });
     return acc;
   }, new Map() as Context["variables"]);
+}
+
+export function createParamData(
+  item: OperationType["parameters"][number]
+): IStatement["data"] {
+  if (item.type.kind !== "operation") {
+    return createData({
+      type: item.type.kind === "unknown" ? { kind: "undefined" } : item.type,
+    });
+  }
+
+  const parameters = item.type.parameters
+    .filter((param) => !param.isOptional)
+    .reduce((prev, paramSpec) => {
+      prev.push(
+        createStatement({
+          name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
+          data: createParamData({ type: paramSpec.type }),
+          isOptional: paramSpec.isOptional,
+        })
+      );
+      return prev;
+    }, [] as IStatement[]);
+
+  return createData({
+    type: {
+      kind: "operation",
+      parameters: item.type.parameters,
+      result: { kind: "undefined" },
+    },
+    value: { parameters: parameters, statements: [] },
+  });
+}
+
+export function createInstance<
+  T extends keyof typeof InstanceTypes,
+  K extends (typeof InstanceTypes)[T]["Constructor"]
+>(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
+  const rawArgs = constructorArgs.map((arg) =>
+    getRawValueFromData(arg, context)
+  ) as ConstructorParameters<K>;
+  const Constructor = InstanceTypes[className].Constructor as new (
+    ...args: ConstructorParameters<K>
+  ) => InstanceType<K>;
+  return new Constructor(...rawArgs);
+}
+
+export function operationToListItem(
+  operation: IData<OperationType>,
+  name?: string
+) {
+  return {
+    name: name ?? operation.value.name ?? "anonymous",
+    parameters: operation.type.parameters,
+    statements: operation.value.statements,
+  } as OperationListItem;
+}
+
+// TODO: add expectedType instead of expectedKind when needed
+export function createDataFromRawValue(
+  value: unknown,
+  context: Context,
+  expectedKind?: DataType["kind"]
+): IData {
+  if (value === undefined || value === null) {
+    return createData({ type: { kind: "undefined" } });
+  }
+  if (typeof value === "string") {
+    return createData({ type: { kind: "string" }, value });
+  }
+  if (typeof value === "number") {
+    return createData({ type: { kind: "number" }, value });
+  }
+  if (typeof value === "boolean") {
+    return createData({ type: { kind: "boolean" }, value });
+  }
+  if (value instanceof Error) {
+    return createData({
+      type: { kind: "error", errorType: "custom_error" },
+      value: { reason: value.message },
+    });
+  }
+
+  if (Array.isArray(value)) {
+    const _value = value.map((val) =>
+      createStatement({ data: createDataFromRawValue(val, context) })
+    );
+    return createData({
+      type:
+        expectedKind === "tuple"
+          ? { kind: "tuple", elements: _value.map((v) => v.data.type) }
+          : {
+              kind: "array",
+              elementType: resolveUnionType(_value.map((v) => v.data.type)),
+            },
+      value: _value,
+    });
+  }
+
+  if (isObject(value)) {
+    const instanceClass = Object.entries(InstanceTypes).find(
+      ([, config]) => value instanceof config.Constructor
+    );
+    if (instanceClass) {
+      const [className, config] = instanceClass;
+      const data = createData({
+        type: {
+          kind: "instance",
+          className,
+          constructorArgs: config.constructorArgs,
+        },
+      });
+      context.setInstance(data.value.instanceId, value);
+      return data;
+    }
+  }
+
+  if (isObject(value) || value instanceof Map) {
+    const _value = new Map(
+      Object.entries(value).map(([key, val]) => {
+        return [
+          key,
+          createStatement({ data: createDataFromRawValue(val, context) }),
+        ];
+      })
+    );
+    return createData({
+      type:
+        expectedKind === "object"
+          ? {
+              kind: "object",
+              properties: Array.from(_value).reduce((acc, [key, value]) => {
+                acc[key] = value.data.type;
+                return acc;
+              }, {} as Record<string, DataType>),
+            }
+          : {
+              kind: "dictionary",
+              elementType: resolveUnionType(
+                Array.from(_value).map(([, v]) => v.data.type)
+              ),
+            },
+      value: _value,
+    });
+  }
+  if (typeof value === "function") {
+    const data = createData({
+      type: {
+        kind: "operation",
+        parameters: Array.from({ length: value.length }, () => ({
+          type: { kind: "unknown" },
+        })),
+        result: { kind: "unknown" },
+      },
+    });
+    context.setInstance(`${data.id}-operation`, value);
+    return data;
+  }
+  return createData({ type: { kind: "unknown" }, value });
 }
 
 /* Types */
@@ -265,15 +522,29 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     return isTypeCompatible(first.elementType, second.elementType);
   }
 
-  if (first.kind === "object" && second.kind === "object") {
-    const firstKeys = Object.keys(first.properties);
-    const secondKeys = Object.keys(second.properties);
-    if (firstKeys.length !== secondKeys.length) return false;
-    return secondKeys.every(
-      (key) =>
-        first.properties[key] &&
-        isTypeCompatible(first.properties[key], second.properties[key])
+  if (first.kind === "tuple" && second.kind === "tuple") {
+    return first.elements.every((firstElement) =>
+      second.elements.some((secondElement) =>
+        isTypeCompatible(firstElement, secondElement)
+      )
     );
+  }
+
+  if (first.kind === "object" && second.kind === "object") {
+    const firstRequired = first.required ?? Object.keys(first.properties);
+    const secondRequired = second.required ?? Object.keys(second.properties);
+    for (const key of Object.keys(second.properties)) {
+      const firstProp = first.properties[key];
+      if (!firstProp && secondRequired.includes(key)) return false;
+      if (firstProp && !isTypeCompatible(firstProp, second.properties[key])) {
+        return false;
+      }
+    }
+    return firstRequired.every((key) => second.properties[key]);
+  }
+
+  if (first.kind === "dictionary" && second.kind === "dictionary") {
+    return isTypeCompatible(first.elementType, second.elementType);
   }
 
   if (first.kind === "union" && second.kind === "union") {
@@ -338,7 +609,7 @@ export function getInverseTypes(
     if (!variable) return acc;
     let excludedType: DataType = variable.data.type;
 
-    if (variable.data.type.kind === "union") {
+    if (isDataOfType(variable.data, "union")) {
       const remainingTypes = variable.data.type.types.filter(
         (t) => !isTypeCompatible(t, value.data.type)
       );
@@ -408,11 +679,15 @@ export function applyTypeNarrowing(
     referenceName = data.value.name;
     const reference = context.variables.get(referenceName);
     if (reference) {
-      const resolvedParamData = resolveReference(param.data, context.variables);
-      narrowedType = narrowType(
-        reference.data.type,
-        inferTypeFromValue(resolvedParamData.value)
-      );
+      const resolvedParamData = resolveReference(param.data, context);
+      const targetType = isDataOfType(resolvedParamData, "union")
+        ? getUnionActiveType(
+            resolvedParamData.type,
+            resolvedParamData.value,
+            context
+          )
+        : resolvedParamData.type;
+      narrowedType = narrowType(reference.data.type, targetType);
     }
   }
 
@@ -463,7 +738,7 @@ export function mergeNarrowedTypes(
   return operationName === "or"
     ? originalTypes
     : narrowedTypes.entries().reduce((acc, [key, value]) => {
-        if (value.data.type.kind === "never") acc.delete(key);
+        if (isDataOfType(value.data, "never")) acc.delete(key);
         else acc.set(key, value);
         return acc;
       }, new Map(originalTypes));
@@ -494,11 +769,16 @@ export function updateContextWithNarrowedTypes(
   };
 }
 
-export function resolveUnionType(types: DataType[], union: true): UnionType;
+export function resolveUnionType(
+  types: DataType[],
+  union: true,
+  activeIndex?: number
+): UnionType;
 export function resolveUnionType(types: DataType[], union?: false): DataType;
 export function resolveUnionType(
   types: DataType[],
-  forceUnion = false
+  forceUnion = false,
+  activeIndex?: number
 ): DataType | UnionType {
   const flattenedTypes = types.flatMap((type) => {
     if (!type) return [];
@@ -516,20 +796,25 @@ export function resolveUnionType(
 
   if (uniqueTypes.length === 0) return { kind: "never" };
   if (uniqueTypes.length === 1 && !forceUnion) return uniqueTypes[0];
-  const sortedTypes = uniqueTypes.sort((a, b) => a.kind.localeCompare(b.kind));
-  return { kind: "union", types: sortedTypes };
+  return { kind: "union", types: uniqueTypes, activeIndex: activeIndex ?? 0 };
 }
 
-function getArrayElementType(elements: IStatement[]): DataType {
+function getArrayElementType(
+  elements: IStatement[],
+  context: Context
+): DataType {
   if (elements.length === 0) return { kind: "unknown" };
-  const firstType = elements[0].data.type;
+  const firstType = getStatementResult(elements[0], context).type;
   const allSameType = elements.every((element) => {
-    return isTypeCompatible(element.data.type, firstType);
+    return isTypeCompatible(
+      getStatementResult(element, context).type,
+      firstType
+    );
   });
   if (allSameType) return firstType;
 
   const unionTypes = elements.reduce((acc, element) => {
-    const elementType = element.data.type;
+    const elementType = getStatementResult(element, context).type;
     const exists = acc.some((t) => isTypeCompatible(t, elementType));
     if (!exists) acc.push(elementType);
     return acc;
@@ -537,21 +822,21 @@ function getArrayElementType(elements: IStatement[]): DataType {
   return resolveUnionType(unionTypes);
 }
 
-export function getOperationResultType(statements: IStatement[]): DataType {
+export function getOperationResultType(
+  statements: IStatement[],
+  context: Context
+): DataType {
   let resultType: DataType = { kind: "undefined" };
   if (statements.length > 0) {
     const lastStatement = statements[statements.length - 1];
-    resultType = getStatementResult(lastStatement).type;
+    resultType = getStatementResult(lastStatement, context).type;
   }
   return resultType;
 }
 
-export function resolveReference(
-  data: IData,
-  variables: Context["variables"]
-): IData {
+export function resolveReference(data: IData, context: Context): IData {
   if (isDataOfType(data, "reference")) {
-    const variable = variables.get(data.value.name);
+    const variable = context.variables.get(data.value.name);
     if (!variable) {
       return createData({
         id: data.id,
@@ -559,53 +844,69 @@ export function resolveReference(
         value: { reason: `'${data.value.name}' not found` },
       });
     }
-    return resolveReference(variable.data, variables);
+    return resolveReference(variable.data, context);
   }
-  if (isDataOfType(data, "array")) {
+  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return createData({
       ...data,
       value: data.value.map((statement) => ({
         ...statement,
-        data: resolveReference(statement.data, variables),
+        data: resolveReference(statement.data, context),
       })),
-    });
+    } as IData<ArrayType | TupleType>);
   }
-  if (isDataOfType(data, "object")) {
+  if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     const newMap = new Map();
     data.value.forEach((statement, key) => {
       newMap.set(key, {
         ...statement,
-        data: resolveReference(statement.data, variables),
+        data: resolveReference(statement.data, context),
       });
     });
-    return createData({ ...data, value: newMap });
+    return createData({ ...data, value: newMap } as IData<
+      ObjectType | DictionaryType
+    >);
   }
   return data;
 }
 
 export function inferTypeFromValue<T extends DataType>(
-  value?: DataValue<T>,
-  context?: Context
+  value: DataValue<T> | undefined,
+  context: Context
 ): T {
+  // TODO: handle union types using context.expectedType
   if (value === undefined) return { kind: "undefined" } as T;
   if (typeof value === "string") return { kind: "string" } as T;
   if (typeof value === "number") return { kind: "number" } as T;
   if (typeof value === "boolean") return { kind: "boolean" } as T;
 
   if (Array.isArray(value)) {
-    return {
-      kind: "array",
-      elementType: getArrayElementType(value),
-    } as T;
+    return context.expectedType?.kind === "tuple"
+      ? ({
+          kind: "tuple",
+          elements: value.map(
+            (element) => getStatementResult(element, context).type
+          ),
+        } as T)
+      : ({
+          kind: "array",
+          elementType: getArrayElementType(value, context),
+        } as T);
   }
   if (value instanceof Map) {
-    return {
-      kind: "object",
-      properties: value.entries().reduce((acc, [key, statement]) => {
-        acc[key] = statement.data.type;
-        return acc;
-      }, {} as { [key: string]: DataType }),
-    } as T;
+    return context.expectedType?.kind === "object"
+      ? ({
+          kind: "object",
+          properties: value.entries().reduce((acc, [key, statement]) => {
+            acc[key] = getStatementResult(statement, context).type;
+            return acc;
+          }, {} as { [key: string]: DataType }),
+          required: context.expectedType?.required ?? [],
+        } as T)
+      : ({
+          kind: "dictionary",
+          elementType: getArrayElementType(Array.from(value.values()), context),
+        } as T);
   }
   if (
     isObject(value, ["parameters", "statements"]) &&
@@ -614,23 +915,26 @@ export function inferTypeFromValue<T extends DataType>(
   ) {
     return {
       kind: "operation",
-      // TODO: Add optional parameters support
       parameters: value.parameters.map((param) => ({
         name: param.name,
         type: param.data.type,
+        isOptional: param.isOptional,
       })),
-      result: getOperationResultType(value.statements),
+      result: getOperationResultType(value.statements, context),
     } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
-    const trueType = getStatementResult(value.true as IStatement).type;
-    const falseType = getStatementResult(value.false as IStatement).type;
+    const trueType = getStatementResult(value.true as IStatement, context).type;
+    const falseType = getStatementResult(
+      value.false as IStatement,
+      context
+    ).type;
     const unionType = resolveUnionType(
       isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
     );
-    return { kind: "condition", resultType: unionType } as T;
+    return { kind: "condition", result: unionType } as T;
   }
-  if (isObject(value, ["name"]) && typeof value.name === "string" && context) {
+  if (isObject(value, ["name"]) && typeof value.name === "string") {
     const type = context.variables.get(value.name)?.data.type;
     return { kind: "reference", dataType: type ?? { kind: "unknown" } } as T;
   }
@@ -638,7 +942,36 @@ export function inferTypeFromValue<T extends DataType>(
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {
     return { kind: "error", errorType: "custom_error" } as T;
   }
+  if (
+    isObject(value, ["className", "constructorArgs"]) &&
+    Array.isArray(value.constructorArgs)
+  ) {
+    return {
+      kind: "instance",
+      className: value.className,
+      constructorArgs: value.constructorArgs.map((arg) => ({
+        name: arg.name,
+        type: arg.data.type,
+        isOptional: arg.isOptional,
+      })),
+    } as T;
+  }
   return { kind: "unknown" } as T;
+}
+
+export function getUnionActiveType(
+  unionType: UnionType,
+  value: unknown,
+  context: Context
+): DataType {
+  if (unionType.activeIndex !== undefined) {
+    return unionType.types[unionType.activeIndex] ?? unionType.types[0];
+  }
+  const inferredType = inferTypeFromValue(value, context);
+  const index = unionType.types.findIndex((t) =>
+    isTypeCompatible(inferredType, t)
+  );
+  return index === -1 ? unionType.types[0] : unionType.types[index];
 }
 
 export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
@@ -659,14 +992,27 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     case "array":
       return `array<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
 
+    case "tuple":
+      return `[${type.elements
+        .map((element) => getTypeSignature(element, maxDepth - 1))
+        .join(", ")}]`;
+
     case "object": {
       const maxEntries = 3;
       const entries = Object.entries(type.properties).slice(0, maxEntries);
       const props = entries
-        .map(([k, v]) => `${k}: ${getTypeSignature(v, maxDepth - 1)}`)
+        .map(
+          ([k, v]) =>
+            `${k}${type.required?.includes(k) ? "" : "?"}: ${getTypeSignature(
+              v,
+              maxDepth - 1
+            )}`
+        )
         .join(", ");
       return `{ ${props} ${entries.length > maxEntries ? ", ..." : ""} }`;
     }
+    case "dictionary":
+      return `dictionary<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
 
     case "union":
       return resolveUnionType(type.types, true)
@@ -687,41 +1033,77 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     }
 
     case "condition":
-      return getTypeSignature(type.resultType, maxDepth - 1);
+      return getTypeSignature(type.result, maxDepth - 1);
 
     case "reference":
       return getTypeSignature(type.dataType, maxDepth - 1);
+    case "instance": {
+      return type.className;
+    }
     default:
       return "unknown";
   }
+}
+
+export function resolveParameters(
+  operationListItem: OperationListItem,
+  _data: IData,
+  context: Context
+) {
+  const data = resolveReference(_data, context);
+  const params =
+    typeof operationListItem.parameters === "function"
+      ? operationListItem.parameters(data)
+      : operationListItem.parameters;
+  return params.map((param) => {
+    if (param.isOptional)
+      return {
+        ...param,
+        type: resolveUnionType([param.type, { kind: "undefined" }]),
+      };
+    return param;
+  });
 }
 
 /* Execution */
 
 export function getStatementResult(
   statement: IStatement,
-  index?: number,
-  prevEntity?: boolean
+  context: Context,
+  options?: {
+    index?: number;
+    prevEntity?: boolean;
+    skipResolveReference?: boolean;
+  }
   // TODO: Make use of the data type to create a better type for result e.g. a union type
 ): IData {
   let result = statement.data;
-  if (isDataOfType(result, "error")) return { ...result, id: statement.id };
+  if (isDataOfType(result, "error")) return result;
   const lastOperation = statement.operations[statement.operations.length - 1];
-  if (index) {
-    const statementResult = statement.operations[index - 1]?.value.result;
-    result = statementResult ?? createData();
-  } else if (!prevEntity && lastOperation) {
-    result = lastOperation.value.result ?? createData();
+  if (options?.index) {
+    result =
+      context.getResult(statement.operations[options.index - 1]?.id)?.data ??
+      createData();
+  } else if (!options?.prevEntity && lastOperation) {
+    result = context.getResult(lastOperation.id)?.data ?? createData();
   } else if (isDataOfType(result, "condition")) {
-    result = result.value.result ?? getConditionResult(result.value);
+    result =
+      context.getResult(result.id)?.data ??
+      getConditionResult(result.value, context);
   }
-  return { ...result, id: statement.id };
+  return options?.skipResolveReference
+    ? result
+    : resolveReference(result, context);
 }
 
-export function getConditionResult(condition: DataValue<ConditionType>): IData {
-  const conditionResult = getStatementResult(condition.condition);
+export function getConditionResult(
+  condition: DataValue<ConditionType>,
+  context: Context
+): IData {
+  const conditionResult = getStatementResult(condition.condition, context);
   return getStatementResult(
-    conditionResult.value ? condition.true : condition.false
+    conditionResult.value ? condition.true : condition.false,
+    context
   );
 }
 
@@ -737,7 +1119,7 @@ export function getSkipExecution({
   paramIndex?: number;
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
-  const data = resolveReference(_data, context.variables);
+  const data = resolveReference(_data, context);
   if (isDataOfType(data, "error"))
     return { reason: data.value.reason, kind: "error" };
   if (!operationName) return undefined;
@@ -760,6 +1142,69 @@ export function getSkipExecution({
   }
 
   return undefined;
+}
+
+export function getRawValueFromData(data: IData, context: Context): unknown {
+  /* if-else used instead of switch for type narrowing */
+  if (
+    isDataOfType(data, "never") ||
+    isDataOfType(data, "undefined") ||
+    isDataOfType(data, "string") ||
+    isDataOfType(data, "number") ||
+    isDataOfType(data, "boolean") ||
+    isDataOfType(data, "unknown")
+  ) {
+    return data.value;
+  } else if (isDataOfType(data, "error")) {
+    return new Error(data.value.reason);
+  } else if (isDataOfType(data, "instance")) {
+    return context.getInstance(data.value.instanceId);
+  } else if (isDataOfType(data, "operation")) {
+    return async (...rawParams: unknown[]): Promise<unknown> => {
+      const mappedParameters = data.value.parameters.map((param, index) =>
+        createDataFromRawValue(rawParams[index], context, param.data.type.kind)
+      );
+      const result = await context.executeOperation(
+        operationToListItem(data),
+        mappedParameters[0],
+        mappedParameters.slice(1).map((data) => createStatement({ data })),
+        context
+      );
+      return getRawValueFromData(result, context);
+    };
+  } else if (isDataOfType(data, "condition")) {
+    return getRawValueFromData(
+      getConditionResult(data.value, context),
+      context
+    );
+  } else if (isDataOfType(data, "reference")) {
+    return getRawValueFromData(
+      createData(resolveReference(data, context)),
+      context
+    );
+  } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
+    return data.value.map((element) =>
+      getRawValueFromData(getStatementResult(element, context), context)
+    );
+  } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
+    return Object.fromEntries(
+      data.value
+        .entries()
+        .map(([key, value]) => [
+          key,
+          getRawValueFromData(getStatementResult(value, context), context),
+        ])
+    );
+  } else if (isDataOfType(data, "union")) {
+    return getRawValueFromData(
+      createData({
+        type: getUnionActiveType(data.type, data.value, context),
+        value: data.value,
+      }),
+      context
+    );
+  }
+  return "unknown";
 }
 
 /* Others */
@@ -832,6 +1277,36 @@ export function getDataDropdownList({
       dataTypeOptions.push(option);
     }
   });
+
+  (Object.keys(InstanceTypes) as (keyof typeof InstanceTypes)[]).forEach(
+    (name) => {
+      if (InstanceTypes[name].hideFromDropdown) return;
+      const instanceConfig = InstanceTypes[name];
+      const instanceType: DataType = {
+        kind: "instance",
+        className: instanceConfig.name,
+        constructorArgs: instanceConfig.constructorArgs,
+      };
+
+      const option: IDropdownItem = {
+        entityType: "data",
+        label: name,
+        value: `instance:${name}`,
+        type: instanceType,
+        onClick: () => {
+          onSelect(createData({ id: data.id, type: instanceType }));
+        },
+      };
+      if (
+        !context.expectedType ||
+        isTypeCompatible(instanceType, context.expectedType)
+      ) {
+        allowedOptions.push(option);
+      } else if (!context.enforceExpectedType) {
+        dataTypeOptions.push(option);
+      }
+    }
+  );
 
   context.variables.entries().forEach(([name, variable]) => {
     const option: IDropdownItem = {

@@ -13,22 +13,24 @@ import {
   jsonParseReviver,
   jsonStringifyReplacer,
   useNavigationStore,
-} from "../lib/store";
+} from "@/lib/store";
 import { IconButton } from "./IconButton";
 import { useClipboard, useTimeout } from "@mantine/hooks";
-import { createFileFromOperation } from "../lib/utils";
-import { useState } from "react";
-import { IData, OperationType, Project } from "../lib/types";
-import { OperationValueSchema } from "../lib/schemas";
+import { createFileFromOperation } from "@/lib/utils";
+import { memo, useState } from "react";
+import { Context, IData, OperationType, Project } from "@/lib/types";
+import { OperationValueSchema } from "@/lib/schemas";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { updateFiles } from "@/lib/update";
 
-export function Header({
+function HeaderComponent({
   currentProject,
   currentOperation,
+  context,
 }: {
   currentOperation?: IData<OperationType>;
   currentProject: Project;
+  context: Context;
 }) {
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
@@ -94,6 +96,7 @@ export function Header({
                 files: updateFiles(
                   currentProject.files,
                   fileHistoryActions.pushState,
+                  context,
                   createFileFromOperation({
                     ...currentOperation,
                     value: { ...currentOperation.value, ...parsed.data },
@@ -130,3 +133,5 @@ export function Header({
     </div>
   );
 }
+
+export const Header = memo(HeaderComponent);

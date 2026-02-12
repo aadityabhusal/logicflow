@@ -1,7 +1,7 @@
 import { IconButton } from "../ui/IconButton";
 import { FaPlus } from "react-icons/fa6";
 import { IStatement, OperationType } from "../lib/types";
-import { createData, createStatement } from "../lib/utils";
+import { createParamData, createStatement } from "../lib/utils";
 import { ComponentPropsWithoutRef, memo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { getHotkeyHandler } from "@mantine/hooks";
@@ -35,7 +35,9 @@ const AddStatementComponent = ({
           className || "",
         ].join(" ")}
         onClick={() => {
-          const data = createData({ type: config?.type });
+          const data = createParamData({
+            type: config?.type || { kind: "undefined" },
+          });
           setNavigation({ navigation: { id: data.id } });
           onSelect(createStatement({ data, ...config }));
         }}
