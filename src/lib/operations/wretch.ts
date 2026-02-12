@@ -22,7 +22,8 @@ import { Wretch, WretchResponseChain, WretchError } from "wretch";
 function createWretchOperation(
   name: string,
   method: (instance: Wretch, context: Context, ...args: IData[]) => unknown,
-  parameters: OperationListItem["parameters"] = []
+  parameters: OperationListItem["parameters"] = [],
+  shouldCacheResult?: boolean
 ): OperationListItem {
   return {
     name,
@@ -30,6 +31,7 @@ function createWretchOperation(
       { type: { kind: "instance", className: "Wretch", constructorArgs: [] } },
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
+    shouldCacheResult,
     handler: (context, data: IData<InstanceDataType>, ...args: IData[]) => {
       const instance = getRawValueFromData(data, context) as Wretch;
       if (!instance) {
@@ -96,7 +98,7 @@ function createWretchOperation(
 function createChainOperation(
   name: string,
   method: (
-    instance: WretchResponseChain<unknown, unknown, unknown>,
+    instance: WretchResponseChain<unknown, unknown, unknown, unknown>,
     context: Context,
     ...args: IData[]
   ) => unknown,
@@ -118,7 +120,7 @@ function createChainOperation(
       const instance = getRawValueFromData(
         data,
         context
-      ) as WretchResponseChain<unknown, unknown, unknown>;
+      ) as WretchResponseChain<unknown, unknown, unknown, unknown>;
       if (!instance) {
         return createRuntimeError("WretchResponseChain instance not found");
       }
@@ -283,17 +285,20 @@ const wretchInstanceOperations: OperationListItem[] = [
       { type: { kind: "string" }, name: "method", isOptional: true },
       { type: { kind: "string" }, name: "url", isOptional: true },
       { type: { kind: "unknown" }, name: "body", isOptional: true },
-    ]
+    ],
+    true
   ),
   createWretchOperation(
     "get",
     (instance, _, p1) => instance.get(p1?.value as string),
-    [{ type: { kind: "string" }, name: "url", isOptional: true }]
+    [{ type: { kind: "string" }, name: "url", isOptional: true }],
+    true
   ),
   createWretchOperation(
     "delete",
     (instance, _, p1) => instance.delete(p1?.value as string),
-    [{ type: { kind: "string" }, name: "url", isOptional: true }]
+    [{ type: { kind: "string" }, name: "url", isOptional: true }],
+    true
   ),
   createWretchOperation(
     "put",
@@ -305,7 +310,8 @@ const wretchInstanceOperations: OperationListItem[] = [
     [
       { type: { kind: "unknown" }, name: "body", isOptional: true },
       { type: { kind: "string" }, name: "url", isOptional: true },
-    ]
+    ],
+    true
   ),
   createWretchOperation(
     "post",
@@ -317,7 +323,8 @@ const wretchInstanceOperations: OperationListItem[] = [
     [
       { type: { kind: "unknown" }, name: "body", isOptional: true },
       { type: { kind: "string" }, name: "url", isOptional: true },
-    ]
+    ],
+    true
   ),
   createWretchOperation(
     "patch",
@@ -329,25 +336,40 @@ const wretchInstanceOperations: OperationListItem[] = [
     [
       { type: { kind: "unknown" }, name: "body", isOptional: true },
       { type: { kind: "string" }, name: "url", isOptional: true },
-    ]
+    ],
+    true
   ),
   createWretchOperation(
     "head",
     (instance, _, p1) => instance.head(p1?.value as string),
-    [{ type: { kind: "string" }, name: "url", isOptional: true }]
+    [{ type: { kind: "string" }, name: "url", isOptional: true }],
+    true
   ),
   createWretchOperation(
     "opts",
     (instance, _, p1) => instance.opts(p1?.value as string),
-    [{ type: { kind: "string" }, name: "url", isOptional: true }]
+    [{ type: { kind: "string" }, name: "url", isOptional: true }],
+    true
   ),
 ];
 
 // Chain methods that return promises
 const chainPromiseOperations: OperationListItem[] = [
-  createChainOperation("res", (instance) => instance.res(), []),
-  createChainOperation("json", (instance) => instance.json(), []),
-  createChainOperation("text", (instance) => instance.text(), []),
+  createChainOperation(
+    "res",
+    (instance) => instance.res().then((res) => res.clone()),
+    []
+  ),
+  createChainOperation(
+    "json",
+    (instance) => instance.res().then((res) => res.clone().json()),
+    []
+  ),
+  createChainOperation(
+    "text",
+    (instance) => instance.res().then((res) => res.clone().text()),
+    []
+  ),
 ];
 
 // Re-implement error handlers with lazyHandler

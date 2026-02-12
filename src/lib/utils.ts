@@ -249,7 +249,8 @@ export function createFileFromOperation(operation: IData<OperationType>) {
 
 export function createContext(
   context: Context,
-  overrides?: Partial<Context>
+  overrides?: Partial<Context>,
+  scopedResults?: boolean
 ): Context {
   const baseContext: Context = {
     getResult: context.getResult,
@@ -261,6 +262,13 @@ export function createContext(
     reservedNames: new Set(context.reservedNames),
     variables: new Map(context.variables),
   };
+
+  if (scopedResults) {
+    const localResults = new Map<string, ReturnType<Context["getResult"]>>();
+    baseContext.setResult = (id, result) => localResults.set(id, result);
+    baseContext.getResult = (id) =>
+      localResults.get(id) ?? context.getResult(id);
+  }
   return { ...baseContext, ...overrides };
 }
 

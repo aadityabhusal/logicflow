@@ -6,7 +6,7 @@ import {
   getFilteredOperations,
   executeOperation,
 } from "../lib/operation";
-import { FaArrowRotateRight, FaPlay } from "react-icons/fa6";
+import { FaArrowRotateRight } from "react-icons/fa6";
 import {
   updateContextWithNarrowedTypes,
   resolveParameters,
@@ -142,17 +142,14 @@ const OperationCallComponent = ({
     >
       {originalOperation?.shouldCacheResult && (
         <IconButton
-          icon={
-            context.getResult(operation.id)?.data?.value
-              ? FaArrowRotateRight
-              : FaPlay
-          }
-          title="Run operation"
+          icon={FaArrowRotateRight}
+          title="Re-run operation"
           className="mx-0.5"
           onClick={(e) => {
             e.stopPropagation();
             handleManualExecute();
           }}
+          size={12}
         />
       )}
       <span>{"("}</span>

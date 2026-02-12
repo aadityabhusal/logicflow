@@ -254,7 +254,7 @@ const booleanOperations: OperationListItem[] = [
         trueBranch,
         {
           ...context,
-          ...updateContextWithNarrowedTypes(context, data, "thenElse"),
+          ...updateContextWithNarrowedTypes(context, data, "thenElse", 0),
         },
       ] as const;
       const falseWithContext = falseBranch

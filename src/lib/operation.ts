@@ -23,7 +23,6 @@ import {
   resolveParameters,
   operationToListItem,
   createContext,
-  updateContextWithNarrowedTypes,
 } from "./utils";
 import { builtInOperations, createRuntimeError } from "./built-in-operations";
 import { InstanceTypes } from "./data";
@@ -270,12 +269,14 @@ export async function executeStatement(
           !existingResult);
 
       if (shouldExecute) {
-        operationResult = await executeOperation(
-          foundOp,
-          resultData,
-          operation.value.parameters,
-          _context
-        );
+        operationResult = _context.skipExecution
+          ? createData({ type: operation.type.result })
+          : await executeOperation(
+              foundOp,
+              resultData,
+              operation.value.parameters,
+              _context
+            );
       } else if (existingResult) {
         operationResult = existingResult;
       } else if (foundOp.shouldCacheResult) {
@@ -349,10 +350,7 @@ export async function executeOperation(
           type: resolveUnionType([p.type, { kind: "undefined" }]),
           value: undefined,
         });
-      return executeStatement(
-        hasParam,
-        updateContextWithNarrowedTypes(prevContext, data, operation.name, index)
-      );
+      return executeStatement(hasParam, prevContext);
     })
   );
 
@@ -387,11 +385,15 @@ export async function executeOperation(
   }
 
   if ("statements" in operation && operation.statements.length > 0) {
-    const context = createContext(prevContext);
+    const context = createContext(prevContext, undefined, true);
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
       if (_param.name && allInputs[index]) {
-        const param = { ...allInputs[index], type: _param.type };
+        const paramType =
+          _param.type.kind === "union"
+            ? { ..._param.type, activeIndex: undefined }
+            : _param.type;
+        const param = { ...allInputs[index], type: paramType };
         const resolved = resolveReference(param, context);
         context.variables.set(_param.name, {
           data: resolved,
