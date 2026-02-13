@@ -1,13 +1,12 @@
 import { Operation } from "@/components/Operation";
 import {
-  useUiConfigStore,
   useProjectStore,
   useNavigationStore,
   useExecutionResultsStore,
   fileHistoryActions,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
-import { Sidebar } from "@/ui/Sidebar";
+import { SidebarTabs } from "@/ui/SidebarTabs";
 import { NoteText } from "@/ui/NoteText";
 import {
   MouseEvent,
@@ -17,7 +16,6 @@ import {
   useMemo,
 } from "react";
 import { useHotkeys } from "@mantine/hooks";
-import { DetailsPanel } from "@/components/DetailsPanel";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { Context, IData, OperationType } from "@/lib/types";
@@ -41,7 +39,6 @@ export default function Project() {
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const updateFile = useProjectStore((s) => s.updateFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
-  const hideSidebar = useUiConfigStore((s) => s.hideSidebar);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setResult = useExecutionResultsStore((s) => s.setResult);
 
@@ -138,17 +135,17 @@ export default function Project() {
   if (!currentProject) return <Navigate to="/" replace />;
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-dvh">
       <Header
         context={context}
         currentOperation={currentOperation}
         currentProject={currentProject}
       />
-      <div className="flex flex-1 min-h-0 relative">
-        {!hideSidebar && <Sidebar context={context} />}
+      <div className="flex flex-col-reverse md:flex-row flex-1 min-h-0 relative">
+        <SidebarTabs context={context} />
         <div
           className={
-            "relative flex-1 overflow-y-auto scroll flex flex-col md:flex-row"
+            "relative flex-1 overflow-y-auto scroll flex flex-col pr-2"
           }
         >
           <ErrorBoundary
@@ -170,7 +167,6 @@ export default function Project() {
               <NoteText>Select an operation</NoteText>
             )}
           </ErrorBoundary>
-          <DetailsPanel />
         </div>
       </div>
     </div>

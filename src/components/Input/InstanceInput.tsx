@@ -4,6 +4,7 @@ import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { IDropdownTargetProps } from "../Dropdown";
 import { getContextExpectedTypes } from "@/lib/utils";
+import { AddStatement } from "../AddStatement";
 
 export interface InstanceInputProps extends IDropdownTargetProps {
   data: IData<InstanceDataType>;
@@ -15,9 +16,14 @@ const InstanceInputComponent = (
   { data, handleData, context, onChange, ...props }: InstanceInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
-  function handleConstructorArgs(item: IStatement, index: number) {
+  function handleConstructorArgs(
+    item: IStatement,
+    index: number,
+    remove?: boolean
+  ) {
     const constructorArgs = [...data.value.constructorArgs];
-    constructorArgs[index] = item;
+    if (remove) constructorArgs.splice(index, 1);
+    else constructorArgs[index] = item;
     handleData({
       ...data,
       value: { ...data.value, constructorArgs },
@@ -37,8 +43,8 @@ const InstanceInputComponent = (
           <span key={item.id} className="flex">
             <Statement
               statement={item}
-              handleStatement={(val) =>
-                val && handleConstructorArgs(val, paramIndex)
+              handleStatement={(val, remove) =>
+                val && handleConstructorArgs(val, paramIndex, remove)
               }
               options={{ disableDelete: !item.isOptional }}
               context={{
@@ -53,6 +59,19 @@ const InstanceInputComponent = (
           </span>
         );
       })}
+      {data.value.constructorArgs.length < data.type.constructorArgs.length && (
+        <AddStatement
+          id={`${data.id}_call_parameter`}
+          onSelect={(statement) =>
+            handleConstructorArgs(statement, data.value.constructorArgs.length)
+          }
+          iconProps={{ title: "Add parameter" }}
+          config={{
+            ...data.type.constructorArgs[data.value.constructorArgs.length],
+            name: undefined,
+          }}
+        />
+      )}
       <span className="self-end">{")"}</span>
     </div>
   );

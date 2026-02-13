@@ -10,7 +10,7 @@ import {
   isDataOfType,
 } from "../lib/utils";
 import { memo, useMemo } from "react";
-import { BaseInput } from "./Input/BaseInput";
+import { BaseInput, BaseInputProps } from "./Input/BaseInput";
 import { isNumberLike } from "@mantine/core";
 import { DataTypes } from "../lib/data";
 import { ConditionInput } from "./Input/ConditionInput";
@@ -133,7 +133,10 @@ const DataComponent = ({
               onChange?.(val);
               handleChange({ ...data, value: val });
             }}
-            options={{ withQuotes: true }}
+            options={{
+              withQuotes: true,
+              ...(props as BaseInputProps<string>).options,
+            }}
           />
         ) : isDataOfType(data, "condition") ? (
           <ConditionInput

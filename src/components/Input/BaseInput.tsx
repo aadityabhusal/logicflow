@@ -4,10 +4,12 @@ import {
   TextInput,
   TextInputProps,
 } from "@mantine/core";
-import { useUncontrolled } from "@mantine/hooks";
+import { useUncontrolled, useMediaQuery } from "@mantine/hooks";
 import { forwardRef, memo, useState } from "react";
+import { useUiConfigStore } from "@/lib/store";
+import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
-interface BaseInputProps<T extends string | number>
+export interface BaseInputProps<T extends string | number>
   extends Omit<
     TextInputProps & NumberInputProps,
     "value" | "onChange" | "type" | "defaultValue"
@@ -17,13 +19,18 @@ interface BaseInputProps<T extends string | number>
   defaultValue?: T;
   type?: "text" | "number";
   containerClassName?: string;
-  options?: { withQuotes?: boolean };
+  options?: { withQuotes?: boolean; forceEnableKeyboard?: boolean };
 }
 
 function BaseInputInner<T extends string | number>(
-  { value, type, onChange, defaultValue, ...props }: BaseInputProps<T>,
+  { value, type, onChange, defaultValue, options, ...props }: BaseInputProps<T>,
   ref: React.ForwardedRef<HTMLInputElement>
 ) {
+  const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
+  const disableKeyboard = useUiConfigStore(
+    (s) => s.disableKeyboard && !options?.forceEnableKeyboard && smallScreen
+  );
+
   const MAX_WIDTH = 160;
   const [textWidth, setTextWidth] = useState(0);
   const [inputValue, setInputValue] = useUncontrolled({
@@ -43,6 +50,7 @@ function BaseInputInner<T extends string | number>(
         textWidth >= MAX_WIDTH ? "truncate" : "",
       ].join(" "),
     },
+    readOnly: disableKeyboard,
     styles: { input: { width: textWidth, ...props.styles } },
     onClick: props.onClick,
   } as typeof props;
@@ -50,7 +58,7 @@ function BaseInputInner<T extends string | number>(
   return (
     <div
       className={`relative flex flex-col py-0 ${
-        props.options?.withQuotes ? "px-[7px] input-quotes" : "px-0"
+        options?.withQuotes ? "px-[7px] input-quotes" : "px-0"
       } ${props.containerClassName}`}
     >
       <div

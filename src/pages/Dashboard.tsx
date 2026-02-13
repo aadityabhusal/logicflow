@@ -139,7 +139,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 space-y-4">
       <div className="border-b pb-2 flex items-center justify-between gap-4">
         <h2 className="text-2xl mr-auto">Projects</h2>
         <Button

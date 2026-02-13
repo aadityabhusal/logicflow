@@ -295,12 +295,13 @@ export const waitForHydration = () => {
 };
 
 type UiConfigStore = {
-  hideSidebar?: boolean;
-  detailsPanel: {
-    hidden?: boolean;
-    size?: { width?: number; height?: number };
+  sidebar: {
+    activeTab?: string;
+    width?: number;
+    height?: number;
     lockedIds?: { [operationId: string]: string };
   };
+  disableKeyboard?: boolean;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;
@@ -308,7 +309,12 @@ type UiConfigStore = {
 export const useUiConfigStore = createWithEqualityFn(
   persist<UiConfigStore>(
     (set) => ({
-      detailsPanel: { size: { width: 200, height: 150 } },
+      sidebar: {
+        activeTab: "operations",
+        width: 200,
+        height: 150,
+        lockedIds: {},
+      },
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),

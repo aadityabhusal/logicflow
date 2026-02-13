@@ -82,7 +82,7 @@ const DropdownComponent = ({
   );
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const detailsPanelLockedId = useUiConfigStore((s) => {
-    const lockedId = currentFileId && s.detailsPanel.lockedIds?.[currentFileId];
+    const lockedId = currentFileId && s.sidebar.lockedIds?.[currentFileId];
     if (
       !lockedId ||
       !useExecutionResultsStore.getState().results.has(lockedId)
@@ -287,6 +287,7 @@ const DropdownComponent = ({
                     onKeyDown: getHotkeyHandler([
                       ["ctrl+space", () => combobox.openDropdown()],
                     ]),
+                    options: { allowDisableKeyboard: true },
                   }
                 : {}),
               onClick: (e) => {
