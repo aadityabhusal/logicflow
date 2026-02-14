@@ -136,7 +136,6 @@ const UnionInputComponent = (
         width={200}
         position="bottom-start"
         withinPortal={false}
-        classNames={{ dropdown: "absolute bg-editor border" }}
         opened={menuOpened}
         onChange={(opened) => {
           setNavigation(() => ({
@@ -162,25 +161,16 @@ const UnionInputComponent = (
             title="Show union types"
           />
         </Menu.Target>
-        <Menu.Dropdown
-          classNames={{ dropdown: "flex flex-col" }}
-          onMouseOver={(e) => e.stopPropagation()}
-        >
+        <Menu.Dropdown onMouseOver={(e) => e.stopPropagation()}>
           {data.type.types.map((type, i) => (
-            <Menu.Item
-              key={i}
-              onClick={() => handleTypeSwitch(i)}
-              classNames={{
-                item: [
-                  "menu-item",
-                  i === activeType.index ? "bg-dropdown-selected" : "",
-                ].join(" "),
-              }}
-            >
-              <Tooltip label={getTypeSignature(type)} position="right">
-                <div className={"flex items-center gap-1 justify-between"}>
-                  {type.kind}
-                  {data.type.types.length > 1 && !context.expectedType ? (
+            <Tooltip key={i} label={getTypeSignature(type)} position="right">
+              <Menu.Item
+                onClick={() => handleTypeSwitch(i)}
+                classNames={{
+                  item: i === activeType.index ? "bg-dropdown-selected" : "",
+                }}
+                rightSection={
+                  data.type.types.length > 1 && !context.expectedType ? (
                     <FaX
                       size={16}
                       className="p-1 hover:outline hover:outline-border"
@@ -189,10 +179,12 @@ const UnionInputComponent = (
                         handleTypeRemove(i);
                       }}
                     />
-                  ) : null}
-                </div>
-              </Tooltip>
-            </Menu.Item>
+                  ) : null
+                }
+              >
+                {type.kind}
+              </Menu.Item>
+            </Tooltip>
           ))}
           {!context.expectedType ? (
             <Menu.Sub>
@@ -218,15 +210,15 @@ const UnionInputComponent = (
                       )
                   )
                   .map(([name, { type }]) => (
-                    <Menu.Item
-                      classNames={{ item: "text-left menu-item" }}
+                    <Tooltip
                       key={name}
-                      onClick={() => handleTypeAdd(type)}
+                      label={getTypeSignature(type)}
+                      position="right"
                     >
-                      <Tooltip label={getTypeSignature(type)} position="right">
-                        <span className="text-left">{name}</span>
-                      </Tooltip>
-                    </Menu.Item>
+                      <Menu.Item onClick={() => handleTypeAdd(type)}>
+                        {name}
+                      </Menu.Item>
+                    </Tooltip>
                   ))}
               </Menu.Sub.Dropdown>
             </Menu.Sub>

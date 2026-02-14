@@ -22,7 +22,7 @@ import type {
   DictionaryType,
   InstanceDataType,
 } from "./types";
-import { isDataOfType } from "./utils";
+import { DataTypes } from "./data";
 
 /**
  * Note: Zod schemas are derived from types because the type relations are complex and some not possible to express in Zod.
@@ -248,11 +248,13 @@ export const IStatementSchema: z.ZodType<IStatement> = z.object({
     return IDataSchema;
   },
   get operations() {
-    return z
-      .array(IDataSchema)
-      .refine((ops) => ops.every((op) => isDataOfType(op, "operation")), {
-        message: "All operations must have type.kind === 'operation'",
-      }) as z.ZodType<IData<OperationType>[]>;
+    return z.array(
+      z.object({
+        id: z.string(),
+        type: OperationTypeSchema,
+        value: OperationValueSchema,
+      })
+    );
   },
 });
 
@@ -264,8 +266,42 @@ export const IDropdownItemSchema: z.ZodType<IDropdownItem> = z.object({
   onClick: z.function().optional(),
 });
 
+export const AgentChangeSchema = z.object({
+  action: z.enum(["create", "update", "delete"]),
+  targetType: z.enum(["statement", "data", "operation", "parameter"]),
+  targetId: z.string(),
+  parentId: z.string().optional(),
+  position: z.number().optional(),
+  changes: z
+    .object({
+      // TODO: is having only data type's kind enough here, also make this a union of data type properties
+      dataType: z
+        .enum(Object.keys(DataTypes).filter((key) => key !== "condition"))
+        .optional(),
+      value: z
+        .union([z.string(), z.number(), z.boolean(), z.null()])
+        .optional(),
+      name: z.string().nullable().optional(),
+      isOptional: z.boolean().optional(),
+      operationName: z.string().optional(),
+      referenceName: z.string().optional(),
+      referenceId: z.string().optional(),
+      key: z.string().optional(),
+      className: z.string().optional(),
+    })
+    .optional(),
+});
+
+export const AgentResponseSchema = z.object({
+  changes: z.array(AgentChangeSchema),
+  explanation: z.string().optional(),
+});
+
 // Type inference helpers to verify schemas match the original types
 export type InferredDataType = z.infer<typeof DataTypeSchema>;
 export type InferredIData = z.infer<typeof IDataSchema>;
 export type InferredIStatement = z.infer<typeof IStatementSchema>;
 export type InferredIDropdownItem = z.infer<typeof IDropdownItemSchema>;
+
+export type AgentChange = z.infer<typeof AgentChangeSchema>;
+export type AgentResponse = z.infer<typeof AgentResponseSchema>;

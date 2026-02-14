@@ -188,14 +188,10 @@ export default function Dashboard() {
                 <Menu.Target>
                   <IconButton icon={FaEllipsisVertical} className="p-1" />
                 </Menu.Target>
-                <Menu.Dropdown
-                  classNames={{ dropdown: "absolute border flex flex-col" }}
-                >
+                <Menu.Dropdown>
                   <Menu.Item
                     leftSection={<FaTrash />}
-                    classNames={{
-                      item: "flex items-center gap-4 p-2 hover:bg-dropdown-hover text-red-600",
-                    }}
+                    classNames={{ item: "p-2 text-red-600" }}
                     onClick={() => deleteProject(project.id)}
                   >
                     Delete

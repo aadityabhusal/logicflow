@@ -60,7 +60,9 @@ export function DetailsPanel() {
     return (
       <div className="flex flex-col h-full bg-editor">
         <div className="p-1 border-b">Details</div>
-        <div className="p-2 text-gray-500">No entity selected</div>
+        <div className="p-2 text-gray-500">
+          Select a data or an operation call
+        </div>
       </div>
     );
   }

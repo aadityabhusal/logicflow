@@ -7,6 +7,7 @@ import { OperationsList } from "./OperationsList";
 import { DetailsPanel } from "./DetailsPanel";
 import { Resizer } from "./Resizer";
 import { Context } from "@/lib/types";
+import { AgentPanel } from "./AgentPanel";
 
 const TABS = [
   { value: "operations", label: "Operations", Icon: FaFileCode },
@@ -88,6 +89,9 @@ export function SidebarTabs({ context }: { context: Context }) {
             </Tabs.Panel>
             <Tabs.Panel value="details" className="h-full w-full">
               <DetailsPanel />
+            </Tabs.Panel>
+            <Tabs.Panel value="agent" className="h-full w-full">
+              <AgentPanel />
             </Tabs.Panel>
           </div>
         )}

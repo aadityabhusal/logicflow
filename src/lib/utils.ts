@@ -1187,14 +1187,14 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       getRawValueFromData(getStatementResult(element, context), context)
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    return Object.fromEntries(
-      data.value
-        .entries()
-        .map(([key, value]) => [
-          key,
-          getRawValueFromData(getStatementResult(value, context), context),
-        ])
-    );
+    const result: Record<string, unknown> = {};
+    data.value.forEach((value, key) => {
+      result[key] = getRawValueFromData(
+        getStatementResult(value, context),
+        context
+      );
+    });
+    return result;
   } else if (isDataOfType(data, "union")) {
     return getRawValueFromData(
       createData({
@@ -1308,7 +1308,7 @@ export function getDataDropdownList({
     }
   );
 
-  context.variables.entries().forEach(([name, variable]) => {
+  context.variables.forEach((variable, name) => {
     const option: IDropdownItem = {
       value: name,
       secondaryLabel: variable.data.type.kind,

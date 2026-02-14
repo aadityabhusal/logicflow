@@ -43,9 +43,8 @@ function BaseInputInner<T extends string | number>(
     ...props,
     value: inputValue,
     classNames: {
-      wrapper: "flex gap-1 items-center",
       input: [
-        "number-input outline-0 bg-inherit border-none p-0",
+        "number-input",
         props.className,
         textWidth >= MAX_WIDTH ? "truncate" : "",
       ].join(" "),
@@ -57,9 +56,11 @@ function BaseInputInner<T extends string | number>(
 
   return (
     <div
-      className={`relative flex flex-col py-0 ${
-        options?.withQuotes ? "px-[7px] input-quotes" : "px-0"
-      } ${props.containerClassName}`}
+      className={[
+        "relative flex flex-col py-0",
+        options?.withQuotes ? "px-[7px] input-quotes" : "px-0",
+        props.containerClassName,
+      ].join(" ")}
     >
       <div
         className="self-start h-0 overflow-hidden whitespace-pre max-w-40"
@@ -79,7 +80,6 @@ function BaseInputInner<T extends string | number>(
       ) : (
         <TextInput
           {...commonProps}
-          type="text"
           ref={ref}
           onChange={(e) => setInputValue(e.target.value as T)}
           placeholder={"..."}

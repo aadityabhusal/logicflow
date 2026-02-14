@@ -181,10 +181,7 @@ const StatementComponent = ({
                 {...hoverEvents}
               />
             </Popover.Target>
-            <Popover.Dropdown
-              classNames={{ dropdown: "absolute bg-inherit" }}
-              {...hoverEvents}
-            >
+            <Popover.Dropdown {...hoverEvents}>
               <AddStatement
                 id={statement.id}
                 onSelect={(statement) => {

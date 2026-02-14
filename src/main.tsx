@@ -12,6 +12,10 @@ import {
   Button,
   createTheme,
   HeadlessMantineProvider,
+  Input,
+  Menu,
+  Popover,
+  Textarea,
   Tooltip,
 } from "@mantine/core";
 import { LoadingFallback } from "./ui/LoadingFallback";
@@ -39,6 +43,27 @@ const theme = createTheme({
       classNames: {
         root: "outline outline-white p-1 hover:bg-dropdown-hover",
         inner: "flex items-center gap-1 outline-white",
+      },
+    }),
+    Popover: Popover.extend({
+      classNames: { dropdown: "absolute bg-editor" },
+    }),
+    Input: Input.extend({
+      classNames: {
+        wrapper: "flex gap-1 items-center",
+        input: "outline-0 bg-inherit border-none p-0 resize-none",
+      },
+    }),
+    Textarea: Textarea.extend({
+      classNames: {
+        wrapper: "flex gap-1 items-center",
+        input: "outline-0 bg-inherit border-none p-0 flex-1",
+      },
+    }),
+    Menu: Menu.extend({
+      classNames: {
+        dropdown: "absolute border flex flex-col bg-editor",
+        item: "flex items-center justify-between gap-2 p-1 hover:bg-dropdown-hover focus:bg-dropdown-hover focus:outline-none data-disabled:text-disabled",
       },
     }),
   },
