@@ -1,9 +1,8 @@
-import { ScrollArea } from "@mantine/core";
 import { useAgentStore } from "@/lib/store";
 import { NoteText } from "../NoteText";
 
 export function AgentChat() {
-  const { messages } = useAgentStore();
+  const { messages, isLoading } = useAgentStore();
 
   if (messages.length === 0) {
     return (
@@ -14,7 +13,7 @@ export function AgentChat() {
   }
 
   return (
-    <ScrollArea className="flex-1 p-2 h-full">
+    <div className="p-2 h-full overflow-y-auto">
       {messages.map((msg) => (
         <div
           key={msg.id}
@@ -26,6 +25,7 @@ export function AgentChat() {
           <div className="whitespace-pre-wrap">{msg.content}</div>
         </div>
       ))}
-    </ScrollArea>
+      {isLoading ? <NoteText>Loading...</NoteText> : null}
+    </div>
   );
 }

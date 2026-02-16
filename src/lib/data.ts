@@ -202,6 +202,7 @@ export const LLM_PROVIDERS = {
 export const AVAILABLE_MODELS = [
   { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
   { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
+  { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini", provider: "openai" },
   { id: "gpt-5.1-codex", name: "GPT 5.1 Codex", provider: "openai" },
   { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic" },
   { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic" },

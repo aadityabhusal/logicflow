@@ -45,7 +45,7 @@ export function AgentInput({ onSubmit }: AgentInputProps) {
           }
         }}
       />
-      <div className="flex justify-between p-1">
+      <div className="flex justify-between p-1 gap-2">
         <Menu position="top-start">
           <Menu.Target>
             <Button

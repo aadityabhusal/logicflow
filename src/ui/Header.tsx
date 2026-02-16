@@ -103,7 +103,10 @@ function HeaderComponent({
                   context,
                   createFileFromOperation({
                     ...currentOperation,
-                    value: { ...currentOperation.value, ...parsed.data },
+                    value: {
+                      ...currentOperation.value,
+                      ...parsed.data,
+                    } as typeof currentOperation.value,
                   })
                 ),
               });
