@@ -6,7 +6,8 @@ export type ArrayType = { kind: "array"; elementType: DataType };
 export type TupleType = { kind: "tuple"; elements: DataType[] };
 export type ObjectType = {
   kind: "object";
-  properties: { [key: string]: DataType };
+  // properties is array to support LLM generation
+  properties: Array<{ key: string; value: DataType }>;
   required?: string[];
 };
 export type DictionaryType = { kind: "dictionary"; elementType: DataType };
@@ -77,9 +78,9 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   : T extends TupleType
   ? IStatement[]
   : T extends ObjectType
-  ? Map<keyof T["properties"] & string, IStatement>
+  ? { entries: Array<{ key: string; value: IStatement }> }
   : T extends DictionaryType
-  ? Map<string, IStatement>
+  ? { entries: Array<{ key: string; value: IStatement }> }
   : T extends OperationType
   ? {
       parameters: IStatement[];

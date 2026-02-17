@@ -106,21 +106,20 @@ function ParseObject({
   nest?: number;
   context: Context;
 }) {
-  const val = Array.from(data.value);
   return (
     <span className="gap-1">
       <span className="text-method">{"{"}</span>
-      {val.map(([key, val], i, arr) => (
-        <Fragment key={val.id}>
-          <span className="text-property">{key}</span>
+      {data.value.entries.map((entry, i) => (
+        <Fragment key={entry.value.id}>
+          <span className="text-property">{entry.key}</span>
           {": "}
           <ParseStatement
-            statement={val}
+            statement={entry.value}
             showData={showData}
             nest={nest}
             context={context}
           />
-          {i + 1 < arr.length && ", "}
+          {i + 1 < data.value.entries.length && ", "}
         </Fragment>
       ))}
       <span className="text-method">{"}"}</span>

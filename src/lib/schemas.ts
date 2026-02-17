@@ -23,13 +23,17 @@ const TupleTypeSchema = z.object({
 const ObjectTypeSchema = z.object({
   kind: z.literal("object"),
   get properties() {
-    return z.object({}).catchall(DataTypeSchema);
+    return z.array(z.object({ key: z.string(), value: DataTypeSchema }));
   },
   required: z.array(z.string()).nullable(),
 });
 
 // Used record instead of map because serialized data don't have a map
-const ObjectValueSchema = z.lazy(() => z.object({}).catchall(IStatementSchema));
+const ObjectValueSchema = z.lazy(() =>
+  z.object({
+    entries: z.array(z.object({ key: z.string(), value: IStatementSchema })),
+  })
+);
 
 const DictionaryTypeSchema = z.object({
   kind: z.literal("dictionary"),

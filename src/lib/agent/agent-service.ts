@@ -118,7 +118,7 @@ function applyCreate(
 
   if (!parentOriginalId) return operation;
 
-  const newStatement = convertStatementRecordToMap(entity);
+  const newStatement = convertStatementRecordToEntries(entity);
 
   if (parentOriginalId === operation.id) {
     if (!entity.data && entity.name) {
@@ -213,11 +213,11 @@ function patchStatement(
     result.isOptional = patch.isOptional as boolean;
   }
   if ("data" in patch && patch.data) {
-    result.data = convertDataRecordToMap(patch.data as IData);
+    result.data = convertDataRecordToEntries(patch.data as IData);
   }
   if ("operations" in patch && Array.isArray(patch.operations)) {
     result.operations = patch.operations.map((op) =>
-      convertOperationRecordToMap(op as IData<OperationType>)
+      convertOperationRecordToEntries(op as IData<OperationType>)
     );
   }
 
@@ -260,12 +260,12 @@ function patchOperationCall(
       ...(valuePatch.name !== undefined && { name: valuePatch.name as string }),
       ...(Array.isArray(valuePatch.parameters) && {
         parameters: valuePatch.parameters.map((p) =>
-          convertStatementRecordToMap(p as IStatement)
+          convertStatementRecordToEntries(p as IStatement)
         ),
       }),
       ...(Array.isArray(valuePatch.statements) && {
         statements: valuePatch.statements.map((s) =>
-          convertStatementRecordToMap(s as IStatement)
+          convertStatementRecordToEntries(s as IStatement)
         ),
       }),
     };
@@ -274,48 +274,46 @@ function patchOperationCall(
   return result;
 }
 
-function convertStatementRecordToMap(stmt: IStatement): IStatement {
+function convertStatementRecordToEntries(stmt: IStatement): IStatement {
   return {
     ...stmt,
-    operations: stmt.operations?.map(convertOperationRecordToMap) ?? [],
-    data: stmt.data ? convertDataRecordToMap(stmt.data) : createDefaultData(),
+    operations: stmt.operations?.map(convertOperationRecordToEntries) ?? [],
+    data: stmt.data ? convertDataRecordToEntries(stmt.data) : createDefaultData(),
   };
 }
 
-function convertDataRecordToMap(data: IData): IData {
+function convertDataRecordToEntries(data: IData): IData {
   if (!data.type) return data;
 
   if (data.type.kind === "object" || data.type.kind === "dictionary") {
-    const record = data.value as
-      | Record<string, IStatement>
-      | Map<string, IStatement>;
-    const map =
-      record instanceof Map
-        ? record
-        : new Map(
-            Object.entries(record ?? {}).map(([k, v]) => [
-              k,
-              convertStatementRecordToMap(v),
-            ])
-          );
-    return { ...data, value: map };
+    const value = data.value as { entries: Array<{ key: string; value: IStatement }> };
+    const entries = value.entries ?? [];
+    return {
+      ...data,
+      value: {
+        entries: entries.map(({ key, value }) => ({
+          key,
+          value: convertStatementRecordToEntries(value),
+        })),
+      },
+    };
   }
   if (data.type.kind === "array" || data.type.kind === "tuple") {
     const arr = data.value as IStatement[];
-    return { ...data, value: (arr ?? []).map(convertStatementRecordToMap) };
+    return { ...data, value: (arr ?? []).map(convertStatementRecordToEntries) };
   }
   return data;
 }
 
-function convertOperationRecordToMap(
+function convertOperationRecordToEntries(
   op: IData<OperationType>
 ): IData<OperationType> {
   return {
     ...op,
     value: {
       ...op.value,
-      parameters: op.value.parameters.map(convertStatementRecordToMap),
-      statements: op.value.statements?.map(convertStatementRecordToMap) ?? [],
+      parameters: op.value.parameters.map(convertStatementRecordToEntries),
+      statements: op.value.statements?.map(convertStatementRecordToEntries) ?? [],
     },
   };
 }
@@ -340,8 +338,8 @@ function createOperationCallFromEntity(
     type: { kind: "operation", parameters: [], result: { kind: "unknown" } },
     value: {
       name: opValue?.name ?? entity.name ?? "",
-      parameters: opValue?.parameters?.map(convertStatementRecordToMap) ?? [],
-      statements: opValue?.statements?.map(convertStatementRecordToMap) ?? [],
+      parameters: opValue?.parameters?.map(convertStatementRecordToEntries) ?? [],
+      statements: opValue?.statements?.map(convertStatementRecordToEntries) ?? [],
     },
   };
 }

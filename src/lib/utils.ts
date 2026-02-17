@@ -118,16 +118,16 @@ export function createDefaultValue<T extends DataType>(
     }
 
     case "object": {
-      const map = new Map<string, IStatement>();
-      for (const [key, propType] of Object.entries(type.properties)) {
+      const entries: Array<{ key: string; value: IStatement }> = [];
+      for (const { key, value } of type.properties) {
         if (
           type.required?.includes(key) ||
           options?.includeOptionalProperties
         ) {
-          map.set(key, createStatementFromType(propType));
+          entries.push({ key, value: createStatementFromType(value) });
         }
       }
-      return map as DataValue<T>;
+      return { entries } as DataValue<T>;
     }
 
     case "dictionary": {
@@ -135,11 +135,13 @@ export function createDefaultValue<T extends DataType>(
         type.elementType.kind === "unknown" ||
         type.elementType.kind === "never"
       ) {
-        return new Map() as DataValue<T>;
+        return { entries: [] } as DataValue<T>;
       }
-      return new Map([
-        ["key", createStatementFromType(type.elementType)],
-      ]) as DataValue<T>;
+      return {
+        entries: [
+          { key: "key", value: createStatementFromType(type.elementType) },
+        ],
+      } as DataValue<T>;
     }
 
     case "union": {
@@ -450,37 +452,32 @@ export function createDataFromRawValue(
       });
       context.setInstance(data.value.instanceId, value);
       return data;
+    } else {
+      const entries = Object.entries(value).map(([key, val]) => ({
+        key,
+        value: createStatement({ data: createDataFromRawValue(val, context) }),
+      }));
+      return createData({
+        type:
+          expectedKind === "object"
+            ? {
+                kind: "object",
+                properties: entries.map(({ key, value }) => ({
+                  key,
+                  value: value.data.type,
+                })),
+              }
+            : {
+                kind: "dictionary",
+                elementType: resolveUnionType(
+                  entries.map(({ value }) => value.data.type)
+                ),
+              },
+        value: { entries },
+      });
     }
   }
 
-  if (isObject(value) || value instanceof Map) {
-    const _value = new Map(
-      Object.entries(value).map(([key, val]) => {
-        return [
-          key,
-          createStatement({ data: createDataFromRawValue(val, context) }),
-        ];
-      })
-    );
-    return createData({
-      type:
-        expectedKind === "object"
-          ? {
-              kind: "object",
-              properties: Array.from(_value).reduce((acc, [key, value]) => {
-                acc[key] = value.data.type;
-                return acc;
-              }, {} as Record<string, DataType>),
-            }
-          : {
-              kind: "dictionary",
-              elementType: resolveUnionType(
-                Array.from(_value).map(([, v]) => v.data.type)
-              ),
-            },
-      value: _value,
-    });
-  }
   if (typeof value === "function") {
     const data = createData({
       type: {
@@ -531,16 +528,19 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
   }
 
   if (first.kind === "object" && second.kind === "object") {
-    const firstRequired = first.required ?? Object.keys(first.properties);
-    const secondRequired = second.required ?? Object.keys(second.properties);
-    for (const key of Object.keys(second.properties)) {
-      const firstProp = first.properties[key];
+    const firstRequired = first.required ?? first.properties.map((p) => p.key);
+    const secondRequired =
+      second.required ?? second.properties.map((p) => p.key);
+    const firstProps = new Map(first.properties.map((p) => [p.key, p.value]));
+    const secondProps = new Map(second.properties.map((p) => [p.key, p.value]));
+    for (const key of second.properties.map((p) => p.key)) {
+      const firstProp = firstProps.get(key);
       if (!firstProp && secondRequired.includes(key)) return false;
-      if (firstProp && !isTypeCompatible(firstProp, second.properties[key])) {
+      if (firstProp && !isTypeCompatible(firstProp, secondProps.get(key)!)) {
         return false;
       }
     }
-    return firstRequired.every((key) => second.properties[key]);
+    return firstRequired.every((key) => secondProps.has(key));
   }
 
   if (first.kind === "dictionary" && second.kind === "dictionary") {
@@ -632,9 +632,10 @@ export function getInverseTypes(
 function objectTypeMatch(source: DataType, target: DataType): boolean {
   if (target.kind !== "object") return isTypeCompatible(source, target);
   if (source.kind !== "object") return false;
-  return Object.entries(target.properties).every(([key, targetType]) => {
-    const sourceType = source.properties[key];
-    return sourceType && isTypeCompatible(sourceType, targetType);
+  const sourceProps = new Map(source.properties.map((p) => [p.key, p.value]));
+  return target.properties.every(({ key, value }) => {
+    const sourceType = sourceProps.get(key);
+    return sourceType && isTypeCompatible(sourceType, value);
   });
 }
 
@@ -856,14 +857,11 @@ export function resolveReference(data: IData, context: Context): IData {
     } as IData<ArrayType | TupleType>);
   }
   if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    const newMap = new Map();
-    data.value.forEach((statement, key) => {
-      newMap.set(key, {
-        ...statement,
-        data: resolveReference(statement.data, context),
-      });
-    });
-    return createData({ ...data, value: newMap } as IData<
+    const newEntries = data.value.entries.map(({ key, value }) => ({
+      key,
+      value: { ...value, data: resolveReference(value.data, context) },
+    }));
+    return createData({ ...data, value: { entries: newEntries } } as IData<
       ObjectType | DictionaryType
     >);
   }
@@ -893,19 +891,22 @@ export function inferTypeFromValue<T extends DataType>(
           elementType: getArrayElementType(value, context),
         } as T);
   }
-  if (value instanceof Map) {
+  if (isObject(value, ["entries"]) && Array.isArray(value.entries)) {
     return context.expectedType?.kind === "object"
       ? ({
           kind: "object",
-          properties: value.entries().reduce((acc, [key, statement]) => {
-            acc[key] = getStatementResult(statement, context).type;
-            return acc;
-          }, {} as { [key: string]: DataType }),
+          properties: value.entries.map(({ key, value }) => ({
+            key,
+            value: getStatementResult(value, context).type,
+          })),
           required: context.expectedType?.required ?? [],
         } as T)
       : ({
           kind: "dictionary",
-          elementType: getArrayElementType(Array.from(value.values()), context),
+          elementType: getArrayElementType(
+            value.entries.map(({ value }) => value),
+            context
+          ),
         } as T);
   }
   if (
@@ -999,17 +1000,18 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
 
     case "object": {
       const maxEntries = 3;
-      const entries = Object.entries(type.properties).slice(0, maxEntries);
+      const entries = type.properties.slice(0, maxEntries);
       const props = entries
         .map(
-          ([k, v]) =>
-            `${k}${type.required?.includes(k) ? "" : "?"}: ${getTypeSignature(
-              v,
-              maxDepth - 1
-            )}`
+          ({ key, value }) =>
+            `${key}${
+              type.required?.includes(key) ? "" : "?"
+            }: ${getTypeSignature(value, maxDepth - 1)}`
         )
         .join(", ");
-      return `{ ${props} ${entries.length > maxEntries ? ", ..." : ""} }`;
+      return `{ ${props}${
+        type.properties.length > maxEntries ? ", ..." : ""
+      } }`;
     }
     case "dictionary":
       return `dictionary<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
@@ -1187,14 +1189,13 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       getRawValueFromData(getStatementResult(element, context), context)
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    const result: Record<string, unknown> = {};
-    data.value.forEach((value, key) => {
-      result[key] = getRawValueFromData(
+    return data.value.entries.reduce((acc, { key, value }) => {
+      acc[key] = getRawValueFromData(
         getStatementResult(value, context),
         context
       );
-    });
-    return result;
+      return acc;
+    }, {} as Record<string, unknown>);
   } else if (isDataOfType(data, "union")) {
     return getRawValueFromData(
       createData({

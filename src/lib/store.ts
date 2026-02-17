@@ -33,40 +33,21 @@ const IDbStore = openDB("logicflow", 2, {
 });
 
 const createIDbStorage = <T>(storeName: string) =>
-  createJSONStorage<T>(
-    () => ({
-      getItem: async (key) =>
-        (await IDbStore)
-          .get(storeName, key)
-          .then((data) => data || null)
-          .catch((e) => (console.error(`IndexedDB getItem error:`, e), null)),
-      setItem: async (key, value) =>
-        (await IDbStore).put(storeName, value, key).catch((e) => {
-          console.error(`IndexedDB setItem error:`, e);
-        }),
-      removeItem: async (key) =>
-        (await IDbStore).delete(storeName, key).catch((e) => {
-          console.error(`IndexedDB removeItem error:`, e);
-        }),
-    }),
-    { reviver: jsonParseReviver, replacer: jsonStringifyReplacer }
-  );
-
-export function jsonParseReviver(_: string, value: unknown) {
-  if (
-    value &&
-    typeof value === "object" &&
-    "_map_" in value &&
-    Array.isArray(value._map_)
-  ) {
-    return new Map(value._map_);
-  }
-  return value;
-}
-
-export function jsonStringifyReplacer(_: string, value: IData["value"]) {
-  return value instanceof Map ? { _map_: Array.from(value.entries()) } : value;
-}
+  createJSONStorage<T>(() => ({
+    getItem: async (key) =>
+      (await IDbStore)
+        .get(storeName, key)
+        .then((data) => data || null)
+        .catch((e) => (console.error(`IndexedDB getItem error:`, e), null)),
+    setItem: async (key, value) =>
+      (await IDbStore).put(storeName, value, key).catch((e) => {
+        console.error(`IndexedDB setItem error:`, e);
+      }),
+    removeItem: async (key) =>
+      (await IDbStore).delete(storeName, key).catch((e) => {
+        console.error(`IndexedDB removeItem error:`, e);
+      }),
+  }));
 
 /* Files store */
 
@@ -463,6 +444,7 @@ interface AgentStore {
 export const useAgentStore = createWithEqualityFn<AgentStore>()(
   persist(
     (set, get) => ({
+      loading: false,
       apiKeys: {},
       messages: [],
       isLoading: false,
@@ -478,7 +460,7 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
             { ...message, id: nanoid(), timestamp: Date.now() },
           ],
         })),
-      clearMessages: () => set({ messages: [] }),
+      clearMessages: () => set({ messages: [], isLoading: false }),
       setIsLoading: (loading) => set({ isLoading: loading }),
     }),
     { name: "agent", storage: createIDbStorage("agent") }

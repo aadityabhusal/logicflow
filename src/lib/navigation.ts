@@ -244,7 +244,7 @@ function getStatementEntities(
     isDataOfType(statement.data, "object") ||
     isDataOfType(statement.data, "dictionary")
   ) {
-    Array.from(statement.data.value).forEach(([key, property]) => {
+    statement.data.value.entries.forEach(({ key, value: property }) => {
       const keyId = `${statement.data.id}_${key}`;
       entities.push({ id: keyId, depth: depth + 1, ...parent });
       if (isDataOfType(statement.data, "object")) {

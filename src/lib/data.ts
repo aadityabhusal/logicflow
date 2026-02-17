@@ -35,7 +35,10 @@ export const DataTypes: {
     type: { kind: "tuple", elements: [{ kind: "undefined" }] },
   },
   object: {
-    type: { kind: "object", properties: { key: { kind: "undefined" } } },
+    type: {
+      kind: "object",
+      properties: [{ key: "key", value: { kind: "undefined" } }],
+    },
   },
   dictionary: {
     type: { kind: "dictionary", elementType: { kind: "undefined" } },

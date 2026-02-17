@@ -9,8 +9,6 @@ import {
 import {
   fileHistoryActions,
   useProjectStore,
-  jsonParseReviver,
-  jsonStringifyReplacer,
   useNavigationStore,
 } from "@/lib/store";
 import { IconButton } from "./IconButton";
@@ -79,7 +77,7 @@ function HeaderComponent({
           onClick={() => {
             if (!currentOperation) return;
             const { name: _, ...value } = currentOperation.value;
-            clipboard.copy(JSON.stringify(value, jsonStringifyReplacer));
+            clipboard.copy(JSON.stringify(value));
           }}
           disabled={!currentOperation}
           className={!currentOperation ? "cursor-not-allowed" : ""}
@@ -92,9 +90,7 @@ function HeaderComponent({
             try {
               if (!currentOperation || !currentProject) return;
               const copied = await navigator.clipboard.readText();
-              const parsed = OperationValueSchema.safeParse(
-                JSON.parse(copied, jsonParseReviver)
-              );
+              const parsed = OperationValueSchema.safeParse(JSON.parse(copied));
               if (parsed.error) throw new Error(parsed.error.message);
               updateProject(currentProject.id, {
                 files: updateFiles(

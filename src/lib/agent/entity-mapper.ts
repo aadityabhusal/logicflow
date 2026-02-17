@@ -76,11 +76,12 @@ function serializeDataValue(data: IData, ctx: EntityMappingContext): unknown {
     return data.value.map((s) => statementToLLMFormat(s, ctx, "S"));
   }
   if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    const result: Record<string, IStatement> = {};
-    data.value.forEach((v, k) => {
-      result[k] = statementToLLMFormat(v, ctx, "S");
-    });
-    return result;
+    return {
+      entries: data.value.entries.map(({ key, value }) => ({
+        key,
+        value: statementToLLMFormat(value, ctx, "S"),
+      })),
+    };
   }
   if (isDataOfType(data, "operation")) {
     return operationToLLMFormat(data, ctx).mappedOperation.value;

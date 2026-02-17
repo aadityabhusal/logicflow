@@ -22,44 +22,39 @@ const ObjectInputComponent = (
   { data, handleData, context, ...props }: ObjectInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const isMultiline = data.value.size > 2;
+  const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
-  function handleUpdate(
-    dataArray: [string, IStatement][],
-    index: number,
-    result: IStatement,
-    remove?: boolean
-  ) {
-    if (remove) dataArray.splice(index, 1);
-    else dataArray[index] = [dataArray[index][0], result];
-    const newValue = new Map(dataArray);
+  function handleUpdate(index: number, result: IStatement, remove?: boolean) {
+    const newEntries = [...data.value.entries];
+    if (remove) newEntries.splice(index, 1);
+    else newEntries[index] = { ...newEntries[index], value: result };
+
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue, {
-        ...context,
-        expectedType: context.expectedType ?? data.type,
-      }),
-      value: newValue,
+      type: inferTypeFromValue(
+        { entries: newEntries },
+        { ...context, expectedType: context.expectedType ?? data.type }
+      ),
+      value: { entries: newEntries },
     });
   }
 
-  function handleKeyUpdate(
-    dataArray: [string, IStatement][],
-    index: number,
-    value: string
-  ) {
-    if (typeof value === "string" && !data.value.has(value)) {
-      dataArray[index] = [value, dataArray[index][1]];
-      const newValue = new Map(dataArray);
+  function handleKeyUpdate(index: number, newKey: string) {
+    const existingKey = data.value.entries.some(
+      (e, i) => i !== index && e.key === newKey
+    );
+    if (typeof newKey === "string" && !existingKey) {
+      const newEntries = [...data.value.entries];
+      newEntries[index] = { ...newEntries[index], key: newKey };
       handleData({
         ...data,
-        type: inferTypeFromValue(newValue, {
-          ...context,
-          expectedType: context.expectedType ?? data.type,
-        }),
-        value: newValue,
+        type: inferTypeFromValue(
+          { entries: newEntries },
+          { ...context, expectedType: context.expectedType ?? data.type }
+        ),
+        value: { entries: newEntries },
       });
     }
   }
@@ -69,30 +64,31 @@ const ObjectInputComponent = (
       context.expectedType?.kind === "object"
         ? context.expectedType.properties
         : data.type.properties;
-    return Object.entries(originalProperties).filter(
-      ([key]) => !data.value.has(key)
-    );
+    const existingKeys = data.value.entries.map((e) => e.key);
+    return originalProperties.filter(({ key }) => !existingKeys.includes(key));
   }, [context.expectedType, data.type.properties, data.value]);
 
   const optionalKeyOptions = useMemo(() => {
     const oldKey = navigationId?.slice(data.id.length + 1);
-    return remainingOptionalProperties.map(([key, type]) => ({
+    return remainingOptionalProperties.map(({ key, value }) => ({
       value: key,
       entityType: "data" as const,
-      type,
+      type: value,
       onClick: () => {
-        const newValue = new Map(data.value);
-        const oldKeyValue = newValue.get(oldKey || "");
-        if (!oldKeyValue || !oldKey) return;
-        newValue.set(key, oldKeyValue);
-        newValue.delete(oldKey);
+        const entryIndex = data.value.entries.findIndex(
+          (e) => e.key === oldKey
+        );
+        if (entryIndex === -1 || !oldKey) return;
+        const newEntries = data.value.entries.map((e, i) =>
+          i === entryIndex ? { ...e, key } : e
+        );
         handleData({
           ...data,
-          type: inferTypeFromValue(newValue, {
-            ...context,
-            expectedType: context.expectedType ?? data.type,
-          }),
-          value: newValue,
+          type: inferTypeFromValue(
+            { entries: newEntries },
+            { ...context, expectedType: context.expectedType ?? data.type }
+          ),
+          value: { entries: newEntries },
         });
       },
     }));
@@ -109,22 +105,23 @@ const ObjectInputComponent = (
       ].join(" ")}
     >
       <span>{"{"}</span>
-      {Array.from(data.value).map(([key, value], i, arr) => {
-        const isOptional = !data.type.required?.includes(key);
+      {data.value.entries.map((entry, i) => {
+        const isOptional = !data.type.required?.includes(entry.key);
         const expectedType =
           context.expectedType?.kind === "object"
-            ? context.expectedType.properties[key]
+            ? context.expectedType.properties.find((p) => p.key === entry.key)
+                ?.value
             : undefined;
-        const isKeyInputFocused = navigationId === `${data.id}_${key}`;
+        const isKeyInputFocused = navigationId === `${data.id}_${entry.key}`;
         return (
           <div
-            key={value.id}
+            key={entry.value.id}
             className={["relative flex", isMultiline ? "ml-2" : ""].join(" ")}
           >
             {context.expectedType ? (
               <Dropdown
-                id={`${data.id}_${key}`}
-                value={key}
+                id={`${data.id}_${entry.key}`}
+                value={entry.key}
                 items={
                   isOptional ? [["Properties", optionalKeyOptions]] : undefined
                 }
@@ -141,20 +138,22 @@ const ObjectInputComponent = (
                   "text-property",
                   isKeyInputFocused ? "outline outline-border" : "",
                 ].join(" ")}
-                value={key}
-                onChange={(value) => handleKeyUpdate(arr, i, value)}
+                value={entry.key}
+                onChange={(value) => handleKeyUpdate(i, value)}
               />
             )}
             <IconButton
               ref={(elem) => {
-                if (navigationId === `${data.id}_${key}_colon`) elem?.focus();
+                if (navigationId === `${data.id}_${entry.key}_colon`) {
+                  elem?.focus();
+                }
               }}
               icon={
                 isOptional ? FaQuestion : () => <span className="px-1">:</span>
               }
               className={[
                 "hover:outline hover:outline-border",
-                navigationId === `${data.id}_${key}_colon`
+                navigationId === `${data.id}_${entry.key}_colon`
                   ? "outline outline-border"
                   : "",
                 expectedType ? "text-disabled" : "",
@@ -171,19 +170,17 @@ const ObjectInputComponent = (
               onClick={() => {
                 if (expectedType) return;
                 const required = isOptional
-                  ? [...(data.type.required ?? []), key]
-                  : (data.type.required ?? []).filter((k) => k !== key);
+                  ? [...(data.type.required ?? []), entry.key]
+                  : (data.type.required ?? []).filter((k) => k !== entry.key);
                 handleData({ ...data, type: { ...data.type, required } });
                 setNavigation(() => ({
-                  navigation: { id: `${data.id}_${key}_colon` },
+                  navigation: { id: `${data.id}_${entry.key}_colon` },
                 }));
               }}
             />
             <Statement
-              statement={value}
-              handleStatement={(val, remove) =>
-                handleUpdate(arr, i, val, remove)
-              }
+              statement={entry.value}
+              handleStatement={(val, remove) => handleUpdate(i, val, remove)}
               context={{
                 ...context,
                 ...getContextExpectedTypes({ context, expectedType }),
@@ -192,7 +189,7 @@ const ObjectInputComponent = (
                 disableDelete: !!context.expectedType && !isOptional,
               }}
             />
-            {i < arr.length - 1 ? <span>{","}</span> : null}
+            {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
@@ -200,33 +197,35 @@ const ObjectInputComponent = (
         <AddStatement
           id={data.id}
           onSelect={(value) => {
-            if (!data.value.has("")) {
-              const newMap = new Map(data.value);
-              newMap.set(
-                remainingOptionalProperties[0]
-                  ? remainingOptionalProperties[0][0]
+            if (data.value.entries.some((e) => e.key === "")) return;
+            const existingKeys = data.value.entries.map((e) => e.key);
+            const newEntries = [
+              ...data.value.entries,
+              {
+                key: remainingOptionalProperties[0]
+                  ? remainingOptionalProperties[0].key
                   : createVariableName({
                       prefix: "key",
-                      prev: Array.from(data.value.keys()),
+                      prev: existingKeys,
                     }),
-                { ...value, name: undefined }
-              );
-              handleData({
-                ...data,
-                type: inferTypeFromValue(newMap, {
-                  ...context,
-                  expectedType: context.expectedType ?? data.type,
-                }),
-                value: newMap,
-              });
-            }
+                value: { ...value, name: undefined },
+              },
+            ];
+            handleData({
+              ...data,
+              type: inferTypeFromValue(
+                { entries: newEntries },
+                { ...context, expectedType: context.expectedType ?? data.type }
+              ),
+              value: { entries: newEntries },
+            });
           }}
           iconProps={{ title: "Add object item" }}
           config={
             remainingOptionalProperties[0]
               ? {
-                  type: remainingOptionalProperties[0][1],
-                  name: remainingOptionalProperties[0][0],
+                  type: remainingOptionalProperties[0].value,
+                  name: remainingOptionalProperties[0].key,
                   isOptional: true,
                 }
               : undefined

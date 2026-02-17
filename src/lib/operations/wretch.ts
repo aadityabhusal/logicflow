@@ -267,7 +267,7 @@ const wretchInstanceOperations: OperationListItem[] = [
         p2?.value as string
       ),
     [
-      { type: { kind: "object", properties: {} }, name: "jsObject" }, // simplification
+      { type: { kind: "object", properties: [] }, name: "jsObject" },
       { type: { kind: "string" }, name: "contentType", isOptional: true },
     ]
   ),

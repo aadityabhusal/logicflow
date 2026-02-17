@@ -8,6 +8,7 @@ import {
   getDataDropdownList,
   getTypeSignature,
   isDataOfType,
+  isObject,
 } from "../lib/utils";
 import { memo, useMemo } from "react";
 import { BaseInput, BaseInputProps } from "./Input/BaseInput";
@@ -196,13 +197,17 @@ const DataComponent = ({
                 value: transform.value,
               });
               if (Array.isArray(transform.value)) {
-                setNavigation({
-                  navigation: { id: transform.value[0].data.id },
-                });
-              } else if (transform.value instanceof Map) {
-                setNavigation({
-                  navigation: { id: transform.value.get("key")?.data.id },
-                });
+                const firstItem = transform.value[0];
+                if (firstItem?.data?.id) {
+                  setNavigation({ navigation: { id: firstItem.data.id } });
+                }
+              } else if (isObject(transform.value, ["entries"])) {
+                const firstEntry = transform.value.entries[0];
+                if (firstEntry) {
+                  setNavigation({
+                    navigation: { id: firstEntry.value.data.id },
+                  });
+                }
               }
             }}
           />

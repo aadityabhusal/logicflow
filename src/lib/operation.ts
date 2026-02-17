@@ -177,9 +177,7 @@ export async function executeDataValue(
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     await Promise.allSettled(
-      Array.from(data.value.values()).map((item) =>
-        executeStatement(item, context)
-      )
+      data.value.entries.map((entry) => executeStatement(entry.value, context))
     );
   } else if (isDataOfType(data, "operation")) {
     await setOperationResults(data, context);

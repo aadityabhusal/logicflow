@@ -19,43 +19,38 @@ const DictionaryInputComponent = (
   { data, handleData, context, ...props }: DictionaryInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const isMultiline = data.value.size > 2;
+  const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
 
-  function handleUpdate(
-    dataArray: [string, IStatement][],
-    index: number,
-    result: IStatement,
-    remove?: boolean
-  ) {
-    if (remove) dataArray.splice(index, 1);
-    else dataArray[index] = [dataArray[index][0], result];
-    const newValue = new Map(dataArray);
+  function handleUpdate(index: number, result: IStatement, remove?: boolean) {
+    const newEntries = [...data.value.entries];
+    if (remove) newEntries.splice(index, 1);
+    else newEntries[index] = { ...newEntries[index], value: result };
+
     handleData({
       ...data,
-      type: inferTypeFromValue(newValue, {
-        ...context,
-        expectedType: context.expectedType ?? data.type,
-      }),
-      value: newValue,
+      type: inferTypeFromValue(
+        { entries: newEntries },
+        { ...context, expectedType: context.expectedType ?? data.type }
+      ),
+      value: { entries: newEntries },
     });
   }
 
-  function handleKeyUpdate(
-    dataArray: [string, IStatement][],
-    index: number,
-    value: string
-  ) {
-    if (typeof value === "string" && !data.value.has(value)) {
-      dataArray[index] = [value, dataArray[index][1]];
-      const newValue = new Map(dataArray);
+  function handleKeyUpdate(index: number, newKey: string) {
+    const existingKey = data.value.entries.some(
+      (e, i) => i !== index && e.key === newKey
+    );
+    if (typeof newKey === "string" && !existingKey) {
+      const newEntries = [...data.value.entries];
+      newEntries[index] = { ...newEntries[index], key: newKey };
       handleData({
         ...data,
-        type: inferTypeFromValue(newValue, {
-          ...context,
-          expectedType: context.expectedType ?? data.type,
-        }),
-        value: newValue,
+        type: inferTypeFromValue(
+          { entries: newEntries },
+          { ...context, expectedType: context.expectedType ?? data.type }
+        ),
+        value: { entries: newEntries },
       });
     }
   }
@@ -71,11 +66,11 @@ const DictionaryInputComponent = (
       ].join(" ")}
     >
       <span>{"{"}</span>
-      {Array.from(data.value).map(([key, value], i, arr) => {
-        const isKeyInputFocused = navigationId === `${data.id}_${key}`;
+      {data.value.entries.map((entry, i) => {
+        const isKeyInputFocused = navigationId === `${data.id}_${entry.key}`;
         return (
           <div
-            key={value.id}
+            key={entry.value.id}
             className={["flex", isMultiline ? "ml-2" : ""].join(" ")}
           >
             <BaseInput
@@ -84,15 +79,13 @@ const DictionaryInputComponent = (
                 "text-property",
                 isKeyInputFocused ? "outline outline-border" : "",
               ].join(" ")}
-              value={key}
-              onChange={(value) => handleKeyUpdate(arr, i, value)}
+              value={entry.key}
+              onChange={(value) => handleKeyUpdate(i, value)}
             />
             <span style={{ marginRight: 4 }}>:</span>
             <Statement
-              statement={value}
-              handleStatement={(val, remove) =>
-                handleUpdate(arr, i, val, remove)
-              }
+              statement={entry.value}
+              handleStatement={(val, remove) => handleUpdate(i, val, remove)}
               context={{
                 ...context,
                 ...getContextExpectedTypes({
@@ -104,31 +97,30 @@ const DictionaryInputComponent = (
                 }),
               }}
             />
-            {i < arr.length - 1 ? <span>{","}</span> : null}
+            {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>
         );
       })}
       <AddStatement
         id={data.id}
         onSelect={(value) => {
-          if (!data.value.has("")) {
-            const newMap = new Map(data.value);
-            newMap.set(
-              createVariableName({
-                prefix: "key",
-                prev: Array.from(data.value.keys()),
-              }),
-              value
-            );
-            handleData({
-              ...data,
-              type: inferTypeFromValue(newMap, {
-                ...context,
-                expectedType: context.expectedType ?? data.type,
-              }),
-              value: newMap,
-            });
-          }
+          if (data.value.entries.some((e) => e.key === "")) return;
+          const existingKeys = data.value.entries.map((e) => e.key);
+          const newEntries = [
+            ...data.value.entries,
+            {
+              key: createVariableName({ prefix: "key", prev: existingKeys }),
+              value,
+            },
+          ];
+          handleData({
+            ...data,
+            type: inferTypeFromValue(
+              { entries: newEntries },
+              { ...context, expectedType: context.expectedType ?? data.type }
+            ),
+            value: { entries: newEntries },
+          });
         }}
         iconProps={{ title: "Add dictionary item" }}
         config={{
