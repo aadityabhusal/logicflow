@@ -15,7 +15,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { useHotkeys } from "@mantine/hooks";
+import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { Context, IData, OperationType } from "@/lib/types";
@@ -80,6 +80,11 @@ export default function Project() {
     } as Context;
   }, [currentProject?.files, currentOperation?.id]);
 
+  useHotkeys(useCustomHotkeys(), []);
+  const operationRef = useClickOutside(() => {
+    setNavigation({ navigation: undefined });
+  });
+
   const handleOperationChange = useCallback(
     (operation: IData<OperationType>, remove?: boolean) => {
       if (!currentProject) return;
@@ -119,8 +124,6 @@ export default function Project() {
     setResult,
   ]);
 
-  useHotkeys(useCustomHotkeys(), []);
-
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       if (currentOperation?.id && e.target === e.currentTarget) {
@@ -157,6 +160,7 @@ export default function Project() {
           >
             {currentProject && currentOperation ? (
               <Operation
+                ref={operationRef}
                 operation={currentOperation}
                 handleChange={handleOperationChange}
                 context={context}

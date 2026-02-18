@@ -400,7 +400,7 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
           kind: "operation",
           parameters: [
             {
-              name: "err",
+              name: "reason",
               type: { kind: "error", errorType: "custom_error" },
             },
           ],

@@ -21,6 +21,7 @@ const DictionaryInputComponent = (
 ) => {
   const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   function handleUpdate(index: number, result: IStatement, remove?: boolean) {
     const newEntries = [...data.value.entries];
@@ -81,6 +82,9 @@ const DictionaryInputComponent = (
               ].join(" ")}
               value={entry.key}
               onChange={(value) => handleKeyUpdate(i, value)}
+              onFocus={() =>
+                setNavigation({ navigation: { id: `${data.id}_${entry.key}` } })
+              }
             />
             <span style={{ marginRight: 4 }}>:</span>
             <Statement

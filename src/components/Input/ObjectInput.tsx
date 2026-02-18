@@ -42,18 +42,25 @@ const ObjectInputComponent = (
   }
 
   function handleKeyUpdate(index: number, newKey: string) {
+    const oldKey = data.value.entries[index].key;
     const existingKey = data.value.entries.some(
       (e, i) => i !== index && e.key === newKey
     );
     if (typeof newKey === "string" && !existingKey) {
       const newEntries = [...data.value.entries];
       newEntries[index] = { ...newEntries[index], key: newKey };
+      const newRequired = data.type.required?.includes(oldKey)
+        ? data.type.required?.map((k) => (k === oldKey ? newKey : k))
+        : data.type.required;
       handleData({
         ...data,
-        type: inferTypeFromValue(
-          { entries: newEntries },
-          { ...context, expectedType: context.expectedType ?? data.type }
-        ),
+        type: {
+          ...inferTypeFromValue(
+            { entries: newEntries },
+            { ...context, expectedType: context.expectedType ?? data.type }
+          ),
+          required: newRequired,
+        },
         value: { entries: newEntries },
       });
     }
@@ -140,6 +147,11 @@ const ObjectInputComponent = (
                 ].join(" ")}
                 value={entry.key}
                 onChange={(value) => handleKeyUpdate(i, value)}
+                onFocus={() => {
+                  setNavigation({
+                    navigation: { id: `${data.id}_${entry.key}` },
+                  });
+                }}
               />
             )}
             <IconButton

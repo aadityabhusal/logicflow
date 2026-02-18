@@ -581,6 +581,12 @@ export function isDataOfType<K extends DataType["kind"]>(
   return data?.type.kind === kind;
 }
 
+export function isFatalError(
+  data: IData | undefined
+): data is IData<Extract<DataType, { kind: "error" }>> {
+  return isDataOfType(data, "error") && data.type.errorType !== "custom_error";
+}
+
 export function isObject<const K extends readonly string[]>(
   data: unknown,
   keys?: K
@@ -1072,7 +1078,7 @@ export function getStatementResult(
   // TODO: Make use of the data type to create a better type for result e.g. a union type
 ): IData {
   let result = statement.data;
-  if (isDataOfType(result, "error")) return result;
+  if (isFatalError(result)) return result;
   const lastOperation = statement.operations[statement.operations.length - 1];
   if (options?.index) {
     result =
@@ -1114,8 +1120,7 @@ export function getSkipExecution({
 }): Context["skipExecution"] {
   if (context.skipExecution) return context.skipExecution;
   const data = resolveReference(_data, context);
-  if (isDataOfType(data, "error"))
-    return { reason: data.value.reason, kind: "error" };
+  if (isFatalError(data)) return { reason: data.value.reason, kind: "error" };
   if (!operationName) return undefined;
 
   if (paramIndex !== undefined && isDataOfType(data, "boolean")) {

@@ -22,6 +22,7 @@ import {
   getStatementResult,
   getUnionActiveType,
   isDataOfType,
+  isFatalError,
   isTypeCompatible,
   resolveUnionType,
   updateContextWithNarrowedTypes,
@@ -201,7 +202,7 @@ const booleanOperations: OperationListItem[] = [
         ...context,
         ...updateContextWithNarrowedTypes(context, data),
       });
-      if (isDataOfType(result, "error")) return result;
+      if (isFatalError(result)) return result;
       return createData({
         type: { kind: "boolean" },
         value: Boolean(result.value),
@@ -223,7 +224,7 @@ const booleanOperations: OperationListItem[] = [
         ...context,
         ...updateContextWithNarrowedTypes(context, data),
       });
-      if (isDataOfType(result, "error")) return result;
+      if (isFatalError(result)) return result;
       return createData({
         type: { kind: "boolean" },
         value: Boolean(result.value),
@@ -967,6 +968,7 @@ const promiseOperations: OperationListItem[] = [
             [createStatement({ data: resolvedData })],
             context
           );
+          if (isFatalError(result)) throw result.value?.reason ?? result;
           return getRawValueFromData(result, context);
         });
         const newInstanceId = nanoid();
@@ -996,9 +998,7 @@ const promiseOperations: OperationListItem[] = [
       {
         type: {
           kind: "operation",
-          parameters: [
-            { name: "err", type: { kind: "error", errorType: "custom_error" } },
-          ],
+          parameters: [{ name: "reason", type: { kind: "unknown" } }],
           result: { kind: "undefined" },
         },
       },
@@ -1029,7 +1029,13 @@ const promiseOperations: OperationListItem[] = [
             [createStatement({ data: errorData })],
             context
           );
-          return callbackResult.value;
+          if (
+            isDataOfType(callbackResult, "error") &&
+            isFatalError(callbackResult)
+          ) {
+            throw callbackResult.value?.reason ?? callbackResult;
+          }
+          return getRawValueFromData(callbackResult, context);
         });
         const newInstanceId = nanoid();
         context.setInstance(newInstanceId, newPromise);
@@ -1038,7 +1044,7 @@ const promiseOperations: OperationListItem[] = [
             kind: "instance",
             className: "Promise",
             constructorArgs: getPromiseArgsType([
-              { type: { kind: "unknown" }, name: "value" },
+              { type: errorCallbackOp.type.result, name: "value" },
             ]),
           },
         });
