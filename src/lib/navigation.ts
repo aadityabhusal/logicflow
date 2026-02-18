@@ -244,7 +244,7 @@ function getStatementEntities(
     isDataOfType(statement.data, "object") ||
     isDataOfType(statement.data, "dictionary")
   ) {
-    Array.from(statement.data.value).forEach(([key, property]) => {
+    statement.data.value.entries.forEach(({ key, value: property }) => {
       const keyId = `${statement.data.id}_${key}`;
       entities.push({ id: keyId, depth: depth + 1, ...parent });
       if (isDataOfType(statement.data, "object")) {
@@ -270,6 +270,16 @@ function getStatementEntities(
     statement.data.value.constructorArgs.forEach((arg) => {
       entities.push(...getStatementEntities(arg, depth + 1, parent, context));
     });
+    if (
+      statement.data.value.constructorArgs.length <
+      statement.data.type.constructorArgs.length
+    ) {
+      entities.push({
+        id: `${statement.data.id}_call_parameter_add`,
+        depth: depth + 1,
+        ...parent,
+      });
+    }
   } else if (isDataOfType(statement.data, "union")) {
     const valueType = getUnionActiveType(
       statement.data.type,

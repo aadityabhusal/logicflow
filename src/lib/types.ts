@@ -6,7 +6,8 @@ export type ArrayType = { kind: "array"; elementType: DataType };
 export type TupleType = { kind: "tuple"; elements: DataType[] };
 export type ObjectType = {
   kind: "object";
-  properties: { [key: string]: DataType };
+  // properties is array to support LLM generation
+  properties: Array<{ key: string; value: DataType }>;
   required?: string[];
 };
 export type DictionaryType = { kind: "dictionary"; elementType: DataType };
@@ -77,9 +78,9 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
   : T extends TupleType
   ? IStatement[]
   : T extends ObjectType
-  ? Map<keyof T["properties"] & string, IStatement>
+  ? { entries: Array<{ key: string; value: IStatement }> }
   : T extends DictionaryType
-  ? Map<string, IStatement>
+  ? { entries: Array<{ key: string; value: IStatement }> }
   : T extends OperationType
   ? {
       parameters: IStatement[];
@@ -228,7 +229,7 @@ export type ProjectFile = {
   | { type: "json"; content: Record<string, unknown> }
 );
 
-export interface TestCase {
+interface TestCase {
   name: string;
   description?: string;
   inputs: IData[];
@@ -236,7 +237,7 @@ export interface TestCase {
   status?: "pending" | "passed" | "failed";
 }
 
-export interface DependencyBase {
+interface DependencyBase {
   namespace?: string;
   version: string;
   types?: string;
@@ -245,12 +246,12 @@ export interface DependencyBase {
     importedBy: { operationName: string }[];
   }[];
 }
-export interface Dependencies {
+interface Dependencies {
   npm?: (DependencyBase & { name: string })[];
   logicflow?: (DependencyBase & { projectId: string })[];
 }
 
-export type DeploymentConfig = {
+type DeploymentConfig = {
   trigger: (HttpTrigger | CronTrigger)[]; // TODO: trigger should be the entrypoint file with 'request' as a parameter
   runtime: {
     type: "node" | "deno" | "edge";
@@ -281,7 +282,7 @@ export type DeploymentConfig = {
 );
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-export interface HttpTrigger {
+interface HttpTrigger {
   type: "http";
   path: string;
   methods?: HttpMethod | HttpMethod[]; // If undefined, accepts all methods
@@ -293,7 +294,7 @@ export interface HttpTrigger {
   };
 }
 
-export interface CronTrigger {
+interface CronTrigger {
   type: "cron";
   schedule: string; // Cron expression
   timezone?: string;

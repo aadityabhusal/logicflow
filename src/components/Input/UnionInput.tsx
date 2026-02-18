@@ -17,7 +17,7 @@ import { IconButton } from "@/ui/IconButton";
 import { Data } from "../Data";
 import { useNavigationStore } from "@/lib/store";
 
-export interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
+interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<UnionType>;
   handleData: (data: IData<UnionType>) => void;
   context: Context;
@@ -136,7 +136,6 @@ const UnionInputComponent = (
         width={200}
         position="bottom-start"
         withinPortal={false}
-        classNames={{ dropdown: "absolute bg-editor border" }}
         opened={menuOpened}
         onChange={(opened) => {
           setNavigation(() => ({
@@ -162,38 +161,34 @@ const UnionInputComponent = (
             title="Show union types"
           />
         </Menu.Target>
-        <Menu.Dropdown
-          classNames={{ dropdown: "flex flex-col" }}
-          onMouseOver={(e) => e.stopPropagation()}
-        >
-          {data.type.types.map((type, i) => (
-            <Menu.Item
-              key={i}
-              onClick={() => handleTypeSwitch(i)}
-              classNames={{
-                item: [
-                  "menu-item",
-                  i === activeType.index ? "bg-dropdown-selected" : "",
-                ].join(" "),
-              }}
-            >
-              <Tooltip label={getTypeSignature(type)} position="right">
-                <div className={"flex items-center gap-1 justify-between"}>
+        <Menu.Dropdown onMouseOver={(e) => e.stopPropagation()}>
+          {data.type.types.map((type, i) => {
+            const typeSign = getTypeSignature(type);
+            return (
+              <Tooltip key={typeSign} label={typeSign} position="right">
+                <Menu.Item
+                  onClick={() => handleTypeSwitch(i)}
+                  classNames={{
+                    item: i === activeType.index ? "bg-dropdown-selected" : "",
+                  }}
+                  rightSection={
+                    data.type.types.length > 1 && !context.expectedType ? (
+                      <FaX
+                        size={16}
+                        className="p-1 hover:outline hover:outline-border"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTypeRemove(i);
+                        }}
+                      />
+                    ) : null
+                  }
+                >
                   {type.kind}
-                  {data.type.types.length > 1 && !context.expectedType ? (
-                    <FaX
-                      size={16}
-                      className="p-1 hover:outline hover:outline-border"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTypeRemove(i);
-                      }}
-                    />
-                  ) : null}
-                </div>
+                </Menu.Item>
               </Tooltip>
-            </Menu.Item>
-          ))}
+            );
+          })}
           {!context.expectedType ? (
             <Menu.Sub>
               <Menu.Sub.Target>
@@ -218,15 +213,15 @@ const UnionInputComponent = (
                       )
                   )
                   .map(([name, { type }]) => (
-                    <Menu.Item
-                      classNames={{ item: "text-left menu-item" }}
+                    <Tooltip
                       key={name}
-                      onClick={() => handleTypeAdd(type)}
+                      label={getTypeSignature(type)}
+                      position="right"
                     >
-                      <Tooltip label={getTypeSignature(type)} position="right">
-                        <span className="text-left">{name}</span>
-                      </Tooltip>
-                    </Menu.Item>
+                      <Menu.Item onClick={() => handleTypeAdd(type)}>
+                        {name}
+                      </Menu.Item>
+                    </Tooltip>
                   ))}
               </Menu.Sub.Dropdown>
             </Menu.Sub>

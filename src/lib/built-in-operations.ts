@@ -22,6 +22,7 @@ import {
   getStatementResult,
   getUnionActiveType,
   isDataOfType,
+  isFatalError,
   isTypeCompatible,
   resolveUnionType,
   updateContextWithNarrowedTypes,
@@ -201,7 +202,7 @@ const booleanOperations: OperationListItem[] = [
         ...context,
         ...updateContextWithNarrowedTypes(context, data),
       });
-      if (isDataOfType(result, "error")) return result;
+      if (isFatalError(result)) return result;
       return createData({
         type: { kind: "boolean" },
         value: Boolean(result.value),
@@ -223,7 +224,7 @@ const booleanOperations: OperationListItem[] = [
         ...context,
         ...updateContextWithNarrowedTypes(context, data),
       });
-      if (isDataOfType(result, "error")) return result;
+      if (isFatalError(result)) return result;
       return createData({
         type: { kind: "boolean" },
         value: Boolean(result.value),
@@ -647,9 +648,9 @@ const getObjectOperations = (
       data: IData<ObjectType | DictionaryType>,
       p1: IData<StringType>
     ) => {
-      const item = data.value.get(p1.value);
-      if (!item) return createData();
-      const value = getStatementResult(item, context) as IData;
+      const entry = data.value.entries.find((e) => e.key === p1.value);
+      if (!entry) return createData();
+      const value = getStatementResult(entry.value, context) as IData;
       return createData({ type: value.type, value: value.value });
     },
   },
@@ -663,7 +664,7 @@ const getObjectOperations = (
     ) => {
       return createData({
         type: { kind: "boolean" },
-        value: data.value.has(p1.value),
+        value: data.value.entries.some((e) => e.key === p1.value),
       });
     },
   },
@@ -673,9 +674,9 @@ const getObjectOperations = (
     handler: (_, data: IData<ObjectType | DictionaryType>) => {
       return createData({
         type: { kind: "array", elementType: { kind: "string" } },
-        value: [...data.value.keys()].map((item) =>
+        value: data.value.entries.map((entry) =>
           createStatement({
-            data: createData({ type: { kind: "string" }, value: item }),
+            data: createData({ type: { kind: "string" }, value: entry.key }),
           })
         ),
       });
@@ -690,12 +691,12 @@ const getObjectOperations = (
           kind: "array",
           elementType: resolveUnionType(
             isDataOfType(data, "object")
-              ? Object.values(data.type.properties)
+              ? data.type.properties.map((p) => p.value)
               : [(data.type as DictionaryType).elementType]
           ),
         },
-        value: [...data.value.values()].map((item) => {
-          const itemResult = getStatementResult(item, context) as IData;
+        value: data.value.entries.map((entry) => {
+          const itemResult = getStatementResult(entry.value, context) as IData;
           return createStatement({
             data: createData({
               type: itemResult.type,
@@ -710,7 +711,7 @@ const getObjectOperations = (
     name: "entries",
     parameters: [dataType],
     handler: (context, data: IData<ObjectType | DictionaryType>) => {
-      const newValues = [...data.value.entries()].map(([key, value]) => {
+      const newValues = data.value.entries.map(({ key, value }) => {
         const valueResult = getStatementResult(value, context);
         return createStatement({
           data: createData({
@@ -757,7 +758,13 @@ const dictionaryOperations: OperationListItem[] = [
       { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
     ],
     handler: (_, data: IData<DictionaryType>, p1: IData<DictionaryType>) => {
-      const newValue = new Map([...data.value, ...p1.value]);
+      const mergedMap = new Map<string, IStatement>();
+      data.value.entries
+        .concat(p1.value.entries)
+        .forEach(({ key, value }) => mergedMap.set(key, value));
+      const newEntries = Array.from(mergedMap.entries()).map(
+        ([key, value]) => ({ key, value })
+      );
       return createData({
         type: {
           kind: "dictionary",
@@ -766,7 +773,7 @@ const dictionaryOperations: OperationListItem[] = [
             p1.type.elementType,
           ]),
         },
-        value: newValue,
+        value: { entries: newEntries },
       });
     },
   },
@@ -961,6 +968,7 @@ const promiseOperations: OperationListItem[] = [
             [createStatement({ data: resolvedData })],
             context
           );
+          if (isFatalError(result)) throw result.value?.reason ?? result;
           return getRawValueFromData(result, context);
         });
         const newInstanceId = nanoid();
@@ -990,9 +998,7 @@ const promiseOperations: OperationListItem[] = [
       {
         type: {
           kind: "operation",
-          parameters: [
-            { name: "err", type: { kind: "error", errorType: "custom_error" } },
-          ],
+          parameters: [{ name: "reason", type: { kind: "unknown" } }],
           result: { kind: "undefined" },
         },
       },
@@ -1023,7 +1029,13 @@ const promiseOperations: OperationListItem[] = [
             [createStatement({ data: errorData })],
             context
           );
-          return callbackResult.value;
+          if (
+            isDataOfType(callbackResult, "error") &&
+            isFatalError(callbackResult)
+          ) {
+            throw callbackResult.value?.reason ?? callbackResult;
+          }
+          return getRawValueFromData(callbackResult, context);
         });
         const newInstanceId = nanoid();
         context.setInstance(newInstanceId, newPromise);
@@ -1032,7 +1044,7 @@ const promiseOperations: OperationListItem[] = [
             kind: "instance",
             className: "Promise",
             constructorArgs: getPromiseArgsType([
-              { type: { kind: "unknown" }, name: "value" },
+              { type: errorCallbackOp.type.result, name: "value" },
             ]),
           },
         });
@@ -1181,7 +1193,7 @@ export const builtInOperations: OperationListItem[] = [
   ...booleanOperations,
   ...getTupleOperations({ type: { kind: "tuple", elements: [] } }),
   ...arrayOperations,
-  ...getObjectOperations({ type: { kind: "object", properties: {} } }),
+  ...getObjectOperations({ type: { kind: "object", properties: [] } }),
   ...dictionaryOperations,
   ...operationOperations,
   ...unionOperations,

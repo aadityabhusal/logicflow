@@ -9,15 +9,16 @@ import {
   NavigationEntity,
   DataType,
   ExecutionResult,
+  InstanceDataType,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
 import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
-import { isDataOfType } from "./utils";
+import { AgentChange } from "./schemas";
 
-const IDbStore = openDB("logicflow", 1, {
+const IDbStore = openDB("logicflow", 2, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("projects")) {
       db.createObjectStore("projects");
@@ -25,35 +26,36 @@ const IDbStore = openDB("logicflow", 1, {
     if (!db.objectStoreNames.contains("uiConfig")) {
       db.createObjectStore("uiConfig");
     }
+    if (!db.objectStoreNames.contains("agent")) {
+      db.createObjectStore("agent");
+    }
   },
 });
 
 const createIDbStorage = <T>(storeName: string) =>
-  createJSONStorage<T>(
-    () => ({
-      getItem: async (key) =>
-        (await IDbStore)
-          .get(storeName, key)
-          .then((data) => data || null)
-          .catch((e) => (console.error(`IndexedDB getItem error:`, e), null)),
-      setItem: async (key, value) =>
-        (await IDbStore).put(storeName, value, key).catch((e) => {
-          console.error(`IndexedDB setItem error:`, e);
-        }),
-      removeItem: async (key) =>
-        (await IDbStore).delete(storeName, key).catch((e) => {
-          console.error(`IndexedDB removeItem error:`, e);
-        }),
-    }),
-    { reviver: jsonParseReviver, replacer: jsonStringifyReplacer }
-  );
+  createJSONStorage<T>(() => ({
+    getItem: async (key) =>
+      (await IDbStore)
+        .get(storeName, key)
+        .then((data) => data || null)
+        .catch((e) => (console.error(`IndexedDB getItem error:`, e), null)),
+    setItem: async (key, value) =>
+      (await IDbStore).put(storeName, value, key).catch((e) => {
+        console.error(`IndexedDB setItem error:`, e);
+      }),
+    removeItem: async (key) =>
+      (await IDbStore).delete(storeName, key).catch((e) => {
+        console.error(`IndexedDB removeItem error:`, e);
+      }),
+  }));
+
+/* Files store */
 
 interface FileHistoryItem {
   content: ProjectFile["content"];
   focusId?: string;
 }
-
-export const fileHistories = new Map<
+const fileHistories = new Map<
   string,
   { past: FileHistoryItem[]; future: FileHistoryItem[] }
 >();
@@ -86,7 +88,7 @@ export const fileHistoryActions = {
   },
 };
 
-export interface IProjectsStore {
+interface IProjectsStore {
   projects: Record<string, Project>;
   createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
@@ -95,7 +97,7 @@ export interface IProjectsStore {
   getCurrentProject: () => Project | undefined;
 }
 
-export interface ICurrentProjectStore {
+interface ICurrentProjectStore {
   currentProjectId?: string;
   currentFileId?: string;
   setCurrentProjectId: (projectId?: string) => void;
@@ -294,13 +296,16 @@ export const waitForHydration = () => {
   });
 };
 
+/* UI-related store */
+
 type UiConfigStore = {
-  hideSidebar?: boolean;
-  detailsPanel: {
-    hidden?: boolean;
-    size?: { width?: number; height?: number };
+  sidebar: {
+    activeTab?: string;
+    width?: number;
+    height?: number;
     lockedIds?: { [operationId: string]: string };
   };
+  disableKeyboard?: boolean;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;
@@ -308,7 +313,12 @@ type UiConfigStore = {
 export const useUiConfigStore = createWithEqualityFn(
   persist<UiConfigStore>(
     (set) => ({
-      detailsPanel: { size: { width: 200, height: 150 } },
+      sidebar: {
+        activeTab: "operations",
+        width: 200,
+        height: 150,
+        lockedIds: {},
+      },
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),
@@ -361,8 +371,9 @@ export const useExecutionResultsStore =
           for (const [key, value] of state.results) {
             if (value.shouldCacheResult) {
               newResults.set(key, value);
-              if (isDataOfType(value.data, "instance")) {
-                const instanceId = value.data.value.instanceId;
+              if (value.data?.type.kind === "instance") {
+                const instanceId = (value.data as IData<InstanceDataType>).value
+                  .instanceId;
                 newInstances.set(instanceId, state.instances.get(instanceId));
               }
             }
@@ -400,18 +411,59 @@ export const useNavigationStore = createWithEqualityFn<NavigationStore>(
   shallow
 );
 
-export function jsonParseReviver(_: string, value: unknown) {
-  if (
-    value &&
-    typeof value === "object" &&
-    "_map_" in value &&
-    Array.isArray(value._map_)
-  ) {
-    return new Map(value._map_);
-  }
-  return value;
+/* Agent store */
+
+interface ApiKeys {
+  openai?: string;
+  anthropic?: string;
+  google?: string;
 }
 
-export function jsonStringifyReplacer(_: string, value: IData["value"]) {
-  return value instanceof Map ? { _map_: Array.from(value.entries()) } : value;
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  changes?: AgentChange[];
+  timestamp: number;
 }
+
+interface AgentStore {
+  apiKeys: ApiKeys;
+  selectedModel?: string;
+  messages: ChatMessage[];
+  isLoading: boolean;
+
+  setApiKey: (provider: keyof ApiKeys, key: string) => void;
+  getApiKey: (provider: keyof ApiKeys) => string | undefined;
+  setSelectedModel: (model: string) => void;
+  addMessage: (message: Omit<ChatMessage, "id" | "timestamp">) => void;
+  clearMessages: () => void;
+  setIsLoading: (loading: boolean) => void;
+}
+
+export const useAgentStore = createWithEqualityFn<AgentStore>()(
+  persist(
+    (set, get) => ({
+      loading: false,
+      apiKeys: {},
+      messages: [],
+      isLoading: false,
+      setApiKey: (provider, key) => {
+        set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
+      },
+      getApiKey: (provider) => get().apiKeys[provider],
+      setSelectedModel: (model) => set({ selectedModel: model }),
+      addMessage: (message) =>
+        set((state) => ({
+          messages: [
+            ...state.messages,
+            { ...message, id: nanoid(), timestamp: Date.now() },
+          ],
+        })),
+      clearMessages: () => set({ messages: [], isLoading: false }),
+      setIsLoading: (loading) => set({ isLoading: loading }),
+    }),
+    { name: "agent", storage: createIDbStorage("agent") }
+  ),
+  shallow
+);

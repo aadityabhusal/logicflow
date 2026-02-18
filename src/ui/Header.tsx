@@ -1,17 +1,14 @@
 import {
-  FaBars,
   FaArrowRotateLeft,
   FaArrowRotateRight,
   FaRegCopy,
   FaRegPaste,
   FaCheck,
+  FaChevronLeft,
 } from "react-icons/fa6";
 import {
   fileHistoryActions,
-  useUiConfigStore,
   useProjectStore,
-  jsonParseReviver,
-  jsonStringifyReplacer,
   useNavigationStore,
 } from "@/lib/store";
 import { IconButton } from "./IconButton";
@@ -22,6 +19,8 @@ import { Context, IData, OperationType, Project } from "@/lib/types";
 import { OperationValueSchema } from "@/lib/schemas";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { updateFiles } from "@/lib/update";
+import { Button } from "@mantine/core";
+import { Link } from "react-router";
 
 function HeaderComponent({
   currentProject,
@@ -32,7 +31,6 @@ function HeaderComponent({
   currentProject: Project;
   context: Context;
 }) {
-  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
@@ -46,12 +44,15 @@ function HeaderComponent({
 
   return (
     <div className="border-b p-2 flex items-center justify-between gap-4">
-      <div className="flex items-center gap-4 w-[88px]">
-        <IconButton
-          icon={FaBars}
-          size={16}
-          onClick={() => setUiConfig((p) => ({ hideSidebar: !p.hideSidebar }))}
-        />
+      <div className="flex items-center gap-4">
+        <Button
+          component={Link}
+          to="/"
+          className="outline-none p-0.5!"
+          leftSection={<FaChevronLeft />}
+        >
+          Dashboard
+        </Button>
       </div>
       {currentProject && (
         <BaseInput
@@ -65,6 +66,7 @@ function HeaderComponent({
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
           }}
+          options={{ forceEnableKeyboard: true }}
         />
       )}
       <div className="flex items-center gap-2">
@@ -75,7 +77,7 @@ function HeaderComponent({
           onClick={() => {
             if (!currentOperation) return;
             const { name: _, ...value } = currentOperation.value;
-            clipboard.copy(JSON.stringify(value, jsonStringifyReplacer));
+            clipboard.copy(JSON.stringify(value));
           }}
           disabled={!currentOperation}
           className={!currentOperation ? "cursor-not-allowed" : ""}
@@ -88,9 +90,7 @@ function HeaderComponent({
             try {
               if (!currentOperation || !currentProject) return;
               const copied = await navigator.clipboard.readText();
-              const parsed = OperationValueSchema.safeParse(
-                JSON.parse(copied, jsonParseReviver)
-              );
+              const parsed = OperationValueSchema.safeParse(JSON.parse(copied));
               if (parsed.error) throw new Error(parsed.error.message);
               updateProject(currentProject.id, {
                 files: updateFiles(
@@ -99,7 +99,10 @@ function HeaderComponent({
                   context,
                   createFileFromOperation({
                     ...currentOperation,
-                    value: { ...currentOperation.value, ...parsed.data },
+                    value: {
+                      ...currentOperation.value,
+                      ...parsed.data,
+                    } as typeof currentOperation.value,
                   })
                 ),
               });

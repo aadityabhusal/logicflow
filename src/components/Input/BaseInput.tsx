@@ -4,8 +4,10 @@ import {
   TextInput,
   TextInputProps,
 } from "@mantine/core";
-import { useUncontrolled } from "@mantine/hooks";
+import { useUncontrolled, useMediaQuery } from "@mantine/hooks";
 import { forwardRef, memo, useState } from "react";
+import { useUiConfigStore } from "@/lib/store";
+import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
 interface BaseInputProps<T extends string | number>
   extends Omit<
@@ -17,13 +19,18 @@ interface BaseInputProps<T extends string | number>
   defaultValue?: T;
   type?: "text" | "number";
   containerClassName?: string;
-  options?: { withQuotes?: boolean };
+  options?: { withQuotes?: boolean; forceEnableKeyboard?: boolean };
 }
 
 function BaseInputInner<T extends string | number>(
-  { value, type, onChange, defaultValue, ...props }: BaseInputProps<T>,
+  { value, type, onChange, defaultValue, options, ...props }: BaseInputProps<T>,
   ref: React.ForwardedRef<HTMLInputElement>
 ) {
+  const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
+  const disableKeyboard = useUiConfigStore(
+    (s) => s.disableKeyboard && !options?.forceEnableKeyboard && smallScreen
+  );
+
   const MAX_WIDTH = 160;
   const [textWidth, setTextWidth] = useState(0);
   const [inputValue, setInputValue] = useUncontrolled({
@@ -36,22 +43,24 @@ function BaseInputInner<T extends string | number>(
     ...props,
     value: inputValue,
     classNames: {
-      wrapper: "flex gap-1 items-center",
       input: [
-        "number-input outline-0 bg-inherit border-none p-0",
+        "number-input",
         props.className,
         textWidth >= MAX_WIDTH ? "truncate" : "",
       ].join(" "),
     },
+    readOnly: disableKeyboard,
     styles: { input: { width: textWidth, ...props.styles } },
     onClick: props.onClick,
   } as typeof props;
 
   return (
     <div
-      className={`relative flex flex-col py-0 ${
-        props.options?.withQuotes ? "px-[7px] input-quotes" : "px-0"
-      } ${props.containerClassName}`}
+      className={[
+        "relative flex flex-col py-0",
+        options?.withQuotes ? "px-[7px] input-quotes" : "px-0",
+        props.containerClassName,
+      ].join(" ")}
     >
       <div
         className="self-start h-0 overflow-hidden whitespace-pre max-w-40"
@@ -71,7 +80,6 @@ function BaseInputInner<T extends string | number>(
       ) : (
         <TextInput
           {...commonProps}
-          type="text"
           ref={ref}
           onChange={(e) => setInputValue(e.target.value as T)}
           placeholder={"..."}

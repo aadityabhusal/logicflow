@@ -69,7 +69,3 @@ pre {
 .number-input[type="number"] {
   appearance: textfield;
 }
-
-.menu-item {
-  @apply hover:bg-dropdown-hover focus:bg-dropdown-hover focus:outline-none;
-}

@@ -267,7 +267,7 @@ const wretchInstanceOperations: OperationListItem[] = [
         p2?.value as string
       ),
     [
-      { type: { kind: "object", properties: {} }, name: "jsObject" }, // simplification
+      { type: { kind: "object", properties: [] }, name: "jsObject" },
       { type: { kind: "string" }, name: "contentType", isOptional: true },
     ]
   ),
@@ -400,7 +400,7 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
           kind: "operation",
           parameters: [
             {
-              name: "err",
+              name: "reason",
               type: { kind: "error", errorType: "custom_error" },
             },
           ],

@@ -14,6 +14,7 @@ import {
   getStatementResult,
   getUnionActiveType,
   isDataOfType,
+  isFatalError,
   isTypeCompatible,
   resolveUnionType,
   resolveReference,
@@ -152,7 +153,7 @@ export async function createOperationCall({
 
 /* Execution */
 
-export async function storeDataInstance(data: IData, context: Context) {
+async function storeDataInstance(data: IData, context: Context) {
   if (!isDataOfType(data, "instance")) return;
   const settledArgs = await Promise.all(
     data.value.constructorArgs.map((arg) => executeStatement(arg, context))
@@ -167,19 +168,14 @@ export async function storeDataInstance(data: IData, context: Context) {
   context.setInstance(data.value.instanceId, instance);
 }
 
-export async function executeDataValue(
-  data: IData,
-  context: Context
-): Promise<void> {
+async function executeDataValue(data: IData, context: Context): Promise<void> {
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     await Promise.allSettled(
       data.value.map((item) => executeStatement(item, context))
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     await Promise.allSettled(
-      Array.from(data.value.values()).map((item) =>
-        executeStatement(item, context)
-      )
+      data.value.entries.map((entry) => executeStatement(entry.value, context))
     );
   } else if (isDataOfType(data, "operation")) {
     await setOperationResults(data, context);
@@ -204,7 +200,7 @@ export async function executeStatement(
   context: Context
 ): Promise<IData> {
   let currentData = resolveReference(statement.data, context);
-  if (isDataOfType(currentData, "error")) return currentData;
+  if (isFatalError(currentData)) return currentData;
 
   if (isDataOfType(currentData, "condition")) {
     const conditionValue = currentData.value;
@@ -212,12 +208,12 @@ export async function executeStatement(
       conditionValue.condition,
       context
     );
-    if (isDataOfType(conditionResult, "error")) return conditionResult;
+    if (isFatalError(conditionResult)) return conditionResult;
     currentData = await executeStatement(
       conditionResult.value ? conditionValue.true : conditionValue.false,
       context
     );
-    if (isDataOfType(currentData, "error")) return currentData;
+    if (isFatalError(currentData)) return currentData;
   }
 
   // For showing result values of operation calls used inside complex data.
@@ -227,7 +223,7 @@ export async function executeStatement(
   let resultData = statement.data;
 
   for (const operation of statement.operations) {
-    if (isDataOfType(resultData, "error")) break;
+    if (isFatalError(resultData)) break;
 
     narrowedTypes = applyTypeNarrowing(
       context,
@@ -360,7 +356,7 @@ export async function executeOperation(
       : createRuntimeError(result.reason)
   );
   const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
-    const hasError = isDataOfType(parameters[i], "error");
+    const hasError = isFatalError(parameters[i]);
     const typeMismatch = !isTypeCompatible(parameters[i].type, p.type);
     return hasError || typeMismatch;
   });

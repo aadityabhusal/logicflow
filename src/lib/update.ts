@@ -117,12 +117,12 @@ function updateDataValue(
     : isDataOfType(data, "array") || isDataOfType(data, "tuple")
     ? updateStatements({ statements: data.value, context })
     : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
-    ? new Map(
-        [...data.value.entries()].map(([name, statement]) => [
-          name,
-          updateStatement(statement, context),
-        ])
-      )
+    ? {
+        entries: data.value.entries.map(({ key, value }) => ({
+          key,
+          value: updateStatement(value, context),
+        })),
+      }
     : isDataOfType(data, "operation")
     ? updateOperationValue(data, context) ?? data.value
     : isDataOfType(data, "union")

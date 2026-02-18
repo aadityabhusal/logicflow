@@ -26,7 +26,7 @@ import {
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 
-export interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
+interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
   operation: IData<OperationType>;
   handleChange: (data: IData<OperationType>, remove?: boolean) => void;
   context: Context;

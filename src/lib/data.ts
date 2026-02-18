@@ -1,5 +1,6 @@
 import { DataType, ErrorType, OperationType } from "./types";
 import wretch from "wretch";
+import { SiAnthropic, SiOpenai, SiGooglegemini } from "react-icons/si";
 
 export const DataTypes: {
   [K in DataType["kind"]]: {
@@ -34,7 +35,10 @@ export const DataTypes: {
     type: { kind: "tuple", elements: [{ kind: "undefined" }] },
   },
   object: {
-    type: { kind: "object", properties: { key: { kind: "undefined" } } },
+    type: {
+      kind: "object",
+      properties: [{ key: "key", value: { kind: "undefined" } }],
+    },
   },
   dictionary: {
     type: { kind: "dictionary", elementType: { kind: "undefined" } },
@@ -73,7 +77,10 @@ export const DataTypes: {
   },
 };
 
-export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
+export function getPromiseArgsType(
+  resolveType?: OperationType["parameters"],
+  rejectType?: OperationType["parameters"]
+) {
   return [
     {
       type: {
@@ -93,11 +100,8 @@ export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
             name: "reject",
             type: {
               kind: "operation",
-              parameters: [
-                {
-                  name: "err",
-                  type: { kind: "error", errorType: "custom_error" },
-                },
+              parameters: rejectType ?? [
+                { name: "reason", type: { kind: "unknown" } },
               ],
               result: { kind: "undefined" },
             },
@@ -114,7 +118,7 @@ export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   ] as OperationType["parameters"];
 }
 
-export type InstanceTypeConfig<
+type InstanceTypeConfig<
   K extends string = string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   C extends new (...args: any[]) => any = new (...args: any[]) => any
@@ -191,3 +195,18 @@ export const ErrorTypesData: {
 };
 
 export const MAX_SCREEN_WIDTH = 767;
+
+export const LLM_PROVIDERS = {
+  google: { name: "Gemini", Icon: SiGooglegemini },
+  openai: { name: "OpenAI", Icon: SiOpenai },
+  anthropic: { name: "Anthropic", Icon: SiAnthropic },
+} as const;
+
+export const AVAILABLE_MODELS = [
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
+  { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini", provider: "openai" },
+  { id: "gpt-5.1-codex", name: "GPT 5.1 Codex", provider: "openai" },
+  { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic" },
+  { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic" },
+] as const;

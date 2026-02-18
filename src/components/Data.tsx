@@ -2,14 +2,15 @@ import { IData, IStatement, DataType, Context } from "../lib/types";
 import { ArrayInput } from "./Input/ArrayInput";
 import { ObjectInput } from "./Input/ObjectInput";
 import { BooleanInput } from "./Input/BooleanInput";
-import { Dropdown, IDropdownTargetProps } from "./Dropdown";
+import { Dropdown } from "./Dropdown";
 import {
   createDefaultValue,
   getDataDropdownList,
   getTypeSignature,
   isDataOfType,
+  isObject,
 } from "../lib/utils";
-import { memo, useMemo } from "react";
+import { ComponentProps, HTMLAttributes, memo, useMemo } from "react";
 import { BaseInput } from "./Input/BaseInput";
 import { isNumberLike } from "@mantine/core";
 import { DataTypes } from "../lib/data";
@@ -20,6 +21,11 @@ import { ErrorInput } from "./Input/ErrorInput";
 import { DictionaryInput } from "./Input/Dictionary";
 import { InstanceInput } from "./Input/InstanceInput";
 import { useNavigationStore } from "@/lib/store";
+
+interface IDropdownTargetProps
+  extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
+  onChange?: (value: string) => void;
+}
 
 interface IProps {
   data: IData;
@@ -133,7 +139,10 @@ const DataComponent = ({
               onChange?.(val);
               handleChange({ ...data, value: val });
             }}
-            options={{ withQuotes: true }}
+            options={{
+              withQuotes: true,
+              ...(props as ComponentProps<typeof BaseInput>).options,
+            }}
           />
         ) : isDataOfType(data, "condition") ? (
           <ConditionInput
@@ -193,13 +202,17 @@ const DataComponent = ({
                 value: transform.value,
               });
               if (Array.isArray(transform.value)) {
-                setNavigation({
-                  navigation: { id: transform.value[0].data.id },
-                });
-              } else if (transform.value instanceof Map) {
-                setNavigation({
-                  navigation: { id: transform.value.get("key")?.data.id },
-                });
+                const firstItem = transform.value[0];
+                if (firstItem?.data?.id) {
+                  setNavigation({ navigation: { id: firstItem.data.id } });
+                }
+              } else if (isObject(transform.value, ["entries"])) {
+                const firstEntry = transform.value.entries[0];
+                if (firstEntry) {
+                  setNavigation({
+                    navigation: { id: firstEntry.value.data.id },
+                  });
+                }
               }
             }}
           />

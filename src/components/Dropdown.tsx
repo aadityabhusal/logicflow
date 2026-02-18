@@ -35,9 +35,8 @@ import {
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 
-export interface IDropdownTargetProps
+interface IDropdownTargetProps
   extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
-  value?: string;
   onChange?: (value: string) => void;
 }
 
@@ -82,7 +81,7 @@ const DropdownComponent = ({
   );
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const detailsPanelLockedId = useUiConfigStore((s) => {
-    const lockedId = currentFileId && s.detailsPanel.lockedIds?.[currentFileId];
+    const lockedId = currentFileId && s.sidebar.lockedIds?.[currentFileId];
     if (
       !lockedId ||
       !useExecutionResultsStore.getState().results.has(lockedId)
@@ -287,6 +286,7 @@ const DropdownComponent = ({
                     onKeyDown: getHotkeyHandler([
                       ["ctrl+space", () => combobox.openDropdown()],
                     ]),
+                    options: { allowDisableKeyboard: true },
                   }
                 : {}),
               onClick: (e) => {

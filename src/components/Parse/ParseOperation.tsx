@@ -53,7 +53,7 @@ export function ParseOperation({
   );
 }
 
-export function ParseVariable({ name }: { name?: string }) {
+function ParseVariable({ name }: { name?: string }) {
   return !name ? null : (
     <>
       <span className="text-reserved">let</span>{" "}

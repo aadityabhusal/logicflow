@@ -7,7 +7,7 @@ import {
 } from "@/lib/utils";
 import { Statement } from "../Statement";
 
-export interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
+interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
   handleData: (data: IData<ConditionType>) => void;
   context: Context;
