@@ -2,7 +2,7 @@ import { IData, IStatement, DataType, Context } from "../lib/types";
 import { ArrayInput } from "./Input/ArrayInput";
 import { ObjectInput } from "./Input/ObjectInput";
 import { BooleanInput } from "./Input/BooleanInput";
-import { Dropdown, IDropdownTargetProps } from "./Dropdown";
+import { Dropdown } from "./Dropdown";
 import {
   createDefaultValue,
   getDataDropdownList,
@@ -10,8 +10,8 @@ import {
   isDataOfType,
   isObject,
 } from "../lib/utils";
-import { memo, useMemo } from "react";
-import { BaseInput, BaseInputProps } from "./Input/BaseInput";
+import { ComponentProps, HTMLAttributes, memo, useMemo } from "react";
+import { BaseInput } from "./Input/BaseInput";
 import { isNumberLike } from "@mantine/core";
 import { DataTypes } from "../lib/data";
 import { ConditionInput } from "./Input/ConditionInput";
@@ -21,6 +21,11 @@ import { ErrorInput } from "./Input/ErrorInput";
 import { DictionaryInput } from "./Input/Dictionary";
 import { InstanceInput } from "./Input/InstanceInput";
 import { useNavigationStore } from "@/lib/store";
+
+interface IDropdownTargetProps
+  extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
+  onChange?: (value: string) => void;
+}
 
 interface IProps {
   data: IData;
@@ -136,7 +141,7 @@ const DataComponent = ({
             }}
             options={{
               withQuotes: true,
-              ...(props as BaseInputProps<string>).options,
+              ...(props as ComponentProps<typeof BaseInput>).options,
             }}
           />
         ) : isDataOfType(data, "condition") ? (

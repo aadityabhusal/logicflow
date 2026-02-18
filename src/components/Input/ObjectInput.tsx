@@ -13,7 +13,7 @@ import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
 import { Dropdown } from "../Dropdown";
 
-export interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
+interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
   handleData: (data: IData<ObjectType>) => void;
   context: Context;

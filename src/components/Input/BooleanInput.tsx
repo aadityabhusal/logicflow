@@ -2,7 +2,7 @@ import { forwardRef, HTMLAttributes, memo } from "react";
 import { BooleanType, IData } from "@/lib/types";
 import { getHotkeyHandler } from "@mantine/hooks";
 
-export interface IBooleanInput extends HTMLAttributes<HTMLInputElement> {
+interface IBooleanInput extends HTMLAttributes<HTMLInputElement> {
   data: IData<BooleanType>;
   handleData: (data: IData<BooleanType>) => void;
   className?: string;

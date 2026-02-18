@@ -77,7 +77,10 @@ export const DataTypes: {
   },
 };
 
-export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
+export function getPromiseArgsType(
+  resolveType?: OperationType["parameters"],
+  rejectType?: OperationType["parameters"]
+) {
   return [
     {
       type: {
@@ -97,11 +100,8 @@ export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
             name: "reject",
             type: {
               kind: "operation",
-              parameters: [
-                {
-                  name: "err",
-                  type: { kind: "error", errorType: "custom_error" },
-                },
+              parameters: rejectType ?? [
+                { name: "reason", type: { kind: "unknown" } },
               ],
               result: { kind: "undefined" },
             },
@@ -118,7 +118,7 @@ export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   ] as OperationType["parameters"];
 }
 
-export type InstanceTypeConfig<
+type InstanceTypeConfig<
   K extends string = string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   C extends new (...args: any[]) => any = new (...args: any[]) => any

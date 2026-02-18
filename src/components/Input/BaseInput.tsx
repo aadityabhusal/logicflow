@@ -9,7 +9,7 @@ import { forwardRef, memo, useState } from "react";
 import { useUiConfigStore } from "@/lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
-export interface BaseInputProps<T extends string | number>
+interface BaseInputProps<T extends string | number>
   extends Omit<
     TextInputProps & NumberInputProps,
     "value" | "onChange" | "type" | "defaultValue"

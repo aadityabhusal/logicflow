@@ -8,7 +8,7 @@ import {
   getContextExpectedTypes,
 } from "@/lib/utils";
 
-export interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
+interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
   handleData: (data: IData<ArrayType | TupleType>) => void;
   context: Context;

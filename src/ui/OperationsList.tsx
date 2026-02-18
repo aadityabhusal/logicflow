@@ -4,7 +4,7 @@ import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
 import { useNavigate, useSearchParams } from "react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { Context } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
@@ -16,7 +16,14 @@ export function OperationsList({ context }: { context: Context }) {
   const navigate = useNavigate();
   const [editingId, setEditingId] = useState<string>();
   const [hoveringId, setHoveringId] = useState<string>();
+  const inputRef = useRef<HTMLInputElement>(null);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
+
+  useEffect(() => {
+    if (editingId) {
+      inputRef.current?.focus();
+    }
+  }, [editingId]);
 
   const addFile = useProjectStore((s) => s.addFile);
   const updateProject = useProjectStore((s) => s.updateProject);
@@ -60,12 +67,20 @@ export function OperationsList({ context }: { context: Context }) {
             onClick={() =>
               setSearchParams(...handleSearchParams({ file: item.name }, true))
             }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setSearchParams(
+                  ...handleSearchParams({ file: item.name }, true)
+                );
+              }
+            }}
             onPointerOver={() => setHoveringId(item.id)}
             onPointerLeave={() => setHoveringId(undefined)}
           >
             {editingId === item.id ? (
               <input
-                autoFocus
+                ref={inputRef}
                 className="focus:outline outline-white flex-1 w-full"
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}

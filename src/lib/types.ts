@@ -229,7 +229,7 @@ export type ProjectFile = {
   | { type: "json"; content: Record<string, unknown> }
 );
 
-export interface TestCase {
+interface TestCase {
   name: string;
   description?: string;
   inputs: IData[];
@@ -237,7 +237,7 @@ export interface TestCase {
   status?: "pending" | "passed" | "failed";
 }
 
-export interface DependencyBase {
+interface DependencyBase {
   namespace?: string;
   version: string;
   types?: string;
@@ -246,12 +246,12 @@ export interface DependencyBase {
     importedBy: { operationName: string }[];
   }[];
 }
-export interface Dependencies {
+interface Dependencies {
   npm?: (DependencyBase & { name: string })[];
   logicflow?: (DependencyBase & { projectId: string })[];
 }
 
-export type DeploymentConfig = {
+type DeploymentConfig = {
   trigger: (HttpTrigger | CronTrigger)[]; // TODO: trigger should be the entrypoint file with 'request' as a parameter
   runtime: {
     type: "node" | "deno" | "edge";
@@ -282,7 +282,7 @@ export type DeploymentConfig = {
 );
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-export interface HttpTrigger {
+interface HttpTrigger {
   type: "http";
   path: string;
   methods?: HttpMethod | HttpMethod[]; // If undefined, accepts all methods
@@ -294,7 +294,7 @@ export interface HttpTrigger {
   };
 }
 
-export interface CronTrigger {
+interface CronTrigger {
   type: "cron";
   schedule: string; // Cron expression
   timezone?: string;

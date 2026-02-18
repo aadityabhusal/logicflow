@@ -17,7 +17,7 @@ import { IconButton } from "@/ui/IconButton";
 import { Data } from "../Data";
 import { useNavigationStore } from "@/lib/store";
 
-export interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
+interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<UnionType>;
   handleData: (data: IData<UnionType>) => void;
   context: Context;
@@ -162,30 +162,33 @@ const UnionInputComponent = (
           />
         </Menu.Target>
         <Menu.Dropdown onMouseOver={(e) => e.stopPropagation()}>
-          {data.type.types.map((type, i) => (
-            <Tooltip key={i} label={getTypeSignature(type)} position="right">
-              <Menu.Item
-                onClick={() => handleTypeSwitch(i)}
-                classNames={{
-                  item: i === activeType.index ? "bg-dropdown-selected" : "",
-                }}
-                rightSection={
-                  data.type.types.length > 1 && !context.expectedType ? (
-                    <FaX
-                      size={16}
-                      className="p-1 hover:outline hover:outline-border"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTypeRemove(i);
-                      }}
-                    />
-                  ) : null
-                }
-              >
-                {type.kind}
-              </Menu.Item>
-            </Tooltip>
-          ))}
+          {data.type.types.map((type, i) => {
+            const typeSign = getTypeSignature(type);
+            return (
+              <Tooltip key={typeSign} label={typeSign} position="right">
+                <Menu.Item
+                  onClick={() => handleTypeSwitch(i)}
+                  classNames={{
+                    item: i === activeType.index ? "bg-dropdown-selected" : "",
+                  }}
+                  rightSection={
+                    data.type.types.length > 1 && !context.expectedType ? (
+                      <FaX
+                        size={16}
+                        className="p-1 hover:outline hover:outline-border"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTypeRemove(i);
+                        }}
+                      />
+                    ) : null
+                  }
+                >
+                  {type.kind}
+                </Menu.Item>
+              </Tooltip>
+            );
+          })}
           {!context.expectedType ? (
             <Menu.Sub>
               <Menu.Sub.Target>

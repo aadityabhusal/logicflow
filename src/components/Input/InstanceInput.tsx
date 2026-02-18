@@ -2,14 +2,14 @@ import { IData, Context, InstanceDataType, IStatement } from "@/lib/types";
 import { forwardRef, memo } from "react";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
-import { IDropdownTargetProps } from "../Dropdown";
 import { getContextExpectedTypes } from "@/lib/utils";
 import { AddStatement } from "../AddStatement";
 
-export interface InstanceInputProps extends IDropdownTargetProps {
+interface InstanceInputProps {
   data: IData<InstanceDataType>;
   handleData: (data: IData<InstanceDataType>) => void;
   context: Context;
+  onChange?: (value: string) => void;
 }
 
 const InstanceInputComponent = (

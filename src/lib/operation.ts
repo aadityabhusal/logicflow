@@ -152,7 +152,7 @@ export async function createOperationCall({
 
 /* Execution */
 
-export async function storeDataInstance(data: IData, context: Context) {
+async function storeDataInstance(data: IData, context: Context) {
   if (!isDataOfType(data, "instance")) return;
   const settledArgs = await Promise.all(
     data.value.constructorArgs.map((arg) => executeStatement(arg, context))
@@ -167,10 +167,7 @@ export async function storeDataInstance(data: IData, context: Context) {
   context.setInstance(data.value.instanceId, instance);
 }
 
-export async function executeDataValue(
-  data: IData,
-  context: Context
-): Promise<void> {
+async function executeDataValue(data: IData, context: Context): Promise<void> {
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     await Promise.allSettled(
       data.value.map((item) => executeStatement(item, context))

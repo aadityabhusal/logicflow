@@ -3,7 +3,7 @@ import { forwardRef, HTMLAttributes, memo } from "react";
 import { FaCircleExclamation } from "react-icons/fa6";
 import { BaseInput } from "./BaseInput";
 
-export interface ErrorInputProps extends HTMLAttributes<HTMLInputElement> {
+interface ErrorInputProps extends HTMLAttributes<HTMLInputElement> {
   data: IData<ErrorType>;
   handleData: (data: IData<ErrorType>) => void;
   context: Context;

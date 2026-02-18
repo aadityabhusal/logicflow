@@ -46,9 +46,9 @@ export function Resizer({
 
   useEffect(() => {
     document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("touchmove", onMouseMove);
+    document.addEventListener("touchmove", onMouseMove, { passive: true });
     document.addEventListener("mouseup", onMouseUp);
-    document.addEventListener("touchend", onMouseUp);
+    document.addEventListener("touchend", onMouseUp, { passive: true });
 
     return () => {
       document.removeEventListener("mousemove", onMouseMove);
@@ -88,6 +88,7 @@ export function Resizer({
           type === "width" ? window.innerWidth : window.innerHeight;
         handleSize(dimension * (direction === "positive" ? 0.25 : 0.75));
       }}
+      role="separator"
     >
       <div
         className={`absolute z-50 hover:bg-dropdown-hover ${

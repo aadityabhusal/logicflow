@@ -35,9 +35,8 @@ import {
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 
-export interface IDropdownTargetProps
+interface IDropdownTargetProps
   extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
-  value?: string;
   onChange?: (value: string) => void;
 }
 

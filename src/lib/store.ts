@@ -55,7 +55,7 @@ interface FileHistoryItem {
   content: ProjectFile["content"];
   focusId?: string;
 }
-export const fileHistories = new Map<
+const fileHistories = new Map<
   string,
   { past: FileHistoryItem[]; future: FileHistoryItem[] }
 >();
@@ -88,7 +88,7 @@ export const fileHistoryActions = {
   },
 };
 
-export interface IProjectsStore {
+interface IProjectsStore {
   projects: Record<string, Project>;
   createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
@@ -97,7 +97,7 @@ export interface IProjectsStore {
   getCurrentProject: () => Project | undefined;
 }
 
-export interface ICurrentProjectStore {
+interface ICurrentProjectStore {
   currentProjectId?: string;
   currentFileId?: string;
   setCurrentProjectId: (projectId?: string) => void;
@@ -419,7 +419,7 @@ interface ApiKeys {
   google?: string;
 }
 
-export interface ChatMessage {
+interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;

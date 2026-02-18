@@ -10,7 +10,7 @@ import {
 } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 
-export interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
+interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<DictionaryType>;
   handleData: (data: IData<DictionaryType>) => void;
   context: Context;

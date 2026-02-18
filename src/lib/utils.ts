@@ -17,7 +17,6 @@ import {
   DictionaryType,
   TupleType,
 } from "./types";
-import { MouseEvent } from "react";
 
 /* Create */
 
@@ -232,7 +231,7 @@ export function createProjectFile(
 }
 
 export function createOperationFromFile(file?: ProjectFile) {
-  if (!file || !isFileOfType(file, "operation")) return undefined;
+  if (!file || file.type !== "operation") return undefined;
   return {
     id: file.id,
     type: file.content.type,
@@ -593,14 +592,7 @@ export function isObject<const K extends readonly string[]>(
   return true;
 }
 
-export function isFileOfType<T extends ProjectFile["type"]>(
-  file: ProjectFile | undefined,
-  type: T
-): file is Extract<ProjectFile, { type: T }> {
-  return file?.type === type;
-}
-
-export function getInverseTypes(
+function getInverseTypes(
   originalTypes: Context["variables"],
   narrowedTypes: Context["variables"]
 ): Context["variables"] {
@@ -731,7 +723,7 @@ export function applyTypeNarrowing(
   return narrowedTypes;
 }
 
-export function mergeNarrowedTypes(
+function mergeNarrowedTypes(
   originalTypes: Context["variables"],
   narrowedTypes: Context["variables"],
   operationName?: string
@@ -1356,11 +1348,4 @@ export function handleSearchParams(
     else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
-}
-
-export function didMouseEnterFromRight(e: MouseEvent) {
-  const rect = e.currentTarget.getBoundingClientRect();
-  const mouseX = e.clientX;
-  const elementRight = rect.right;
-  return mouseX >= elementRight - 5;
 }
