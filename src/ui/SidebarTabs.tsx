@@ -1,18 +1,29 @@
+import { lazy, Suspense } from "react";
 import { Tabs, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { FaCircleInfo, FaRobot, FaFileCode } from "react-icons/fa6";
 import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
-import { OperationsList } from "./OperationsList";
-import { DetailsPanel } from "./DetailsPanel";
 import { Resizer } from "./Resizer";
 import { Context } from "@/lib/types";
-import { AgentPanel } from "./AgentPanel";
+import { LoadingFallback } from "./LoadingFallback";
+
+const OperationsList = lazy(() =>
+  import("./OperationsList").then((m) => ({ default: m.OperationsList }))
+);
+const DetailsPanel = lazy(() =>
+  import("./DetailsPanel").then((m) => ({ default: m.DetailsPanel }))
+);
+const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
+  ? lazy(() => import("./AgentPanel").then((m) => ({ default: m.AgentPanel })))
+  : null;
 
 const TABS = [
   { value: "operations", label: "Operations", Icon: FaFileCode },
   { value: "details", label: "Details", Icon: FaCircleInfo },
-  { value: "agent", label: "Agent", Icon: FaRobot },
+  ...(import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
+    ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
+    : []),
 ];
 export function SidebarTabs({ context }: { context: Context }) {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
@@ -85,14 +96,22 @@ export function SidebarTabs({ context }: { context: Context }) {
         {!activeTab ? null : (
           <div className="overflow-hidden relative flex-1">
             <Tabs.Panel value="operations" className="h-full w-full">
-              <OperationsList context={context} />
+              <Suspense fallback={<LoadingFallback />}>
+                <OperationsList context={context} />
+              </Suspense>
             </Tabs.Panel>
             <Tabs.Panel value="details" className="h-full w-full">
-              <DetailsPanel />
+              <Suspense fallback={<LoadingFallback />}>
+                <DetailsPanel />
+              </Suspense>
             </Tabs.Panel>
-            <Tabs.Panel value="agent" className="h-full w-full">
-              <AgentPanel />
-            </Tabs.Panel>
+            {import.meta.env.VITE_APP_ENABLE_AGENT_PANEL && AgentPanel && (
+              <Tabs.Panel value="agent" className="h-full w-full">
+                <Suspense fallback={<LoadingFallback />}>
+                  <AgentPanel />
+                </Suspense>
+              </Tabs.Panel>
+            )}
           </div>
         )}
       </Tabs>
