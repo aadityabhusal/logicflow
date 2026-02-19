@@ -40,9 +40,9 @@ When you use type-checking operations like `isTypeOf` on a union type, Logicflow
 
 ### Unreachable Branches
 
-When boolean operations like `and`, `or`, or `thenElse` make a branch unreachable, Logicflow skips it's execution.
+When boolean operations like `and`, `or`, or `thenElse` make a branch unreachable, Logicflow skips its execution.
 
-![Example with 'and' operation](docs-images/data-types-02.png)
+![Example with 'and' operation](/docs-images/data-types-02.png)
 
 ### Lazy Evaluation
 
@@ -67,7 +67,7 @@ Logicflow recognizes four error categories:
 - **Runtime Error**: Operation fails during execution
 - **Custom Error**: User-defined error messages
 
-![Error types example](docs-images/additional-features-03.png)
+![Error types example](/docs-images/additional-features-03.png)
 
 ### Error Propagation
 
@@ -87,8 +87,55 @@ Errors show:
 
 Errors can be removed by clicking the close button or fixing the underlying issue.
 
-![Error boundary isolation example](docs-images/additional-features-04.png)
+![Error boundary isolation example](/docs-images/additional-features-04.png)
 
 ### No Try-Catch Blocks
 
 Logicflow avoids traditional try-catch blocks. Instead, errors become data of type `error` that can be checked and handled using type operations.
+
+## Asynchronous Operations
+
+Logicflow supports asynchronous operations through Promise types and async operations. The type system tracks async flows and ensures proper handling.
+
+### Promises and Async Flow
+
+Operations that return Promises (like `fetch` or HTTP methods) produce `Promise` instance types. These can be:
+
+- **Chained** with `then` to transform resolved values
+- **Handled** with `catch` for error recovery
+- **Resolved** with `await` to get the final value
+
+![Promise chaining flow with fetch, then and await](/docs-images/additional-features-05.png)
+
+### HTTP Requests
+
+Logicflow provides two ways to make HTTP requests:
+
+#### Native Fetch
+
+The built-in `fetch` operation provides a direct interface to the browser's Fetch API. Chain it after a URL string to make a GET request, or pass a dictionary of options to configure method, headers, and body.
+
+#### Wretch HTTP Client
+
+Wretch provides a fluent, chainable interface for HTTP requests with better error handling and configuration options.
+
+**Configuration Operations**: `url`, `options`, `headers`, `accept`, `content`, `auth`, `body`, `json`
+
+**HTTP Methods**: `get`, `post`, `put`, `patch`, `delete`, `head`
+
+**Response Handling**: After calling an HTTP method, use `json`, `text`, or `res` to parse the response, then `await` to resolve the Promise.
+
+**Error Handling**: Wretch provides specific error handlers:
+
+- `badRequest` (400), `unauthorized` (401), `forbidden` (403), `notFound` (404)
+- `timeout`, `internalError` (500), `fetchError`, `error` (any error)
+
+Each error handler accepts an operation that receives the error and can return a fallback value.
+
+### Async Execution
+
+All operations support async handlers internally. When an operation is async:
+
+- The execution result is cached to prevent redundant API calls
+- Loading states are shown for pending operations
+- Errors are caught and converted to error types

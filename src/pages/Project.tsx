@@ -82,7 +82,7 @@ export default function Project() {
 
   useHotkeys(useCustomHotkeys(), []);
   const operationRef = useClickOutside(() => {
-    setNavigation({ navigation: undefined });
+    setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));
   });
 
   const handleOperationChange = useCallback(
