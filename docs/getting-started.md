@@ -21,6 +21,7 @@ The editor has three main areas:
 - **Sidebar**: Lists all files in your project (toggle with keyboard shortcut)
 - **Editor Canvas**: Where you build your program by adding statements
 - **Details Panel**: Shows execution results and type information (toggle with keyboard shortcut)
+- **Agent Panel**: AI assistant that helps you modify operations using natural language (toggle with keyboard shortcut)
 
 ![Logicflow's editor interface](/docs-images/getting-started-02.png)
 

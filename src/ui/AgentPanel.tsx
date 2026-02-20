@@ -1,5 +1,5 @@
 import { PasswordInput, Popover } from "@mantine/core";
-import { FaKey, FaTrash } from "react-icons/fa6";
+import { FaKey, FaTrash, FaPlus, FaClockRotateLeft } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
 import {
@@ -22,7 +22,11 @@ export function AgentPanel() {
     setIsLoading,
     getApiKey,
     setApiKey,
-    clearMessages,
+    chats,
+    currentChatId,
+    addChat,
+    deleteChat,
+    setCurrentChatId,
   } = useAgentStore();
 
   const currentFile = useProjectStore((s) => s.getCurrentFile());
@@ -81,16 +85,63 @@ export function AgentPanel() {
 
   return (
     <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between items-center p-1 border-b gap-4">
-        <div className="mr-auto">Agent</div>
+      <div className="flex justify-between items-center p-1 border-b gap-1">
+        <div className="px-2 text-sm font-medium truncate">
+          {chats.find((c) => c.id === currentChatId)?.name ?? "Agent"}
+        </div>
         <IconButton
-          icon={FaTrash}
-          onClick={clearMessages}
-          title="Clear messages"
+          icon={FaPlus}
+          onClick={() => addChat()}
+          title="New chat"
+          className="ml-auto p-0.5 hover:bg-dropdown-hover"
         />
+        <Popover position="bottom-end" shadow="md">
+          <Popover.Target>
+            <IconButton
+              icon={FaClockRotateLeft}
+              title="Chat history"
+              size={14}
+              className="p-1 hover:bg-dropdown-hover"
+            />
+          </Popover.Target>
+          <Popover.Dropdown
+            classNames={{ dropdown: "border p-1 min-w-[200px]" }}
+          >
+            <div className="flex flex-col gap-1">
+              <p className="p-1">Recent Chats</p>
+              {chats.length === 0 && <p className="p-1 italic">No chats yet</p>}
+              {chats.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={[
+                    "flex items-center justify-between gap-4 p-1 cursor-pointer hover:bg-dropdown-hover",
+                    chat.id === currentChatId ? "bg-dropdown-selected" : "",
+                  ].join(" ")}
+                  onClick={() => setCurrentChatId(chat.id)}
+                >
+                  <p className="truncate">{chat.name}</p>
+                  <IconButton
+                    icon={FaTrash}
+                    size={12}
+                    title="Delete chat"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteChat(chat.id);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </Popover.Dropdown>
+        </Popover>
         <Popover position="top-start">
           <Popover.Target>
-            <IconButton icon={FaKey} size={14} title="Add API keys" />
+            <IconButton
+              icon={FaKey}
+              size={14}
+              title="Add API keys"
+              className="p-1 hover:bg-dropdown-hover"
+            />
           </Popover.Target>
           <Popover.Dropdown classNames={{ dropdown: "border" }}>
             <div className="flex flex-col gap-1">

@@ -1,8 +1,17 @@
 import { useAgentStore } from "@/lib/store";
 import { NoteText } from "../NoteText";
+import { IconButton } from "../IconButton";
+import { FaTrash } from "react-icons/fa6";
+import { useMemo } from "react";
 
 export function AgentChat() {
-  const { messages, isLoading } = useAgentStore();
+  const { chats, currentChatId, isLoading, deleteMessagePair } =
+    useAgentStore();
+
+  const messages = useMemo(
+    () => chats.find((c) => c.id === currentChatId)?.messages ?? [],
+    [chats, currentChatId]
+  );
 
   if (messages.length === 0) {
     return (
@@ -18,11 +27,18 @@ export function AgentChat() {
         <div
           key={msg.id}
           className={[
-            "rounded-md p-2 mb-2",
+            "flex items-start justify-between rounded-md p-2 mb-2",
             msg.role === "user" ? "bg-dropdown-scrollbar" : "",
           ].join(" ")}
         >
           <div className="whitespace-pre-wrap">{msg.content}</div>
+          {msg.role === "user" && (
+            <IconButton
+              icon={FaTrash}
+              onClick={() => deleteMessagePair(msg.id)}
+              title="Delete message"
+            />
+          )}
         </div>
       ))}
       {isLoading ? <NoteText>Loading...</NoteText> : null}

@@ -427,16 +427,27 @@ interface ChatMessage {
   timestamp: number;
 }
 
+interface Chat {
+  id: string;
+  name: string;
+  messages: ChatMessage[];
+  createdAt: number;
+}
+
 interface AgentStore {
   apiKeys: ApiKeys;
   selectedModel?: string;
-  messages: ChatMessage[];
-  isLoading: boolean;
-
+  chats: Chat[];
+  currentChatId?: string;
+  isLoading?: boolean;
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
   getApiKey: (provider: keyof ApiKeys) => string | undefined;
   setSelectedModel: (model: string) => void;
+  addChat: (name?: string) => string;
+  deleteChat: (id: string) => void;
+  setCurrentChatId: (id: string) => void;
   addMessage: (message: Omit<ChatMessage, "id" | "timestamp">) => void;
+  deleteMessagePair: (messageId: string) => void;
   clearMessages: () => void;
   setIsLoading: (loading: boolean) => void;
 }
@@ -444,23 +455,78 @@ interface AgentStore {
 export const useAgentStore = createWithEqualityFn<AgentStore>()(
   persist(
     (set, get) => ({
-      loading: false,
       apiKeys: {},
-      messages: [],
-      isLoading: false,
+      chats: [],
       setApiKey: (provider, key) => {
         set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
       },
       getApiKey: (provider) => get().apiKeys[provider],
       setSelectedModel: (model) => set({ selectedModel: model }),
-      addMessage: (message) =>
+      addChat: (name) => {
+        const currentChatId = nanoid();
+        const newChat: Chat = {
+          id: currentChatId,
+          name: name || `New Chat ${get().chats.length + 1}`,
+          messages: [],
+          createdAt: Date.now(),
+        };
+        set((state) => ({ chats: [newChat, ...state.chats], currentChatId }));
+        return currentChatId;
+      },
+      deleteChat: (id) => {
+        set((state) => {
+          const newChats = state.chats.filter((c) => c.id !== id);
+          const newCurrentId =
+            state.currentChatId === id ? newChats[0]?.id : state.currentChatId;
+          return { chats: newChats, currentChatId: newCurrentId };
+        });
+      },
+      setCurrentChatId: (id) => set({ currentChatId: id }),
+      addMessage: (message) => {
+        const chatId =
+          get().currentChatId ?? get().addChat(message.content.slice(0, 30));
+        let updatedChats = [...get().chats];
+
+        const newMessage = { ...message, id: nanoid(), timestamp: Date.now() };
+        updatedChats = updatedChats.map((chat) => {
+          if (chat.id !== chatId) return chat;
+          const name =
+            chat.messages.length === 0
+              ? message.content.slice(0, 30)
+              : chat.name;
+          return { ...chat, messages: [...chat.messages, newMessage], name };
+        });
+
+        set({ chats: updatedChats, currentChatId: chatId });
+      },
+      deleteMessagePair: (messageId) => {
+        const { currentChatId, chats } = get();
+        if (!currentChatId) return;
+
+        set({
+          chats: chats.map((chat) => {
+            if (chat.id !== currentChatId) return chat;
+            const msgIndex = chat.messages.findIndex((m) => m.id === messageId);
+            if (msgIndex === -1) return chat;
+            const newMessages = [...chat.messages];
+            // Delete user message and the subsequent assistant message
+            const deleteCount =
+              chat.messages[msgIndex + 1]?.role === "assistant" ? 2 : 1;
+            newMessages.splice(msgIndex, deleteCount);
+            return { ...chat, messages: newMessages };
+          }),
+        });
+      },
+      clearMessages: () => {
+        const { currentChatId } = get();
+        if (!currentChatId) return;
         set((state) => ({
-          messages: [
-            ...state.messages,
-            { ...message, id: nanoid(), timestamp: Date.now() },
-          ],
-        })),
-      clearMessages: () => set({ messages: [], isLoading: false }),
+          chats: state.chats.map((c) =>
+            c.id === currentChatId ? { ...c, messages: [] } : c
+          ),
+          isLoading: false,
+        }));
+      },
       setIsLoading: (loading) => set({ isLoading: loading }),
     }),
     { name: "agent", storage: createIDbStorage("agent") }
