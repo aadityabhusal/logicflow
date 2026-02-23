@@ -4291,6 +4291,11 @@ remark-rehype@^11.0.0:
     unified "^11.0.0"
     vfile "^6.0.0"
 
+remeda@^2.33.6:
+  version "2.33.6"
+  resolved "https://registry.yarnpkg.com/remeda/-/remeda-2.33.6.tgz#5cc100b6edad5e8ba9a5859e15b400c94e83c0d7"
+  integrity sha512-tazDGH7s75kUPGBKLvhgBEHMgW+TdDFhjUAMdQj57IoWz6HsGa5D2RX5yDUz6IIqiRRvZiaEHzCzWdTeixc/Kg==
+
 requires-port@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/requires-port/-/requires-port-1.0.0.tgz#925d2601d39ac485e091cf0da5c6e694dc3dcaff"

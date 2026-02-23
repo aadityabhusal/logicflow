@@ -129,7 +129,7 @@ const InstanceValueSchema = z.object({
   },
 });
 
-const DataTypeSchema = z.union([
+export const DataTypeSchema = z.union([
   UndefinedTypeSchema,
   StringTypeSchema,
   NumberTypeSchema,
@@ -180,9 +180,10 @@ const DataVariants = [
     },
   }),
 ] as const;
-const IDataSchema = z.union(DataVariants);
 
-const IStatementSchema = z.object({
+export const IDataSchema = z.union(DataVariants);
+
+export const IStatementSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   isOptional: z.boolean().nullable(),
@@ -198,46 +199,3 @@ const IStatementSchema = z.object({
     );
   },
 });
-
-/* Agent change schemas for LLM operations */
-const AgentDeleteSchema = z.object({
-  action: z.literal("delete"),
-  entity: z.object({ id: z.string() }),
-});
-
-const AgentCreateSchema = z.object({
-  action: z.literal("create"),
-  parentId: z.string(),
-  entity: IStatementSchema,
-});
-
-const AgentUpdateSchema = z.object({
-  action: z.literal("update"),
-  entity: z.union([
-    IStatementSchema.extend({
-      data: IDataSchema.nullable(),
-      operations: z
-        .array(
-          BaseData.extend({
-            type: OperationTypeSchema,
-            value: OperationValueSchema,
-          })
-        )
-        .nullable(),
-    }),
-    ...DataVariants.map((v) => v.extend({ value: v.shape.value.nullable() })),
-  ]),
-});
-
-export const AgentChangeSchema = z.discriminatedUnion("action", [
-  AgentDeleteSchema,
-  AgentCreateSchema,
-  AgentUpdateSchema,
-]);
-
-export const AgentResponseSchema = z.object({
-  changes: z.array(AgentChangeSchema),
-  explanation: z.string().nullable(),
-});
-
-export type AgentChange = z.infer<typeof AgentChangeSchema>;

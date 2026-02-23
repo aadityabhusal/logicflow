@@ -2,10 +2,7 @@ import { PasswordInput, Popover } from "@mantine/core";
 import { FaKey, FaTrash, FaPlus, FaClockRotateLeft } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
-import {
-  generateOperationChanges,
-  applyChangesToOperation,
-} from "@/lib/agent/agent-service";
+import { runAgent } from "@/lib/agent/agent-service";
 import {
   useProjectStore,
   fileHistoryActions,
@@ -27,6 +24,8 @@ export function AgentPanel() {
     addChat,
     deleteChat,
     setCurrentChatId,
+    updateToolCall,
+    undoToMessage,
   } = useAgentStore();
 
   const currentFile = useProjectStore((s) => s.getCurrentFile());
@@ -34,43 +33,47 @@ export function AgentPanel() {
 
   const handleSubmit = async (prompt: string) => {
     const currentOperation = createOperationFromFile(currentFile);
-    if (!currentOperation) return;
+    if (!currentOperation) {
+      addMessage({
+        role: "assistant",
+        content:
+          "Please open an operation file first. The agent can only modify operation files.",
+      });
+      return;
+    }
 
     const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
     if (!modelConfig) return;
+
     const apiKey = getApiKey(modelConfig.provider);
     if (!apiKey) return;
 
-    addMessage({ role: "user", content: prompt });
+    addMessage({ role: "user", content: prompt, operationSnapshot: currentOperation });
     setIsLoading(true);
 
     try {
-      const { response, mappingContext } = await generateOperationChanges({
+      const result = await runAgent({
         operation: currentOperation,
         userPrompt: prompt,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
+        onToolCall: (toolCall) => {
+          updateToolCall(toolCall.id, toolCall);
+        },
       });
 
       addMessage({
         role: "assistant",
-        content: response.explanation || "Changes applied successfully.",
-        changes: response.changes,
+        content: result.finalMessage,
       });
 
-      if (response.changes.length > 0) {
-        const lastContent = createFileFromOperation(currentOperation).content;
-        fileHistoryActions.pushState(currentOperation.id, lastContent);
-        const updatedOperation = applyChangesToOperation(
-          currentOperation,
-          response.changes,
-          mappingContext
-        );
-        updateFile(
-          currentOperation.id,
-          createFileFromOperation(updatedOperation)
-        );
-      }
+      const lastContent = createFileFromOperation(currentOperation).content;
+      fileHistoryActions.pushState(currentOperation.id, lastContent);
+
+      updateFile(
+        currentOperation.id,
+        createFileFromOperation(result.operation)
+      );
     } catch (error) {
       addMessage({
         role: "assistant",
@@ -80,6 +83,14 @@ export function AgentPanel() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleUndoToMessage = (messageId: string) => {
+    const snapshot = undoToMessage(messageId);
+    if (snapshot) {
+      updateFile(snapshot.id, createFileFromOperation(snapshot));
+      fileHistoryActions.pushState(snapshot.id, createFileFromOperation(snapshot).content);
     }
   };
 
@@ -164,7 +175,8 @@ export function AgentPanel() {
           </Popover.Dropdown>
         </Popover>
       </div>
-      <AgentChat />
+
+      <AgentChat onUndoToMessage={handleUndoToMessage} />
       <AgentInput onSubmit={handleSubmit} />
     </div>
   );

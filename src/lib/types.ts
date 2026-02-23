@@ -6,7 +6,6 @@ export type ArrayType = { kind: "array"; elementType: DataType };
 export type TupleType = { kind: "tuple"; elements: DataType[] };
 export type ObjectType = {
   kind: "object";
-  // properties is array to support LLM generation
   properties: Array<{ key: string; value: DataType }>;
   required?: string[];
 };
@@ -26,7 +25,6 @@ export type UnknownType = { kind: "unknown" };
 export type NeverType = { kind: "never" };
 export type ReferenceType = {
   kind: "reference";
-  // referenceType: "variable" | "env";
   dataType: DataType;
 };
 export type ErrorType = {

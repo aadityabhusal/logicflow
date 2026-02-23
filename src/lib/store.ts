@@ -10,13 +10,13 @@ import {
   DataType,
   ExecutionResult,
   InstanceDataType,
+  OperationType,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
 import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
-import { AgentChange } from "./schemas";
 
 const IDbStore = openDB("logicflow", 2, {
   upgrade(db) {
@@ -419,12 +419,22 @@ interface ApiKeys {
   google?: string;
 }
 
+export interface ToolCallDisplay {
+  id: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  status: "pending" | "running" | "complete" | "error";
+  result?: unknown;
+  timestamp: number;
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  changes?: AgentChange[];
+  toolCalls?: ToolCallDisplay[];
   timestamp: number;
+  operationSnapshot?: IData<OperationType>;
 }
 
 interface Chat {
@@ -440,6 +450,7 @@ interface AgentStore {
   chats: Chat[];
   currentChatId?: string;
   isLoading?: boolean;
+  pendingToolCalls: ToolCallDisplay[];
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
   getApiKey: (provider: keyof ApiKeys) => string | undefined;
   setSelectedModel: (model: string) => void;
@@ -447,9 +458,12 @@ interface AgentStore {
   deleteChat: (id: string) => void;
   setCurrentChatId: (id: string) => void;
   addMessage: (message: Omit<ChatMessage, "id" | "timestamp">) => void;
+  updateToolCall: (id: string, update: Partial<ToolCallDisplay>) => void;
+  clearPendingToolCalls: () => void;
   deleteMessagePair: (messageId: string) => void;
   clearMessages: () => void;
   setIsLoading: (loading: boolean) => void;
+  undoToMessage: (messageId: string) => IData<OperationType> | null;
 }
 
 export const useAgentStore = createWithEqualityFn<AgentStore>()(
@@ -457,6 +471,7 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
     (set, get) => ({
       apiKeys: {},
       chats: [],
+      pendingToolCalls: [],
       setApiKey: (provider, key) => {
         set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
       },
@@ -486,8 +501,16 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
         const chatId =
           get().currentChatId ?? get().addChat(message.content.slice(0, 30));
         let updatedChats = [...get().chats];
+        const pendingToolCalls = get().pendingToolCalls;
 
-        const newMessage = { ...message, id: nanoid(), timestamp: Date.now() };
+        const newMessage = {
+          ...message,
+          id: nanoid(),
+          timestamp: Date.now(),
+          toolCalls:
+            message.toolCalls ||
+            (pendingToolCalls.length > 0 ? [...pendingToolCalls] : undefined),
+        };
         updatedChats = updatedChats.map((chat) => {
           if (chat.id !== chatId) return chat;
           const name =
@@ -497,8 +520,33 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
           return { ...chat, messages: [...chat.messages, newMessage], name };
         });
 
-        set({ chats: updatedChats, currentChatId: chatId });
+        set({
+          chats: updatedChats,
+          currentChatId: chatId,
+          pendingToolCalls: [],
+        });
       },
+      updateToolCall: (id, update) => {
+        set((state) => {
+          const existing = state.pendingToolCalls.find((tc) => tc.id === id);
+          if (existing) {
+            return {
+              pendingToolCalls: state.pendingToolCalls.map((tc) =>
+                tc.id === id ? { ...tc, ...update } : tc
+              ),
+            };
+          }
+          const timestamp = Date.now();
+          const status = "pending";
+          return {
+            pendingToolCalls: [
+              ...state.pendingToolCalls,
+              { id, toolName: "", args: {}, status, timestamp, ...update },
+            ],
+          };
+        });
+      },
+      clearPendingToolCalls: () => set({ pendingToolCalls: [] }),
       deleteMessagePair: (messageId) => {
         const { currentChatId, chats } = get();
         if (!currentChatId) return;
@@ -509,7 +557,6 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
             const msgIndex = chat.messages.findIndex((m) => m.id === messageId);
             if (msgIndex === -1) return chat;
             const newMessages = [...chat.messages];
-            // Delete user message and the subsequent assistant message
             const deleteCount =
               chat.messages[msgIndex + 1]?.role === "assistant" ? 2 : 1;
             newMessages.splice(msgIndex, deleteCount);
@@ -525,11 +572,44 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
             c.id === currentChatId ? { ...c, messages: [] } : c
           ),
           isLoading: false,
+          pendingToolCalls: [],
         }));
       },
       setIsLoading: (loading) => set({ isLoading: loading }),
+      undoToMessage: (messageId) => {
+        const { currentChatId, chats } = get();
+        if (!currentChatId) return null;
+
+        const chat = chats.find((c) => c.id === currentChatId);
+        if (!chat) return null;
+
+        const msgIndex = chat.messages.findIndex((m) => m.id === messageId);
+        if (msgIndex === -1) return null;
+
+        const message = chat.messages[msgIndex];
+        if (!message.operationSnapshot) return null;
+
+        const newMessages = chat.messages.slice(0, msgIndex);
+
+        set({
+          chats: chats.map((c) =>
+            c.id === currentChatId ? { ...c, messages: newMessages } : c
+          ),
+        });
+
+        return message.operationSnapshot;
+      },
     }),
-    { name: "agent", storage: createIDbStorage("agent") }
+    {
+      name: "agent",
+      storage: createIDbStorage("agent"),
+      partialize: (state) => ({
+        apiKeys: state.apiKeys,
+        selectedModel: state.selectedModel,
+        chats: state.chats,
+        currentChatId: state.currentChatId,
+      }),
+    }
   ),
   shallow
 );

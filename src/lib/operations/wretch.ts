@@ -12,6 +12,7 @@ import {
   createDataFromRawValue,
   operationToListItem,
   createStatement,
+  isObject,
 } from "../utils";
 import { getPromiseArgsType, InstanceTypes } from "../data";
 import { createRuntimeError } from "../built-in-operations";
@@ -41,12 +42,7 @@ function createWretchOperation(
         const result = method(instance, context, ...args);
 
         // If result is a Wretch instance (chaining), create a new instance data
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "url" in result &&
-          "fetch" in result
-        ) {
+        if (isObject(result, ["url", "fetch"])) {
           const newInstanceId = nanoid();
           context.setInstance(newInstanceId, result);
           const resultData = createData({
@@ -64,13 +60,7 @@ function createWretchOperation(
 
         // If result is a WretchResponseChain
         // We know it's a response chain if it has 'res', 'json', 'text' methods but NOT 'url' (which Wretch has)
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "res" in result &&
-          "json" in result &&
-          !("url" in result)
-        ) {
+        if (isObject(result, ["res", "json"]) && !("url" in result)) {
           const newInstanceId = nanoid();
           context.setInstance(newInstanceId, result);
           const resultData = createData({
@@ -169,12 +159,7 @@ function createChainOperation(
         }
 
         // Check if it returns WretchResponseChain (for error handlers)
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "res" in result &&
-          "json" in result
-        ) {
+        if (isObject(result, ["res", "json"])) {
           const newInstanceId = nanoid();
           context.setInstance(newInstanceId, result);
           const resultData = createData({
