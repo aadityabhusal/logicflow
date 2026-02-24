@@ -255,14 +255,9 @@ export async function executeStatement(
     );
 
     if (foundOp) {
-      const resultType = operation.type.result;
       const existingResult = context.getResult(operation.id)?.data;
 
-      const shouldExecute =
-        !foundOp.shouldCacheResult ||
-        (foundOp.shouldCacheResult &&
-          resultType.kind !== "undefined" &&
-          !existingResult);
+      const shouldExecute = !foundOp.shouldCacheResult || !existingResult;
 
       if (shouldExecute) {
         operationResult = _context.skipExecution

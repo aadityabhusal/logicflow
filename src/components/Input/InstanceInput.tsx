@@ -51,7 +51,7 @@ const InstanceInputComponent = (
                 ...context,
                 ...getContextExpectedTypes({
                   context,
-                  expectedType: data.type.constructorArgs[paramIndex].type,
+                  expectedType: data.type.constructorArgs[paramIndex]?.type,
                 }),
               }}
             />

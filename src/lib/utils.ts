@@ -1045,6 +1045,58 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
   }
 }
 
+function processDataType(type: DataType): DataType {
+  switch (type.kind) {
+    case "operation":
+      return {
+        ...type,
+        parameters: type.parameters.map((param) => {
+          const processedType = processDataType(param.type);
+          return {
+            ...param,
+            type: param.isOptional
+              ? resolveUnionType([processedType, { kind: "undefined" }])
+              : processedType,
+          };
+        }),
+        result: processDataType(type.result),
+      };
+    case "array":
+      return { ...type, elementType: processDataType(type.elementType) };
+    case "tuple":
+      return { ...type, elements: type.elements.map(processDataType) };
+    case "object":
+      return {
+        ...type,
+        properties: type.properties.map((prop) => ({
+          ...prop,
+          value: processDataType(prop.value),
+        })),
+      };
+    case "dictionary":
+      return { ...type, elementType: processDataType(type.elementType) };
+    case "union":
+      return { ...type, types: type.types.map(processDataType) };
+    case "condition":
+      return { ...type, result: processDataType(type.result) };
+    case "instance":
+      return {
+        ...type,
+        constructorArgs: type.constructorArgs.map((arg) => {
+          const processedType = processDataType(arg.type);
+          return {
+            ...arg,
+            type: arg.isOptional
+              ? resolveUnionType([processedType, { kind: "undefined" }])
+              : processedType,
+          };
+        }),
+      };
+    default:
+      return type;
+  }
+}
+
 export function resolveParameters(
   operationListItem: OperationListItem,
   _data: IData,
@@ -1056,12 +1108,14 @@ export function resolveParameters(
       ? operationListItem.parameters(data)
       : operationListItem.parameters;
   return params.map((param) => {
-    if (param.isOptional)
+    const processedType = processDataType(param.type);
+    if (param.isOptional) {
       return {
         ...param,
-        type: resolveUnionType([param.type, { kind: "undefined" }]),
+        type: resolveUnionType([processedType, { kind: "undefined" }]),
       };
-    return param;
+    }
+    return { ...param, type: processedType };
   });
 }
 
