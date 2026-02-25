@@ -14,6 +14,7 @@ import {
   FaCircleChevronDown,
   FaCirclePlus,
   FaCircleXmark,
+  FaObjectUngroup,
   FaSquareArrowUpRight,
 } from "react-icons/fa6";
 import {
@@ -23,10 +24,12 @@ import {
   useExecutionResultsStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
-import { Context, IData, IDropdownItem } from "../lib/types";
+import { Context, IData, IDropdownItem, OperationType } from "../lib/types";
 import { useSearchParams } from "react-router";
 import {
   createOperationFromFile,
+  createFileFromOperation,
+  createVariableName,
   getTypeSignature,
   handleSearchParams,
   isDataOfType,
@@ -34,6 +37,7 @@ import {
   resolveReference,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
+import { nanoid } from "nanoid";
 
 interface IDropdownTargetProps
   extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
@@ -47,6 +51,7 @@ const DropdownComponent = ({
   items,
   handleDelete,
   addOperationCall,
+  handleChange,
   children,
   options,
   isInputTarget,
@@ -59,6 +64,7 @@ const DropdownComponent = ({
   items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
   addOperationCall?: () => void;
+  handleChange?: (data: IData) => void;
   children?: ReactNode;
   options?: {
     withSearch?: boolean;
@@ -79,6 +85,7 @@ const DropdownComponent = ({
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
   );
+  const addFile = useProjectStore((s) => s.addFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const detailsPanelLockedId = useUiConfigStore((s) => {
     const lockedId = currentFileId && s.sidebar.lockedIds?.[currentFileId];
@@ -235,6 +242,27 @@ const DropdownComponent = ({
     data?.type.kind,
   ]);
 
+  const handleExtractToFile = (data: IData<OperationType>) => {
+    const newName = createVariableName({
+      prefix: "operation",
+      prev: useProjectStore.getState().getCurrentProject()?.files || [],
+    });
+
+    addFile(
+      createFileFromOperation({
+        id: data.id,
+        type: data.type,
+        value: { ...data.value, name: newName },
+      })
+    );
+
+    handleChange?.({
+      id: nanoid(),
+      type: { kind: "reference", dataType: data.type },
+      value: { name: newName, id: data.id },
+    });
+  };
+
   return (
     <Combobox
       onOptionSubmit={(optionValue) => {
@@ -314,6 +342,17 @@ const DropdownComponent = ({
                 title="Go to operation"
               />
             )}
+          {isDataOfType(data, "operation") && handleChange && (
+            <IconButton
+              tabIndex={-1}
+              size={8}
+              className="absolute -top-1.5 right-2.5 text-white bg-border rounded-full z-10 p-0.5"
+              icon={FaObjectUngroup}
+              onClick={() => handleExtractToFile(data)}
+              hidden={!isFocused && !isHovered}
+              title="Extract operation"
+            />
+          )}
           {handleDelete && (
             <IconButton
               tabIndex={-1}

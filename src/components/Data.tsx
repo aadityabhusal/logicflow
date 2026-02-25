@@ -73,6 +73,7 @@ const DataComponent = ({
       items={dropdownItems}
       handleDelete={!disableDelete ? () => handleChange(data, true) : undefined}
       addOperationCall={addOperationCall}
+      handleChange={handleChange}
       options={dropdownOptions}
       context={context}
       value={
