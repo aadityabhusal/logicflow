@@ -308,12 +308,14 @@ export function createContextVariables(
       const isOptional = operation?.type.parameters.find(
         (param) => param.name === statement.name && param.isOptional
       );
-      if (isOptional) {
-        result.type = resolveUnionType([result.type, { kind: "undefined" }]);
-      }
-
       variables.set(statement.name, {
-        data: { ...result, id: statement.id },
+        data: {
+          ...result,
+          id: statement.id,
+          type: isOptional
+            ? resolveUnionType([result.type, { kind: "undefined" }])
+            : result.type,
+        },
         reference: isDataOfType(statement.data, "reference")
           ? statement.data.value
           : undefined,

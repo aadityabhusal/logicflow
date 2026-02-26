@@ -29,6 +29,7 @@ import {
   getRawValueFromData,
   operationToListItem,
   createDataFromRawValue,
+  resolveReference,
 } from "./utils";
 import { wretchOperations } from "./operations/wretch";
 
@@ -952,7 +953,10 @@ const promiseOperations: OperationListItem[] = [
           promiseData,
           context
         ) as Promise<unknown>;
-        const callbackOp = callback.data as IData<OperationType>;
+        const callbackOp = resolveReference(
+          callback.data,
+          context
+        ) as IData<OperationType>;
         const newPromise = promiseValue.then(async (resolvedValue) => {
           const updatedCallback = {
             ...callbackOp.type,
@@ -1013,7 +1017,10 @@ const promiseOperations: OperationListItem[] = [
           promiseData,
           context
         ) as Promise<unknown>;
-        const errorCallbackOp = errorCallback.data as IData<OperationType>;
+        const errorCallbackOp = resolveReference(
+          errorCallback.data,
+          context
+        ) as IData<OperationType>;
         const newPromise = promiseValue.catch(async (error) => {
           const updatedCallback = {
             ...errorCallbackOp.type,

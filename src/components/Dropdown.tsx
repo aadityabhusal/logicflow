@@ -438,13 +438,15 @@ const DropdownComponent = ({
                       <Combobox.Option
                         value={option.value}
                         key={option.value}
-                        className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
+                        className={`flex items-center justify-between gap-4 p-0.5 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
                         active={option.value === value}
                       >
-                        <span className="text-sm max-w-32 truncate">
+                        <span className="max-w-32 truncate">
                           {option.label || option.value}
                         </span>
-                        <span className="text-xs">{option.secondaryLabel}</span>
+                        <span className="text-sm text-disabled">
+                          {option.secondaryLabel}
+                        </span>
                       </Combobox.Option>
                     </Tooltip>
                   ))}

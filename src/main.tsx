@@ -64,7 +64,7 @@ const theme = createTheme({
     Menu: Menu.extend({
       classNames: {
         dropdown: "absolute border flex flex-col bg-editor",
-        item: "flex items-center justify-between gap-2 p-1 hover:bg-dropdown-hover focus:bg-dropdown-hover focus:outline-none data-disabled:text-disabled",
+        item: "flex items-center justify-between gap-2 p-0.5 hover:bg-dropdown-hover focus:bg-dropdown-hover focus:outline-none data-disabled:text-disabled",
       },
     }),
   },
