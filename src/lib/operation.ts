@@ -38,12 +38,11 @@ const dataSupportsOperation = (
   if (isDataOfType(data, "never")) return false;
   const operationParameters = resolveParameters(operationItem, data, context);
   const firstParam = operationParameters[0]?.type ?? { kind: "undefined" };
-  if (isDataOfType(data, "instance") && firstParam.kind === "instance") {
-    return firstParam.className === data.type.className;
+  // This case is for union of two objects of different keys.
+  if (isDataOfType(data, "union") && firstParam.kind !== "union") {
+    return data.type.types.every((t) => isTypeCompatible(t, firstParam));
   }
-  return isDataOfType(data, "union") && firstParam.kind !== "union"
-    ? data.type.types.every((t) => t.kind === firstParam.kind)
-    : isDataOfType(data, firstParam.kind) || firstParam.kind === "unknown";
+  return isTypeCompatible(data.type, firstParam);
 };
 
 type FilteredOperationsReturn<T extends boolean> = T extends true

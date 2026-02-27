@@ -801,7 +801,10 @@ const operationOperations: OperationListItem[] = [
         const rawArgs = p.map((param) => getRawValueFromData(param, context));
         try {
           const result = await jsCallback(...rawArgs);
-          return createDataFromRawValue(result, context, data.type.result.kind);
+          return createDataFromRawValue(result, {
+            ...context,
+            expectedType: data.type.result,
+          });
         } catch (error) {
           return createRuntimeError(error);
         }

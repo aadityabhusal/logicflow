@@ -400,8 +400,7 @@ export function operationToListItem(
 // TODO: add expectedType instead of expectedKind when needed
 export function createDataFromRawValue(
   value: unknown,
-  context: Context,
-  expectedKind?: DataType["kind"]
+  context: Context
 ): IData {
   if (value === undefined || value === null) {
     return createData({ type: { kind: "undefined" } });
@@ -423,12 +422,22 @@ export function createDataFromRawValue(
   }
 
   if (Array.isArray(value)) {
-    const _value = value.map((val) =>
-      createStatement({ data: createDataFromRawValue(val, context) })
+    const _value = value.map((val, i) =>
+      createStatement({
+        data: createDataFromRawValue(val, {
+          ...context,
+          expectedType:
+            context.expectedType?.kind === "tuple"
+              ? context.expectedType.elements[i]
+              : context.expectedType?.kind === "array"
+              ? context.expectedType.elementType
+              : undefined,
+        }),
+      })
     );
     return createData({
       type:
-        expectedKind === "tuple"
+        context.expectedType?.kind === "tuple"
           ? { kind: "tuple", elements: _value.map((v) => v.data.type) }
           : {
               kind: "array",
@@ -454,13 +463,23 @@ export function createDataFromRawValue(
       context.setInstance(data.value.instanceId, value);
       return data;
     } else {
-      const entries = Object.entries(value).map(([key, val]) => ({
+      const entries = Object.entries(value).map(([key, val], i) => ({
         key,
-        value: createStatement({ data: createDataFromRawValue(val, context) }),
+        value: createStatement({
+          data: createDataFromRawValue(val, {
+            ...context,
+            expectedType:
+              context.expectedType?.kind === "object"
+                ? context.expectedType.properties[i].value
+                : context.expectedType?.kind === "dictionary"
+                ? context.expectedType.elementType
+                : undefined,
+          }),
+        }),
       }));
       return createData({
         type:
-          expectedKind === "object"
+          context.expectedType?.kind === "object"
             ? {
                 kind: "object",
                 properties: entries.map(({ key, value }) => ({
@@ -546,6 +565,10 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
 
   if (first.kind === "dictionary" && second.kind === "dictionary") {
     return isTypeCompatible(first.elementType, second.elementType);
+  }
+
+  if (first.kind === "instance" && second.kind === "instance") {
+    return first.className === second.className;
   }
 
   if (first.kind === "union" && second.kind === "union") {
@@ -1217,7 +1240,10 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
   } else if (isDataOfType(data, "operation")) {
     return async (...rawParams: unknown[]): Promise<unknown> => {
       const mappedParameters = data.value.parameters.map((param, index) =>
-        createDataFromRawValue(rawParams[index], context, param.data.type.kind)
+        createDataFromRawValue(rawParams[index], {
+          ...context,
+          expectedType: param.data.type,
+        })
       );
       const result = await context.executeOperation(
         operationToListItem(data),
