@@ -5,6 +5,7 @@ import {
   OperationType,
   OperationListItem,
   Context,
+  Thenable,
 } from "./types";
 import {
   createData,
@@ -24,9 +25,10 @@ import {
   resolveParameters,
   operationToListItem,
   createContext,
+  syncPromise,
+  isObject,
 } from "./utils";
 import { builtInOperations, createRuntimeError } from "./built-in-operations";
-import { InstanceTypes } from "./data";
 
 /* Operation List */
 
@@ -152,46 +154,119 @@ export async function createOperationCall({
 
 /* Execution */
 
-async function storeDataInstance(data: IData, context: Context) {
-  if (!isDataOfType(data, "instance")) return;
-  const settledArgs = await Promise.all(
-    data.value.constructorArgs.map((arg) => executeStatement(arg, context))
-  );
-  const instance =
-    context.getInstance(data.value.instanceId) ??
-    createInstance(
-      data.value.className as keyof typeof InstanceTypes,
-      settledArgs,
-      context
-    );
-  context.setInstance(data.value.instanceId, instance);
-}
+function executeDataValue(
+  data: IData,
+  context: Context
+): (IData | Thenable<IData | void>)[] {
+  const _execute = context.isSync ? executeStatementSync : executeStatement;
 
-async function executeDataValue(data: IData, context: Context): Promise<void> {
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
-    await Promise.allSettled(
-      data.value.map((item) => executeStatement(item, context))
-    );
+    return data.value.map((item) => _execute(item, context));
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    await Promise.allSettled(
-      data.value.entries.map((entry) => executeStatement(entry.value, context))
-    );
+    return data.value.entries.map((e) => _execute(e.value, context));
   } else if (isDataOfType(data, "operation")) {
-    await setOperationResults(data, context);
+    return [setOperationResults(data, context)];
   } else if (isDataOfType(data, "union")) {
-    await executeDataValue(
+    return executeDataValue(
       { ...data, type: getUnionActiveType(data.type, data.value, context) },
       context
     );
   } else if (isDataOfType(data, "condition")) {
-    await Promise.allSettled([
-      executeStatement(data.value.condition, context),
-      executeStatement(data.value.true, context),
-      executeStatement(data.value.false, context),
-    ]);
+    return Object.values(data.value).map((s) => _execute(s, context));
   } else if (isDataOfType(data, "instance")) {
-    await storeDataInstance(data, context);
+    const args = data.value.constructorArgs.map((arg) =>
+      _execute(arg, context)
+    );
+    return [
+      (context.isSync ? syncPromise(args as IData[]) : Promise.all(args)).then(
+        (result) => {
+          const instance =
+            context.getInstance(data.value.instanceId) ??
+            createInstance(data.value.className, result, context);
+          context.setInstance(data.value.instanceId, instance);
+        }
+      ),
+    ];
   }
+  return [];
+}
+
+export function setOperationResults(
+  operation: IData<OperationType>,
+  context: Context
+): Thenable<void> {
+  const { parameters, statements } = operation.value;
+  const _context = createContext(context, {
+    variables: createContextVariables(parameters, context, operation),
+  });
+  const _execute = context.isSync ? executeStatementSync : executeStatement;
+  const executedStatements = [...parameters, ...statements].map((statements) =>
+    _execute(statements, _context)
+  );
+
+  return (
+    context.isSync
+      ? syncPromise(executedStatements as IData[])
+      : Promise.all(executedStatements)
+  ).then((results) => {
+    results.slice(parameters.length).forEach((result, index) => {
+      if (result && !isDataOfType(result, "error") && statements[index].name) {
+        _context.variables.set(statements[index].name, { data: result });
+      }
+    });
+  });
+}
+
+function executeStatementCore(
+  context: Context,
+  narrowed: Required<Context>["narrowedTypes"],
+  data: IData,
+  operation: IData<OperationType>
+): {
+  _narrowedTypes: Required<Context>["narrowedTypes"];
+  shouldCacheResult?: boolean;
+} & (
+  | { result: IData; foundOp?: never; _context?: never }
+  | { foundOp: OperationListItem; _context: Context; result?: never }
+) {
+  const _narrowedTypes = applyTypeNarrowing(context, narrowed, data, operation);
+  const _context = createContext(context, {
+    narrowedTypes: _narrowedTypes,
+    skipExecution: getSkipExecution({
+      context: context,
+      data: data,
+      operationName: operation.value.name,
+    }),
+  });
+  const foundOp = getFilteredOperations(data, _context).find(
+    (op) => op.name === operation.value.name
+  );
+
+  if (!foundOp) {
+    const kind = resolveReference(data, _context).type.kind;
+    return {
+      _narrowedTypes,
+      result: createData({
+        type: { kind: "error", errorType: "type_error" },
+        value: {
+          reason: `Cannot chain '${operation.value.name}' after '${kind}' type`,
+        },
+      }),
+    };
+  }
+  const existingResult = context.getResult(operation.id)?.data;
+  const shouldCacheResult = foundOp.shouldCacheResult;
+  if (shouldCacheResult && existingResult) {
+    return { _narrowedTypes, result: existingResult, shouldCacheResult };
+  }
+  if (_context.skipExecution) {
+    return {
+      _narrowedTypes,
+      shouldCacheResult,
+      result: createData({ type: operation.type.result }),
+    };
+  }
+  return { _narrowedTypes, _context, foundOp, shouldCacheResult };
 }
 
 export async function executeStatement(
@@ -199,81 +274,70 @@ export async function executeStatement(
   context: Context
 ): Promise<IData> {
   let currentData = resolveReference(statement.data, context);
+  if (isDataOfType(currentData, "condition")) {
+    const value = currentData.value;
+    const result = await executeStatement(value.condition, context);
+    if (isFatalError(result)) return result;
+    const data = result.value ? value.true : value.false;
+    currentData = await executeStatement(data, context);
+  }
   if (isFatalError(currentData)) return currentData;
 
-  if (isDataOfType(currentData, "condition")) {
-    const conditionValue = currentData.value;
-    const conditionResult = await executeStatement(
-      conditionValue.condition,
-      context
-    );
-    if (isFatalError(conditionResult)) return conditionResult;
-    currentData = await executeStatement(
-      conditionResult.value ? conditionValue.true : conditionValue.false,
-      context
-    );
-    if (isFatalError(currentData)) return currentData;
-  }
-
-  // For showing result values of operation calls used inside complex data.
-  await executeDataValue(statement.data, context);
+  await Promise.allSettled(executeDataValue(statement.data, context));
 
   let narrowedTypes = new Map();
   let resultData = statement.data;
 
   for (const operation of statement.operations) {
     if (isFatalError(resultData)) break;
+    const { _narrowedTypes, foundOp, result, _context, shouldCacheResult } =
+      executeStatementCore(context, narrowedTypes, resultData, operation);
+    narrowedTypes = _narrowedTypes;
+    const parameters = operation.value.parameters;
+    const opResult = foundOp
+      ? await executeOperation(foundOp, resultData, parameters, _context)
+      : result;
+    context.setResult?.(operation.id, { data: opResult, shouldCacheResult });
+    resultData = opResult;
+  }
+  const finalResult = resolveReference(resultData, context);
+  return finalResult;
+}
 
-    narrowedTypes = applyTypeNarrowing(
+export function executeStatementSync(
+  statement: IStatement,
+  context: Context
+): IData {
+  let currentData = resolveReference(statement.data, context);
+  if (isDataOfType(currentData, "condition")) {
+    const value = currentData.value;
+    const result = executeStatementSync(value.condition, context);
+    if (isFatalError(result)) return result;
+    const data = result.value ? value.true : value.false;
+    currentData = executeStatementSync(data, context);
+  }
+  if (isFatalError(currentData)) return currentData;
+
+  executeDataValue(statement.data, context).forEach((e) => {
+    if (isObject(e, ["then"])) e.then(() => {});
+  });
+
+  let narrowedTypes = new Map();
+  let resultData = statement.data;
+
+  for (const operation of statement.operations) {
+    if (isFatalError(resultData)) break;
+    const { _narrowedTypes, foundOp, result, _context } = executeStatementCore(
       context,
       narrowedTypes,
       resultData,
       operation
     );
-
-    const _context = createContext(context, {
-      narrowedTypes,
-      skipExecution: getSkipExecution({
-        context,
-        data: resultData,
-        operationName: operation.value.name,
-      }),
-    });
-
-    let operationResult: IData = createData({
-      type: { kind: "error", errorType: "type_error" },
-      value: {
-        reason: `Cannot chain '${operation.value.name}' after '${
-          resolveReference(resultData, _context).type.kind
-        }' type`,
-      },
-    });
-
-    const foundOp = getFilteredOperations(resultData, _context).find(
-      (op) => op.name === operation.value.name
-    );
-
-    if (foundOp) {
-      const existingResult = context.getResult(operation.id)?.data;
-
-      const shouldExecute = !foundOp.shouldCacheResult || !existingResult;
-
-      if (shouldExecute) {
-        operationResult = _context.skipExecution
-          ? createData({ type: operation.type.result })
-          : await executeOperation(
-              foundOp,
-              resultData,
-              operation.value.parameters,
-              _context
-            );
-      } else if (existingResult) {
-        operationResult = existingResult;
-      } else if (foundOp.shouldCacheResult) {
-        // For yet-to-execute manual operations, return an undefined type placeholder result.
-        operationResult = createData({ type: { kind: "undefined" } });
-      }
-    }
+    narrowedTypes = _narrowedTypes;
+    const parameters = operation.value.parameters;
+    const operationResult = foundOp
+      ? executeOperationSync(foundOp, resultData, parameters, _context)
+      : result;
     context.setResult?.(operation.id, {
       data: operationResult,
       shouldCacheResult: foundOp?.shouldCacheResult,
@@ -284,98 +348,73 @@ export async function executeStatement(
   return finalResult;
 }
 
-export async function setOperationResults(
-  operation: IData<OperationType>,
-  context: Context
-): Promise<void> {
-  const _context = createContext(context, {
-    variables: createContextVariables(
-      operation.value.parameters,
-      context,
-      operation
-    ),
-  });
-  await Promise.allSettled(
-    operation.value.parameters.map((param) =>
-      storeDataInstance(param.data, context)
-    )
-  );
-  for (const statement of operation.value.statements) {
-    const result = await executeStatement(statement, _context);
-    if (!isDataOfType(result, "error") && statement.name) {
-      _context.variables.set(statement.name, { data: result });
-    }
-  }
-}
-
-export async function executeOperation(
+export function executeOperationCore(
   operation: OperationListItem,
   _data: IData,
   _parameters: IStatement[],
-  prevContext: Context
-): Promise<IData> {
-  if (prevContext.skipExecution) return createData();
-  const data = resolveReference(_data, prevContext);
+  context: Context
+): IData | Thenable<IData | Context> {
+  if (context.skipExecution) return createData();
+  const data = resolveReference(_data, context);
   if (
     isDataOfType(data, "error") &&
-    !dataSupportsOperation(data, operation, prevContext)
+    !dataSupportsOperation(data, operation, context)
   ) {
     return data;
   }
 
   if ("lazyHandler" in operation) {
     try {
-      return await operation.lazyHandler(prevContext, data, ..._parameters);
+      return operation.lazyHandler(context, data, ..._parameters);
     } catch (error) {
       return createRuntimeError(error);
     }
   }
 
-  const resolvedParams = resolveParameters(operation, data, prevContext);
-  const settledParams = await Promise.allSettled(
-    resolvedParams.slice(1).map((p, index) => {
-      const hasParam = _parameters[index];
-      if (!hasParam)
-        return createData({
-          type: resolveUnionType([p.type, { kind: "undefined" }]),
-          value: undefined,
-        });
-      return executeStatement(hasParam, prevContext);
-    })
-  );
-
-  const parameters = settledParams.map((result) =>
-    result.status === "fulfilled"
-      ? result.value
-      : createRuntimeError(result.reason)
-  );
-  const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
-    const hasError = isFatalError(parameters[i]);
-    const typeMismatch = !isTypeCompatible(parameters[i].type, p.type);
-    return hasError || typeMismatch;
+  const resolvedParams = resolveParameters(operation, data, context);
+  const executedParams = resolvedParams.slice(1).map((p, index) => {
+    const hasParam = _parameters[index];
+    if (!hasParam)
+      return createData({
+        type: resolveUnionType([p.type, { kind: "undefined" }]),
+        value: undefined,
+      });
+    const _execute = context.isSync ? executeStatementSync : executeStatement;
+    return _execute(hasParam, context);
   });
-  if (errorParamIndex !== -1) {
-    return createData({
-      type: { kind: "error", errorType: "type_error" },
-      value: {
-        reason: `Parameter #${errorParamIndex + 1} should be of type '${
-          resolvedParams[errorParamIndex + 1].type.kind
-        }'`,
-      },
+
+  return (
+    context.isSync
+      ? syncPromise(executedParams as IData[])
+      : Promise.all(executedParams)
+  ).then((parameters) => {
+    const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
+      const hasError = isFatalError(parameters[i]);
+      const typeMismatch = !isTypeCompatible(parameters[i].type, p.type);
+      return hasError || typeMismatch;
     });
-  }
-
-  if ("handler" in operation) {
-    try {
-      const result = operation.handler(prevContext, data, ...parameters);
-      return result instanceof Promise ? await result : result;
-    } catch (error) {
-      return createRuntimeError(error);
+    if (errorParamIndex !== -1) {
+      return createData({
+        type: { kind: "error", errorType: "type_error" },
+        value: {
+          reason: `Parameter #${errorParamIndex + 1} should be of type '${
+            resolvedParams[errorParamIndex + 1].type.kind
+          }'`,
+        },
+      });
     }
-  }
+    if ("handler" in operation) {
+      try {
+        return operation.handler(context, data, ...parameters);
+      } catch (error) {
+        return createRuntimeError(error);
+      }
+    }
 
-  if ("statements" in operation && operation.statements.length > 0) {
-    const context = createContext(prevContext, undefined, true);
+    if (!("statements" in operation) || operation.statements.length <= 0) {
+      return createData();
+    }
+    const newContext = createContext(context, undefined, true);
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
       if (_param.name && allInputs[index]) {
@@ -384,26 +423,57 @@ export async function executeOperation(
             ? { ..._param.type, activeIndex: undefined }
             : _param.type;
         const param = { ...allInputs[index], type: paramType };
-        const resolved = resolveReference(param, context);
-        context.variables.set(_param.name, {
+        const resolved = resolveReference(param, newContext);
+        newContext.variables.set(_param.name, {
           data: resolved,
           reference: isDataOfType(param, "reference") ? param.value : undefined,
         });
       }
     });
-    let lastResult: IData = createData();
-    for (const statement of operation.statements) {
-      lastResult = await executeStatement(statement, context);
-      if (isDataOfType(lastResult, "error")) return lastResult;
-      if (statement.name) {
-        context.variables.set(statement.name, {
-          data: lastResult,
-          reference: undefined,
-        });
-      }
-    }
-    return lastResult;
-  }
+    return newContext;
+  });
+}
 
-  return createData();
+export async function executeOperation(
+  ...args: Parameters<typeof executeOperationCore>
+): Promise<IData> {
+  const [operation] = args;
+  const result = await executeOperationCore(...args);
+  if ("type" in result) return result;
+
+  let lastResult: IData = createData();
+  if (!("statements" in operation)) return lastResult;
+  for (const statement of operation.statements) {
+    lastResult = await executeStatement(statement, result);
+    if (isDataOfType(lastResult, "error")) return lastResult;
+    if (statement.name) {
+      result.variables.set(statement.name, {
+        data: lastResult,
+        reference: undefined,
+      });
+    }
+  }
+  return lastResult;
+}
+
+export function executeOperationSync(
+  ...args: Parameters<typeof executeOperationCore>
+): IData {
+  const [operation] = args;
+  const result = executeOperationCore(...args) as IData | Context;
+  if ("type" in result) return result;
+
+  let lastResult: IData = createData();
+  if (!("statements" in operation)) return lastResult;
+  for (const statement of operation.statements) {
+    lastResult = executeStatementSync(statement, result);
+    if (isDataOfType(lastResult, "error")) return lastResult;
+    if (statement.name) {
+      result.variables.set(statement.name, {
+        data: lastResult,
+        reference: undefined,
+      });
+    }
+  }
+  return lastResult;
 }

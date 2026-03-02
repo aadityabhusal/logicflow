@@ -16,6 +16,7 @@ import {
   ObjectType,
   DictionaryType,
   TupleType,
+  Thenable,
 } from "./types";
 
 /* Create */
@@ -260,6 +261,7 @@ export function createContext(
     setInstance: context.setInstance,
     executeOperation: context.executeOperation,
     executeStatement: context.executeStatement,
+    isSync: context.isSync,
     reservedNames: new Set(context.reservedNames),
     variables: new Map(context.variables),
   };
@@ -1435,4 +1437,12 @@ export function handleSearchParams(
     else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
+}
+
+export function syncPromise<T>(data: T): Thenable<T> {
+  return {
+    then: ((onfulfilled?) => {
+      return syncPromise(onfulfilled ? onfulfilled(data) : data);
+    }) as Thenable<T>["then"],
+  };
 }

@@ -71,13 +71,13 @@ export default function Project() {
               name: op.name,
             }))
           )
-      ),
+      ) as Context["reservedNames"],
       getResult: useExecutionResultsStore.getState().getResult,
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
       executeOperation,
       executeStatement,
-    } as Context;
+    };
   }, [currentProject?.files, currentOperation?.id]);
 
   useHotkeys(useCustomHotkeys(), []);
@@ -105,10 +105,7 @@ export default function Project() {
   useEffect(() => {
     if (deferredOperation) {
       useExecutionResultsStore.getState().removeAll();
-      setOperationResults(deferredOperation, {
-        ...deferredContext,
-        setResult,
-      });
+      setOperationResults(deferredOperation, { ...deferredContext, setResult });
       setNavigation({
         navigationEntities: getOperationEntities(
           deferredOperation,

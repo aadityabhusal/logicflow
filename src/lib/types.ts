@@ -169,7 +169,9 @@ export type Context = {
   getResult: (entityId: string) => ExecutionResult | undefined;
   getInstance: (entityId: string) => unknown;
   setInstance: (entityId: string, instance: unknown) => void;
-  setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
+  // Only for async execution of operation calls inside an operation definition
+  setResult?: (entityId: string, result: Partial<ExecutionResult>) => void;
+  // execute functions are here to avoid circular dependency in operation.ts and built-in-operations.ts
   executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
   executeOperation: (
     operation: OperationListItem,
@@ -177,6 +179,7 @@ export type Context = {
     parameters: IStatement[],
     context: Context
   ) => Promise<IData>;
+  isSync?: boolean;
 };
 export type OperationListItem = {
   name: string;
@@ -301,3 +304,10 @@ interface CronTrigger {
 }
 
 export type SetItem<T> = T extends Set<infer U> ? U : never;
+
+export type Thenable<T> = {
+  then<TResult1 = T, TResult2 = never>(
+    onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ): Thenable<TResult1 | TResult2>;
+};
