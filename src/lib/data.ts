@@ -127,6 +127,7 @@ type InstanceTypeConfig<
   readonly Constructor: C;
   readonly constructorArgs: OperationType["parameters"];
   readonly hideFromDropdown?: boolean;
+  readonly prepareArgs?: (args: unknown[]) => unknown[];
 };
 
 export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
@@ -159,6 +160,13 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
         isOptional: true,
       },
     ] as OperationType["parameters"],
+    prepareArgs(args) {
+      const [body, ...rest] = args;
+      if (body !== null && typeof body === "object") {
+        return [JSON.stringify(body), ...rest];
+      }
+      return args;
+    },
   },
   Wretch: {
     name: "Wretch",

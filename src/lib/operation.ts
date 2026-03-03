@@ -19,7 +19,6 @@ import {
   isTypeCompatible,
   resolveUnionType,
   resolveReference,
-  createContextVariables,
   applyTypeNarrowing,
   getSkipExecution,
   resolveParameters,
@@ -196,25 +195,20 @@ export function setOperationResults(
   context: Context
 ): Thenable<void> {
   const { parameters, statements } = operation.value;
-  const _context = createContext(context, {
-    variables: createContextVariables(parameters, context, operation),
-  });
+  const _context = createContext(context);
   const _execute = context.isSync ? executeStatementSync : executeStatement;
-  const executedStatements = [...parameters, ...statements].map((statements) =>
-    _execute(statements, _context)
-  );
-
-  return (
-    context.isSync
-      ? syncPromise(executedStatements as IData[])
-      : Promise.all(executedStatements)
-  ).then((results) => {
-    results.slice(parameters.length).forEach((result, index) => {
-      if (result && !isDataOfType(result, "error") && statements[index].name) {
-        _context.variables.set(statements[index].name, { data: result });
-      }
+  return [...parameters, ...statements].reduce((chain, statement) => {
+    return chain.then(() => {
+      const _result = _execute(statement, _context);
+      return (_result instanceof Promise ? _result : syncPromise(_result)).then(
+        (result) => {
+          if (!isDataOfType(result, "error") && statement.name) {
+            _context.variables.set(statement.name, { data: result });
+          }
+        }
+      );
     });
-  });
+  }, syncPromise(undefined) as Thenable<void>);
 }
 
 function executeStatementCore(

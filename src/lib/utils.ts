@@ -379,10 +379,15 @@ export function createInstance<
   T extends keyof typeof InstanceTypes,
   K extends (typeof InstanceTypes)[T]["Constructor"]
 >(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
-  const rawArgs = constructorArgs.map((arg) =>
+  const config = InstanceTypes[className];
+  let rawArgs = constructorArgs.map((arg) =>
     getRawValueFromData(arg, context)
   ) as ConstructorParameters<K>;
-  const Constructor = InstanceTypes[className].Constructor as new (
+  if (config.prepareArgs) {
+    rawArgs = config.prepareArgs(rawArgs) as ConstructorParameters<K>;
+  }
+
+  const Constructor = config.Constructor as new (
     ...args: ConstructorParameters<K>
   ) => InstanceType<K>;
   return new Constructor(...rawArgs);
@@ -1440,9 +1445,13 @@ export function handleSearchParams(
 }
 
 export function syncPromise<T>(data: T): Thenable<T> {
+  // Allows nested Thenables to pass through
+  if (isObject(data, ["then"])) return data as Thenable<T>;
   return {
     then: ((onfulfilled?) => {
-      return syncPromise(onfulfilled ? onfulfilled(data) : data);
+      if (!onfulfilled) return syncPromise(data);
+      const result = onfulfilled(data);
+      return syncPromise(result);
     }) as Thenable<T>["then"],
   };
 }
