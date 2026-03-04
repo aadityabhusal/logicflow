@@ -31,7 +31,9 @@ export function createData<T extends DataType>(
       getInstance: () => undefined,
       setInstance: () => undefined,
       executeOperation: () => Promise.resolve(createData()),
+      executeOperationSync: () => createData(),
       executeStatement: () => Promise.resolve(createData()),
+      executeStatementSync: () => createData(),
     })) as T;
   return {
     id: props?.id ?? nanoid(),
@@ -260,7 +262,9 @@ export function createContext(
     getInstance: context.getInstance,
     setInstance: context.setInstance,
     executeOperation: context.executeOperation,
+    executeOperationSync: context.executeOperationSync,
     executeStatement: context.executeStatement,
+    executeStatementSync: context.executeStatementSync,
     isSync: context.isSync,
     reservedNames: new Set(context.reservedNames),
     variables: new Map(context.variables),
@@ -521,6 +525,30 @@ export function createDataFromRawValue(
   return createData({ type: { kind: "unknown" }, value });
 }
 
+export function createThenable<T>(data: T): Thenable<T> {
+  // Allows nested Thenables to pass through
+  if (isObject(data, ["then"])) return data as Thenable<T>;
+  return {
+    then: ((onfulfilled?) => {
+      if (!onfulfilled) return createThenable(data);
+      const result = onfulfilled(data);
+      return createThenable(result);
+    }) as Thenable<T>["then"],
+  };
+}
+
+export function unwrapThenable<T>(thenable: T | Thenable<T>): T {
+  let result = thenable;
+  if (isObject(thenable, ["then"])) {
+    let unwrapped: T;
+    thenable.then((r) => {
+      unwrapped = r;
+    });
+    result = unwrapped!;
+  }
+  return result as T;
+}
+
 /* Types */
 
 export function isTypeCompatible(first: DataType, second: DataType): boolean {
@@ -555,7 +583,8 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
   }
 
   if (first.kind === "object" && second.kind === "object") {
-    const firstRequired = first.required ?? first.properties.map((p) => p.key);
+    if (second.properties.length === 0) return true;
+
     const secondRequired =
       second.required ?? second.properties.map((p) => p.key);
     const firstProps = new Map(first.properties.map((p) => [p.key, p.value]));
@@ -567,7 +596,22 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
         return false;
       }
     }
-    return firstRequired.every((key) => secondProps.has(key));
+    return true;
+  }
+
+  if (first.kind === "object" && second.kind === "dictionary") {
+    return first.properties.every(({ value }) =>
+      isTypeCompatible(value, second.elementType)
+    );
+  }
+
+  if (first.kind === "dictionary" && second.kind === "object") {
+    const secondRequired =
+      second.required ?? second.properties.map((p) => p.key);
+    if (secondRequired.length > 0) return false;
+    return second.properties.every(({ value }) =>
+      isTypeCompatible(first.elementType, value)
+    );
   }
 
   if (first.kind === "dictionary" && second.kind === "dictionary") {
@@ -1442,16 +1486,4 @@ export function handleSearchParams(
     else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
-}
-
-export function syncPromise<T>(data: T): Thenable<T> {
-  // Allows nested Thenables to pass through
-  if (isObject(data, ["then"])) return data as Thenable<T>;
-  return {
-    then: ((onfulfilled?) => {
-      if (!onfulfilled) return syncPromise(data);
-      const result = onfulfilled(data);
-      return syncPromise(result);
-    }) as Thenable<T>["then"],
-  };
 }

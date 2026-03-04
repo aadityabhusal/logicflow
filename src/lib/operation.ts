@@ -24,8 +24,9 @@ import {
   resolveParameters,
   operationToListItem,
   createContext,
-  syncPromise,
   isObject,
+  createThenable,
+  unwrapThenable,
 } from "./utils";
 import { builtInOperations, createRuntimeError } from "./built-in-operations";
 
@@ -177,14 +178,15 @@ function executeDataValue(
       _execute(arg, context)
     );
     return [
-      (context.isSync ? syncPromise(args as IData[]) : Promise.all(args)).then(
-        (result) => {
-          const instance =
-            context.getInstance(data.value.instanceId) ??
-            createInstance(data.value.className, result, context);
-          context.setInstance(data.value.instanceId, instance);
-        }
-      ),
+      (context.isSync
+        ? createThenable(args as IData[])
+        : Promise.all(args)
+      ).then((result) => {
+        const instance =
+          context.getInstance(data.value.instanceId) ??
+          createInstance(data.value.className, result, context);
+        context.setInstance(data.value.instanceId, instance);
+      }),
     ];
   }
   return [];
@@ -199,8 +201,8 @@ export function setOperationResults(
   const _execute = context.isSync ? executeStatementSync : executeStatement;
   return [...parameters, ...statements].reduce((chain, statement) => {
     return chain.then(() => {
-      const _result = _execute(statement, _context);
-      return (_result instanceof Promise ? _result : syncPromise(_result)).then(
+      const result = _execute(statement, _context);
+      return (result instanceof Promise ? result : createThenable(result)).then(
         (result) => {
           if (!isDataOfType(result, "error") && statement.name) {
             _context.variables.set(statement.name, { data: result });
@@ -208,7 +210,7 @@ export function setOperationResults(
         }
       );
     });
-  }, syncPromise(undefined) as Thenable<void>);
+  }, createThenable(undefined) as Thenable<void>);
 }
 
 function executeStatementCore(
@@ -379,7 +381,7 @@ export function executeOperationCore(
 
   return (
     context.isSync
-      ? syncPromise(executedParams as IData[])
+      ? createThenable(executedParams as IData[])
       : Promise.all(executedParams)
   ).then((parameters) => {
     const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
@@ -454,8 +456,8 @@ export function executeOperationSync(
   ...args: Parameters<typeof executeOperationCore>
 ): IData {
   const [operation] = args;
-  const result = executeOperationCore(...args) as IData | Context;
-  if ("type" in result) return result;
+  const result = unwrapThenable(executeOperationCore(...args));
+  if (result && "type" in result) return result;
 
   let lastResult: IData = createData();
   if (!("statements" in operation)) return lastResult;

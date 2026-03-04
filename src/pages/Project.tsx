@@ -29,7 +29,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DataTypes } from "@/lib/data";
 import {
   executeOperation,
+  executeOperationSync,
   executeStatement,
+  executeStatementSync,
   setOperationResults,
 } from "@/lib/operation";
 import { builtInOperations } from "@/lib/built-in-operations";
@@ -76,7 +78,9 @@ export default function Project() {
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
       executeOperation,
+      executeOperationSync,
       executeStatement,
+      executeStatementSync,
     };
   }, [currentProject?.files, currentOperation?.id]);
 

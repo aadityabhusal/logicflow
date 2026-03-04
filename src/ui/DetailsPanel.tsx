@@ -51,7 +51,9 @@ export function DetailsPanel() {
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
       executeOperation: () => Promise.resolve(createData()),
+      executeOperationSync: () => createData(),
       executeStatement: () => Promise.resolve(createData()),
+      executeStatementSync: () => createData(),
     }),
     []
   );

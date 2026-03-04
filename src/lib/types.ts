@@ -173,12 +173,18 @@ export type Context = {
   setResult?: (entityId: string, result: Partial<ExecutionResult>) => void;
   // execute functions are here to avoid circular dependency in operation.ts and built-in-operations.ts
   executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
+  executeStatementSync: (
+    ...args: Parameters<Context["executeStatement"]>
+  ) => IData;
   executeOperation: (
     operation: OperationListItem,
     data: IData,
     parameters: IStatement[],
     context: Context
   ) => Promise<IData>;
+  executeOperationSync: (
+    ...args: Parameters<Context["executeOperation"]>
+  ) => IData;
   isSync?: boolean;
 };
 export type OperationListItem = {

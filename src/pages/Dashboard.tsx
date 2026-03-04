@@ -22,7 +22,9 @@ import {
 import {
   createOperationCall,
   executeOperation,
+  executeOperationSync,
   executeStatement,
+  executeStatementSync,
 } from "@/lib/operation";
 import { Context } from "@/lib/types";
 
@@ -42,7 +44,9 @@ export default function Dashboard() {
       getInstance: useExecutionResultsStore.getState().getInstance,
       setInstance: useExecutionResultsStore.getState().setInstance,
       executeOperation,
+      executeOperationSync,
       executeStatement,
+      executeStatementSync,
     }),
     []
   );

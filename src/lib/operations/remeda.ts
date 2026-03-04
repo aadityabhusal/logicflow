@@ -3,6 +3,7 @@ import {
   ArrayType,
   Context,
   DataType,
+  DictionaryType,
   IData,
   NumberType,
   ObjectType,
@@ -15,102 +16,130 @@ import {
   createDataFromRawValue,
   createStatement,
   getRawValueFromData,
-  getStatementResult,
   isDataOfType,
   operationToListItem,
+  resolveUnionType,
 } from "../utils";
 
-function createRuntimeError(error: unknown): IData {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  return createData({
-    type: { kind: "error", errorType: "runtime_error" },
-    value: { reason: errorMessage },
-  });
-}
-
-async function asyncSort<T>(
-  arr: T[],
-  compare: (a: T, b: T) => Promise<number>
-): Promise<T[]> {
-  if (arr.length <= 1) return [...arr];
-  const mid = Math.floor(arr.length / 2);
-  const left = await asyncSort(arr.slice(0, mid), compare);
-  const right = await asyncSort(arr.slice(mid), compare);
-  const sorted: T[] = [];
-  let l = 0;
-  let r = 0;
-  while (l < left.length && r < right.length) {
-    if ((await compare(left[l], right[r])) <= 0) {
-      sorted.push(left[l++]);
-    } else {
-      sorted.push(right[r++]);
-    }
+function getArrayCallbackParams(
+  data: IData,
+  options?: {
+    elementType?: DataType;
+    secondData?: true | DataType;
+    returnType?: DataType;
+    twoParams?: boolean;
+    fourParams?: boolean;
+    accumulator?: boolean;
   }
-  return [...sorted, ...left.slice(l), ...right.slice(r)];
-}
-
-function getArrayCallbackParameters(data: IData, returnType?: DataType) {
-  const elementType = (data.type as ArrayType).elementType ?? {
+): OperationType["parameters"] {
+  const itemType = (data.type as ArrayType).elementType ?? {
     kind: "undefined",
   };
   return [
-    { type: { kind: "array", elementType: { kind: "unknown" } } },
+    {
+      type: {
+        kind: "array",
+        elementType: options?.elementType ?? { kind: "unknown" },
+      },
+    },
+    ...(options?.accumulator
+      ? [{ type: { kind: "unknown" } }]
+      : options?.secondData === true
+      ? [{ type: { kind: "array", elementType: { kind: "unknown" } } }]
+      : options?.secondData
+      ? [{ type: options?.secondData }]
+      : []),
     {
       type: {
         kind: "operation",
         parameters: [
-          { name: "item", type: elementType },
-          { name: "index", type: { kind: "number" }, isOptional: true },
-          {
-            name: "arr",
-            type: { kind: "array", elementType },
-            isOptional: true,
-          },
+          ...(options?.accumulator
+            ? [{ name: "acc", type: { kind: "unknown" } }]
+            : []),
+          ...(options?.twoParams || options?.fourParams
+            ? [
+                { name: "first", type: itemType },
+                {
+                  name: "second",
+                  type: options?.twoParams ? itemType : { kind: "unknown" },
+                },
+              ]
+            : [{ name: "item", type: itemType }]),
+          ...(options?.twoParams
+            ? []
+            : [
+                { name: "index", type: { kind: "number" }, isOptional: true },
+                { name: "data", type: data.type, isOptional: true },
+              ]),
         ],
-        result: returnType ?? { kind: "unknown" },
+        result: options?.returnType ?? { kind: "unknown" },
       },
     },
   ] as OperationType["parameters"];
 }
 
-async function executeArrayOperation(
-  data: IData<ArrayType>,
-  operation: IData<OperationType>,
-  context: Context
-): Promise<IData[]> {
-  const settledResults = await Promise.allSettled(
-    data.value.map((item, index) => {
-      const itemData = getStatementResult(item, context);
-      return context.executeOperation(
-        operationToListItem({
-          ...operation,
-          type: {
-            ...operation.type,
-            parameters: [
-              { type: data.type.elementType },
-              ...operation.type.parameters,
-            ],
-          },
-        }),
-        data,
-        [
-          createStatement({ data: createData(itemData) }),
-          createStatement({
-            data: createData({ type: { kind: "number" }, value: index }),
-            isOptional: true,
-          }),
-          createStatement({ data, isOptional: true }),
-        ],
-        context
-      );
-    })
-  );
+function createCallback<T>(_operation: IData<OperationType>, context: Context) {
+  const operation = operationToListItem(_operation);
+  return (..._args: unknown[]) => {
+    const [data, ...args] = _args;
+    const result = context.executeOperationSync(
+      operation,
+      createDataFromRawValue(data, { ...context }),
+      args.map((arg) =>
+        createStatement({
+          data: createDataFromRawValue(arg, { ...context }),
+        })
+      ),
+      { ...context, isSync: true }
+    );
+    return getRawValueFromData(result, context) as T;
+  };
+}
 
-  return settledResults.map((result) =>
-    result.status === "fulfilled"
-      ? result.value
-      : createRuntimeError(result.reason)
-  );
+function getObjectParam(): OperationType["parameters"][number] {
+  return {
+    type: resolveUnionType([
+      { kind: "object", properties: [] },
+      { kind: "dictionary", elementType: { kind: "unknown" } },
+    ]),
+  };
+}
+
+function getObjectCallbackParams(
+  data: IData,
+  options?: {
+    reverseParams?: boolean;
+    returnType?: DataType;
+    withData?: boolean;
+  }
+): OperationType["parameters"] {
+  const valueType: DataType =
+    data.type.kind === "object"
+      ? resolveUnionType(data.type.properties.map((v) => v.value))
+      : data.type.kind === "dictionary"
+      ? data.type.elementType
+      : { kind: "unknown" };
+  return [
+    getObjectParam(),
+    {
+      type: {
+        kind: "operation",
+        parameters: options?.reverseParams
+          ? [
+              { name: "key", type: { kind: "string" } },
+              { name: "value", type: valueType },
+            ]
+          : [
+              { name: "value", type: valueType },
+              { name: "key", type: { kind: "string" } },
+              ...(options?.withData
+                ? [{ name: "obj", type: data.type, isOptional: true }]
+                : []),
+            ],
+        result: options?.returnType ?? { kind: "unknown" },
+      },
+    },
+  ];
 }
 
 export const remedaOperations: OperationListItem[] = [
@@ -251,33 +280,29 @@ export const remedaOperations: OperationListItem[] = [
   },
   {
     name: "sumBy",
-    parameters: (data) => getArrayCallbackParameters(data, { kind: "number" }),
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "number" } }),
     handler: async (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const values = await executeArrayOperation(data, operation, context);
-      const result = R.sumBy(
-        values.map((item) => item.value),
-        (x) => x as number
-      );
+      const values = getRawValueFromData(data, context) as number[];
+      const result = R.sumBy(values, createCallback(operation, context));
       return createData({ type: { kind: "number" }, value: result });
     },
   },
   {
     name: "meanBy",
-    parameters: (data) => getArrayCallbackParameters(data, { kind: "number" }),
-    handler: async (
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "number" } }),
+    handler: (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const values = await executeArrayOperation(data, operation, context);
-      const result = R.meanBy(
-        values.map((item) => item.value),
-        (x) => x as number
-      );
+      const values = getRawValueFromData(data, context) as number[];
+      const result = R.meanBy(values, createCallback(operation, context));
       return createData({ type: { kind: "number" }, value: result });
     },
   },
@@ -540,36 +565,15 @@ export const remedaOperations: OperationListItem[] = [
   },
   {
     name: "sort",
-    parameters: (data) => [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      {
-        type: {
-          kind: "operation",
-          parameters: isDataOfType(data, "array")
-            ? [
-                { name: "first", type: data.type.elementType },
-                { name: "second", type: data.type.elementType },
-              ]
-            : [],
-          result: { kind: "unknown" },
-        },
-      },
-    ],
-    handler: async (
+    parameters: (data) => getArrayCallbackParams(data, { twoParams: true }),
+    handler: (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const sorted = await asyncSort(data.value, async (a, b) => {
-        const result = await context.executeOperation(
-          operationToListItem(operation),
-          getStatementResult(a, context),
-          [b],
-          context
-        );
-        return Number(result.value) || 0;
-      });
-      return createData({ type: data.type, value: sorted });
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.sort(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
     },
   },
   {
@@ -646,20 +650,13 @@ export const remedaOperations: OperationListItem[] = [
         },
       },
     ],
-    handler: async (
+    handler: (
       context,
       data: IData<NumberType>,
       operation: IData<OperationType>
     ) => {
-      const range = createDataFromRawValue(
-        R.range(0, data.value),
-        context
-      ) as IData<ArrayType>;
-      const values = await executeArrayOperation(range, operation, context);
-      const result = R.sumBy(
-        values.map((item) => item.value),
-        (x) => x as number
-      );
+      const value = getRawValueFromData(data, context) as number;
+      const result = R.times(value, createCallback(operation, context));
       return createDataFromRawValue(result, context);
     },
   },
@@ -749,18 +746,15 @@ export const remedaOperations: OperationListItem[] = [
   },
   {
     name: "splitWhen",
-    parameters: (data) => getArrayCallbackParameters(data, { kind: "boolean" }),
-    handler: async (
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
+    handler: (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const values = getRawValueFromData(data, context) as [];
-      const conditions = await executeArrayOperation(data, operation, context);
-      const result = R.splitWhen(
-        values,
-        (_, i) => conditions[i].value as boolean
-      );
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.splitWhen(values, createCallback(operation, context));
       return createDataFromRawValue(result, {
         ...context,
         expectedType: { kind: "tuple", elements: [] },
@@ -808,16 +802,13 @@ export const remedaOperations: OperationListItem[] = [
   },
   {
     name: "sortedIndexBy",
-    parameters: (data) => [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      {
-        type: isDataOfType(data, "array")
+    parameters: (data) =>
+      getArrayCallbackParams(data, {
+        secondData: isDataOfType(data, "array")
           ? data.type.elementType
           : { kind: "unknown" },
-      },
-      ...getArrayCallbackParameters(data).slice(1),
-    ],
-    handler: async (
+      }),
+    handler: (
       context,
       data: IData<ArrayType>,
       item: IData,
@@ -825,25 +816,27 @@ export const remedaOperations: OperationListItem[] = [
     ) => {
       const values = getRawValueFromData(data, context) as unknown[];
       const itemValue = getRawValueFromData(item, context);
-      const arrResults = await executeArrayOperation(data, operation, context);
-      const result = R.sortedIndexBy(values, itemValue, async (_, i) =>
-        i ? arrResults[i].value : undefined
+      const result = R.sortedIndexBy(
+        values,
+        itemValue,
+        createCallback(operation, context)
       );
       return createDataFromRawValue(result, context);
     },
   },
   {
     name: "sortedIndexWith",
-    parameters: (data) => getArrayCallbackParameters(data, { kind: "boolean" }),
-    handler: async (
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
+    handler: (
       context,
       data: IData<ArrayType>,
       operation: IData<OperationType>
     ) => {
-      const values = await executeArrayOperation(data, operation, context);
+      const values = getRawValueFromData(data, context) as unknown[];
       const result = R.sortedIndexWith(
-        values.map((item) => item.value),
-        (x) => x as boolean
+        values,
+        createCallback(operation, context)
       );
       return createDataFromRawValue(result, context);
     },
@@ -864,21 +857,13 @@ export const remedaOperations: OperationListItem[] = [
   },
   {
     name: "sortedLastIndexBy",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      { type: { kind: "unknown" } },
-      {
-        type: {
-          kind: "operation",
-          parameters: [
-            { name: "item", type: { kind: "unknown" } },
-            { name: "index", type: { kind: "number" }, isOptional: true },
-          ],
-          result: { kind: "unknown" },
-        },
-      },
-    ],
-    handler: async (
+    parameters: (data) =>
+      getArrayCallbackParams(data, {
+        secondData: isDataOfType(data, "array")
+          ? data.type.elementType
+          : { kind: "unknown" },
+      }),
+    handler: (
       context,
       data: IData<ArrayType>,
       item: IData,
@@ -886,9 +871,10 @@ export const remedaOperations: OperationListItem[] = [
     ) => {
       const values = getRawValueFromData(data, context) as unknown[];
       const itemValue = getRawValueFromData(item, context);
-      const arrResults = await executeArrayOperation(data, operation, context);
-      const result = R.sortedLastIndexBy(values, itemValue, async (_, i) =>
-        i ? arrResults[i].value : undefined
+      const result = R.sortedLastIndexBy(
+        values,
+        itemValue,
+        createCallback(operation, context)
       );
       return createDataFromRawValue(result, context);
     },
@@ -923,6 +909,971 @@ export const remedaOperations: OperationListItem[] = [
         type: { kind: "boolean" },
         value: R.hasAtLeast(values, Number(minimum.value)),
       });
+    },
+  },
+  {
+    name: "zipWith",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { secondData: true, fourParams: true }),
+    handler: (
+      context,
+      first: IData<ArrayType>,
+      second: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const firstValues = getRawValueFromData(first, context) as unknown[];
+      const secondValues = getRawValueFromData(second, context) as unknown[];
+      const results = R.zipWith(
+        firstValues,
+        secondValues,
+        createCallback(operation, context)
+      );
+      return createDataFromRawValue(results, context);
+    },
+  },
+  {
+    name: "uniqueWith",
+    parameters: (data) => getArrayCallbackParams(data, { twoParams: true }),
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.uniqueWith(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "intersectionWith",
+    parameters: (data) =>
+      getArrayCallbackParams(data, {
+        returnType: { kind: "boolean" },
+        secondData: true,
+        twoParams: true,
+      }),
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      other: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const dataArr = getRawValueFromData(data, context) as unknown[];
+      const otherArr = getRawValueFromData(other, context) as unknown[];
+      const result = R.intersectionWith(
+        dataArr,
+        otherArr,
+        createCallback(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "differenceWith",
+    parameters: (data) =>
+      getArrayCallbackParams(data, {
+        returnType: { kind: "boolean" },
+        secondData: true,
+        twoParams: true,
+      }),
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      other: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const dataArr = getRawValueFromData(data, context) as unknown[];
+      const otherArr = getRawValueFromData(other, context) as unknown[];
+      const result = R.differenceWith(
+        dataArr,
+        otherArr,
+        createCallback(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  // Array operations with callbacks using remeda
+  {
+    name: "map",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.map(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "filter",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.filter(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "find",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.find(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "findIndex",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.findIndex(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "findLast",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.findLast(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "findLastIndex",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.findLastIndex(
+        values,
+        createCallback(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "flatMap",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.flatMap(
+        values,
+        createCallback<unknown[]>(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "every",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = values.every(createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "some",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = values.some(createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "reduce",
+    parameters: (data) => getArrayCallbackParams(data, { accumulator: true }),
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      initialValue: IData,
+      operation: IData<OperationType>
+    ) => {
+      const result = R.reduce(
+        getRawValueFromData(data, context) as unknown[],
+        createCallback(operation, context),
+        getRawValueFromData(initialValue, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "forEach",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      R.forEach(values, createCallback(operation, context));
+      return createData({ type: { kind: "undefined" } });
+    },
+  },
+  {
+    name: "mapWithFeedback",
+    parameters: (data) => getArrayCallbackParams(data, { accumulator: true }),
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      initialValue: IData,
+      operation: IData<OperationType>
+    ) => {
+      const results = R.mapWithFeedback(
+        getRawValueFromData(data, context) as unknown[],
+        createCallback(operation, context),
+        getRawValueFromData(initialValue, context)
+      );
+      return createDataFromRawValue(results, context);
+    },
+  },
+  {
+    name: "dropWhile",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.dropWhile(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "takeWhile",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.takeWhile(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "dropLastWhile",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.dropLastWhile(
+        values,
+        createCallback(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "takeLastWhile",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.takeLastWhile(
+        values,
+        createCallback(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "partition",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.partition(values, createCallback(operation, context));
+      return createDataFromRawValue(result, {
+        ...context,
+        expectedType: { kind: "tuple", elements: [data.type, data.type] },
+      });
+    },
+  },
+  {
+    name: "groupBy",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.groupBy(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "countBy",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.countBy(values, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  // Object operations using remeda
+  {
+    name: "keys",
+    parameters: [getObjectParam()],
+    handler: (context, data: IData<ObjectType | DictionaryType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.keys(rawObj);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "values",
+    parameters: [getObjectParam()],
+    handler: (context, data: IData<ObjectType | DictionaryType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.values(rawObj);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "invert",
+    parameters: [getObjectParam()],
+    handler: (context, data: IData<ObjectType | DictionaryType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        string
+      >;
+      const result = R.invert(rawObj);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "entries",
+    parameters: [getObjectParam()],
+    handler: (context, data: IData<ObjectType | DictionaryType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.entries(rawObj);
+      return createDataFromRawValue(result, {
+        ...context,
+        expectedType: {
+          kind: "array",
+          elementType: {
+            kind: "tuple",
+            elements: [{ kind: "string" }, { kind: "unknown" }],
+          },
+        },
+      });
+    },
+  },
+  {
+    name: "fromEntries",
+    parameters: [
+      {
+        type: {
+          kind: "array",
+          elementType: {
+            kind: "tuple",
+            elements: [{ kind: "string" }, { kind: "unknown" }],
+          },
+        },
+      },
+    ],
+    handler: (context, data: IData<ArrayType>) => {
+      const entries = getRawValueFromData(data, context) as [string, unknown][];
+      const result = R.fromEntries(entries);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "fromKeys",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { elementType: { kind: "string" } }),
+    handler: (
+      context,
+      keys: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const keyArr = getRawValueFromData(keys, context) as string[];
+      const result = R.fromKeys(keyArr, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "pick",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "array", elementType: { kind: "string" } } },
+    ],
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      keys: IData<ArrayType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const keyArr = getRawValueFromData(keys, context) as string[];
+      const result = R.pick(rawObj, keyArr);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "omit",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "array", elementType: { kind: "string" } } },
+    ],
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      keys: IData<ArrayType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const keyArr = getRawValueFromData(keys, context) as string[];
+      const result = R.omit(rawObj, keyArr);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "pickBy",
+    parameters: (data) =>
+      getObjectCallbackParams(data, { returnType: { kind: "boolean" } }),
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      operation: IData<OperationType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.pickBy(rawObj, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "omitBy",
+    parameters: (data) =>
+      getObjectCallbackParams(data, { returnType: { kind: "boolean" } }),
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      operation: IData<OperationType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.omitBy(rawObj, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "merge",
+    parameters: [getObjectParam(), getObjectParam()],
+    handler: (context, data: IData<ObjectType>, source: IData<ObjectType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const rawSource = getRawValueFromData(source, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.merge(rawObj, rawSource);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "mergeAll",
+    parameters: [
+      { type: { kind: "array", elementType: getObjectParam().type } },
+    ],
+    handler: (context, data: IData<ArrayType>) => {
+      const objects = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >[];
+      const result = R.mergeAll(objects);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "mergeDeep",
+    parameters: [getObjectParam(), getObjectParam()],
+    handler: (context, data: IData<ObjectType>, source: IData<ObjectType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const rawSource = getRawValueFromData(source, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.mergeDeep(rawObj, rawSource);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "mapKeys",
+    parameters: (data) =>
+      getObjectCallbackParams(data, {
+        reverseParams: true,
+        returnType: { kind: "string" },
+      }),
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      operation: IData<OperationType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.mapKeys(
+        rawObj,
+        createCallback<string>(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "mapValues",
+    parameters: getObjectCallbackParams,
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      operation: IData<OperationType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const result = R.mapValues(rawObj, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "mapToObj",
+    parameters: getArrayCallbackParams,
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.mapToObj(
+        values,
+        createCallback<[string, unknown]>(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "pullObject",
+    parameters: (data) => {
+      const params = getArrayCallbackParams(data);
+      return params.concat(params.slice(-1));
+    },
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      keyExtractor: IData<OperationType>,
+      valueExtractor: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.pullObject(
+        values,
+        createCallback<string>(keyExtractor, context),
+        createCallback(valueExtractor, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "indexBy",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "string" } }),
+    handler: (
+      context,
+      data: IData<ArrayType>,
+      operation: IData<OperationType>
+    ) => {
+      const values = getRawValueFromData(data, context) as unknown[];
+      const result = R.indexBy(
+        values,
+        createCallback<string>(operation, context)
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "groupByProp",
+    parameters: [
+      { type: { kind: "array", elementType: getObjectParam().type } },
+      { type: { kind: "string" } },
+    ],
+    handler: (context, data: IData<ArrayType>, prop: IData<StringType>) => {
+      const values = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >[];
+      const result = R.groupByProp(
+        values,
+        getRawValueFromData(prop, context) as never
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "objOf",
+    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "string" } }],
+    handler: (context, value: IData, key: IData<StringType>) => {
+      const rawValue = getRawValueFromData(value, context);
+      const result = R.objOf(
+        rawValue,
+        getRawValueFromData(key, context) as string
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "pathOr",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (
+      context,
+      data: IData,
+      path: IData<ArrayType>,
+      defaultValue: IData
+    ) => {
+      const rawValue = getRawValueFromData(data, context);
+      const pathArr = getRawValueFromData(path, context) as [never];
+      const rawDefault = getRawValueFromData(defaultValue, context) as never;
+      const result = R.pathOr(rawValue, pathArr, rawDefault);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "set",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "string" } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (
+      context,
+      data: IData<ObjectType>,
+      prop: IData<StringType>,
+      value: IData
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const rawValue = getRawValueFromData(value, context);
+      const result = R.set(rawObj, prop.value, rawValue);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "setPath",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (context, data: IData, path: IData<ArrayType>, value: IData) => {
+      const rawValue = getRawValueFromData(data, context);
+      const pathArr = getRawValueFromData(path, context) as [];
+      const val = getRawValueFromData(value, context);
+      const result = R.setPath(rawValue, pathArr, val);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "addProp",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "string" } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (context, data: IData, prop: IData<StringType>, value: IData) => {
+      const rawValue = getRawValueFromData(data, context);
+      const val = getRawValueFromData(value, context);
+      const result = R.addProp(rawValue, prop.value, val);
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "swapProps",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "string" } },
+      { type: { kind: "string" } },
+    ],
+    handler: (
+      context,
+      data: IData<ObjectType>,
+      key1: IData<StringType>,
+      key2: IData<StringType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const rawKey1 = getRawValueFromData(key1, context) as string;
+      const rawKey2 = getRawValueFromData(key2, context) as string;
+      return createDataFromRawValue(
+        R.swapProps(rawObj, rawKey1, rawKey2),
+        context
+      );
+    },
+  },
+  {
+    name: "evolve",
+    parameters: [
+      getObjectParam(),
+      { type: { kind: "object", properties: [] } },
+    ],
+    handler: (context, data: IData<ObjectType>, evolver: IData<ObjectType>) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const rawEvolver = getRawValueFromData(evolver, context) as Record<
+        string,
+        (data: unknown) => unknown
+      >;
+      return createDataFromRawValue(R.evolve(rawObj, rawEvolver), context);
+    },
+  },
+  {
+    name: "hasSubObject",
+    parameters: [getObjectParam(), getObjectParam()],
+    handler: (
+      context,
+      data: IData<ObjectType>,
+      subObject: IData<ObjectType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const rawSubObj = getRawValueFromData(subObject, context) as Record<
+        string,
+        unknown
+      >;
+      return createDataFromRawValue(R.hasSubObject(rawObj, rawSubObj), context);
+    },
+  },
+  {
+    name: "length",
+    parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
+    handler: (context, data: IData<ArrayType>) => {
+      const values = getRawValueFromData(data, context) as [];
+      return createDataFromRawValue(R.length(values), context);
+    },
+  },
+  {
+    name: "clone",
+    parameters: [{ type: { kind: "unknown" } }],
+    handler: (context, data: IData) => {
+      const result = R.clone(getRawValueFromData(data, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "tap",
+    parameters: [
+      { type: { kind: "unknown" } },
+      {
+        type: {
+          kind: "operation",
+          parameters: [{ name: "value", type: { kind: "unknown" } }],
+          result: { kind: "unknown" },
+        },
+      },
+    ],
+    handler: (context, data: IData, operation: IData<OperationType>) => {
+      const rawValue = getRawValueFromData(data, context);
+      const result = R.tap(rawValue, createCallback(operation, context));
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "forEachObj",
+    parameters: (data) => getObjectCallbackParams(data, { withData: true }),
+    handler: (
+      context,
+      data: IData<ObjectType | DictionaryType>,
+      operation: IData<OperationType>
+    ) => {
+      const rawObj = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      R.forEachObj(rawObj, createCallback<void>(operation, context));
+      return createDataFromRawValue(undefined, context);
+    },
+  },
+  // Random operations using remeda
+  {
+    name: "isIncludedIn",
+    parameters: [
+      { type: { kind: "unknown" } },
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+    ],
+    handler: (context, data: IData, container: IData<ArrayType>) => {
+      const rawValue = getRawValueFromData(data, context);
+      const containerArr = getRawValueFromData(container, context) as unknown[];
+      return createDataFromRawValue(
+        R.isIncludedIn(rawValue, containerArr),
+        context
+      );
+    },
+  },
+  {
+    name: "randomInteger",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    handler: (context, from: IData, to: IData) => {
+      const result = R.randomInteger(
+        getRawValueFromData(from, context) as number,
+        getRawValueFromData(to, context) as number
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  {
+    name: "randomString",
+    parameters: [{ type: { kind: "number" } }],
+    handler: (context, length: IData) => {
+      const result = R.randomString(
+        getRawValueFromData(length, context) as number
+      );
+      return createDataFromRawValue(result, context);
+    },
+  },
+  // Logic operations using remeda
+  {
+    name: "defaultTo",
+    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+    handler: (context, data: IData, fallback: IData) => {
+      const rawValue = getRawValueFromData(data, context);
+      const rawFallback = getRawValueFromData(fallback, context);
+      return createDataFromRawValue(
+        R.defaultTo(rawValue, rawFallback),
+        context
+      );
+    },
+  },
+  {
+    name: "allPass",
+    parameters: (data) => [
+      { type: { kind: "unknown" } },
+      {
+        type: {
+          kind: "array",
+          elementType: {
+            kind: "operation",
+            parameters: [{ type: data.type, name: "data" }],
+            result: { kind: "boolean" },
+          },
+        },
+      },
+    ],
+    handler: async (context, data: IData, operations: IData<ArrayType>) => {
+      const rawData = getRawValueFromData(data, context);
+      const callbacks = operations.value.map((op) =>
+        createCallback<boolean>(op.data as IData<OperationType>, context)
+      );
+      return createDataFromRawValue(R.allPass(rawData, callbacks), context);
+    },
+  },
+  {
+    name: "anyPass",
+    parameters: (data) => [
+      { type: { kind: "unknown" } },
+      {
+        type: {
+          kind: "array",
+          elementType: {
+            kind: "operation",
+            parameters: [{ type: data.type, name: "data" }],
+            result: { kind: "boolean" },
+          },
+        },
+      },
+    ],
+    handler: async (context, data: IData, operations: IData<ArrayType>) => {
+      const rawData = getRawValueFromData(data, context);
+      const callbacks = operations.value.map((op) =>
+        createCallback<boolean>(op.data as IData<OperationType>, context)
+      );
+      return createDataFromRawValue(R.anyPass(rawData, callbacks), context);
     },
   },
 ];

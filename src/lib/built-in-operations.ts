@@ -10,7 +10,6 @@ import {
   ObjectType,
   OperationListItem,
   DictionaryType,
-  TupleType,
   UnionType,
   InstanceDataType,
   Context,
@@ -32,6 +31,7 @@ import {
   resolveReference,
 } from "./utils";
 import { wretchOperations } from "./operations/wretch";
+import { remedaOperations } from "./operations/remeda";
 
 function getArrayCallbackParameters(data: IData) {
   const elementType = (data.type as ArrayType).elementType ?? {
@@ -103,28 +103,6 @@ export function createRuntimeError(error: unknown): IData {
     type: { kind: "error", errorType: "runtime_error" },
     value: { reason: errorMessage },
   });
-}
-
-async function asyncSort<T>(
-  arr: T[],
-  compare: (a: T, b: T) => Promise<number>
-): Promise<T[]> {
-  if (arr.length <= 1) return [...arr];
-  const mid = Math.floor(arr.length / 2);
-  const left = await asyncSort(arr.slice(0, mid), compare);
-  const right = await asyncSort(arr.slice(mid), compare);
-
-  const sorted: T[] = [];
-  let l = 0;
-  let r = 0;
-  while (l < left.length && r < right.length) {
-    if ((await compare(left[l], right[r])) <= 0) {
-      sorted.push(left[l++]);
-    } else {
-      sorted.push(right[r++]);
-    }
-  }
-  return [...sorted, ...left.slice(l), ...right.slice(r)];
 }
 
 const unknownOperations: OperationListItem[] = [
@@ -316,59 +294,6 @@ const stringOperations: OperationListItem[] = [
     },
   },
   {
-    name: "slice",
-    parameters: [
-      { type: { kind: "string" } },
-      { type: { kind: "number" } },
-      { type: { kind: "number" } },
-    ],
-    handler: (
-      _,
-      data: IData<StringType>,
-      p1: IData<NumberType>,
-      p2: IData<NumberType>
-    ) => {
-      return createData({
-        type: { kind: "string" },
-        value: data.value.slice(p1.value, p2.value),
-      });
-    },
-  },
-  {
-    name: "split",
-    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>, p1: IData<StringType>) => {
-      return createData({
-        type: { kind: "array", elementType: { kind: "string" } },
-        value: data.value.split(p1.value).map((item) =>
-          createStatement({
-            data: createData({ type: { kind: "string" }, value: item }),
-          })
-        ),
-      });
-    },
-  },
-  {
-    name: "toUpperCase",
-    parameters: [{ type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>) => {
-      return createData({
-        type: { kind: "string" },
-        value: data.value.toUpperCase(),
-      });
-    },
-  },
-  {
-    name: "toLowerCase",
-    parameters: [{ type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>) => {
-      return createData({
-        type: { kind: "string" },
-        value: data.value.toLowerCase(),
-      });
-    },
-  },
-  {
     name: "localeCompare",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
     handler: (_, data: IData<StringType>, p1: IData<StringType>) => {
@@ -381,52 +306,6 @@ const stringOperations: OperationListItem[] = [
 ];
 
 const numberOperations: OperationListItem[] = [
-  {
-    name: "add",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      return createData({
-        type: { kind: "number" },
-        value: data.value + p1.value,
-      });
-    },
-  },
-  {
-    name: "subtract",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      return createData({
-        type: { kind: "number" },
-        value: data.value - p1.value,
-      });
-    },
-  },
-  {
-    name: "multiply",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      return createData({
-        type: { kind: "number" },
-        value: data.value * p1.value,
-      });
-    },
-  },
-  {
-    name: "divide",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      if (p1.value === 0) {
-        return createData({
-          type: { kind: "error", errorType: "runtime_error" },
-          value: { reason: "Division by zero" },
-        });
-      }
-      return createData({
-        type: { kind: "number" },
-        value: data.value / p1.value,
-      });
-    },
-  },
   {
     name: "power",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
@@ -477,27 +356,6 @@ const numberOperations: OperationListItem[] = [
     handler: (_, data: IData<NumberType>, p1: IData<typeof data.type>) =>
       createData({ type: { kind: "boolean" }, value: data.value >= p1.value }),
   },
-  {
-    name: "toRange",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      const rev = data.value > p1.value;
-      const [start, end] = rev
-        ? [p1.value, data.value]
-        : [data.value, p1.value];
-      return createData({
-        type: { kind: "array", elementType: { kind: "number" } },
-        value: Array.from(Array(end - start).keys()).map((value) =>
-          createStatement({
-            data: createData({
-              type: { kind: "number" },
-              value: rev ? end - value : start + value,
-            }),
-          })
-        ),
-      });
-    },
-  },
 ];
 
 const getTupleOperations = (
@@ -535,29 +393,6 @@ const getTupleOperations = (
 ];
 
 const arrayOperations: OperationListItem[] = [
-  ...getTupleOperations({
-    type: { kind: "array", elementType: { kind: "unknown" } },
-  }),
-  {
-    name: "concat",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-    ],
-    handler: (_, data: IData<ArrayType>, p1: IData<ArrayType>) => {
-      const newArray = data.value.concat(p1.value);
-      return createData({
-        type: {
-          kind: "array",
-          elementType: resolveUnionType([
-            data.type.elementType,
-            p1.type.elementType,
-          ]),
-        },
-        value: newArray,
-      });
-    },
-  },
   {
     name: "map",
     parameters: getArrayCallbackParameters,
@@ -585,7 +420,8 @@ const arrayOperations: OperationListItem[] = [
       operation: IData<OperationType>
     ) => {
       const results = await executeArrayOperation(data, operation, context);
-      const found = results.find((r) => Boolean(r.value));
+      const found = data.value.find((_, i) => results[i].value)?.data;
+      // console.log({ found, results });
       return createData({ type: found?.type, value: found?.value });
     },
   },
@@ -602,48 +438,20 @@ const arrayOperations: OperationListItem[] = [
       return createData({ type: data.type, value: filtered });
     },
   },
-  {
-    name: "sort",
-    parameters: (data) => [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      {
-        type: {
-          kind: "operation",
-          parameters: isDataOfType(data, "array")
-            ? [
-                { name: "first", type: data.type.elementType },
-                { name: "second", type: data.type.elementType },
-              ]
-            : [],
-          result: { kind: "unknown" },
-        },
-      },
-    ],
-    handler: async (
-      context,
-      data: IData<ArrayType>,
-      operation: IData<OperationType>
-    ) => {
-      const sorted = await asyncSort(data.value, async (a, b) => {
-        const result = await context.executeOperation(
-          operationToListItem(operation),
-          getStatementResult(a, context),
-          [b],
-          context
-        );
-        return Number(result.value) || 0;
-      });
-      return createData({ type: data.type, value: sorted });
-    },
-  },
 ];
 
-const getObjectOperations = (
-  dataType: OperationType["parameters"][number]
-): OperationListItem[] => [
+const dictionaryOperations: OperationListItem[] = [
   {
     name: "get",
-    parameters: [dataType, { type: { kind: "string" } }],
+    parameters: [
+      {
+        type: resolveUnionType([
+          { kind: "object", properties: [] },
+          { kind: "dictionary", elementType: { kind: "unknown" } },
+        ]),
+      },
+      { type: { kind: "string" } },
+    ],
     handler: (
       context,
       data: IData<ObjectType | DictionaryType>,
@@ -657,7 +465,15 @@ const getObjectOperations = (
   },
   {
     name: "has",
-    parameters: [dataType, { type: { kind: "string" } }],
+    parameters: [
+      {
+        type: resolveUnionType([
+          { kind: "object", properties: [] },
+          { kind: "dictionary", elementType: { kind: "unknown" } },
+        ]),
+      },
+      { type: { kind: "string" } },
+    ],
     handler: (
       _,
       data: IData<ObjectType | DictionaryType>,
@@ -666,115 +482,6 @@ const getObjectOperations = (
       return createData({
         type: { kind: "boolean" },
         value: data.value.entries.some((e) => e.key === p1.value),
-      });
-    },
-  },
-  {
-    name: "keys",
-    parameters: [dataType],
-    handler: (_, data: IData<ObjectType | DictionaryType>) => {
-      return createData({
-        type: { kind: "array", elementType: { kind: "string" } },
-        value: data.value.entries.map((entry) =>
-          createStatement({
-            data: createData({ type: { kind: "string" }, value: entry.key }),
-          })
-        ),
-      });
-    },
-  },
-  {
-    name: "values",
-    parameters: [dataType],
-    handler: (context, data: IData<ObjectType | DictionaryType>) => {
-      return createData({
-        type: {
-          kind: "array",
-          elementType: resolveUnionType(
-            isDataOfType(data, "object")
-              ? data.type.properties.map((p) => p.value)
-              : [(data.type as DictionaryType).elementType]
-          ),
-        },
-        value: data.value.entries.map((entry) => {
-          const itemResult = getStatementResult(entry.value, context) as IData;
-          return createStatement({
-            data: createData({
-              type: itemResult.type,
-              value: itemResult.value,
-            }),
-          });
-        }),
-      });
-    },
-  },
-  {
-    name: "entries",
-    parameters: [dataType],
-    handler: (context, data: IData<ObjectType | DictionaryType>) => {
-      const newValues = data.value.entries.map(({ key, value }) => {
-        const valueResult = getStatementResult(value, context);
-        return createStatement({
-          data: createData({
-            type: {
-              kind: "tuple",
-              elements: [{ kind: "string" }, valueResult.type],
-            },
-            value: [
-              createStatement({
-                data: createData({ type: { kind: "string" }, value: key }),
-              }),
-              createStatement({ data: valueResult }),
-            ],
-          }),
-        });
-      });
-
-      const elementType = resolveUnionType(
-        newValues.flatMap((v) => (v.data as IData<TupleType>).type.elements[1])
-      );
-
-      return createData({
-        type: {
-          kind: "array",
-          elementType: {
-            kind: "tuple",
-            elements: [{ kind: "string" }, elementType],
-          },
-        },
-        value: newValues,
-      });
-    },
-  },
-];
-
-const dictionaryOperations: OperationListItem[] = [
-  ...getObjectOperations({
-    type: { kind: "dictionary", elementType: { kind: "unknown" } },
-  }),
-  {
-    name: "merged",
-    parameters: [
-      { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
-      { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
-    ],
-    handler: (_, data: IData<DictionaryType>, p1: IData<DictionaryType>) => {
-      const mergedMap = new Map<string, IStatement>();
-      data.value.entries
-        .concat(p1.value.entries)
-        .forEach(({ key, value }) => mergedMap.set(key, value));
-      const newEntries = Array.from(mergedMap.entries()).map(
-        ([key, value]) => ({ key, value })
-      );
-      return createData({
-        type: {
-          kind: "dictionary",
-          elementType: resolveUnionType([
-            data.type.elementType,
-            p1.type.elementType,
-          ]),
-        },
-        value: { entries: newEntries },
       });
     },
   },
@@ -1201,10 +908,10 @@ export const builtInOperations: OperationListItem[] = [
   ...stringOperations,
   ...numberOperations,
   ...booleanOperations,
-  ...getTupleOperations({ type: { kind: "tuple", elements: [] } }),
+  // ...getTupleOperations({ type: { kind: "tuple", elements: [] } }),
   ...arrayOperations,
-  ...getObjectOperations({ type: { kind: "object", properties: [] } }),
   ...dictionaryOperations,
+  ...remedaOperations,
   ...operationOperations,
   ...unionOperations,
   ...dateOperations,
