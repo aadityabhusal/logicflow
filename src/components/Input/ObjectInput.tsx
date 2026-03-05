@@ -123,7 +123,10 @@ const ObjectInputComponent = (
         return (
           <div
             key={entry.value.id}
-            className={["relative flex", isMultiline ? "ml-2" : ""].join(" ")}
+            className={[
+              "relative flex items-start",
+              isMultiline ? "ml-2" : "",
+            ].join(" ")}
           >
             {context.expectedType ? (
               <Dropdown
@@ -164,7 +167,7 @@ const ObjectInputComponent = (
                 isOptional ? FaQuestion : () => <span className="px-1">:</span>
               }
               className={[
-                "hover:outline hover:outline-border",
+                "mt-0.5 hover:outline hover:outline-border",
                 navigationId === `${data.id}_${entry.key}_colon`
                   ? "outline outline-border"
                   : "",

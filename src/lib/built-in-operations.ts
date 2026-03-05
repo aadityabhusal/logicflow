@@ -33,70 +33,6 @@ import {
 import { wretchOperations } from "./operations/wretch";
 import { remedaOperations } from "./operations/remeda";
 
-function getArrayCallbackParameters(data: IData) {
-  const elementType = (data.type as ArrayType).elementType ?? {
-    kind: "undefined",
-  };
-  return [
-    { type: { kind: "array", elementType: { kind: "unknown" } } },
-    {
-      type: {
-        kind: "operation",
-        parameters: [
-          { name: "item", type: elementType },
-          { name: "index", type: { kind: "number" }, isOptional: true },
-          {
-            name: "arr",
-            type: { kind: "array", elementType },
-            isOptional: true,
-          },
-        ],
-        result: { kind: "unknown" },
-      },
-    },
-  ] as OperationType["parameters"];
-}
-
-async function executeArrayOperation(
-  data: IData<ArrayType>,
-  operation: IData<OperationType>,
-  context: Context
-): Promise<IData[]> {
-  const settledResults = await Promise.allSettled(
-    data.value.map((item, index) => {
-      const itemData = getStatementResult(item, context);
-      return context.executeOperation(
-        operationToListItem({
-          ...operation,
-          type: {
-            ...operation.type,
-            parameters: [
-              { type: data.type.elementType },
-              ...operation.type.parameters,
-            ],
-          },
-        }),
-        data,
-        [
-          createStatement({ data: createData(itemData), isOptional: true }),
-          createStatement({
-            data: createData({ type: { kind: "number" }, value: index }),
-            isOptional: true,
-          }),
-          createStatement({ data }),
-        ],
-        context
-      );
-    })
-  );
-
-  return settledResults.map((result) =>
-    result.status === "fulfilled"
-      ? result.value
-      : createRuntimeError(result.reason)
-  );
-}
-
 export function createRuntimeError(error: unknown): IData {
   const errorMessage = error instanceof Error ? error.message : String(error);
   return createData({
@@ -358,12 +294,13 @@ const numberOperations: OperationListItem[] = [
   },
 ];
 
-const getTupleOperations = (
-  dataType: OperationType["parameters"][number]
-): OperationListItem[] => [
+const tupleOperations: OperationListItem[] = [
   {
     name: "get",
-    parameters: [dataType, { type: { kind: "number" } }],
+    parameters: [
+      { type: { kind: "tuple", elements: [] } },
+      { type: { kind: "number" } },
+    ],
     handler: (context, data: IData<ArrayType>, p1: IData<NumberType>) => {
       const item = data.value.at(p1.value);
       if (!item) return createData();
@@ -373,14 +310,17 @@ const getTupleOperations = (
   },
   {
     name: "getLength",
-    parameters: [dataType],
+    parameters: [{ type: { kind: "tuple", elements: [] } }],
     handler: (_, data: IData<ArrayType>) => {
       return createData({ type: { kind: "number" }, value: data.value.length });
     },
   },
   {
     name: "join",
-    parameters: [dataType, { type: { kind: "string" } }],
+    parameters: [
+      { type: { kind: "tuple", elements: [] } },
+      { type: { kind: "string" } },
+    ],
     handler: (context, data: IData<ArrayType>, p1: IData<StringType>) => {
       return createData({
         type: { kind: "string" },
@@ -392,53 +332,7 @@ const getTupleOperations = (
   },
 ];
 
-const arrayOperations: OperationListItem[] = [
-  {
-    name: "map",
-    parameters: getArrayCallbackParameters,
-    handler: async (
-      context,
-      data: IData<ArrayType>,
-      operation: IData<OperationType>
-    ) => {
-      const results = await executeArrayOperation(data, operation, context);
-      return createData({
-        type: {
-          kind: "array",
-          elementType: resolveUnionType(results.map((r) => r.type)),
-        },
-        value: results.map((r) => createStatement({ data: r })),
-      });
-    },
-  },
-  {
-    name: "find",
-    parameters: getArrayCallbackParameters,
-    handler: async (
-      context,
-      data: IData<ArrayType>,
-      operation: IData<OperationType>
-    ) => {
-      const results = await executeArrayOperation(data, operation, context);
-      const found = data.value.find((_, i) => results[i].value)?.data;
-      // console.log({ found, results });
-      return createData({ type: found?.type, value: found?.value });
-    },
-  },
-  {
-    name: "filter",
-    parameters: getArrayCallbackParameters,
-    handler: async (
-      context,
-      data: IData<ArrayType>,
-      operation: IData<OperationType>
-    ) => {
-      const results = await executeArrayOperation(data, operation, context);
-      const filtered = data.value.filter((_, i) => Boolean(results[i].value));
-      return createData({ type: data.type, value: filtered });
-    },
-  },
-];
+const arrayOperations: OperationListItem[] = [];
 
 const dictionaryOperations: OperationListItem[] = [
   {
@@ -908,7 +802,7 @@ export const builtInOperations: OperationListItem[] = [
   ...stringOperations,
   ...numberOperations,
   ...booleanOperations,
-  // ...getTupleOperations({ type: { kind: "tuple", elements: [] } }),
+  ...tupleOperations,
   ...arrayOperations,
   ...dictionaryOperations,
   ...remedaOperations,

@@ -1177,7 +1177,7 @@ export function resolveParameters(
   operationListItem: OperationListItem,
   _data: IData,
   context: Context
-) {
+): OperationType["parameters"] {
   const data = resolveReference(_data, context);
   const params =
     typeof operationListItem.parameters === "function"
@@ -1289,20 +1289,22 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
   } else if (isDataOfType(data, "instance")) {
     return context.getInstance(data.value.instanceId);
   } else if (isDataOfType(data, "operation")) {
-    return async (...rawParams: unknown[]): Promise<unknown> => {
-      const mappedParameters = data.value.parameters.map((param, index) =>
-        createDataFromRawValue(rawParams[index], {
-          ...context,
-          expectedType: param.data.type,
-        })
-      );
-      const result = await context.executeOperation(
+    return (..._args: unknown[]) => {
+      const [dataArg, ...args] = _args;
+      const execute = context.isSync
+        ? context.executeOperationSync
+        : context.executeOperation;
+      const result = execute(
         operationToListItem(data),
-        mappedParameters[0],
-        mappedParameters.slice(1).map((data) => createStatement({ data })),
+        createDataFromRawValue(dataArg, context),
+        args.map((arg) =>
+          createStatement({ data: createDataFromRawValue(arg, context) })
+        ),
         context
       );
-      return getRawValueFromData(result, context);
+      return result instanceof Promise
+        ? result.then((r) => getRawValueFromData(r, context))
+        : getRawValueFromData(result, context);
     };
   } else if (isDataOfType(data, "condition")) {
     return getRawValueFromData(

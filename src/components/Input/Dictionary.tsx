@@ -72,7 +72,10 @@ const DictionaryInputComponent = (
         return (
           <div
             key={entry.value.id}
-            className={["flex", isMultiline ? "ml-2" : ""].join(" ")}
+            className={[
+              "flex items-start",
+              isMultiline ? "ml-2 mt-1" : "",
+            ].join(" ")}
           >
             <BaseInput
               ref={(elem) => isKeyInputFocused && elem?.focus()}

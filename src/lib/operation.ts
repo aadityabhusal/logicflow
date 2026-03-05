@@ -315,7 +315,7 @@ export function executeStatementSync(
   if (isFatalError(currentData)) return currentData;
 
   executeDataValue(statement.data, context).forEach((e) => {
-    if (isObject(e, ["then"])) e.then(() => {});
+    unwrapThenable(e);
   });
 
   let narrowedTypes = new Map();
