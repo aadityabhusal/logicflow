@@ -1,37 +1,33 @@
-import { nanoid } from "nanoid";
 import {
   IData,
   IStatement,
   OperationType,
-  StringType,
-  ArrayType,
-  NumberType,
-  BooleanType,
-  ObjectType,
   OperationListItem,
-  DictionaryType,
   UnionType,
-  InstanceDataType,
   Context,
 } from "./types";
-import { getPromiseArgsType, InstanceTypes } from "./data";
+import { InstanceTypes } from "./data";
 import {
   createData,
-  createStatement,
-  getStatementResult,
   getUnionActiveType,
   isDataOfType,
-  isFatalError,
   isTypeCompatible,
-  resolveUnionType,
   updateContextWithNarrowedTypes,
   getRawValueFromData,
-  operationToListItem,
   createDataFromRawValue,
   resolveReference,
+  createThenable,
+  unwrapThenable,
+  resolveConstructorArgs,
+  resolveUnionType,
+  getStatementResult,
 } from "./utils";
 import { wretchOperations } from "./operations/wretch";
-import { remedaOperations } from "./operations/remeda";
+import {
+  getArrayCallbackParams,
+  getObjectParam,
+  remedaOperations,
+} from "./operations/remeda";
 
 export function createRuntimeError(error: unknown): IData {
   const errorMessage = error instanceof Error ? error.message : String(error);
@@ -43,36 +39,21 @@ export function createRuntimeError(error: unknown): IData {
 
 const unknownOperations: OperationListItem[] = [
   {
-    name: "isEqual",
-    parameters: (data) => [{ type: { kind: "unknown" } }, { type: data.type }],
-    handler: (context, data: IData, p1: IData) => {
-      return createData({
-        type: { kind: "boolean" },
-        value:
-          JSON.stringify(getRawValueFromData(data, context)) ===
-          JSON.stringify(getRawValueFromData(p1, context)),
-      });
-    },
-  },
-  {
     name: "toString",
     parameters: [{ type: { kind: "unknown" } }],
-    handler: (_, data: IData<StringType>) => {
-      return createData({
-        type: { kind: "string" },
-        value: JSON.stringify(data.value),
-      });
+    handler: (context, data: IData) => {
+      const value = JSON.stringify(getRawValueFromData(data, context));
+      return createDataFromRawValue(value, context);
     },
   },
   {
     name: "log",
-    parameters: [{ type: { kind: "unknown" } }],
+    parameters: [{ type: { kind: "unknown" }, isRest: true }],
     handler: (context, data: IData) => {
-      console.log({ data, raw: getRawValueFromData(data, context) });
-      return createData();
+      const value = console.log(getRawValueFromData(data, context));
+      return createDataFromRawValue(value, context);
     },
   },
-  // TODO: add isTypeOf operation for unknown type here. Or maybe separate operations accepting 'unknown' and 'any' type.
 ];
 
 const unionOperations: OperationListItem[] = [
@@ -87,12 +68,12 @@ const unionOperations: OperationListItem[] = [
       },
       { type: data.type },
     ],
-    handler: (context, data: IData<UnionType>, typeData: IData<UnionType>) => {
+    handler: (context, data: IData, type: IData) => {
       return createData({
         type: { kind: "boolean" },
         value: isTypeCompatible(
-          getUnionActiveType(data.type, data.value, context),
-          getUnionActiveType(typeData.type, typeData.value, context)
+          getUnionActiveType(data.type as UnionType, data.value, context),
+          getUnionActiveType(type.type as UnionType, type.value, context)
         ),
       });
     },
@@ -105,52 +86,51 @@ const booleanOperations: OperationListItem[] = [
   {
     name: "and",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: async (
-      context,
-      data: IData<BooleanType>,
-      trueStatement: IStatement
-    ) => {
-      if (!data.value) {
-        return createData({ type: { kind: "boolean" }, value: false });
+    lazyHandler: (context, data: IData, trueStatement: IStatement) => {
+      if (!getRawValueFromData(data, context)) {
+        return createDataFromRawValue(false, context);
       }
-      const result = await context.executeStatement(trueStatement, {
+      const execute = context.isSync
+        ? context.executeStatementSync
+        : context.executeStatement;
+
+      const result = execute(trueStatement, {
         ...context,
         ...updateContextWithNarrowedTypes(context, data),
       });
-      if (isFatalError(result)) return result;
-      return createData({
-        type: { kind: "boolean" },
-        value: Boolean(result.value),
-      });
+
+      return (result instanceof Promise ? result : createThenable(result)).then(
+        (r) => createDataFromRawValue(getRawValueFromData(r, context), context)
+      );
     },
   },
   {
     name: "or",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: async (
-      context,
-      data: IData<BooleanType>,
-      falseStatement: IStatement
-    ) => {
-      if (data.value) {
-        return createData({ type: { kind: "boolean" }, value: true });
+    lazyHandler: (context, data: IData, falseStatement: IStatement) => {
+      if (getRawValueFromData(data, context)) {
+        return createDataFromRawValue(true, context);
       }
-      const result = await context.executeStatement(falseStatement, {
+      const execute = context.isSync
+        ? context.executeStatementSync
+        : context.executeStatement;
+
+      const result = execute(falseStatement, {
         ...context,
         ...updateContextWithNarrowedTypes(context, data),
       });
-      if (isFatalError(result)) return result;
-      return createData({
-        type: { kind: "boolean" },
-        value: Boolean(result.value),
-      });
+
+      return (result instanceof Promise ? result : createThenable(result)).then(
+        (r) => createDataFromRawValue(getRawValueFromData(r, context), context)
+      );
     },
   },
   {
     name: "not",
     parameters: [{ type: { kind: "boolean" } }],
-    handler: (_, data: IData<BooleanType>) => {
-      return createData({ type: { kind: "boolean" }, value: !data.value });
+    handler: (context, data: IData) => {
+      const value = getRawValueFromData(data, context);
+      return createDataFromRawValue(!value, context);
     },
   },
   {
@@ -160,83 +140,78 @@ const booleanOperations: OperationListItem[] = [
       { type: { kind: "unknown" } },
       { type: { kind: "unknown" }, isOptional: true },
     ],
-    lazyHandler: async (
+    lazyHandler: (
       context,
-      data: IData<BooleanType>,
+      data: IData,
       trueBranch: IStatement,
       falseBranch?: IStatement
     ) => {
-      const trueWithContext = [
-        trueBranch,
-        {
-          ...context,
-          ...updateContextWithNarrowedTypes(context, data, "thenElse", 0),
-        },
-      ] as const;
-      const falseWithContext = falseBranch
-        ? ([
-            falseBranch,
-            {
-              ...context,
-              ...updateContextWithNarrowedTypes(context, data, "thenElse", 1),
-            },
-          ] as const)
-        : undefined;
+      const value = getRawValueFromData(data, context);
+      const execute = context.isSync
+        ? context.executeStatementSync
+        : context.executeStatement;
 
-      const trueResult = await context.executeStatement(...trueWithContext);
-      const falseResult = falseWithContext
-        ? await context.executeStatement(...falseWithContext)
-        : createData({ type: { kind: "undefined" } });
+      const result = value
+        ? execute(trueBranch, {
+            ...context,
+            ...updateContextWithNarrowedTypes(context, data, "thenElse", 0),
+          })
+        : falseBranch
+        ? execute(falseBranch, {
+            ...context,
+            ...updateContextWithNarrowedTypes(context, data, "thenElse", 1),
+          })
+        : createDataFromRawValue(undefined, context);
 
-      const resultType = resolveUnionType([trueResult.type, falseResult.type]);
-
-      const selectedResult =
-        !data.value && falseResult ? falseResult : trueResult;
-      if (isDataOfType(selectedResult, "error")) return selectedResult;
-      return createData({ type: resultType, value: selectedResult.value });
+      return (result instanceof Promise ? result : createThenable(result)).then(
+        (res) =>
+          createDataFromRawValue(getRawValueFromData(res, context), {
+            ...context,
+            expectedType: resolveUnionType(
+              value
+                ? [res.type, getStatementResult(trueBranch, context).type]
+                : [getStatementResult(trueBranch, context).type, res.type]
+            ),
+          })
+      );
     },
   },
 ];
 
 const stringOperations: OperationListItem[] = [
   {
-    name: "getLength",
+    name: "length",
     parameters: [{ type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>) => {
-      return createData({
-        type: { kind: "number" },
-        value: data.value.length,
-      });
+    handler: (context, data: IData) => {
+      const value = getRawValueFromData(data, context) as string;
+      return createDataFromRawValue(value.length, context);
     },
   },
   {
     name: "concat",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>, p1: IData<StringType>) => {
-      return createData({
-        type: { kind: "string" },
-        value: data.value.concat(p1.value),
-      });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as string;
+      const p1Value = getRawValueFromData(p1, context) as string;
+      return createDataFromRawValue(value.concat(p1Value), context);
     },
   },
   {
     name: "includes",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>, p1: IData<StringType>) => {
-      return createData({
-        type: { kind: "boolean" },
-        value: data.value.includes(p1.value),
-      });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as string;
+      const p1Value = getRawValueFromData(p1, context) as string;
+      return createDataFromRawValue(value.includes(p1Value), context);
     },
   },
   {
     name: "localeCompare",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (_, data: IData<StringType>, p1: IData<StringType>) => {
-      return createData({
-        type: { kind: "number" },
-        value: data.value.localeCompare(p1.value),
-      });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as string;
+      const p1Value = getRawValueFromData(p1, context) as string;
+      return createDataFromRawValue(value.localeCompare(p1Value), context);
     },
   },
 ];
@@ -245,52 +220,56 @@ const numberOperations: OperationListItem[] = [
   {
     name: "power",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      return createData({
-        type: { kind: "number" },
-        value: Math.pow(data.value, p1.value),
-      });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as number;
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(Math.pow(value, p1Value), context);
     },
   },
   {
     name: "mod",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<NumberType>) => {
-      if (p1.value === 0) {
-        return createData({
-          type: { kind: "error", errorType: "runtime_error" },
-          value: { reason: "Modulo by zero" },
-        });
-      }
-      return createData({
-        type: { kind: "number" },
-        value: data.value % p1.value,
-      });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as number;
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(value % p1Value, context);
     },
   },
   {
     name: "lessThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<typeof data.type>) =>
-      createData({ type: { kind: "boolean" }, value: data.value < p1.value }),
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as number;
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(value < p1Value, context);
+    },
   },
   {
     name: "lessThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<typeof data.type>) =>
-      createData({ type: { kind: "boolean" }, value: data.value <= p1.value }),
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as number;
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(value <= p1Value, context);
+    },
   },
   {
     name: "greaterThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<typeof data.type>) =>
-      createData({ type: { kind: "boolean" }, value: data.value > p1.value }),
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as number;
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(value > p1Value, context);
+    },
   },
   {
     name: "greaterThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (_, data: IData<NumberType>, p1: IData<typeof data.type>) =>
-      createData({ type: { kind: "boolean" }, value: data.value >= p1.value }),
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as number;
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(value >= p1Value, context);
+    },
   },
 ];
 
@@ -301,18 +280,18 @@ const tupleOperations: OperationListItem[] = [
       { type: { kind: "tuple", elements: [] } },
       { type: { kind: "number" } },
     ],
-    handler: (context, data: IData<ArrayType>, p1: IData<NumberType>) => {
-      const item = data.value.at(p1.value);
-      if (!item) return createData();
-      const value = getStatementResult(item, context);
-      return createData({ type: value.type, value: value.value });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as [];
+      const p1Value = getRawValueFromData(p1, context) as number;
+      return createDataFromRawValue(value.at(p1Value), context);
     },
   },
   {
-    name: "getLength",
+    name: "length",
     parameters: [{ type: { kind: "tuple", elements: [] } }],
-    handler: (_, data: IData<ArrayType>) => {
-      return createData({ type: { kind: "number" }, value: data.value.length });
+    handler: (context, data: IData) => {
+      const value = getRawValueFromData(data, context) as [];
+      return createDataFromRawValue(value.length, context);
     },
   },
   {
@@ -321,62 +300,114 @@ const tupleOperations: OperationListItem[] = [
       { type: { kind: "tuple", elements: [] } },
       { type: { kind: "string" } },
     ],
-    handler: (context, data: IData<ArrayType>, p1: IData<StringType>) => {
-      return createData({
-        type: { kind: "string" },
-        value: data.value
-          .map((item) => getStatementResult(item, context).value)
-          .join(p1.value),
-      });
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as [];
+      const p1Value = getRawValueFromData(p1, context) as string;
+      return createDataFromRawValue(value.join(p1Value), context);
     },
   },
 ];
 
-const arrayOperations: OperationListItem[] = [];
+const arrayOperations: OperationListItem[] = [
+  {
+    name: "at",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "number" } },
+    ],
+    handler: (context, data: IData, index: IData) => {
+      const value = getRawValueFromData(data, context) as unknown[];
+      const indexValue = getRawValueFromData(index, context) as number;
+      return createDataFromRawValue(value.at(indexValue), context);
+    },
+  },
+  {
+    name: "includes",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "string" } } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (context, data: IData, element: IData) => {
+      const value = getRawValueFromData(data, context) as unknown[];
+      const elementValue = getRawValueFromData(element, context);
+      return createDataFromRawValue(value.includes(elementValue), context);
+    },
+  },
+  {
+    name: "indexOf",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (context, data: IData, element: IData) => {
+      const value = getRawValueFromData(data, context) as unknown[];
+      const elementValue = getRawValueFromData(element, context);
+      return createDataFromRawValue(value.indexOf(elementValue), context);
+    },
+  },
+  {
+    name: "lastIndexOf",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "unknown" } },
+    ],
+    handler: (context, data: IData, element: IData) => {
+      const value = getRawValueFromData(data, context) as unknown[];
+      const elementValue = getRawValueFromData(element, context);
+      return createDataFromRawValue(value.lastIndexOf(elementValue), context);
+    },
+  },
+  {
+    name: "some",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
+    handler: (context, data: IData, callback: IData) => {
+      const _context = { ...context, isSync: true } as Context;
+      const value = getRawValueFromData(data, _context) as unknown[];
+      const callbackOp = getRawValueFromData(callback, _context) as (
+        ...args: unknown[]
+      ) => unknown;
+      return createDataFromRawValue(value.some(callbackOp), _context);
+    },
+  },
+  {
+    name: "every",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
+    handler: (context, data: IData, callback: IData) => {
+      const _context = { ...context, isSync: true } as Context;
+      const value = getRawValueFromData(data, _context) as unknown[];
+      const callbackOp = getRawValueFromData(callback, _context) as (
+        ...args: unknown[]
+      ) => unknown;
+      return createDataFromRawValue(value.every(callbackOp), _context);
+    },
+  },
+];
 
 const dictionaryOperations: OperationListItem[] = [
   {
     name: "get",
-    parameters: [
-      {
-        type: resolveUnionType([
-          { kind: "object", properties: [] },
-          { kind: "dictionary", elementType: { kind: "unknown" } },
-        ]),
-      },
-      { type: { kind: "string" } },
-    ],
-    handler: (
-      context,
-      data: IData<ObjectType | DictionaryType>,
-      p1: IData<StringType>
-    ) => {
-      const entry = data.value.entries.find((e) => e.key === p1.value);
-      if (!entry) return createData();
-      const value = getStatementResult(entry.value, context) as IData;
-      return createData({ type: value.type, value: value.value });
+    parameters: [getObjectParam(), { type: { kind: "string" } }],
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const p1Value = getRawValueFromData(p1, context) as string;
+      return createDataFromRawValue(value[p1Value], context);
     },
   },
   {
     name: "has",
-    parameters: [
-      {
-        type: resolveUnionType([
-          { kind: "object", properties: [] },
-          { kind: "dictionary", elementType: { kind: "unknown" } },
-        ]),
-      },
-      { type: { kind: "string" } },
-    ],
-    handler: (
-      _,
-      data: IData<ObjectType | DictionaryType>,
-      p1: IData<StringType>
-    ) => {
-      return createData({
-        type: { kind: "boolean" },
-        value: data.value.entries.some((e) => e.key === p1.value),
-      });
+    parameters: [getObjectParam(), { type: { kind: "string" } }],
+    handler: (context, data: IData, p1: IData) => {
+      const value = getRawValueFromData(data, context) as Record<
+        string,
+        unknown
+      >;
+      const p1Value = getRawValueFromData(p1, context) as string;
+      return createDataFromRawValue(p1Value in value, context);
     },
   },
 ];
@@ -396,26 +427,17 @@ const operationOperations: OperationListItem[] = [
       },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
-    handler: async (context, data: IData<OperationType>, ...p: IData[]) => {
-      const jsCallback = context.getInstance(`${data.id}-operation`);
-      if (typeof jsCallback === "function") {
-        const rawArgs = p.map((param) => getRawValueFromData(param, context));
-        try {
-          const result = await jsCallback(...rawArgs);
-          return createDataFromRawValue(result, {
-            ...context,
-            expectedType: data.type.result,
-          });
-        } catch (error) {
-          return createRuntimeError(error);
-        }
-      }
-
-      return context.executeOperation(
-        operationToListItem(data, "call"),
-        p[0],
-        p.slice(1).map((data) => createStatement({ data })),
-        context
+    handler: (context, data: IData, ...params: IData[]) => {
+      const storedFunc = context.getInstance(`${data.id}-operation`);
+      const operation =
+        typeof storedFunc === "function"
+          ? storedFunc
+          : (getRawValueFromData(data, context) as () => unknown);
+      const result = operation(
+        ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
+      );
+      return (result instanceof Promise ? result : createThenable(result)).then(
+        (r) => createDataFromRawValue(r, context)
       );
     },
   },
@@ -436,7 +458,7 @@ function createInstanceOperation<T extends keyof typeof InstanceTypes>(
       { type: { kind: "instance", className, constructorArgs: [] } },
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
-    handler: (context, data: IData<InstanceDataType>) => {
+    handler: (context, data: IData) => {
       const instance = getRawValueFromData(data, context) as InstanceValue<T>;
       if (!instance) {
         return createRuntimeError(`${className} instance not found`);
@@ -547,53 +569,23 @@ const promiseOperations: OperationListItem[] = [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
       { type: getResolveCallbackType(data) },
     ],
-    lazyHandler: async (
-      context,
-      promiseData: IData<InstanceDataType>,
-      callback: IStatement
-    ) => {
+    lazyHandler: (context, promiseData: IData, _callback: IStatement) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
           context
         ) as Promise<unknown>;
-        const callbackOp = resolveReference(
-          callback.data,
+        const callback = resolveReference(
+          _callback.data,
           context
         ) as IData<OperationType>;
-        const newPromise = promiseValue.then(async (resolvedValue) => {
-          const updatedCallback = {
-            ...callbackOp.type,
-            parameters: [
-              { type: promiseData.type },
-              ...callbackOp.type.parameters,
-            ],
-          };
-          const resolvedData = createDataFromRawValue(resolvedValue, context);
-          const result = await context.executeOperation(
-            operationToListItem({ ...callbackOp, type: updatedCallback }),
-            promiseData,
-            [createStatement({ data: resolvedData })],
-            context
-          );
-          if (isFatalError(result)) throw result.value?.reason ?? result;
-          return getRawValueFromData(result, context);
+        const newPromise = promiseValue.then(
+          getRawValueFromData(callback, context) as (_: unknown) => unknown
+        );
+        return createDataFromRawValue(newPromise, {
+          ...context,
+          expectedType: callback.type.result,
         });
-        const newInstanceId = nanoid();
-        context.setInstance(newInstanceId, newPromise);
-        const resultData = createData({
-          type: {
-            kind: "instance",
-            className: "Promise",
-            constructorArgs: getPromiseArgsType([
-              { type: callbackOp.type.result, name: "value" },
-            ]),
-          },
-        });
-        return {
-          ...resultData,
-          value: { ...resultData.value, instanceId: newInstanceId },
-        };
       } catch (error) {
         return createRuntimeError(error);
       }
@@ -611,58 +603,23 @@ const promiseOperations: OperationListItem[] = [
         },
       },
     ],
-    lazyHandler: async (
-      context,
-      promiseData: IData<InstanceDataType>,
-      errorCallback: IStatement
-    ) => {
+    lazyHandler: (context, promiseData: IData, _errorCallback: IStatement) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
           context
         ) as Promise<unknown>;
-        const errorCallbackOp = resolveReference(
-          errorCallback.data,
+        const errorCallback = resolveReference(
+          _errorCallback.data,
           context
         ) as IData<OperationType>;
-        const newPromise = promiseValue.catch(async (error) => {
-          const updatedCallback = {
-            ...errorCallbackOp.type,
-            parameters: [
-              { type: promiseData.type },
-              ...errorCallbackOp.type.parameters,
-            ],
-          };
-          const errorData = createDataFromRawValue(error, context);
-          const callbackResult = await context.executeOperation(
-            operationToListItem({ ...errorCallbackOp, type: updatedCallback }),
-            promiseData,
-            [createStatement({ data: errorData })],
-            context
-          );
-          if (
-            isDataOfType(callbackResult, "error") &&
-            isFatalError(callbackResult)
-          ) {
-            throw callbackResult.value?.reason ?? callbackResult;
-          }
-          return getRawValueFromData(callbackResult, context);
+        const newPromise = promiseValue.catch(
+          getRawValueFromData(errorCallback, context) as (_: unknown) => unknown
+        );
+        return createDataFromRawValue(newPromise, {
+          ...context,
+          expectedType: errorCallback.type.result,
         });
-        const newInstanceId = nanoid();
-        context.setInstance(newInstanceId, newPromise);
-        const resultData = createData({
-          type: {
-            kind: "instance",
-            className: "Promise",
-            constructorArgs: getPromiseArgsType([
-              { type: errorCallbackOp.type.result, name: "value" },
-            ]),
-          },
-        });
-        return {
-          ...resultData,
-          value: { ...resultData.value, instanceId: newInstanceId },
-        };
       } catch (error) {
         return createRuntimeError(error);
       }
@@ -673,7 +630,7 @@ const promiseOperations: OperationListItem[] = [
     parameters: [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
     ],
-    lazyHandler: async (context, promiseData: IData<InstanceDataType>) => {
+    lazyHandler: async (context, promiseData: IData) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
@@ -697,31 +654,22 @@ const promiseOperations: OperationListItem[] = [
         isOptional: true,
       },
     ],
-    handler: (context, url: IData<StringType>, options?: IData<ObjectType>) => {
+    handler: (context, url: IData, options?: IData) => {
+      const urlValue = getRawValueFromData(url, context) as string;
       const fetchOptions = options?.value
         ? (getRawValueFromData(options, context) as Record<string, unknown>)
         : undefined;
-      const fetchPromise = fetch(url.value, fetchOptions);
-      const newInstanceId = nanoid();
-      context.setInstance(newInstanceId, fetchPromise);
-      const responseType: InstanceDataType = {
-        kind: "instance",
-        className: "Response",
-        constructorArgs: InstanceTypes.Response.constructorArgs,
-      };
-      const resultData = createData({
-        type: {
+      const fetchPromise = fetch(urlValue, fetchOptions);
+      return createDataFromRawValue(fetchPromise, {
+        ...context,
+        expectedType: {
           kind: "instance",
-          className: "Promise",
-          constructorArgs: getPromiseArgsType([
-            { type: responseType, name: "value" },
-          ]),
+          className: "Response",
+          constructorArgs: resolveConstructorArgs(
+            InstanceTypes.Response.constructorArgs
+          ),
         },
       });
-      return {
-        ...resultData,
-        value: { ...resultData.value, instanceId: newInstanceId },
-      };
     },
   },
 ];
@@ -734,22 +682,10 @@ const responseOperations: OperationListItem[] = [
         type: { kind: "instance", className: "Response", constructorArgs: [] },
       },
     ],
-    handler: async (context, data: IData<InstanceDataType>) => {
+    handler: (context, data: IData) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
-      const newInstanceId = nanoid();
-      context.setInstance(newInstanceId, instance.clone().json());
-      const resultData = createData({
-        type: {
-          kind: "instance",
-          className: "Promise",
-          constructorArgs: getPromiseArgsType(),
-        },
-      });
-      return {
-        ...resultData,
-        value: { ...resultData.value, instanceId: newInstanceId },
-      };
+      return createDataFromRawValue(instance.clone().json(), context);
     },
   },
   {
@@ -759,24 +695,13 @@ const responseOperations: OperationListItem[] = [
         type: { kind: "instance", className: "Response", constructorArgs: [] },
       },
     ],
-    handler: (context, data: IData<InstanceDataType>) => {
+    handler: (context, data: IData) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
-      const newInstanceId = nanoid();
-      context.setInstance(newInstanceId, instance.clone().text());
-      const resultData = createData({
-        type: {
-          kind: "instance",
-          className: "Promise",
-          constructorArgs: getPromiseArgsType([
-            { type: { kind: "string" }, name: "value" },
-          ]),
-        },
+      return createDataFromRawValue(instance.clone().text(), {
+        ...context,
+        expectedType: { kind: "string" },
       });
-      return {
-        ...resultData,
-        value: { ...resultData.value, instanceId: newInstanceId },
-      };
     },
   },
   {
@@ -786,7 +711,7 @@ const responseOperations: OperationListItem[] = [
         type: { kind: "instance", className: "Response", constructorArgs: [] },
       },
     ],
-    handler: (context, data: IData<InstanceDataType>) => {
+    handler: (context, data: IData) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
       return createData({
@@ -805,7 +730,6 @@ export const builtInOperations: OperationListItem[] = [
   ...tupleOperations,
   ...arrayOperations,
   ...dictionaryOperations,
-  ...remedaOperations,
   ...operationOperations,
   ...unionOperations,
   ...dateOperations,
@@ -813,5 +737,6 @@ export const builtInOperations: OperationListItem[] = [
   ...promiseOperations,
   ...responseOperations,
   ...wretchOperations,
+  ...remedaOperations,
   ...unknownOperations,
 ];

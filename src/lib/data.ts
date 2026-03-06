@@ -77,10 +77,7 @@ export const DataTypes: {
   },
 };
 
-export function getPromiseArgsType(
-  resolveType?: OperationType["parameters"],
-  rejectType?: OperationType["parameters"]
-) {
+export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   return [
     {
       type: {
@@ -100,9 +97,7 @@ export function getPromiseArgsType(
             name: "reject",
             type: {
               kind: "operation",
-              parameters: rejectType ?? [
-                { name: "reason", type: { kind: "unknown" } },
-              ],
+              parameters: [{ name: "reason", type: { kind: "unknown" } }],
               result: { kind: "undefined" },
             },
             isOptional: true,
@@ -118,14 +113,16 @@ export function getPromiseArgsType(
   ] as OperationType["parameters"];
 }
 
-type InstanceTypeConfig<
+export type InstanceTypeConfig<
   K extends string = string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   C extends new (...args: any[]) => any = new (...args: any[]) => any
 > = {
   readonly name: K;
   readonly Constructor: C;
-  readonly constructorArgs: OperationType["parameters"];
+  readonly constructorArgs:
+    | OperationType["parameters"]
+    | ((data?: OperationType["parameters"]) => OperationType["parameters"]);
   readonly hideFromDropdown?: boolean;
   readonly prepareArgs?: (args: unknown[]) => unknown[];
 };
@@ -134,7 +131,7 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   Promise: {
     name: "Promise",
     Constructor: Promise,
-    constructorArgs: getPromiseArgsType(),
+    constructorArgs: getPromiseArgsType,
   },
   Date: {
     name: "Date",

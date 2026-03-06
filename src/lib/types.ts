@@ -193,13 +193,12 @@ export type OperationListItem = {
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
   shouldCacheResult?: boolean;
-} & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
+} & (
+  | { handler: (...args: [Context, ...IData[]]) => Thenable<IData> | IData }
   | {
       lazyHandler: (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...args: [Context, IData<any>, ...IStatement[]]
-      ) => Promise<IData> | IData;
+        ...args: [Context, IData, ...IStatement[]]
+      ) => Thenable<IData> | IData;
     }
   | { statements: IStatement[] }
 );

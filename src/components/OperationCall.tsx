@@ -40,6 +40,7 @@ const OperationCallComponent = ({
     () => getFilteredOperations(data, context, true),
     [data, context]
   );
+  const restParam = operation.type.parameters.findLast((p) => p.isRest);
 
   const originalOperation = useMemo(() => {
     return filteredOperations
@@ -180,7 +181,7 @@ const OperationCallComponent = ({
         );
       })}
       {operation.value.parameters.length + 1 <
-        operation.type.parameters.length && (
+        operation.type.parameters.length || restParam ? (
         <AddStatement
           id={`${operation.id}_call_parameter`}
           onSelect={(statement) =>
@@ -188,11 +189,15 @@ const OperationCallComponent = ({
           }
           iconProps={{ title: "Add parameter" }}
           config={{
-            ...operation.type.parameters[operation.value.parameters.length + 1],
+            ...(restParam
+              ? { ...restParam, isRest: undefined }
+              : operation.type.parameters[
+                  operation.value.parameters.length + 1
+                ]),
             name: undefined,
           }}
         />
-      )}
+      ) : null}
       <span className="self-end">{")"}</span>
     </Dropdown>
   );

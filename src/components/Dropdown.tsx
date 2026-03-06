@@ -35,6 +35,7 @@ import {
   isDataOfType,
   isTextInput,
   resolveReference,
+  fuzzySearch,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 import { nanoid } from "nanoid";
@@ -128,13 +129,10 @@ const DropdownComponent = ({
 
   const dropdownOptions = useMemo(() => {
     return items?.reduce((acc, [groupName, groupItems]) => {
-      const filteredItem = groupItems.filter((item) => {
-        return (
-          search === value ||
-          item.label?.toLowerCase().includes(search.toLowerCase().trim()) ||
-          item.value.toLowerCase().includes(search.toLowerCase().trim())
-        );
-      });
+      const filteredItem = fuzzySearch(
+        groupItems,
+        value === search ? [] : [{ label: search, value: search }]
+      );
       if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
       return acc;
     }, [] as [string, IDropdownItem[]][]);

@@ -15,7 +15,7 @@ import {
   unwrapThenable,
 } from "../utils";
 
-function getArrayCallbackParams(
+export function getArrayCallbackParams(
   data: IData,
   options?: {
     elementType?: DataType;
@@ -755,6 +755,15 @@ export const remedaOperationList: {
       { type: { kind: "array", elementType: { kind: "unknown" } } },
     ],
   },
+  {
+    name: "isDeepEqual",
+    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+  },
+  {
+    name: "isShallowEqual",
+    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+  },
+
   {
     name: "randomInteger",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],

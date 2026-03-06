@@ -1,5 +1,10 @@
 import { nanoid } from "nanoid";
-import { DataTypes, ErrorTypesData, InstanceTypes } from "./data";
+import {
+  DataTypes,
+  ErrorTypesData,
+  InstanceTypeConfig,
+  InstanceTypes,
+} from "./data";
 import {
   IData,
   IStatement,
@@ -468,7 +473,10 @@ export function createDataFromRawValue(
         type: {
           kind: "instance",
           className,
-          constructorArgs: config.constructorArgs,
+          constructorArgs: resolveConstructorArgs(
+            config.constructorArgs,
+            context.expectedType
+          ),
         },
       });
       context.setInstance(data.value.instanceId, value);
@@ -575,10 +583,10 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
   }
 
   if (first.kind === "tuple" && second.kind === "tuple") {
-    return first.elements.every((firstElement) =>
-      second.elements.some((secondElement) =>
-        isTypeCompatible(firstElement, secondElement)
-      )
+    if (second.elements.length === 0) return true;
+    if (first.elements.length !== second.elements.length) return false;
+    return first.elements.every((firstElement, index) =>
+      isTypeCompatible(firstElement, second.elements[index])
     );
   }
 
@@ -1195,6 +1203,15 @@ export function resolveParameters(
   });
 }
 
+export function resolveConstructorArgs(
+  args: InstanceTypeConfig["constructorArgs"],
+  expectedType?: DataType
+): OperationType["parameters"] {
+  return typeof args === "function"
+    ? args(expectedType ? [{ type: expectedType, name: "value" }] : undefined)
+    : args;
+}
+
 /* Execution */
 
 export function getStatementResult(
@@ -1418,7 +1435,7 @@ export function getDataDropdownList({
       const instanceType: DataType = {
         kind: "instance",
         className: instanceConfig.name,
-        constructorArgs: instanceConfig.constructorArgs,
+        constructorArgs: resolveConstructorArgs(instanceConfig.constructorArgs),
       };
 
       const option: IDropdownItem = {
@@ -1488,4 +1505,36 @@ export function handleSearchParams(
     else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
+}
+
+export function fuzzySearch<T extends object>(
+  data: T[],
+  search?: Partial<{ [key in keyof T]: string }>[]
+): T[] {
+  if (!search || search.length === 0) return data;
+  return data.reduce<T[]>((acc, item) => {
+    for (const searchObj of search) {
+      for (const [key, searchValue] of Object.entries(searchObj)) {
+        if (!isObject(item) || typeof item[key] !== "string") continue;
+        const fieldValue = item[key].toLowerCase().trim();
+        const letters = String(searchValue).toLowerCase().trim().split("");
+        const foundIndices: number[] = [];
+
+        let lastIndex = -1;
+        const match = letters.every((letter) => {
+          const index = fieldValue.indexOf(letter, lastIndex + 1);
+          if (index === -1) return false;
+          foundIndices.push(index);
+          lastIndex = index;
+          return true;
+        });
+
+        if (match) {
+          acc.push(item);
+          return acc;
+        }
+      }
+    }
+    return acc;
+  }, []);
 }
