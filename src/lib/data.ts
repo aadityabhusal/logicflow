@@ -127,6 +127,37 @@ export type InstanceTypeConfig<
   readonly prepareArgs?: (args: unknown[]) => unknown[];
 };
 
+export const customInstances = new WeakMap<
+  object,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  new (...args: any[]) => any
+>();
+
+export class WretchClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === WretchClass
+    );
+  }
+  constructor(...args: Parameters<typeof wretch>) {
+    const instance = wretch(...args);
+    customInstances.set(instance, WretchClass);
+    return instance;
+  }
+}
+
+export class WretchResponseChainClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === WretchResponseChainClass
+    );
+  }
+}
+
 export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   Promise: {
     name: "Promise",
@@ -167,11 +198,7 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   },
   Wretch: {
     name: "Wretch",
-    Constructor: function (...args: Parameters<typeof wretch>) {
-      return wretch(...args);
-    } as unknown as new (...args: Parameters<typeof wretch>) => ReturnType<
-      typeof wretch
-    >,
+    Constructor: WretchClass,
     constructorArgs: [
       { type: { kind: "string" } },
       {
@@ -182,9 +209,7 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   },
   WretchResponseChain: {
     name: "WretchResponseChain",
-    Constructor: class WretchResponseChain {} as unknown as new (
-      ...args: unknown[]
-    ) => unknown,
+    Constructor: WretchResponseChainClass,
     constructorArgs: [],
     hideFromDropdown: true,
   },

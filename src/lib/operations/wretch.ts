@@ -1,22 +1,24 @@
 import {
   IData,
   OperationListItem,
-  InstanceDataType,
   OperationType,
   Context,
   IStatement,
-} from "../types";
+  DataType,
+} from "@/lib/types";
 import {
-  createData,
   getRawValueFromData,
   createDataFromRawValue,
-  operationToListItem,
-  createStatement,
-} from "../utils";
-import { getPromiseArgsType, InstanceTypes } from "../data";
-import { createRuntimeError } from "../built-in-operations";
-import { nanoid } from "nanoid";
-import { Wretch, WretchResponseChain, WretchError } from "wretch";
+  resolveReference,
+  isObject,
+} from "@/lib/utils";
+import { createRuntimeError } from "@/lib/built-in-operations";
+import { Wretch, WretchResponseChain } from "wretch";
+import {
+  customInstances,
+  WretchClass,
+  WretchResponseChainClass,
+} from "@/lib/data";
 
 // Helper to create Wretch operations
 function createWretchOperation(
@@ -32,58 +34,17 @@ function createWretchOperation(
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
     shouldCacheResult,
-    handler: (context, data: IData<InstanceDataType>, ...args: IData[]) => {
+    handler: (context, data: IData, ...args: IData[]) => {
       const instance = getRawValueFromData(data, context) as Wretch;
-      if (!instance) {
-        return createRuntimeError("Wretch instance not found");
-      }
+      if (!instance) return createRuntimeError("Wretch instance not found");
       try {
         const result = method(instance, context, ...args);
-
-        // If result is a Wretch instance (chaining), create a new instance data
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "url" in result &&
-          "fetch" in result
-        ) {
-          const newInstanceId = nanoid();
-          context.setInstance(newInstanceId, result);
-          const resultData = createData({
-            type: {
-              kind: "instance",
-              className: "Wretch",
-              constructorArgs: InstanceTypes.Wretch.constructorArgs,
-            },
-          });
-          return {
-            ...resultData,
-            value: { ...resultData.value, instanceId: newInstanceId },
-          };
-        }
-
-        // If result is a WretchResponseChain
-        // We know it's a response chain if it has 'res', 'json', 'text' methods but NOT 'url' (which Wretch has)
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "res" in result &&
-          "json" in result &&
-          !("url" in result)
-        ) {
-          const newInstanceId = nanoid();
-          context.setInstance(newInstanceId, result);
-          const resultData = createData({
-            type: {
-              kind: "instance",
-              className: "WretchResponseChain",
-              constructorArgs: [],
-            },
-          });
-          return {
-            ...resultData,
-            value: { ...resultData.value, instanceId: newInstanceId },
-          };
+        if (isObject(result) && !customInstances.has(result)) {
+          if ("url" in result && "fetch" in result) {
+            customInstances.set(result, WretchClass);
+          } else if ("res" in result && "json" in result) {
+            customInstances.set(result, WretchResponseChainClass);
+          }
         }
 
         return createDataFromRawValue(result, context);
@@ -94,103 +55,44 @@ function createWretchOperation(
   };
 }
 
+const WretchResponseChainType: DataType = {
+  kind: "instance",
+  className: "WretchResponseChain",
+  constructorArgs: [],
+};
+
 // Helper for WretchResponseChain operations
-function createChainOperation(
+function createChainOperation<T extends WretchResponseChain<unknown>>(
   name: string,
-  method: (
-    instance: WretchResponseChain<unknown, unknown, unknown, unknown>,
-    context: Context,
-    ...args: IData[]
-  ) => unknown,
+  method: (instance: T, context: Context, ...args: IData[]) => unknown,
   parameters: OperationListItem["parameters"] = []
 ): OperationListItem {
   return {
     name,
     parameters: (data) => [
-      {
-        type: {
-          kind: "instance",
-          className: "WretchResponseChain",
-          constructorArgs: [],
-        },
-      },
+      { type: WretchResponseChainType },
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
-    handler: (context, data: IData<InstanceDataType>, ...args: IData[]) => {
-      const instance = getRawValueFromData(
-        data,
-        context
-      ) as WretchResponseChain<unknown, unknown, unknown, unknown>;
+    handler: (context, data: IData, ...args: IData[]) => {
+      const instance = getRawValueFromData(data, context) as T;
       if (!instance) {
         return createRuntimeError("WretchResponseChain instance not found");
       }
 
       try {
         const result = method(instance, context, ...args);
-
-        // Check if it returns a Promise (for res, json, text)
+        let expectedType: DataType | undefined;
         if (result instanceof Promise) {
-          const newInstanceId = nanoid();
-          context.setInstance(newInstanceId, result);
-          // The promise result type depends on the method.
-          // json -> unknown
-          // text -> string
-          // res -> Response (Instance)
-
-          let promiseResolveType: OperationType["parameters"] = [
-            { name: "value", type: { kind: "unknown" } },
-          ];
-          if (name === "text") {
-            promiseResolveType = [{ name: "value", type: { kind: "string" } }];
-          } else if (name === "res") {
-            promiseResolveType = [
-              {
-                name: "value",
-                type: {
-                  kind: "instance",
-                  className: "Response",
-                  constructorArgs: [],
-                },
-              },
-            ];
-          }
-
-          const resultData = createData({
-            type: {
-              kind: "instance",
-              className: "Promise",
-              constructorArgs: getPromiseArgsType(promiseResolveType),
-            },
-          });
-          return {
-            ...resultData,
-            value: { ...resultData.value, instanceId: newInstanceId },
-          };
+          expectedType =
+            name === "text"
+              ? { kind: "string" }
+              : name === "res"
+              ? { kind: "instance", className: "Response", constructorArgs: [] }
+              : undefined;
+        } else {
+          customInstances.set(result as T, WretchResponseChainClass);
         }
-
-        // Check if it returns WretchResponseChain (for error handlers)
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "res" in result &&
-          "json" in result
-        ) {
-          const newInstanceId = nanoid();
-          context.setInstance(newInstanceId, result);
-          const resultData = createData({
-            type: {
-              kind: "instance",
-              className: "WretchResponseChain",
-              constructorArgs: [],
-            },
-          });
-          return {
-            ...resultData,
-            value: { ...resultData.value, instanceId: newInstanceId },
-          };
-        }
-
-        return createDataFromRawValue(result, context);
+        return createDataFromRawValue(result, { ...context, expectedType });
       } catch (e) {
         return createRuntimeError(e);
       }
@@ -388,13 +290,7 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
   (methodName) => ({
     name: methodName,
     parameters: [
-      {
-        type: {
-          kind: "instance",
-          className: "WretchResponseChain",
-          constructorArgs: [],
-        },
-      },
+      { type: WretchResponseChainType },
       {
         type: {
           kind: "operation",
@@ -408,59 +304,26 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
         },
       },
     ],
-    lazyHandler: async (
+    lazyHandler: (
       context: Context,
-      chainData: IData<InstanceDataType>,
-      callbackStmt: IStatement
+      chainData: IData,
+      _callback: IStatement
     ) => {
       const instance = getRawValueFromData(
         chainData,
         context
-      ) as WretchResponseChain<unknown, unknown, unknown, unknown>;
+      ) as WretchResponseChain<unknown>;
       if (!instance)
         return createRuntimeError("WretchResponseChain instance not found");
 
-      const callbackOp = callbackStmt.data as IData<OperationType>;
-
-      // We wrap the wretch method.
-      // Wretch methods like .notFound(cb) return the chain itself (WretchResponseChain).
-      // The callback `cb` is executed if the error matches.
-
-      // Problem: We can't await `context.executeOperation` inside a synchronous Wretch callback if Wretch expects a sync return or doesn't await it.
-      // Wretch documentation says: "The callback ... can return a replacement response (Promise<Response> | Response) ..."
-      // So it supports async callbacks!
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const newChain = (instance as any)[methodName](
-        async (error: WretchError) => {
-          const errorData = createDataFromRawValue(error, context);
-
-          // Execute the callback operation
-          const result = await context.executeOperation(
-            operationToListItem(callbackOp, "callback"),
-            chainData, // usage context, maybe irrelevant for `call`
-            [createStatement({ data: errorData })], // arguments
-            context
-          );
-          return getRawValueFromData(result, context);
-        }
+      const callback = resolveReference(
+        _callback.data,
+        context
+      ) as IData<OperationType>;
+      const newChain = (instance[methodName] as (_: unknown) => unknown)(
+        getRawValueFromData(callback, context)
       );
-
-      // newChain is the WretchResponseChain (mutable or new instance)
-      const newInstanceId = nanoid();
-      context.setInstance(newInstanceId, newChain);
-
-      const resultData = createData({
-        type: {
-          kind: "instance",
-          className: "WretchResponseChain",
-          constructorArgs: [],
-        },
-      });
-
-      return {
-        ...resultData,
-        value: { ...resultData.value, instanceId: newInstanceId },
-      };
+      return createDataFromRawValue(newChain, context);
     },
   })
 );
