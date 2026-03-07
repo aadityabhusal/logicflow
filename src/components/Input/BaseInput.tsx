@@ -5,7 +5,7 @@ import {
   TextInputProps,
 } from "@mantine/core";
 import { useUncontrolled, useMediaQuery } from "@mantine/hooks";
-import { forwardRef, memo, useState } from "react";
+import { forwardRef, memo, useMemo, useState } from "react";
 import { useUiConfigStore } from "@/lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
@@ -30,28 +30,36 @@ function BaseInputInner<T extends string | number>(
   const disableKeyboard = useUiConfigStore(
     (s) => s.disableKeyboard && !options?.forceEnableKeyboard && smallScreen
   );
-
-  const MAX_WIDTH = 160;
+  const MAX_CHAR = 20;
   const [textWidth, setTextWidth] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
   const [inputValue, setInputValue] = useUncontrolled({
     value,
     defaultValue,
     onChange,
   });
 
+  const displayValue = useMemo(() => {
+    const value = String(inputValue);
+    if (value.length < MAX_CHAR + 5) return value;
+    return `${value.slice(0, MAX_CHAR)}...${value.slice(-5)}`;
+  }, [inputValue]);
+
   const commonProps = {
     ...props,
     value: inputValue,
-    classNames: {
-      input: [
-        "number-input",
-        props.className,
-        textWidth >= MAX_WIDTH ? "truncate" : "",
-      ].join(" "),
-    },
+    classNames: { input: ["number-input", props.className].join(" ") },
     readOnly: disableKeyboard,
     styles: { input: { width: textWidth, ...props.styles } },
     onClick: props.onClick,
+    onFocus: (e: React.FocusEvent<HTMLInputElement>) => {
+      setIsFocused(true);
+      props.onFocus?.(e);
+    },
+    onBlur: (e: React.FocusEvent<HTMLInputElement>) => {
+      setIsFocused(false);
+      props.onBlur?.(e);
+    },
   } as typeof props;
 
   return (
@@ -63,10 +71,14 @@ function BaseInputInner<T extends string | number>(
       ].join(" ")}
     >
       <div
-        className="self-start h-0 overflow-hidden whitespace-pre max-w-40"
+        className={[
+          props.className,
+          "self-start overflow-hidden whitespace-pre bg-editor pointer-events-none",
+          isFocused ? "h-0" : "h-full absolute",
+        ].join(" ")}
         ref={(elem) => setTextWidth(elem?.clientWidth || 14)}
       >
-        {inputValue}
+        {displayValue}
       </div>
       {type === "number" ? (
         <NumberInput
