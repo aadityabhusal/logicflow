@@ -3,6 +3,7 @@ import {
   FaArrowTurnUp,
   FaEquals,
   FaQuestion,
+  FaEllipsis,
 } from "react-icons/fa6";
 import { Context, IData, IStatement, OperationType } from "../lib/types";
 import {
@@ -10,6 +11,8 @@ import {
   createVariableName,
   applyTypeNarrowing,
   getSkipExecution,
+  createStatement,
+  createData,
 } from "../lib/utils";
 import { createOperationCall, getFilteredOperations } from "../lib/operation";
 import { Data } from "./Data";
@@ -39,6 +42,7 @@ const StatementComponent = ({
     enableVariable?: boolean;
     isOptional?: boolean;
     isParameter?: boolean;
+    isRest?: boolean;
     disableNameToggle?: boolean;
     disableDelete?: boolean;
   };
@@ -138,22 +142,32 @@ const StatementComponent = ({
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={options?.isOptional ? FaQuestion : FaEquals}
+                icon={
+                  options?.isRest
+                    ? FaEllipsis
+                    : options?.isOptional
+                    ? FaQuestion
+                    : FaEquals
+                }
                 position="right"
                 className={[
                   "hover:outline hover:outline-border",
-                  options?.isOptional ? "" : "mt-1",
+                  options?.isOptional || options?.isRest ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
                   options?.disableNameToggle ? "text-disabled" : "",
                 ].join(" ")}
                 title={
                   options?.disableNameToggle
-                    ? options?.isOptional
+                    ? options?.isRest
+                      ? "Rest Parameter"
+                      : options?.isOptional
                       ? "Optional Parameter"
                       : undefined
                     : options?.isParameter
-                    ? options?.isOptional
+                    ? options?.isRest
                       ? "Make required"
+                      : options?.isOptional
+                      ? "Make rest"
                       : "Make optional"
                     : "Create variable"
                 }
@@ -162,7 +176,19 @@ const StatementComponent = ({
                   handleStatement({
                     ...statement,
                     ...(options?.isParameter
-                      ? { isOptional: !options?.isOptional }
+                      ? options?.isRest
+                        ? { isOptional: undefined, isRest: undefined }
+                        : options?.isOptional
+                        ? {
+                            isOptional: undefined,
+                            isRest: true,
+                            data: createData({
+                              value: [
+                                createStatement({ data: statement.data }),
+                              ],
+                            }),
+                          }
+                        : { isOptional: true, isRest: undefined }
                       : {
                           name: hasName
                             ? undefined
@@ -221,7 +247,16 @@ const StatementComponent = ({
             }
             context={context}
             handleChange={(data, remove) =>
-              handleStatement({ ...statement, data }, remove)
+              handleStatement(
+                {
+                  ...statement,
+                  data,
+                  ...(statement.isRest && data.type.kind !== "array"
+                    ? { isRest: undefined }
+                    : {}),
+                },
+                remove
+              )
             }
           />
         </ErrorBoundary>

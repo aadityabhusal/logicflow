@@ -24,7 +24,7 @@ import {
   resolveParameters,
   operationToListItem,
   createContext,
-  isObject,
+  createContextVariables,
   createThenable,
   unwrapThenable,
 } from "./utils";
@@ -110,8 +110,12 @@ export async function createOperationCall({
     .slice(1)
     .filter((param) => !param?.isOptional)
     .map((item, index) => {
+      const type =
+        item.isRest && item.type.kind === "array"
+          ? item.type.elementType
+          : item.type;
       const newParam = createStatement({
-        data: createParamData({ ...item, type: item.type || data.type }),
+        data: createParamData({ ...item, type: type || data.type }),
         isOptional: item.isOptional,
       });
       const prevParam = parameters?.[index];
@@ -205,7 +209,10 @@ export function setOperationResults(
       return (result instanceof Promise ? result : createThenable(result)).then(
         (result) => {
           if (!isDataOfType(result, "error") && statement.name) {
-            _context.variables.set(statement.name, { data: result });
+            _context.variables = createContextVariables([statement], _context, {
+              result,
+              parameters: operation.type.parameters,
+            });
           }
         }
       );
@@ -367,7 +374,13 @@ export function executeOperationCore(
     }
   }
 
-  const resolvedParams = resolveParameters(operation, data, context);
+  const _execute = context.isSync ? executeStatementSync : executeStatement;
+  const resolvedParams = resolveParameters(
+    operation,
+    data,
+    context,
+    _parameters
+  );
   const executedParams = resolvedParams.slice(1).map((p, index) => {
     const hasParam = _parameters[index];
     if (!hasParam)
@@ -375,7 +388,6 @@ export function executeOperationCore(
         type: resolveUnionType([p.type, { kind: "undefined" }]),
         value: undefined,
       });
-    const _execute = context.isSync ? executeStatementSync : executeStatement;
     return _execute(hasParam, context);
   });
 
@@ -420,10 +432,11 @@ export function executeOperationCore(
             : _param.type;
         const param = { ...allInputs[index], type: paramType };
         const resolved = resolveReference(param, newContext);
-        newContext.variables.set(_param.name, {
-          data: resolved,
-          reference: isDataOfType(param, "reference") ? param.value : undefined,
-        });
+        newContext.variables = createContextVariables(
+          [createStatement({ data: param, name: _param.name })],
+          newContext,
+          { result: resolved, parameters: resolvedParams }
+        );
       }
     });
     return newContext;
@@ -443,9 +456,8 @@ export async function executeOperation(
     lastResult = await executeStatement(statement, result);
     if (isDataOfType(lastResult, "error")) return lastResult;
     if (statement.name) {
-      result.variables.set(statement.name, {
-        data: lastResult,
-        reference: undefined,
+      result.variables = createContextVariables([statement], result, {
+        result: lastResult,
       });
     }
   }
@@ -465,9 +477,8 @@ export function executeOperationSync(
     lastResult = executeStatementSync(statement, result);
     if (isDataOfType(lastResult, "error")) return lastResult;
     if (statement.name) {
-      result.variables.set(statement.name, {
-        data: lastResult,
-        reference: undefined,
+      result.variables = createContextVariables([statement], result, {
+        result: lastResult,
       });
     }
   }

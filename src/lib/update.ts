@@ -66,7 +66,8 @@ function updateOperationCalls(
         const sourceParameters = resolveParameters(
           foundOperation,
           data,
-          _context
+          _context,
+          operation.value.parameters
         );
         updatedTypeParameters = sourceParameters;
 
@@ -211,11 +212,9 @@ export function updateStatements({
     if (changedStatement && !currentIndexFound)
       return [...prevStatements, currentStatement];
 
-    const variables = createContextVariables(
-      prevStatements,
-      context,
-      operation
-    );
+    const variables = createContextVariables(prevStatements, context, {
+      parameters: operation?.type.parameters,
+    });
     const _context = createContext(context, {
       variables,
       skipExecution: getSkipExecution({

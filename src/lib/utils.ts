@@ -81,14 +81,13 @@ export function createVariableName({
   return `${prefix}${index || ""}`;
 }
 
-function createStatementFromType(
-  type: DataType,
-  name?: string,
-  isOptional?: boolean
-) {
+function createStatementFromType({
+  type,
+  ...config
+}: OperationType["parameters"][number]) {
   const value = createDefaultValue(type);
   const data = createData({ type, value });
-  return createStatement({ data, name, isOptional });
+  return createStatement({ data, ...config });
 }
 
 export function createDefaultValue<T extends DataType>(
@@ -115,12 +114,14 @@ export function createDefaultValue<T extends DataType>(
         type.elementType.kind === "never"
       )
         return [] as DataValue<T>;
-      return [createStatementFromType(type.elementType)] as DataValue<T>;
+      return [
+        createStatementFromType({ type: type.elementType }),
+      ] as DataValue<T>;
     }
 
     case "tuple": {
       return type.elements.map((element) =>
-        createStatementFromType(element)
+        createStatementFromType({ type: element })
       ) as DataValue<T>;
     }
 
@@ -131,7 +132,10 @@ export function createDefaultValue<T extends DataType>(
           type.required?.includes(key) ||
           options?.includeOptionalProperties
         ) {
-          entries.push({ key, value: createStatementFromType(value) });
+          entries.push({
+            key,
+            value: createStatementFromType({ type: value }),
+          });
         }
       }
       return { entries } as DataValue<T>;
@@ -146,7 +150,10 @@ export function createDefaultValue<T extends DataType>(
       }
       return {
         entries: [
-          { key: "key", value: createStatementFromType(type.elementType) },
+          {
+            key: "key",
+            value: createStatementFromType({ type: type.elementType }),
+          },
         ],
       } as DataValue<T>;
     }
@@ -161,9 +168,7 @@ export function createDefaultValue<T extends DataType>(
 
     case "operation": {
       return {
-        parameters: type.parameters.map((param) =>
-          createStatementFromType(param.type, param.name, param.isOptional)
-        ),
+        parameters: type.parameters.map(createStatementFromType),
         statements: [],
         result: undefined,
       } as DataValue<T>;
@@ -309,21 +314,22 @@ export function getContextExpectedTypes({
 export function createContextVariables(
   statements: IStatement[],
   context: Context,
-  operation?: IData<OperationType>
+  options?: { parameters?: OperationType["parameters"]; result?: IData }
 ): Context["variables"] {
   return statements.reduce((variables, statement) => {
     if (statement.name) {
       const data = resolveReference(statement.data, context);
-      const result = getStatementResult({ ...statement, data }, context);
+      const result =
+        options?.result ?? getStatementResult({ ...statement, data }, context);
 
-      const isOptional = operation?.type.parameters.find(
-        (param) => param.name === statement.name && param.isOptional
+      const paramInfo = options?.parameters?.find(
+        (param) => param.name === statement.name
       );
       variables.set(statement.name, {
         data: {
           ...result,
           id: statement.id,
-          type: isOptional
+          type: paramInfo?.isOptional
             ? resolveUnionType([result.type, { kind: "undefined" }])
             : result.type,
         },
@@ -564,6 +570,28 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
 
   if (first.kind === "operation" && second.kind === "operation") {
     if (!isTypeCompatible(first.result, second.result)) return false;
+    const firstRest = first.parameters.find((p) => p.isRest);
+    const secondRest = second.parameters.find((p) => p.isRest);
+
+    const diff = Math.abs(second.parameters.length - first.parameters.length);
+    const restFill = Array(diff).fill(firstRest ?? secondRest);
+    if (firstRest && !secondRest) {
+      const newParams = first.parameters.concat(restFill);
+      return isTypeCompatible(
+        {
+          ...first,
+          parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+        },
+        second
+      );
+    }
+    if (secondRest && !firstRest) {
+      const newParams = second.parameters.concat(restFill);
+      return isTypeCompatible(first, {
+        ...second,
+        parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+      });
+    }
     return (
       first.parameters.every((firstParam, index) => {
         if (firstParam.isOptional && !second.parameters[index]) return true;
@@ -1002,6 +1030,7 @@ export function inferTypeFromValue<T extends DataType>(
         name: param.name,
         type: param.data.type,
         isOptional: param.isOptional,
+        isRest: param.isRest,
       })),
       result: getOperationResultType(value.statements, context),
     } as T;
@@ -1105,13 +1134,15 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
 
     case "operation": {
       const params = type.parameters
-        .map(
-          (p) =>
-            `${p.name || "_"}${p.isOptional ? "?" : ""}: ${getTypeSignature(
-              p.type,
-              maxDepth - 1
-            )}`
-        )
+        .map((p) => {
+          const typeSignature = getTypeSignature(p.type, maxDepth - 1);
+          return [
+            p.isRest ? "..." : "",
+            p.name || "_",
+            p.isOptional ? "?" : "",
+            ": " + (p.isRest ? `array<${typeSignature}>` : typeSignature),
+          ].join("");
+        })
         .join(", ");
       return `(${params}) => ${getTypeSignature(type.result, maxDepth - 1)}`;
     }
@@ -1184,13 +1215,22 @@ function processDataType(type: DataType): DataType {
 export function resolveParameters(
   operationListItem: OperationListItem,
   _data: IData,
-  context: Context
+  context: Context,
+  parameters?: IStatement[]
 ): OperationType["parameters"] {
   const data = resolveReference(_data, context);
-  const params =
+  let params =
     typeof operationListItem.parameters === "function"
       ? operationListItem.parameters(data)
       : operationListItem.parameters;
+
+  const restParam = params.find((p) => p.isRest);
+  if (restParam && parameters && restParam.type.kind === "array") {
+    const diff = Math.abs(parameters.length - (params.length - 1) + 1);
+    params = params
+      .slice(-1)
+      .concat(Array(diff).fill({ type: restParam.type.elementType }));
+  }
   return params.map((param) => {
     const processedType = processDataType(param.type);
     if (param.isOptional) {

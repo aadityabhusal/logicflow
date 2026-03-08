@@ -97,6 +97,7 @@ const OperationComponent = (
               name: param.name,
               type: param.data.type,
               isOptional: param.isOptional,
+              isRest: param.isRest,
             };
           }),
           result: getOperationResultType(updatedStatementsList, context),
@@ -151,6 +152,7 @@ const OperationComponent = (
           name: param.name,
           type: param.data.type,
           isOptional: param.isOptional,
+          isRest: param.isRest,
         };
       });
 
@@ -186,12 +188,14 @@ const OperationComponent = (
                   : false,
                 isParameter: true,
                 isOptional: parameter.isOptional,
+                isRest: parameter.isRest,
                 disableNameToggle: (() => {
                   if (expectedParameterType) return true;
                   const prev = operation.type.parameters[i - 1];
                   const next = operation.type.parameters[i + 1];
                   if (next && !next.isOptional) return true;
                   if (prev && prev.isOptional) return true;
+                  if (prev && prev.isRest) return true;
                   return false;
                 })(),
               }}
@@ -215,9 +219,9 @@ const OperationComponent = (
             {i + 1 < paramList.length && <span>,</span>}
           </Fragment>
         ))}
-        {expectedParameterType &&
-        operation.value.parameters.length ===
-          expectedParameterType.length ? null : (
+        {(expectedParameterType &&
+          operation.value.parameters.length === expectedParameterType.length) ||
+        operation.type.parameters.slice(-1)?.[0]?.isRest ? null : (
           <AddStatement
             id={`${operation.id}_parameter`}
             onSelect={(statement) => {
@@ -248,11 +252,9 @@ const OperationComponent = (
                 }),
               });
 
-              acc.variables = createContextVariables(
-                [statement],
-                _context,
-                operation
-              );
+              acc.variables = createContextVariables([statement], _context, {
+                parameters: operation.type.parameters,
+              });
 
               acc.elements.push(
                 <Statement
@@ -278,7 +280,7 @@ const OperationComponent = (
               variables: createContextVariables(
                 operation.value.parameters.toReversed(),
                 context,
-                operation
+                { parameters: operation.type.parameters }
               ),
             }
           ).elements

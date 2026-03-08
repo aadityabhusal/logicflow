@@ -48,7 +48,13 @@ function BaseInputInner<T extends string | number>(
   const commonProps = {
     ...props,
     value: inputValue,
-    classNames: { input: ["number-input", props.className].join(" ") },
+    classNames: {
+      input: [
+        "number-input",
+        isFocused ? "" : "opacity-0",
+        props.className,
+      ].join(" "),
+    },
     readOnly: disableKeyboard,
     styles: { input: { width: textWidth, ...props.styles } },
     onClick: props.onClick,
@@ -73,12 +79,12 @@ function BaseInputInner<T extends string | number>(
       <div
         className={[
           props.className,
-          "self-start overflow-hidden whitespace-pre bg-editor pointer-events-none",
+          "self-start overflow-hidden whitespace-pre pointer-events-none",
           isFocused ? "h-0" : "h-full absolute",
         ].join(" ")}
         ref={(elem) => setTextWidth(elem?.clientWidth || 14)}
       >
-        {displayValue}
+        {displayValue || <span className="opacity-50">...</span>}
       </div>
       {type === "number" ? (
         <NumberInput

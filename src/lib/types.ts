@@ -18,7 +18,12 @@ export type UnionType = {
 };
 export type OperationType = {
   kind: "operation";
-  parameters: { type: DataType; name?: string; isOptional?: boolean }[];
+  parameters: {
+    type: DataType;
+    name?: string;
+    isOptional?: boolean;
+    isRest?: boolean;
+  }[];
   result: DataType;
 };
 export type ConditionType = { kind: "condition"; result: DataType };
@@ -119,6 +124,7 @@ export interface IStatement {
   operations: IData<OperationType>[];
   name?: string;
   isOptional?: boolean;
+  isRest?: boolean;
 }
 
 /* UI Types */
