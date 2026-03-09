@@ -375,20 +375,17 @@ export function executeOperationCore(
   }
 
   const _execute = context.isSync ? executeStatementSync : executeStatement;
-  const resolvedParams = resolveParameters(
-    operation,
-    data,
-    context,
-    _parameters
-  );
-  const executedParams = resolvedParams.slice(1).map((p, index) => {
-    const hasParam = _parameters[index];
-    if (!hasParam)
-      return createData({
-        type: resolveUnionType([p.type, { kind: "undefined" }]),
-        value: undefined,
-      });
-    return _execute(hasParam, context);
+  const resolvedParams = resolveParameters(operation, data, context);
+  const executedParams = resolvedParams.slice(1).flatMap((p, index) => {
+    const params = p.isRest ? _parameters.slice(index) : [_parameters[index]];
+    return params.map((param) => {
+      if (!param)
+        return createData({
+          type: resolveUnionType([p.type, { kind: "undefined" }]),
+          value: undefined,
+        });
+      return _execute(param, context);
+    });
   });
 
   return (
@@ -397,8 +394,13 @@ export function executeOperationCore(
       : Promise.all(executedParams)
   ).then((parameters) => {
     const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
-      const hasError = isFatalError(parameters[i]);
-      const typeMismatch = !isTypeCompatible(parameters[i].type, p.type);
+      const param = p.isRest
+        ? createData({
+            value: parameters.slice(1).map((data) => createStatement({ data })),
+          })
+        : parameters[i];
+      const hasError = isFatalError(param);
+      const typeMismatch = !isTypeCompatible(param.type, p.type);
       return hasError || typeMismatch;
     });
     if (errorParamIndex !== -1) {

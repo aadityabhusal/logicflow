@@ -66,29 +66,33 @@ function updateOperationCalls(
         const sourceParameters = resolveParameters(
           foundOperation,
           data,
-          _context,
-          operation.value.parameters
+          _context
         );
         updatedTypeParameters = sourceParameters;
 
         updatedParameters = sourceParameters
           .slice(1)
-          .map((sourceParam, sourceParamIndex) => {
-            const param = operation.value.parameters[sourceParamIndex];
-            if (!param) {
+          .flatMap((sourceParam, sourceParamIndex) => {
+            const params = sourceParam.isRest
+              ? operation.value.parameters.slice(sourceParamIndex)
+              : [operation.value.parameters[sourceParamIndex]];
+
+            if (!sourceParam.isRest && !params[0]) {
               if (sourceParam.isOptional) return null;
               return createStatement({
                 data: createData({ type: sourceParam.type }),
                 isOptional: sourceParam.isOptional,
               });
             }
-            return updateStatement(
-              { ...param, isOptional: sourceParam.isOptional },
-              updateContextWithNarrowedTypes(
-                _context,
-                data,
-                operation.value.name,
-                sourceParamIndex
+            return params.map((_param) =>
+              updateStatement(
+                { ..._param, isOptional: sourceParam.isOptional },
+                updateContextWithNarrowedTypes(
+                  _context,
+                  data,
+                  operation.value.name,
+                  sourceParamIndex
+                )
               )
             );
           })

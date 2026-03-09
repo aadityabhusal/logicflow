@@ -71,6 +71,36 @@ export function getArrayCallbackParams(
   ] as OperationType["parameters"];
 }
 
+export function getOrderRuleParams(
+  data: IData,
+  options?: { secondData: DataType }
+): OperationType["parameters"] {
+  const projection: DataType = {
+    kind: "operation",
+    parameters: [
+      {
+        type: data.type.kind === "array" ? data.type.elementType : data.type,
+        name: "value",
+      },
+    ],
+    result: { kind: "unknown" },
+  };
+  return [
+    { type: { kind: "array", elementType: { kind: "unknown" } } },
+    ...(options?.secondData ? [{ type: options.secondData }] : []),
+    {
+      type: {
+        kind: "array",
+        elementType: resolveUnionType([
+          projection,
+          { kind: "tuple", elements: [projection, { kind: "string" }] },
+        ]),
+      },
+      isRest: true,
+    },
+  ];
+}
+
 export function getObjectParam(): OperationType["parameters"][number] {
   return {
     type: resolveUnionType([
@@ -524,6 +554,7 @@ export const remedaOperationList: {
     parameters: (data) =>
       getArrayCallbackParams(data, { secondData: true, fourParams: true }),
   },
+  { name: "uniqueBy", parameters: getArrayCallbackParams },
   {
     name: "uniqueWith",
     parameters: (data) => getArrayCallbackParams(data, { twoParams: true }),
@@ -749,6 +780,22 @@ export const remedaOperationList: {
     parameters: (data) => getObjectCallbackParams(data, { withData: true }),
   },
   {
+    name: "prop",
+    parameters: [
+      getObjectParam(),
+      {
+        type: {
+          kind: "array",
+          elementType: resolveUnionType([
+            { kind: "string" },
+            { kind: "number" },
+          ]),
+        },
+        isRest: true,
+      },
+    ],
+  },
+  {
     name: "isIncludedIn",
     parameters: [
       { type: { kind: "unknown" } },
@@ -802,6 +849,127 @@ export const remedaOperationList: {
             result: { kind: "boolean" },
           },
         },
+      },
+    ],
+  },
+  { name: "sortBy", parameters: getOrderRuleParams },
+  {
+    name: "dropFirstBy",
+    parameters: (data) =>
+      getOrderRuleParams(data, { secondData: { kind: "number" } }),
+  },
+  {
+    name: "takeFirstBy",
+    parameters: (data) =>
+      getOrderRuleParams(data, { secondData: { kind: "number" } }),
+  },
+  {
+    name: "nthBy",
+    parameters: (data) =>
+      getOrderRuleParams(data, { secondData: { kind: "number" } }),
+  },
+  {
+    name: "rankBy",
+    parameters: (data) =>
+      getOrderRuleParams(data, { secondData: { kind: "unknown" } }),
+  },
+  { name: "firstBy", parameters: getOrderRuleParams },
+  {
+    name: "conditional",
+    parameters: (data) => [
+      { type: { kind: "unknown" } },
+      {
+        type: {
+          kind: "array",
+          elementType: resolveUnionType([
+            {
+              kind: "operation",
+              parameters: [{ name: "data", type: data.type }],
+              result: { kind: "unknown" },
+            },
+            {
+              kind: "tuple",
+              elements: [
+                {
+                  kind: "operation",
+                  parameters: [{ name: "data", type: data.type }],
+                  result: { kind: "boolean" },
+                },
+                {
+                  kind: "operation",
+                  parameters: [{ name: "data", type: data.type }],
+                  result: { kind: "unknown" },
+                },
+              ],
+            },
+          ]),
+        },
+        isRest: true,
+      },
+    ],
+  },
+  {
+    name: "constant",
+    parameters: [{ type: { kind: "unknown" } }],
+    config: {
+      expectedType: {
+        kind: "operation",
+        parameters: [
+          {
+            type: { kind: "array", elementType: { kind: "unknown" } },
+            isRest: true,
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+    },
+  },
+  {
+    name: "doNothing",
+    parameters: [],
+    config: {
+      expectedType: {
+        kind: "operation",
+        parameters: [
+          {
+            type: { kind: "array", elementType: { kind: "unknown" } },
+            isRest: true,
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+    },
+  },
+  {
+    name: "identity",
+    parameters: [{ type: { kind: "undefined" } }],
+    config: {
+      expectedType: {
+        kind: "operation",
+        parameters: [
+          {
+            type: { kind: "array", elementType: { kind: "unknown" } },
+            isRest: true,
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+    },
+  },
+  {
+    name: "pipe",
+    parameters: (data) => [
+      { type: { kind: "unknown" } },
+      {
+        type: {
+          kind: "array",
+          elementType: {
+            kind: "operation",
+            parameters: [{ name: "input", type: data.type }],
+            result: { kind: "unknown" },
+          },
+        },
+        isRest: true,
       },
     ],
   },

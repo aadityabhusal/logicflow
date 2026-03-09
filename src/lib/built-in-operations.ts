@@ -21,6 +21,7 @@ import {
   resolveConstructorArgs,
   resolveUnionType,
   getStatementResult,
+  createStatement,
 } from "./utils";
 import { wretchOperations } from "./operations/wretch";
 import {
@@ -433,6 +434,20 @@ const operationOperations: OperationListItem[] = [
         typeof storedFunc === "function"
           ? storedFunc
           : (getRawValueFromData(data, context) as () => unknown);
+
+      const restParamsIndex = (
+        data as IData<OperationType>
+      ).value.parameters.findIndex((p) => p.isRest);
+
+      if (restParamsIndex !== -1) {
+        const restParams = createData({
+          value: params
+            .slice(restParamsIndex)
+            .map((data) => createStatement({ data })),
+        });
+        params = params.slice(0, restParamsIndex).concat(restParams);
+      }
+
       const result = operation(
         ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
       );

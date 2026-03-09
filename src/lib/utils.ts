@@ -525,7 +525,7 @@ export function createDataFromRawValue(
 
   if (typeof value === "function") {
     const data = createData({
-      type: {
+      type: context.expectedType ?? {
         kind: "operation",
         parameters: Array.from({ length: value.length }, () => ({
           type: { kind: "unknown" },
@@ -536,7 +536,10 @@ export function createDataFromRawValue(
     context.setInstance(`${data.id}-operation`, value);
     return data;
   }
-  return createData({ type: { kind: "unknown" }, value });
+  return createData({
+    type: context.expectedType ?? { kind: "unknown" },
+    value,
+  });
 }
 
 export function createThenable<T>(data: T): Thenable<T> {
@@ -577,13 +580,10 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     const restFill = Array(diff).fill(firstRest ?? secondRest);
     if (firstRest && !secondRest) {
       const newParams = first.parameters.concat(restFill);
-      return isTypeCompatible(
-        {
-          ...first,
-          parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
-        },
-        second
-      );
+      return isTypeCompatible(second, {
+        ...first,
+        parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+      });
     }
     if (secondRest && !firstRest) {
       const newParams = second.parameters.concat(restFill);
@@ -1215,22 +1215,14 @@ function processDataType(type: DataType): DataType {
 export function resolveParameters(
   operationListItem: OperationListItem,
   _data: IData,
-  context: Context,
-  parameters?: IStatement[]
+  context: Context
 ): OperationType["parameters"] {
   const data = resolveReference(_data, context);
-  let params =
+  const params =
     typeof operationListItem.parameters === "function"
       ? operationListItem.parameters(data)
       : operationListItem.parameters;
 
-  const restParam = params.find((p) => p.isRest);
-  if (restParam && parameters && restParam.type.kind === "array") {
-    const diff = Math.abs(parameters.length - (params.length - 1) + 1);
-    params = params
-      .slice(-1)
-      .concat(Array(diff).fill({ type: restParam.type.elementType }));
-  }
   return params.map((param) => {
     const processedType = processDataType(param.type);
     if (param.isOptional) {
