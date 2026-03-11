@@ -321,18 +321,24 @@ export function createContextVariables(
       const data = resolveReference(statement.data, context);
       const result =
         options?.result ?? getStatementResult({ ...statement, data }, context);
-
       const paramInfo = options?.parameters?.find(
         (param) => param.name === statement.name
       );
+
+      let resultType = result.type;
+      if (paramInfo?.isOptional) {
+        const union = {
+          ...resolveUnionType([result.type, { kind: "undefined" }], true),
+          activeIndex: undefined,
+        };
+        resultType = {
+          ...union,
+          activeIndex: getUnionActiveIndex(union, result.value, context),
+        };
+      }
+
       variables.set(statement.name, {
-        data: {
-          ...result,
-          id: statement.id,
-          type: paramInfo?.isOptional
-            ? resolveUnionType([result.type, { kind: "undefined" }])
-            : result.type,
-        },
+        data: { ...result, id: statement.id, type: resultType },
         reference: isDataOfType(statement.data, "reference")
           ? statement.data.value
           : undefined,
@@ -419,7 +425,6 @@ export function operationToListItem(
   } as OperationListItem;
 }
 
-// TODO: add expectedType instead of expectedKind when needed
 export function createDataFromRawValue(
   value: unknown,
   context: Context
@@ -437,8 +442,11 @@ export function createDataFromRawValue(
     return createData({ type: { kind: "boolean" }, value });
   }
   if (value instanceof Error) {
+    const errorType = Object.entries(ErrorTypesData).find(([_, val]) =>
+      value.message.startsWith(`${val.name}: `)
+    ) as [keyof typeof ErrorTypesData, unknown];
     return createData({
-      type: { kind: "error", errorType: "custom_error" },
+      type: { kind: "error", errorType: errorType?.[0] ?? "custom_error" },
       value: { reason: value.message },
     });
   }
@@ -569,41 +577,40 @@ export function unwrapThenable<T>(thenable: T | Thenable<T>): T {
 /* Types */
 
 export function isTypeCompatible(first: DataType, second: DataType): boolean {
-  if (first.kind === "unknown" || second.kind === "unknown") return true;
+  if (second.kind === "unknown") return true;
 
   if (first.kind === "operation" && second.kind === "operation") {
     if (!isTypeCompatible(first.result, second.result)) return false;
     const firstRest = first.parameters.find((p) => p.isRest);
     const secondRest = second.parameters.find((p) => p.isRest);
 
-    const diff = Math.abs(second.parameters.length - first.parameters.length);
-    const restFill = Array(diff).fill(firstRest ?? secondRest);
-    if (firstRest && !secondRest) {
-      const newParams = first.parameters.concat(restFill);
+    const diff = Math.abs(
+      second.parameters.length - first.parameters.length + 1
+    );
+    if (firstRest && firstRest.type.kind === "array" && !secondRest) {
+      const newParams = first.parameters
+        .slice(0, -1)
+        .concat(Array(diff).fill({ type: firstRest.type.elementType }));
       return isTypeCompatible(second, {
         ...first,
         parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
       });
     }
-    if (secondRest && !firstRest) {
-      const newParams = second.parameters.concat(restFill);
+    if (secondRest && secondRest.type.kind === "array" && !firstRest) {
+      const newParams = second.parameters
+        .slice(0, -1)
+        .concat(Array(diff).fill({ type: secondRest.type.elementType }));
       return isTypeCompatible(first, {
         ...second,
         parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
       });
     }
-    return (
-      first.parameters.every((firstParam, index) => {
-        if (firstParam.isOptional && !second.parameters[index]) return true;
-        if (!second.parameters[index]) return false;
-        return isTypeCompatible(firstParam.type, second.parameters[index].type);
-      }) &&
-      second.parameters.every((secondParam, index) => {
-        if (secondParam.isOptional && !first.parameters[index]) return true;
-        if (!first.parameters[index]) return false;
-        return isTypeCompatible(secondParam.type, first.parameters[index].type);
-      })
-    );
+    // TODO: Might change this to contravariant check
+    return first.parameters.every((firstParam, index) => {
+      if (firstParam.isOptional && !second.parameters[index]) return true;
+      if (!second.parameters[index]) return false;
+      return isTypeCompatible(firstParam.type, second.parameters[index].type);
+    });
   }
 
   if (first.kind === "array" && second.kind === "array") {
@@ -1071,19 +1078,26 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
+export function getUnionActiveIndex(
+  unionType: UnionType,
+  value: unknown,
+  context: Context
+): number {
+  if (unionType.activeIndex !== undefined) return unionType.activeIndex;
+  const inferredType = inferTypeFromValue(value, context);
+  const index = unionType.types.findIndex((t) =>
+    isTypeCompatible(inferredType, t)
+  );
+  return index === -1 ? 0 : index;
+}
+
 export function getUnionActiveType(
   unionType: UnionType,
   value: unknown,
   context: Context
 ): DataType {
-  if (unionType.activeIndex !== undefined) {
-    return unionType.types[unionType.activeIndex] ?? unionType.types[0];
-  }
-  const inferredType = inferTypeFromValue(value, context);
-  const index = unionType.types.findIndex((t) =>
-    isTypeCompatible(inferredType, t)
-  );
-  return index === -1 ? unionType.types[0] : unionType.types[index];
+  const index = getUnionActiveIndex(unionType, value, context);
+  return unionType.types[index] ?? unionType.types[0];
 }
 
 export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
@@ -1334,10 +1348,14 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
   ) {
     return data.value;
   } else if (isDataOfType(data, "error")) {
-    return new Error(data.value.reason);
+    return new Error(
+      `${ErrorTypesData[data.type.errorType].name}: ${data.value.reason}`
+    );
   } else if (isDataOfType(data, "instance")) {
     return context.getInstance(data.value.instanceId);
   } else if (isDataOfType(data, "operation")) {
+    const storedFunc = context.getInstance(`${data.id}-operation`);
+    if (typeof storedFunc === "function") return storedFunc;
     return (..._args: unknown[]) => {
       const [dataArg, ...args] = _args;
       const execute = context.isSync

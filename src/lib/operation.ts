@@ -394,13 +394,19 @@ export function executeOperationCore(
       : Promise.all(executedParams)
   ).then((parameters) => {
     const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
-      const param = p.isRest
-        ? createData({
-            value: parameters.slice(1).map((data) => createStatement({ data })),
-          })
-        : parameters[i];
+      const param =
+        p.isRest && "handler" in operation
+          ? createData({
+              value: parameters
+                .slice(i)
+                .map((data) => createStatement({ data })),
+            })
+          : parameters[i];
       const hasError = isFatalError(param);
-      const typeMismatch = !isTypeCompatible(param.type, p.type);
+      const expectedType = p.isOptional
+        ? resolveUnionType([p.type, { kind: "undefined" }])
+        : p.type;
+      const typeMismatch = !isTypeCompatible(param.type, expectedType);
       return hasError || typeMismatch;
     });
     if (errorParamIndex !== -1) {

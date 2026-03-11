@@ -429,11 +429,9 @@ const operationOperations: OperationListItem[] = [
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
     handler: (context, data: IData, ...params: IData[]) => {
-      const storedFunc = context.getInstance(`${data.id}-operation`);
-      const operation =
-        typeof storedFunc === "function"
-          ? storedFunc
-          : (getRawValueFromData(data, context) as () => unknown);
+      const operation = getRawValueFromData(data, context) as (
+        ..._: unknown[]
+      ) => unknown;
 
       const restParamsIndex = (
         data as IData<OperationType>
