@@ -240,3 +240,12 @@ export const AVAILABLE_MODELS = [
   { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic" },
   { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic" },
 ] as const;
+
+export const OBJECT_TYPES: DataType["kind"][] = [
+  "array",
+  "tuple",
+  "dictionary",
+  "object",
+  "error",
+  "instance",
+];

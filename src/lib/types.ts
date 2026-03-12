@@ -200,6 +200,7 @@ export type OperationListItem = {
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
   shouldCacheResult?: boolean;
+  narrowType?: ((...args: IData[]) => DataType | undefined) | DataType;
 } & (
   | { handler: (...args: [Context, ...IData[]]) => Thenable<IData> | IData }
   | {

@@ -717,7 +717,7 @@ export function isObject<const K extends readonly string[]>(
   return true;
 }
 
-function getInverseTypes(
+export function getInverseTypes(
   originalTypes: Context["variables"],
   narrowedTypes: Context["variables"]
 ): Context["variables"] {
@@ -744,108 +744,6 @@ function getInverseTypes(
     }
     return acc;
   }, new Map(originalTypes));
-}
-
-function objectTypeMatch(source: DataType, target: DataType): boolean {
-  if (target.kind !== "object") return isTypeCompatible(source, target);
-  if (source.kind !== "object") return false;
-  const sourceProps = new Map(source.properties.map((p) => [p.key, p.value]));
-  return target.properties.every(({ key, value }) => {
-    const sourceType = sourceProps.get(key);
-    return sourceType && isTypeCompatible(sourceType, value);
-  });
-}
-
-function narrowType(
-  originalType: DataType,
-  targetType: DataType
-): DataType | undefined {
-  if (targetType.kind === "never") return { kind: "never" };
-  if (originalType.kind === "unknown") return targetType;
-  if (originalType.kind === "union") {
-    const narrowedTypes = originalType.types.filter((t) => {
-      if (targetType.kind === "object") return objectTypeMatch(t, targetType);
-      return isTypeCompatible(t, targetType);
-    });
-
-    if (narrowedTypes.length === 0) return undefined;
-    return resolveUnionType(narrowedTypes);
-  }
-  if (originalType.kind === "object" && targetType.kind === "object") {
-    return objectTypeMatch(originalType, targetType) ? originalType : undefined;
-  }
-  return originalType;
-}
-
-export function applyTypeNarrowing(
-  context: Context,
-  narrowedTypes: Context["variables"],
-  data: IData,
-  operation: IData<OperationType>
-): Context["variables"] {
-  if (!operation) return narrowedTypes;
-  const param = operation.value.parameters[0];
-  let narrowedType: DataType | undefined;
-  let referenceName: string | undefined;
-
-  if (
-    (operation.value.name === "isTypeOf" ||
-      operation.value.name === "isEqual") &&
-    param &&
-    isDataOfType(data, "reference")
-  ) {
-    referenceName = data.value.name;
-    const reference = context.variables.get(referenceName);
-    if (reference) {
-      const resolvedParamData = resolveReference(param.data, context);
-      const targetType = isDataOfType(resolvedParamData, "union")
-        ? getUnionActiveType(
-            resolvedParamData.type,
-            resolvedParamData.value,
-            context
-          )
-        : resolvedParamData.type;
-      narrowedType = narrowType(reference.data.type, targetType);
-    }
-  }
-
-  if (
-    (operation.value.name === "or" || operation.value.name === "and") &&
-    isDataOfType(param.data, "reference") &&
-    param.operations[0]
-  ) {
-    const resultType = applyTypeNarrowing(
-      context,
-      new Map(
-        operation.value.name === "or" ? context.variables : narrowedTypes
-      ),
-      param.data,
-      param.operations[0]
-    );
-    referenceName = param.data.value.name;
-    const types = [
-      narrowedTypes.get(referenceName)?.data.type,
-      resultType.get(referenceName)?.data.type,
-    ].filter(Boolean) as DataType[];
-
-    if (types.length > 0) narrowedType = resolveUnionType(types);
-  }
-
-  if (operation.value.name === "not") {
-    narrowedTypes = getInverseTypes(context.variables, narrowedTypes);
-  }
-
-  if (referenceName) {
-    const variable = context.variables.get(referenceName);
-    if (variable) {
-      narrowedTypes.set(referenceName, {
-        ...variable,
-        data: { ...variable.data, type: narrowedType ?? { kind: "never" } },
-      });
-    }
-  }
-
-  return narrowedTypes;
 }
 
 function mergeNarrowedTypes(
@@ -1080,21 +978,23 @@ export function inferTypeFromValue<T extends DataType>(
 
 export function getUnionActiveIndex(
   unionType: UnionType,
-  value: unknown,
-  context: Context
+  value?: unknown,
+  context?: Context
 ): number {
   if (unionType.activeIndex !== undefined) return unionType.activeIndex;
-  const inferredType = inferTypeFromValue(value, context);
-  const index = unionType.types.findIndex((t) =>
-    isTypeCompatible(inferredType, t)
-  );
-  return index === -1 ? 0 : index;
+  if (value !== undefined && context) {
+    const index = unionType.types.findIndex((t) =>
+      isTypeCompatible(inferTypeFromValue(value, context), t)
+    );
+    return index === -1 ? 0 : index;
+  }
+  return 0;
 }
 
 export function getUnionActiveType(
   unionType: UnionType,
-  value: unknown,
-  context: Context
+  value?: unknown,
+  context?: Context
 ): DataType {
   const index = getUnionActiveIndex(unionType, value, context);
   return unionType.types[index] ?? unionType.types[0];

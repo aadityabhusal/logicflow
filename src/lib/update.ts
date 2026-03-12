@@ -1,4 +1,3 @@
-import { getFilteredOperations } from "./operation";
 import {
   IStatement,
   IData,
@@ -19,12 +18,12 @@ import {
   createOperationFromFile,
   createFileFromOperation,
   createFileVariables,
-  applyTypeNarrowing,
   getOperationResultType,
   updateContextWithNarrowedTypes,
   getSkipExecution,
   resolveParameters,
 } from "./utils";
+import { applyTypeNarrowing, getFilteredOperations } from "./operation";
 import isEqual from "react-fast-compare";
 
 function updateOperationCalls(

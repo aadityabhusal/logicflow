@@ -27,6 +27,7 @@ import { wretchOperations } from "./operations/wretch";
 import {
   getArrayCallbackParams,
   getObjectParam,
+  getUnionParam,
   remedaOperations,
 } from "./operations/remeda";
 
@@ -60,24 +61,17 @@ const unknownOperations: OperationListItem[] = [
 const unionOperations: OperationListItem[] = [
   {
     name: "isTypeOf",
-    parameters: (data) => [
-      {
-        type: {
-          kind: "union",
-          types: isDataOfType(data, "union") ? data.type.types : [],
-        },
-      },
-      { type: data.type },
-    ],
+    parameters: (data) => [getUnionParam(data), { type: { kind: "unknown" } }],
     handler: (context, data: IData, type: IData) => {
       return createData({
         type: { kind: "boolean" },
         value: isTypeCompatible(
           getUnionActiveType(data.type as UnionType, data.value, context),
-          getUnionActiveType(type.type as UnionType, type.value, context)
+          type.type
         ),
       });
     },
+    narrowType: (_, param) => param.type,
   },
 ];
 
@@ -417,15 +411,7 @@ const operationOperations: OperationListItem[] = [
   {
     name: "call",
     parameters: (data) => [
-      {
-        type: {
-          kind: "operation",
-          parameters: isDataOfType(data, "operation")
-            ? data.type.parameters
-            : [],
-          result: { kind: "unknown" },
-        },
-      },
+      { type: isDataOfType(data, "operation") ? data.type : { kind: "never" } },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
     handler: (context, data: IData, ...params: IData[]) => {

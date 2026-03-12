@@ -9,12 +9,15 @@ import { Context, IData, IStatement, OperationType } from "../lib/types";
 import {
   getStatementResult,
   createVariableName,
-  applyTypeNarrowing,
   getSkipExecution,
   createStatement,
   createData,
 } from "../lib/utils";
-import { createOperationCall, getFilteredOperations } from "../lib/operation";
+import {
+  createOperationCall,
+  getFilteredOperations,
+  applyTypeNarrowing,
+} from "../lib/operation";
 import { Data } from "./Data";
 import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";

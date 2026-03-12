@@ -8,12 +8,15 @@ import {
   OperationType,
 } from "../types";
 import {
+  createData,
   createDataFromRawValue,
+  getInverseTypes,
   getRawValueFromData,
   isDataOfType,
   resolveUnionType,
   unwrapThenable,
 } from "../utils";
+import { OBJECT_TYPES } from "../data";
 
 export function getArrayCallbackParams(
   data: IData,
@@ -107,6 +110,28 @@ export function getObjectParam(): OperationType["parameters"][number] {
       { kind: "object", properties: [] },
       { kind: "dictionary", elementType: { kind: "unknown" } },
     ]),
+  };
+}
+
+export function getUnionParam(
+  data: IData
+): OperationType["parameters"][number] {
+  return {
+    type: {
+      kind: "union",
+      types: isDataOfType(data, "union") ? data.type.types : [],
+    },
+  };
+}
+
+export function getPredicateOperationType(
+  data: IData,
+  returnType?: DataType
+): DataType {
+  return {
+    kind: "operation",
+    parameters: [{ name: "data", type: data.type }],
+    result: returnType ?? { kind: "unknown" },
   };
 }
 
@@ -206,11 +231,10 @@ export function createOperationHandler(
   };
 }
 
-export const remedaOperationList: {
+export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
   name: FunctionKeys<typeof R>;
-  parameters: OperationListItem["parameters"];
   config?: HandlerConfig;
-}[] = [
+})[] = [
   {
     name: "add",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
@@ -764,15 +788,9 @@ export const remedaOperationList: {
   { name: "clone", parameters: [{ type: { kind: "unknown" } }] },
   {
     name: "tap",
-    parameters: [
+    parameters: (data) => [
       { type: { kind: "unknown" } },
-      {
-        type: {
-          kind: "operation",
-          parameters: [{ name: "value", type: { kind: "unknown" } }],
-          result: { kind: "unknown" },
-        },
-      },
+      { type: getPredicateOperationType(data) },
     ],
   },
   {
@@ -796,22 +814,6 @@ export const remedaOperationList: {
     ],
   },
   {
-    name: "isIncludedIn",
-    parameters: [
-      { type: { kind: "unknown" } },
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-    ],
-  },
-  {
-    name: "isDeepEqual",
-    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
-  },
-  {
-    name: "isShallowEqual",
-    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
-  },
-
-  {
     name: "randomInteger",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
   },
@@ -827,11 +829,7 @@ export const remedaOperationList: {
       {
         type: {
           kind: "array",
-          elementType: {
-            kind: "operation",
-            parameters: [{ type: data.type, name: "data" }],
-            result: { kind: "boolean" },
-          },
+          elementType: getPredicateOperationType(data, { kind: "boolean" }),
         },
       },
     ],
@@ -843,11 +841,7 @@ export const remedaOperationList: {
       {
         type: {
           kind: "array",
-          elementType: {
-            kind: "operation",
-            parameters: [{ type: data.type, name: "data" }],
-            result: { kind: "boolean" },
-          },
+          elementType: getPredicateOperationType(data, { kind: "boolean" }),
         },
       },
     ],
@@ -882,24 +876,12 @@ export const remedaOperationList: {
         type: {
           kind: "array",
           elementType: resolveUnionType([
-            {
-              kind: "operation",
-              parameters: [{ name: "data", type: data.type }],
-              result: { kind: "unknown" },
-            },
+            getPredicateOperationType(data),
             {
               kind: "tuple",
               elements: [
-                {
-                  kind: "operation",
-                  parameters: [{ name: "data", type: data.type }],
-                  result: { kind: "boolean" },
-                },
-                {
-                  kind: "operation",
-                  parameters: [{ name: "data", type: data.type }],
-                  result: { kind: "unknown" },
-                },
+                getPredicateOperationType(data, { kind: "boolean" }),
+                getPredicateOperationType(data),
               ],
             },
           ]),
@@ -957,22 +939,150 @@ export const remedaOperationList: {
     },
   },
   {
+    name: "isNot",
+    parameters: [{ type: { kind: "unknown" } }],
+    config: {
+      expectedType: {
+        kind: "operation",
+        parameters: [{ type: { kind: "unknown" } }],
+        result: { kind: "unknown" },
+      },
+    },
+  },
+  {
+    name: "when",
+    parameters: (data) => [
+      { type: { kind: "unknown" } },
+      { type: getPredicateOperationType(data, { kind: "boolean" }) },
+      {
+        type: {
+          kind: "union",
+          types: [
+            getPredicateOperationType(data),
+            {
+              kind: "object",
+              properties: [
+                { key: "onTrue", value: getPredicateOperationType(data) },
+                { key: "onFalse", value: getPredicateOperationType(data) },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  },
+  {
     name: "pipe",
     parameters: (data) => [
       { type: { kind: "unknown" } },
       {
-        type: {
-          kind: "array",
-          elementType: {
-            kind: "operation",
-            parameters: [{ name: "input", type: data.type }],
-            result: { kind: "unknown" },
-          },
-        },
+        type: { kind: "array", elementType: getPredicateOperationType(data) },
         isRest: true,
       },
     ],
   },
+  {
+    name: "isArray",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "array", elementType: { kind: "unknown" } },
+  },
+  {
+    name: "isBoolean",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "boolean" },
+  },
+  {
+    name: "isNumber",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "number" },
+  },
+  {
+    name: "isString",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "string" },
+  },
+  {
+    name: "isDate",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "instance", className: "Date", constructorArgs: [] },
+  },
+  {
+    name: "isError",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "error", errorType: "custom_error" },
+  },
+  {
+    name: "isFunction",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: {
+      kind: "operation",
+      parameters: [],
+      result: { kind: "unknown" },
+    },
+  },
+  {
+    name: "isPlainObject",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "object", properties: [] },
+  },
+  {
+    name: "isObjectType",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: (data) =>
+      isDataOfType(data, "union")
+        ? resolveUnionType(
+            data.type.types.filter((t) => OBJECT_TYPES.includes(t.kind))
+          )
+        : undefined,
+  },
+  {
+    name: "isPromise",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: { kind: "instance", className: "Promise", constructorArgs: [] },
+  },
+  {
+    name: "isDefined",
+    parameters: (data) => [getUnionParam(data)],
+    narrowType: (data) =>
+      getInverseTypes(
+        new Map([["data", { data }]]),
+        new Map([["data", { data: createData() }]])
+      ).get("data")?.data.type,
+  },
+  {
+    name: "isDeepEqual",
+    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+    narrowType: (_, param) => param.type,
+  },
+  {
+    name: "isShallowEqual",
+    parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+    narrowType: (_, param) => param.type,
+  },
+  {
+    name: "isIncludedIn",
+    parameters: [
+      { type: { kind: "unknown" } },
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+    ],
+  },
+  {
+    name: "isEmpty",
+    parameters: [
+      {
+        type: {
+          kind: "union",
+          types: [
+            { kind: "string" },
+            { kind: "array", elementType: { kind: "unknown" } },
+            { kind: "object", properties: [] },
+          ],
+        },
+      },
+    ],
+  },
+  { name: "isEmptyish", parameters: [{ type: { kind: "unknown" } }] },
+  { name: "isTruthy", parameters: [{ type: { kind: "unknown" } }] },
 ];
 
 export const remedaOperations: OperationListItem[] = remedaOperationList.map(
