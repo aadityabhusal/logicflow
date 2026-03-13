@@ -42,8 +42,8 @@ export function getArrayCallbackParams(
     ...(options?.secondData === true
       ? [{ type: { kind: "array", elementType: { kind: "unknown" } } }]
       : options?.secondData
-      ? [{ type: options?.secondData }]
-      : []),
+        ? [{ type: options?.secondData }]
+        : []),
     {
       type: {
         kind: "operation",
@@ -147,8 +147,8 @@ function getObjectCallbackParams(
     data.type.kind === "object"
       ? resolveUnionType(data.type.properties.map((v) => v.value))
       : data.type.kind === "dictionary"
-      ? data.type.elementType
-      : { kind: "unknown" };
+        ? data.type.elementType
+        : { kind: "unknown" };
   return [
     getObjectParam(),
     {
@@ -203,14 +203,9 @@ type FunctionKeys<T> = {
   [K in keyof T]: T[K] extends (...args: never[]) => unknown ? K : never;
 }[keyof T];
 
-export type HandlerConfig = {
-  expectedType?: DataType | ((data: IData) => DataType);
-  shouldCacheResult?: boolean;
-};
-
 export function createOperationHandler(
   operationName: FunctionKeys<typeof R>,
-  config?: HandlerConfig
+  expectedType?: OperationListItem["expectedType"]
 ) {
   return (context: Context, ...args: IData[]): IData => {
     const _context = { ...context, isSync: true };
@@ -221,19 +216,21 @@ export function createOperationHandler(
       ...rawArgs
     );
 
-    const expectedType = config?.expectedType
-      ? typeof config.expectedType === "function"
-        ? config.expectedType(args[0])
-        : config.expectedType
-      : undefined;
-
-    return createDataFromRawValue(result, { ..._context, expectedType });
+    return createDataFromRawValue(result, {
+      ..._context,
+      expectedType:
+        typeof expectedType === "function"
+          ? expectedType(args[0])
+          : expectedType,
+    });
   };
 }
 
-export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
+export const remedaOperationList: (Omit<
+  OperationListItem,
+  "handler" | "source"
+> & {
   name: FunctionKeys<typeof R>;
-  config?: HandlerConfig;
 })[] = [
   {
     name: "add",
@@ -466,11 +463,9 @@ export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       { type: { kind: "array", elementType: { kind: "unknown" } } },
     ],
-    config: {
-      expectedType: {
-        kind: "array",
-        elementType: { kind: "tuple", elements: [] },
-      },
+    expectedType: {
+      kind: "array",
+      elementType: { kind: "tuple", elements: [] },
     },
   },
   {
@@ -493,20 +488,16 @@ export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       { type: { kind: "number" } },
     ],
-    config: {
-      expectedType: (data) => ({
-        kind: "tuple",
-        elements: data?.type.kind === "array" ? [data.type, data.type] : [],
-      }),
-    },
+    expectedType: (data) => ({
+      kind: "tuple",
+      elements: data?.type.kind === "array" ? [data.type, data.type] : [],
+    }),
   },
   {
     name: "splitWhen",
     parameters: (data) =>
       getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
-    config: {
-      expectedType: { kind: "tuple", elements: [] },
-    },
+    expectedType: { kind: "tuple", elements: [] },
   },
   {
     name: "splice",
@@ -624,12 +615,10 @@ export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
   {
     name: "partition",
     parameters: getArrayCallbackParams,
-    config: {
-      expectedType: (data) => ({
-        kind: "tuple",
-        elements: data?.type.kind === "array" ? [data.type, data.type] : [],
-      }),
-    },
+    expectedType: (data) => ({
+      kind: "tuple",
+      elements: data?.type.kind === "array" ? [data.type, data.type] : [],
+    }),
   },
   { name: "groupBy", parameters: getArrayCallbackParams },
   { name: "countBy", parameters: getArrayCallbackParams },
@@ -639,13 +628,11 @@ export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
   {
     name: "entries",
     parameters: [getObjectParam()],
-    config: {
-      expectedType: {
-        kind: "array",
-        elementType: {
-          kind: "tuple",
-          elements: [{ kind: "string" }, { kind: "unknown" }],
-        },
+    expectedType: {
+      kind: "array",
+      elementType: {
+        kind: "tuple",
+        elements: [{ kind: "string" }, { kind: "unknown" }],
       },
     },
   },
@@ -893,60 +880,52 @@ export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
   {
     name: "constant",
     parameters: [{ type: { kind: "unknown" } }],
-    config: {
-      expectedType: {
-        kind: "operation",
-        parameters: [
-          {
-            type: { kind: "array", elementType: { kind: "unknown" } },
-            isRest: true,
-          },
-        ],
-        result: { kind: "unknown" },
-      },
+    expectedType: {
+      kind: "operation",
+      parameters: [
+        {
+          type: { kind: "array", elementType: { kind: "unknown" } },
+          isRest: true,
+        },
+      ],
+      result: { kind: "unknown" },
     },
   },
   {
     name: "doNothing",
     parameters: [],
-    config: {
-      expectedType: {
-        kind: "operation",
-        parameters: [
-          {
-            type: { kind: "array", elementType: { kind: "unknown" } },
-            isRest: true,
-          },
-        ],
-        result: { kind: "unknown" },
-      },
+    expectedType: {
+      kind: "operation",
+      parameters: [
+        {
+          type: { kind: "array", elementType: { kind: "unknown" } },
+          isRest: true,
+        },
+      ],
+      result: { kind: "unknown" },
     },
   },
   {
     name: "identity",
     parameters: [{ type: { kind: "undefined" } }],
-    config: {
-      expectedType: {
-        kind: "operation",
-        parameters: [
-          {
-            type: { kind: "array", elementType: { kind: "unknown" } },
-            isRest: true,
-          },
-        ],
-        result: { kind: "unknown" },
-      },
+    expectedType: {
+      kind: "operation",
+      parameters: [
+        {
+          type: { kind: "array", elementType: { kind: "unknown" } },
+          isRest: true,
+        },
+      ],
+      result: { kind: "unknown" },
     },
   },
   {
     name: "isNot",
     parameters: [{ type: { kind: "unknown" } }],
-    config: {
-      expectedType: {
-        kind: "operation",
-        parameters: [{ type: { kind: "unknown" } }],
-        result: { kind: "unknown" },
-      },
+    expectedType: {
+      kind: "operation",
+      parameters: [{ type: { kind: "unknown" } }],
+      result: { kind: "unknown" },
     },
   },
   {
@@ -1088,6 +1067,7 @@ export const remedaOperationList: (Omit<OperationListItem, "handler"> & {
 export const remedaOperations: OperationListItem[] = remedaOperationList.map(
   (operation) => ({
     ...operation,
-    handler: createOperationHandler(operation.name, operation.config),
+    source: { name: "remeda" },
+    handler: createOperationHandler(operation.name, operation.expectedType),
   })
 );

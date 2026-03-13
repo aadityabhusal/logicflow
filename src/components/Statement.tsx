@@ -17,7 +17,7 @@ import {
   createOperationCall,
   getFilteredOperations,
   applyTypeNarrowing,
-} from "../lib/operation";
+} from "../lib/execution";
 import { Data } from "./Data";
 import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
@@ -149,8 +149,8 @@ const StatementComponent = ({
                   options?.isRest
                     ? FaEllipsis
                     : options?.isOptional
-                    ? FaQuestion
-                    : FaEquals
+                      ? FaQuestion
+                      : FaEquals
                 }
                 position="right"
                 className={[
@@ -164,34 +164,29 @@ const StatementComponent = ({
                     ? options?.isRest
                       ? "Rest Parameter"
                       : options?.isOptional
-                      ? "Optional Parameter"
-                      : undefined
+                        ? "Optional Parameter"
+                        : undefined
                     : options?.isParameter
-                    ? options?.isRest
-                      ? "Make required"
-                      : options?.isOptional
-                      ? "Make rest"
-                      : "Make optional"
-                    : "Create variable"
+                      ? options?.isRest
+                        ? "Make required"
+                        : options?.isOptional
+                          ? "Make rest"
+                          : "Make optional"
+                      : "Create variable"
                 }
                 onClick={() => {
                   if (options?.disableNameToggle) return;
+                  const rest = createData({
+                    value: [createStatement({ data: statement.data })],
+                  });
                   handleStatement({
                     ...statement,
                     ...(options?.isParameter
                       ? options?.isRest
                         ? { isOptional: undefined, isRest: undefined }
                         : options?.isOptional
-                        ? {
-                            isOptional: undefined,
-                            isRest: true,
-                            data: createData({
-                              value: [
-                                createStatement({ data: statement.data }),
-                              ],
-                            }),
-                          }
-                        : { isOptional: true, isRest: undefined }
+                          ? { isOptional: undefined, isRest: true, data: rest }
+                          : { isOptional: true, isRest: undefined }
                       : {
                           name: hasName
                             ? undefined

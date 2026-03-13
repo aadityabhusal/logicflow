@@ -5,8 +5,8 @@ import {
   OperationListItem,
   UnionType,
   Context,
-} from "./types";
-import { InstanceTypes } from "./data";
+} from "../types";
+import { InstanceTypes } from "../data";
 import {
   createData,
   getUnionActiveType,
@@ -22,14 +22,15 @@ import {
   resolveUnionType,
   getStatementResult,
   createStatement,
-} from "./utils";
-import { wretchOperations } from "./operations/wretch";
+  isObject,
+} from "../utils";
+import { wretchOperations } from "./wretch";
 import {
   getArrayCallbackParams,
   getObjectParam,
   getUnionParam,
   remedaOperations,
-} from "./operations/remeda";
+} from "./remeda";
 
 export function createRuntimeError(error: unknown): IData {
   const errorMessage = error instanceof Error ? error.message : String(error);
@@ -44,7 +45,12 @@ const unknownOperations: OperationListItem[] = [
     name: "toString",
     parameters: [{ type: { kind: "unknown" } }],
     handler: (context, data: IData) => {
-      const value = JSON.stringify(getRawValueFromData(data, context));
+      const rawValue = getRawValueFromData(data, context);
+      const value =
+        isObject(rawValue, ["toString"]) &&
+        typeof rawValue.toString === "function"
+          ? rawValue.toString()
+          : JSON.stringify(rawValue);
       return createDataFromRawValue(value, context);
     },
   },
@@ -152,11 +158,11 @@ const booleanOperations: OperationListItem[] = [
             ...updateContextWithNarrowedTypes(context, data, "thenElse", 0),
           })
         : falseBranch
-        ? execute(falseBranch, {
-            ...context,
-            ...updateContextWithNarrowedTypes(context, data, "thenElse", 1),
-          })
-        : createDataFromRawValue(undefined, context);
+          ? execute(falseBranch, {
+              ...context,
+              ...updateContextWithNarrowedTypes(context, data, "thenElse", 1),
+            })
+          : createDataFromRawValue(undefined, context);
 
       return (result instanceof Promise ? result : createThenable(result)).then(
         (res) =>
@@ -350,6 +356,20 @@ const arrayOperations: OperationListItem[] = [
       const value = getRawValueFromData(data, context) as unknown[];
       const elementValue = getRawValueFromData(element, context);
       return createDataFromRawValue(value.lastIndexOf(elementValue), context);
+    },
+  },
+  {
+    name: "slice",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "number" }, isOptional: true },
+      { type: { kind: "number" }, isOptional: true },
+    ],
+    handler: (context, data: IData, start: IData, end: IData) => {
+      const value = getRawValueFromData(data, context) as unknown[];
+      const startValue = getRawValueFromData(start, context) as number;
+      const endValue = getRawValueFromData(end, context) as number;
+      return createDataFromRawValue(value.slice(startValue, endValue), context);
     },
   },
   {
@@ -568,6 +588,7 @@ const promiseOperations: OperationListItem[] = [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
       { type: getResolveCallbackType(data) },
     ],
+    isAsync: true,
     lazyHandler: (context, promiseData: IData, _callback: IStatement) => {
       try {
         const promiseValue = getRawValueFromData(
@@ -602,6 +623,7 @@ const promiseOperations: OperationListItem[] = [
         },
       },
     ],
+    isAsync: true,
     lazyHandler: (context, promiseData: IData, _errorCallback: IStatement) => {
       try {
         const promiseValue = getRawValueFromData(
@@ -645,6 +667,7 @@ const promiseOperations: OperationListItem[] = [
   {
     name: "fetch",
     shouldCacheResult: true,
+    isAsync: true,
     parameters: [
       { type: { kind: "string" } },
       {
@@ -676,6 +699,7 @@ const promiseOperations: OperationListItem[] = [
 const responseOperations: OperationListItem[] = [
   {
     name: "json",
+    isAsync: true,
     parameters: [
       {
         type: { kind: "instance", className: "Response", constructorArgs: [] },
@@ -689,6 +713,7 @@ const responseOperations: OperationListItem[] = [
   },
   {
     name: "text",
+    isAsync: true,
     parameters: [
       {
         type: { kind: "instance", className: "Response", constructorArgs: [] },

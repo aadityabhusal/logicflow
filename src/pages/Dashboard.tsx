@@ -25,7 +25,7 @@ import {
   executeOperationSync,
   executeStatement,
   executeStatementSync,
-} from "@/lib/operation";
+} from "@/lib/execution";
 import { Context } from "@/lib/types";
 
 dayjs.extend(relativeTime);

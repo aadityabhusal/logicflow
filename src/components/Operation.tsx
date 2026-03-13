@@ -41,10 +41,13 @@ const OperationComponent = (
       new Set(
         operation.value.parameters
           .concat(operation.value.statements)
-          .reduce((acc, s) => {
-            if (s.name) acc.push({ kind: "variable", name: s.name });
-            return acc;
-          }, [] as SetItem<Context["reservedNames"]>[])
+          .reduce(
+            (acc, s) => {
+              if (s.name) acc.push({ kind: "variable", name: s.name });
+              return acc;
+            },
+            [] as SetItem<Context["reservedNames"]>[]
+          )
           .concat([...(context.reservedNames ?? [])])
       ),
     [
@@ -104,6 +107,9 @@ const OperationComponent = (
         },
         value: {
           ...operation.value,
+          isAsync: updatedStatementsList.some((statement) =>
+            statement.operations.some((op) => op.value.name === "await")
+          ),
           parameters: updatedParameters,
           statements: updatedStatementsList,
         },

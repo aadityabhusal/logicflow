@@ -26,15 +26,16 @@ import {
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { DataTypes } from "@/lib/data";
+import { DataTypes, RESERVED_KEYWORDS } from "@/lib/data";
 import {
   executeOperation,
   executeOperationSync,
   executeStatement,
   executeStatementSync,
   setOperationResults,
-} from "@/lib/operation";
-import { builtInOperations } from "@/lib/built-in-operations";
+} from "@/lib/execution";
+import { builtInOperations } from "@/lib/operations/built-in";
+import { formatCode, generateOperation } from "@/lib/format-code";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -61,11 +62,9 @@ export default function Project() {
       reservedNames: new Set(
         (currentProject?.files ?? [])
           .map((file) => ({ kind: "operation", name: file.name }))
+          .concat(RESERVED_KEYWORDS.map((name) => ({ kind: "reserved", name })))
           .concat(
-            Object.keys(DataTypes).map((type) => ({
-              kind: "data-type",
-              name: type,
-            }))
+            Object.keys(DataTypes).map((name) => ({ kind: "data-type", name }))
           )
           .concat(
             builtInOperations.map((op) => ({

@@ -23,7 +23,7 @@ import {
   getSkipExecution,
   resolveParameters,
 } from "./utils";
-import { applyTypeNarrowing, getFilteredOperations } from "./operation";
+import { applyTypeNarrowing, getFilteredOperations } from "./execution";
 import isEqual from "react-fast-compare";
 
 function updateOperationCalls(
@@ -119,37 +119,43 @@ function updateDataValue(
   return reference
     ? { name: reference.name, id: reference.data.id }
     : isDataOfType(data, "array") || isDataOfType(data, "tuple")
-    ? updateStatements({ statements: data.value, context })
-    : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
-    ? {
-        entries: data.value.entries.map(({ key, value }) => ({
-          key,
-          value: updateStatement(value, context),
-        })),
-      }
-    : isDataOfType(data, "operation")
-    ? updateOperationValue(data, context) ?? data.value
-    : isDataOfType(data, "union")
-    ? updateDataValue(
-        { ...data, type: getUnionActiveType(data.type, data.value, context) },
-        context
-      )
-    : isDataOfType(data, "condition")
-    ? (() => {
-        const condition = updateStatement(data.value.condition, context);
-        const _true = updateStatement(data.value.true, context);
-        const _false = updateStatement(data.value.false, context);
-        return { condition, true: _true, false: _false };
-      })()
-    : isDataOfType(data, "instance")
-    ? {
-        ...data.value,
-        constructorArgs: updateStatements({
-          statements: data.value.constructorArgs,
-          context,
-        }),
-      }
-    : data.value;
+      ? updateStatements({ statements: data.value, context })
+      : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
+        ? {
+            entries: data.value.entries.map(({ key, value }) => ({
+              key,
+              value: updateStatement(value, context),
+            })),
+          }
+        : isDataOfType(data, "operation")
+          ? (updateOperationValue(data, context) ?? data.value)
+          : isDataOfType(data, "union")
+            ? updateDataValue(
+                {
+                  ...data,
+                  type: getUnionActiveType(data.type, data.value, context),
+                },
+                context
+              )
+            : isDataOfType(data, "condition")
+              ? (() => {
+                  const condition = updateStatement(
+                    data.value.condition,
+                    context
+                  );
+                  const _true = updateStatement(data.value.true, context);
+                  const _false = updateStatement(data.value.false, context);
+                  return { condition, true: _true, false: _false };
+                })()
+              : isDataOfType(data, "instance")
+                ? {
+                    ...data.value,
+                    constructorArgs: updateStatements({
+                      statements: data.value.constructorArgs,
+                      context,
+                    }),
+                  }
+                : data.value;
 }
 
 function updateStatement(
@@ -172,8 +178,8 @@ function updateStatement(
   const reference = foundReference
     ? { name: foundReference[0], data: foundReference[1].data }
     : foundByName
-    ? { name: currentReference!.name, data: foundByName.data }
-    : undefined;
+      ? { name: currentReference!.name, data: foundByName.data }
+      : undefined;
 
   const newStatement = {
     ...currentStatement,
@@ -242,7 +248,10 @@ function updateOperationValue(
   const parameterLength = operation.value.parameters.length;
   const parameters = updatedStatements.slice(0, parameterLength);
   const statements = updatedStatements.slice(parameterLength);
-  return { ...operation.value, parameters, statements };
+  const isAsync = updatedStatements.some((statement) =>
+    statement.operations.some((operation) => operation.value.name === "await")
+  );
+  return { ...operation.value, parameters, statements, isAsync };
 }
 
 export function updateFiles(

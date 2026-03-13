@@ -12,7 +12,7 @@ import {
   resolveReference,
   isObject,
 } from "@/lib/utils";
-import { createRuntimeError } from "@/lib/built-in-operations";
+import { createRuntimeError } from "@/lib/operations/built-in";
 import { Wretch, WretchResponseChain } from "wretch";
 import {
   customInstances,
@@ -87,8 +87,12 @@ function createChainOperation<T extends WretchResponseChain<unknown>>(
             name === "text"
               ? { kind: "string" }
               : name === "res"
-              ? { kind: "instance", className: "Response", constructorArgs: [] }
-              : undefined;
+                ? {
+                    kind: "instance",
+                    className: "Response",
+                    constructorArgs: [],
+                  }
+                : undefined;
         } else {
           customInstances.set(result as T, WretchResponseChainClass);
         }

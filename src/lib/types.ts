@@ -69,42 +69,47 @@ export type DataType =
 type BaseDataValue<T extends DataType> = T extends UnknownType
   ? unknown
   : T extends NeverType
-  ? never
-  : T extends UndefinedType
-  ? undefined
-  : T extends StringType
-  ? string
-  : T extends NumberType
-  ? number
-  : T extends BooleanType
-  ? boolean
-  : T extends ArrayType
-  ? IStatement[]
-  : T extends TupleType
-  ? IStatement[]
-  : T extends ObjectType
-  ? { entries: Array<{ key: string; value: IStatement }> }
-  : T extends DictionaryType
-  ? { entries: Array<{ key: string; value: IStatement }> }
-  : T extends OperationType
-  ? {
-      parameters: IStatement[];
-      statements: IStatement[];
-      name?: string; // for operations calls
-    }
-  : T extends ConditionType
-  ? {
-      condition: IStatement;
-      true: IStatement;
-      false: IStatement;
-    }
-  : T extends ReferenceType
-  ? { name: string; id: string }
-  : T extends ErrorType
-  ? { reason: string }
-  : T extends InstanceDataType
-  ? { className: string; constructorArgs: IStatement[]; instanceId: string }
-  : never;
+    ? never
+    : T extends UndefinedType
+      ? undefined
+      : T extends StringType
+        ? string
+        : T extends NumberType
+          ? number
+          : T extends BooleanType
+            ? boolean
+            : T extends ArrayType
+              ? IStatement[]
+              : T extends TupleType
+                ? IStatement[]
+                : T extends ObjectType
+                  ? { entries: Array<{ key: string; value: IStatement }> }
+                  : T extends DictionaryType
+                    ? { entries: Array<{ key: string; value: IStatement }> }
+                    : T extends OperationType
+                      ? {
+                          parameters: IStatement[];
+                          statements: IStatement[];
+                          name?: string;
+                          isAsync?: boolean;
+                        }
+                      : T extends ConditionType
+                        ? {
+                            condition: IStatement;
+                            true: IStatement;
+                            false: IStatement;
+                          }
+                        : T extends ReferenceType
+                          ? { name: string; id: string }
+                          : T extends ErrorType
+                            ? { reason: string }
+                            : T extends InstanceDataType
+                              ? {
+                                  className: string;
+                                  constructorArgs: IStatement[];
+                                  instanceId: string;
+                                }
+                              : never;
 
 export type DataValue<T extends DataType> = T extends UnionType & {
   types: infer U extends DataType[];
@@ -165,7 +170,7 @@ export type Context = {
     { data: IData; reference?: { name: string; id: string } }
   >;
   reservedNames?: Set<{
-    kind: "data-type" | "operation" | "variable";
+    kind: "data-type" | "operation" | "variable" | "reserved";
     name: string;
   }>;
   narrowedTypes?: Context["variables"];
@@ -201,6 +206,9 @@ export type OperationListItem = {
     | OperationType["parameters"];
   shouldCacheResult?: boolean;
   narrowType?: ((...args: IData[]) => DataType | undefined) | DataType;
+  source?: { name: string };
+  expectedType?: DataType | ((data: IData) => DataType);
+  isAsync?: boolean;
 } & (
   | { handler: (...args: [Context, ...IData[]]) => Thenable<IData> | IData }
   | {

@@ -116,7 +116,7 @@ export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
 export type InstanceTypeConfig<
   K extends string = string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  C extends new (...args: any[]) => any = new (...args: any[]) => any
+  C extends new (...args: any[]) => any = new (...args: any[]) => any,
 > = {
   readonly name: K;
   readonly Constructor: C;
@@ -248,4 +248,57 @@ export const OBJECT_TYPES: DataType["kind"][] = [
   "object",
   "error",
   "instance",
+];
+
+export const RESERVED_KEYWORDS = [
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "let",
+  "static",
+  "yield",
+  "await",
+  "enum",
+  "implements",
+  "interface",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "arguments",
+  "async",
+  "eval",
+  "arg", // pipe callback first arg
 ];

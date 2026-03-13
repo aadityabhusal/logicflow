@@ -29,7 +29,7 @@ import {
   unwrapThenable,
   getInverseTypes,
 } from "./utils";
-import { builtInOperations, createRuntimeError } from "./built-in-operations";
+import { builtInOperations, createRuntimeError } from "./operations/built-in";
 
 /* Operation List */
 
@@ -153,6 +153,7 @@ export async function createOperationCall({
       name: newOperation.name,
       parameters: newParameters,
       statements: [],
+      isAsync: newOperation.isAsync,
     },
   };
 }
@@ -204,21 +205,24 @@ export function setOperationResults(
   const { parameters, statements } = operation.value;
   const _context = createContext(context);
   const _execute = context.isSync ? executeStatementSync : executeStatement;
-  return [...parameters, ...statements].reduce((chain, statement) => {
-    return chain.then(() => {
-      const result = _execute(statement, _context);
-      return (result instanceof Promise ? result : createThenable(result)).then(
-        (result) => {
+  return [...parameters, ...statements].reduce(
+    (chain, statement) => {
+      return chain.then(() => {
+        const result = _execute(statement, _context);
+        return (
+          result instanceof Promise ? result : createThenable(result)
+        ).then((result) => {
           if (!isDataOfType(result, "error") && statement.name) {
             _context.variables = createContextVariables([statement], _context, {
               result,
               parameters: operation.type.parameters,
             });
           }
-        }
-      );
-    });
-  }, createThenable(undefined) as Thenable<void>);
+        });
+      });
+    },
+    createThenable(undefined) as Thenable<void>
+  );
 }
 
 function executeStatementCore(
