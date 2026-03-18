@@ -1,12 +1,5 @@
 import * as R from "remeda";
-import {
-  ArrayType,
-  Context,
-  DataType,
-  IData,
-  OperationListItem,
-  OperationType,
-} from "../types";
+import { ArrayType, DataType, IData, OperationType } from "../types";
 import {
   createData,
   createDataFromRawValue,
@@ -17,6 +10,7 @@ import {
   unwrapThenable,
 } from "../utils";
 import { OBJECT_TYPES } from "../data";
+import { Context, OperationListItem } from "../execution/types";
 
 export function getArrayCallbackParams(
   data: IData,

@@ -6,10 +6,11 @@ import { IconButton } from "./IconButton";
 import { useNavigate, useSearchParams } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { updateFiles } from "@/lib/update";
-import { Context } from "@/lib/types";
+import { Context } from "@/lib/execution/types";
 import { notifications } from "@mantine/notifications";
 import { useMediaQuery } from "@mantine/hooks";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
+import { getReservedNames } from "@/lib/execution/store";
 
 export function OperationsList({ context }: { context: Context }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -42,7 +43,7 @@ export function OperationsList({ context }: { context: Context }) {
           onClick={() => {
             const newFile = createProjectFile(
               { type: "operation" },
-              Array.from(context.reservedNames ?? []).map((r) => r.name)
+              Array.from(getReservedNames(context)).map((r) => r.name)
             );
             addFile(newFile);
             navigate(`/project/${currentProject?.id}?file=${newFile.name}`);
@@ -85,9 +86,7 @@ export function OperationsList({ context }: { context: Context }) {
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={({ target }) => {
-                  const isReserved = Array.from(
-                    context.reservedNames ?? []
-                  ).find(
+                  const isReserved = Array.from(getReservedNames(context)).find(
                     (r) => r.name === target.value && item.name !== target.value
                   );
                   if (isReserved) {

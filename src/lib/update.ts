@@ -2,57 +2,40 @@ import {
   IStatement,
   IData,
   OperationType,
-  Context,
   DataValue,
   DataType,
   ProjectFile,
 } from "./types";
 import {
-  createContext,
   getStatementResult,
   isDataOfType,
   getUnionActiveType,
-  createContextVariables,
   createStatement,
   createData,
   createOperationFromFile,
   createFileFromOperation,
-  createFileVariables,
   getOperationResultType,
-  updateContextWithNarrowedTypes,
-  getSkipExecution,
   resolveParameters,
+  createContext,
+  createFileVariables,
 } from "./utils";
-import { applyTypeNarrowing, getFilteredOperations } from "./execution";
 import isEqual from "react-fast-compare";
+import { getFilteredOperations } from "./execution/execution";
+import { Context } from "./execution/types";
 
 function updateOperationCalls(
   statement: IStatement,
   context: Context
 ): IData<OperationType>[] {
   return statement.operations.reduce(
-    (acc, operation, operationIndex) => {
-      const updatedStatement = { ...statement, operations: acc.operations };
+    (accOperations, operation, operationIndex) => {
+      const updatedStatement = { ...statement, operations: accOperations };
       const data = getStatementResult(updatedStatement, context, {
         index: operationIndex,
         prevEntity: true,
         skipResolveReference: true,
       });
-      /* Type narrowing and finding operation is needed for updating parameters especially of user-defined operations */
-      acc.narrowedTypes = applyTypeNarrowing(
-        context,
-        acc.narrowedTypes,
-        data,
-        operation
-      );
-      const _context = createContext(context, {
-        narrowedTypes: acc.narrowedTypes,
-        skipExecution: getSkipExecution({
-          context,
-          data,
-          operationName: operation.value.name,
-        }),
-      });
+      const _context = context.getContext(operation.id);
 
       const foundOperation = getFilteredOperations(data, _context).find(
         (op) => op.name === operation.value.name
@@ -86,29 +69,24 @@ function updateOperationCalls(
             return params.map((_param) =>
               updateStatement(
                 { ..._param, isOptional: sourceParam.isOptional },
-                updateContextWithNarrowedTypes(
-                  _context,
-                  data,
-                  operation.value.name,
-                  sourceParamIndex
-                )
+                context.getContext(_param.id)
               )
             );
           })
           .filter((p): p is IStatement => p !== null);
       }
-      acc.operations = [
-        ...acc.operations,
+
+      return [
+        ...accOperations,
         {
           ...operation,
           type: { ...operation.type, parameters: updatedTypeParameters },
           value: { ...operation.value, parameters: updatedParameters },
         },
       ];
-      return acc;
     },
-    { operations: [] as IData<OperationType>[], narrowedTypes: new Map() }
-  ).operations;
+    [] as IData<OperationType>[]
+  );
 }
 
 function updateDataValue(
@@ -133,7 +111,10 @@ function updateDataValue(
             ? updateDataValue(
                 {
                   ...data,
-                  type: getUnionActiveType(data.type, data.value, context),
+                  type: getUnionActiveType(data.type, {
+                    value: data.value,
+                    context: context.getContext(data.id),
+                  }),
                 },
                 context
               )
@@ -165,7 +146,6 @@ function updateStatement(
   const currentReference = isDataOfType(currentStatement.data, "reference")
     ? currentStatement.data.value
     : undefined;
-
   const foundReference = context.variables
     .entries()
     .find(([, item]) => item.data?.id === currentReference?.id);
@@ -201,39 +181,27 @@ export function updateStatements({
   context,
   changedStatement,
   removeStatement,
-  operation,
 }: {
   statements: IStatement[];
   context: Context;
   changedStatement?: IStatement;
   removeStatement?: boolean;
-  operation?: IData<OperationType>;
 }): IStatement[] {
   let currentIndexFound = false;
-  return statements.reduce((prevStatements, currentStatement, index) => {
+  return statements.flatMap((currentStatement) => {
     let statementToProcess = currentStatement;
     if (currentStatement.id === changedStatement?.id) {
       currentIndexFound = true;
-      if (removeStatement) return prevStatements;
+      if (removeStatement) return [];
       statementToProcess = changedStatement;
     }
 
-    if (changedStatement && !currentIndexFound)
-      return [...prevStatements, currentStatement];
-
-    const variables = createContextVariables(prevStatements, context, {
-      parameters: operation?.type.parameters,
-    });
-    const _context = createContext(context, {
-      variables,
-      skipExecution: getSkipExecution({
-        context: { ...context, variables },
-        data: statementToProcess.data,
-        ...(operation ? { operation, paramIndex: index } : {}),
-      }),
-    });
-    return [...prevStatements, updateStatement(statementToProcess, _context)];
-  }, [] as IStatement[]);
+    if (changedStatement && !currentIndexFound) return currentStatement;
+    return updateStatement(
+      statementToProcess,
+      context.getContext(statementToProcess.name ?? statementToProcess.id)
+    );
+  });
 }
 
 function updateOperationValue(
@@ -243,7 +211,6 @@ function updateOperationValue(
   const updatedStatements = updateStatements({
     statements: [...operation.value.parameters, ...operation.value.statements],
     context,
-    operation,
   });
   const parameterLength = operation.value.parameters.length;
   const parameters = updatedStatements.slice(0, parameterLength);

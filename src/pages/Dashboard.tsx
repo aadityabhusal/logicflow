@@ -10,23 +10,17 @@ import {
 import { Link, useNavigate } from "react-router";
 import relativeTime from "dayjs/plugin/relativeTime";
 import dayjs from "dayjs";
-import { useProjectStore, useExecutionResultsStore } from "@/lib/store";
+import { useProjectStore } from "@/lib/store";
 import {
-  createContextVariables,
+  createContextVariable,
   createData,
   createFileFromOperation,
   createFileVariables,
   createStatement,
   createVariableName,
 } from "@/lib/utils";
-import {
-  createOperationCall,
-  executeOperation,
-  executeOperationSync,
-  executeStatement,
-  executeStatementSync,
-} from "@/lib/execution";
-import { Context } from "@/lib/types";
+import { createOperationCall } from "@/lib/execution/execution";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 dayjs.extend(relativeTime);
 
@@ -35,21 +29,7 @@ export default function Dashboard() {
   const projects = useProjectStore((s) => s.projects);
   const createProject = useProjectStore((s) => s.createProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
-  const setResult = useExecutionResultsStore((s) => s.setResult);
-
-  const context = useMemo<Context>(
-    () => ({
-      variables: new Map(),
-      getResult: useExecutionResultsStore.getState().getResult,
-      getInstance: useExecutionResultsStore.getState().getInstance,
-      setInstance: useExecutionResultsStore.getState().setInstance,
-      executeOperation,
-      executeOperationSync,
-      executeStatement,
-      executeStatementSync,
-    }),
-    []
-  );
+  const context = useExecutionResultsStore((s) => s.rootContext);
 
   const sortedProjects = useMemo(
     () =>
@@ -67,6 +47,7 @@ export default function Dashboard() {
       name: "name",
     });
     const helloData = createData({ value: "Hello! " });
+    const variable = createContextVariable(nameParam, context, nameParam.data);
     const concatOperation = await createOperationCall({
       data: helloData,
       name: "concat",
@@ -80,9 +61,10 @@ export default function Dashboard() {
       ],
       context: {
         ...context,
-        variables: createContextVariables([nameParam], context),
+        ...(nameParam.name && variable
+          ? { variables: new Map([[nameParam.name, variable]]) }
+          : {}),
       },
-      setResult,
     });
     const greetOperationFile = createFileFromOperation(
       createData({
@@ -123,7 +105,6 @@ export default function Dashboard() {
                     ...context,
                     variables: createFileVariables([greetOperationFile]),
                   },
-                  setResult,
                 }),
               ],
             }),

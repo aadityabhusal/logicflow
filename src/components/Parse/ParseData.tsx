@@ -3,12 +3,12 @@ import { theme } from "@/lib/theme";
 import {
   ArrayType,
   ConditionType,
-  Context,
   DictionaryType,
   IData,
   ObjectType,
   TupleType,
 } from "@/lib/types";
+import { Context } from "@/lib/execution/types";
 import { ParseStatement } from "./ParseStatement";
 import {
   getConditionResult,

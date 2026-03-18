@@ -13,33 +13,42 @@ import {
   DataValue,
   OperationType,
   ConditionType,
-  Context,
   UnionType,
   ProjectFile,
-  OperationListItem,
   ArrayType,
   ObjectType,
   DictionaryType,
   TupleType,
-  Thenable,
+  MapValue,
 } from "./types";
+import {
+  Context,
+  ExecutionResult,
+  OperationListItem,
+  Thenable,
+} from "./execution/types";
 
 /* Create */
 
 export function createData<T extends DataType>(
   props?: Partial<IData<T>>
 ): IData<T> {
+  const emptyContext = {
+    scopeId: "_root_",
+    variables: new Map(),
+    getResult: () => undefined,
+    getInstance: () => undefined,
+    setInstance: () => undefined,
+    executeOperation: () => Promise.resolve(createData()),
+    executeOperationSync: () => createData(),
+    executeStatement: () => Promise.resolve(createData()),
+    executeStatementSync: () => createData(),
+    getContext: () => emptyContext,
+    setContext: () => undefined,
+    setResult: () => undefined,
+  };
   const type = (props?.type ??
-    inferTypeFromValue(props?.value, {
-      variables: new Map(),
-      getResult: () => undefined,
-      getInstance: () => undefined,
-      setInstance: () => undefined,
-      executeOperation: () => Promise.resolve(createData()),
-      executeOperationSync: () => createData(),
-      executeStatement: () => Promise.resolve(createData()),
-      executeStatementSync: () => createData(),
-    })) as T;
+    inferTypeFromValue(props?.value, emptyContext)) as T;
   return {
     id: props?.id ?? nanoid(),
     type,
@@ -234,12 +243,12 @@ export function createProjectFile(
           };
         })()
       : type === "globals"
-      ? { content: props ?? {} }
-      : type === "documentation"
-      ? { content: props.content ?? "" }
-      : type === "json"
-      ? { content: props.content ?? {} }
-      : {}),
+        ? { content: props ?? {} }
+        : type === "documentation"
+          ? { content: props.content ?? "" }
+          : type === "json"
+            ? { content: props.content ?? {} }
+            : {}),
   } as ProjectFile;
 }
 
@@ -262,31 +271,28 @@ export function createFileFromOperation(operation: IData<OperationType>) {
 }
 
 export function createContext(
-  context: Context,
-  overrides?: Partial<Context>,
-  scopedResults?: boolean
+  parentContext: Context,
+  overrides?: Partial<Context>
 ): Context {
-  const baseContext: Context = {
-    getResult: context.getResult,
-    setResult: context.setResult,
-    getInstance: context.getInstance,
-    setInstance: context.setInstance,
-    executeOperation: context.executeOperation,
-    executeOperationSync: context.executeOperationSync,
-    executeStatement: context.executeStatement,
-    executeStatementSync: context.executeStatementSync,
-    isSync: context.isSync,
-    reservedNames: new Set(context.reservedNames),
-    variables: new Map(context.variables),
+  const context: Context = {
+    ...parentContext,
+    scopeId: nanoid(),
+    variables: new Map(parentContext.variables),
+    narrowedTypes: new Map(parentContext.narrowedTypes),
+    expectedType: undefined,
+    enforceExpectedType: undefined,
+    ...overrides,
   };
 
-  if (scopedResults) {
-    const localResults = new Map<string, ReturnType<Context["getResult"]>>();
-    baseContext.setResult = (id, result) => localResults.set(id, result);
-    baseContext.getResult = (id) =>
-      localResults.get(id) ?? context.getResult(id);
+  if (context.isIsolated) {
+    const localResults = new Map<string, ExecutionResult>();
+
+    context.setResult = (id, result) => localResults.set(id, result);
+    context.getResult = (id) =>
+      localResults.get(id) ?? parentContext.getResult(id);
   }
-  return { ...baseContext, ...overrides };
+
+  return context;
 }
 
 export function getContextExpectedTypes({
@@ -311,57 +317,50 @@ export function getContextExpectedTypes({
   };
 }
 
-export function createContextVariables(
-  statements: IStatement[],
+export function createContextVariable(
+  statement: IStatement,
   context: Context,
-  options?: { parameters?: OperationType["parameters"]; result?: IData }
-): Context["variables"] {
-  return statements.reduce((variables, statement) => {
-    if (statement.name) {
-      const data = resolveReference(statement.data, context);
-      const result =
-        options?.result ?? getStatementResult({ ...statement, data }, context);
-      const paramInfo = options?.parameters?.find(
-        (param) => param.name === statement.name
-      );
-
-      let resultType = result.type;
-      if (paramInfo?.isOptional) {
-        const union = {
-          ...resolveUnionType([result.type, { kind: "undefined" }], true),
-          activeIndex: undefined,
-        };
-        resultType = {
-          ...union,
-          activeIndex: getUnionActiveIndex(union, result.value, context),
-        };
-      }
-
-      variables.set(statement.name, {
-        data: { ...result, id: statement.id, type: resultType },
-        reference: isDataOfType(statement.data, "reference")
-          ? statement.data.value
-          : undefined,
-      });
-    }
-    return variables;
-  }, new Map(context.variables));
+  result: IData,
+  parameters?: OperationType["parameters"]
+): MapValue<Context["variables"]> | undefined {
+  if (!statement.name || isDataOfType(result, "error")) return undefined;
+  const paramInfo = parameters?.find((param) => param.name === statement.name);
+  let resultType = result.type;
+  if (paramInfo?.isOptional) {
+    const union = {
+      ...resolveUnionType([result.type, { kind: "undefined" }], true),
+      activeIndex: undefined,
+    };
+    resultType = {
+      ...union,
+      activeIndex: getUnionActiveIndex(union, { value: result.value, context }),
+    };
+  }
+  return {
+    data: { ...result, id: statement.id, type: resultType },
+    reference: isDataOfType(statement.data, "reference")
+      ? statement.data.value
+      : undefined,
+  };
 }
 
 export function createFileVariables(
   files: ProjectFile[] = [],
   currentOperationId?: string
 ): Context["variables"] {
-  return files.reduce((acc, operationFile) => {
-    const operation = createOperationFromFile(operationFile);
-    if (!operation || operationFile.id === currentOperationId) {
+  return files.reduce(
+    (acc, operationFile) => {
+      const operation = createOperationFromFile(operationFile);
+      if (!operation || operationFile.id === currentOperationId) {
+        return acc;
+      }
+      acc.set(operationFile.name, {
+        data: { ...operation, id: operationFile.id },
+      });
       return acc;
-    }
-    acc.set(operationFile.name, {
-      data: { ...operation, id: operationFile.id },
-    });
-    return acc;
-  }, new Map() as Context["variables"]);
+    },
+    new Map() as Context["variables"]
+  );
 }
 
 export function createParamData(
@@ -398,7 +397,7 @@ export function createParamData(
 
 export function createInstance<
   T extends keyof typeof InstanceTypes,
-  K extends (typeof InstanceTypes)[T]["Constructor"]
+  K extends (typeof InstanceTypes)[T]["Constructor"],
 >(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
   const config = InstanceTypes[className];
   let rawArgs = constructorArgs.map((arg) =>
@@ -460,8 +459,8 @@ export function createDataFromRawValue(
             context.expectedType?.kind === "tuple"
               ? context.expectedType.elements[i]
               : context.expectedType?.kind === "array"
-              ? context.expectedType.elementType
-              : undefined,
+                ? context.expectedType.elementType
+                : undefined,
         }),
       })
     );
@@ -505,8 +504,8 @@ export function createDataFromRawValue(
               context.expectedType?.kind === "object"
                 ? context.expectedType.properties[i].value
                 : context.expectedType?.kind === "dictionary"
-                ? context.expectedType.elementType
-                : undefined,
+                  ? context.expectedType.elementType
+                  : undefined,
           }),
         }),
       }));
@@ -978,14 +977,12 @@ export function inferTypeFromValue<T extends DataType>(
 
 export function getUnionActiveIndex(
   unionType: UnionType,
-  value?: unknown,
-  context?: Context
+  infer?: { value: unknown; context: Context }
 ): number {
   if (unionType.activeIndex !== undefined) return unionType.activeIndex;
-  if (value !== undefined && context) {
-    const index = unionType.types.findIndex((t) =>
-      isTypeCompatible(inferTypeFromValue(value, context), t)
-    );
+  if (infer) {
+    const value = inferTypeFromValue(infer.value, infer.context);
+    const index = unionType.types.findIndex((t) => isTypeCompatible(value, t));
     return index === -1 ? 0 : index;
   }
   return 0;
@@ -993,10 +990,9 @@ export function getUnionActiveIndex(
 
 export function getUnionActiveType(
   unionType: UnionType,
-  value?: unknown,
-  context?: Context
+  infer?: { value: unknown; context: Context }
 ): DataType {
-  const index = getUnionActiveIndex(unionType, value, context);
+  const index = getUnionActiveIndex(unionType, infer);
   return unionType.types[index] ?? unionType.types[0];
 }
 
@@ -1288,17 +1284,23 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       getRawValueFromData(getStatementResult(element, context), context)
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    return data.value.entries.reduce((acc, { key, value }) => {
-      acc[key] = getRawValueFromData(
-        getStatementResult(value, context),
-        context
-      );
-      return acc;
-    }, {} as Record<string, unknown>);
+    return data.value.entries.reduce(
+      (acc, { key, value }) => {
+        acc[key] = getRawValueFromData(
+          getStatementResult(value, context),
+          context
+        );
+        return acc;
+      },
+      {} as Record<string, unknown>
+    );
   } else if (isDataOfType(data, "union")) {
     return getRawValueFromData(
       createData({
-        type: getUnionActiveType(data.type, data.value, context),
+        type: getUnionActiveType(data.type, {
+          value: data.value,
+          context: context,
+        }),
         value: data.value,
       }),
       context

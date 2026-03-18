@@ -1,29 +1,25 @@
-import { Context, IData, IStatement, OperationType } from "../lib/types";
+import { IData, IStatement, OperationType } from "../lib/types";
 import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
   getFilteredOperations,
   executeOperation,
-} from "../lib/execution";
+} from "@/lib/execution/execution";
 import { FaArrowRotateRight } from "react-icons/fa6";
-import {
-  updateContextWithNarrowedTypes,
-  resolveParameters,
-  getContextExpectedTypes,
-} from "../lib/utils";
+import { resolveParameters } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useMemo } from "react";
-import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
+import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 import { IconButton } from "@/ui/IconButton";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 const OperationCallComponent = ({
   data,
   operation,
   handleOperationCall,
   addOperationCall,
-  context,
 }: {
   data: IData;
   operation: IData<OperationType>;
@@ -31,11 +27,11 @@ const OperationCallComponent = ({
     operation: IData<OperationType>,
     remove?: boolean
   ) => void;
-  addOperationCall?: () => void;
-  context: Context;
+  addOperationCall?: (data?: IData) => void;
 }) => {
+  const context = useExecutionResultsStore((s) => s.getContext(operation.id));
+
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const setResult = useExecutionResultsStore((s) => s.setResult);
   const filteredOperations = useMemo(
     () => getFilteredOperations(data, context, true),
     [data, context]
@@ -65,7 +61,7 @@ const OperationCallComponent = ({
       operation.value.parameters,
       context
     );
-    setResult(operation.id, {
+    context.setResult(operation.id, {
       data: { ...result, id: operation.id },
       shouldCacheResult: originalOperation.shouldCacheResult,
     });
@@ -83,7 +79,6 @@ const OperationCallComponent = ({
       parameters: operation.value.parameters,
       context,
       operationId: operation.id,
-      setResult,
     });
     operationCall.id = operation.id;
     handleOperationCall(operationCall);
@@ -139,7 +134,9 @@ const OperationCallComponent = ({
       context={context}
       value={operation.value.name}
       addOperationCall={
-        filteredOperations.length ? addOperationCall : undefined
+        filteredOperations.length && !context.skipExecution
+          ? addOperationCall
+          : undefined
       }
       handleDelete={() => handleOperationCall(operation, true)}
       isInputTarget
@@ -167,18 +164,6 @@ const OperationCallComponent = ({
                 val && handleParameter(val, paramIndex, remove)
               }
               options={{ disableDelete: !item.isOptional }}
-              context={{
-                ...updateContextWithNarrowedTypes(
-                  context,
-                  data,
-                  operation.value.name,
-                  paramIndex
-                ),
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType: originalParameters?.[paramIndex + 1]?.type,
-                }),
-              }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
           </span>

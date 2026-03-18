@@ -1,12 +1,10 @@
-import { ArrayType, TupleType, Context, IData, IStatement } from "@/lib/types";
+import { ArrayType, TupleType, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
-import {
-  inferTypeFromValue,
-  isDataOfType,
-  getContextExpectedTypes,
-} from "@/lib/utils";
+import { forwardRef, HTMLAttributes, memo } from "react";
+import { inferTypeFromValue, isDataOfType } from "@/lib/utils";
+import { getChildContext } from "@/lib/execution/execution";
+import { Context } from "@/lib/execution/types";
 
 interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
@@ -16,7 +14,7 @@ interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
 
 const ArrayInputComponent = (
   { data, handleData, context, ...props }: ArrayInputProps,
-  ref: React.ForwardedRef<HTMLDivElement>
+  ref: React.ForwardedRef<HTMLDivElement>,
 ) => {
   const isMultiline = data.value.length > 3;
   function handleUpdate(result: IStatement, index: number, remove?: boolean) {
@@ -32,16 +30,6 @@ const ArrayInputComponent = (
       value: newValue,
     });
   }
-  const getExpectedType = useCallback(
-    (index: number = 0) => {
-      return context.expectedType?.kind === "array"
-        ? context.expectedType.elementType
-        : context.expectedType?.kind === "tuple"
-        ? context.expectedType.elements[index]
-        : undefined;
-    },
-    [context.expectedType]
-  );
 
   return (
     <div
@@ -63,13 +51,6 @@ const ArrayInputComponent = (
             <Statement
               statement={item}
               handleStatement={(val, remove) => handleUpdate(val, i, remove)}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType: getExpectedType(i),
-                }),
-              }}
               options={{
                 disableDelete:
                   isDataOfType(data, "tuple") && !!context.expectedType,
@@ -94,7 +75,7 @@ const ArrayInputComponent = (
             });
           }}
           iconProps={{ title: "Add array item" }}
-          config={{ type: getExpectedType() }}
+          config={{ type: getChildContext(context, { index: 0 }).expectedType }}
         />
       )}
       <span>{"]"}</span>

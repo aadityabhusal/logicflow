@@ -1,4 +1,4 @@
-import { IData, IStatement, DataType, Context } from "../lib/types";
+import { IData, IStatement, DataType } from "../lib/types";
 import { ArrayInput } from "./Input/ArrayInput";
 import { ObjectInput } from "./Input/ObjectInput";
 import { BooleanInput } from "./Input/BooleanInput";
@@ -21,16 +21,19 @@ import { ErrorInput } from "./Input/ErrorInput";
 import { DictionaryInput } from "./Input/Dictionary";
 import { InstanceInput } from "./Input/InstanceInput";
 import { useNavigationStore } from "@/lib/store";
+import { Context } from "@/lib/execution/types";
 
-interface IDropdownTargetProps
-  extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
+interface IDropdownTargetProps extends Omit<
+  HTMLAttributes<HTMLElement>,
+  "onChange" | "defaultValue"
+> {
   onChange?: (value: string) => void;
 }
 
 interface IProps {
   data: IData;
   disableDelete?: boolean;
-  addOperationCall?: () => void;
+  addOperationCall?: (data?: IData) => void;
   handleChange(item: IStatement["data"], remove?: boolean): void;
   context: Context;
 }
@@ -184,18 +187,18 @@ const DataComponent = ({
               const transform = isNumberLike(_val)
                 ? { type: "number", value: Number(_val.slice(0, 16)) }
                 : _val.startsWith("[")
-                ? {
-                    type: "array",
-                    value: createDefaultValue(DataTypes["array"].type),
-                  }
-                : _val.startsWith("{")
-                ? {
-                    type: "dictionary",
-                    value: createDefaultValue(DataTypes["dictionary"].type),
-                  }
-                : _val
-                ? { type: "string", value: _val }
-                : { type: "undefined", value: undefined };
+                  ? {
+                      type: "array",
+                      value: createDefaultValue(DataTypes["array"].type),
+                    }
+                  : _val.startsWith("{")
+                    ? {
+                        type: "dictionary",
+                        value: createDefaultValue(DataTypes["dictionary"].type),
+                      }
+                    : _val
+                      ? { type: "string", value: _val }
+                      : { type: "undefined", value: undefined };
               onChange?.(_val);
               handleChange({
                 ...data,

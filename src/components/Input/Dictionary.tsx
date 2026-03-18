@@ -1,14 +1,11 @@
-import { Context, IData, IStatement, DictionaryType } from "@/lib/types";
+import { IData, IStatement, DictionaryType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo } from "react";
-import {
-  createVariableName,
-  inferTypeFromValue,
-  getContextExpectedTypes,
-} from "@/lib/utils";
+import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
+import { Context } from "@/lib/execution/types";
 
 interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<DictionaryType>;
@@ -93,16 +90,6 @@ const DictionaryInputComponent = (
             <Statement
               statement={entry.value}
               handleStatement={(val, remove) => handleUpdate(i, val, remove)}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType:
-                    context.expectedType?.kind === "dictionary"
-                      ? context.expectedType.elementType
-                      : undefined,
-                }),
-              }}
             />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>

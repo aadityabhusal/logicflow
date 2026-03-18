@@ -1,17 +1,14 @@
-import { Context, IData, IStatement, ObjectType } from "@/lib/types";
+import { IData, IStatement, ObjectType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
-import {
-  createVariableName,
-  inferTypeFromValue,
-  getContextExpectedTypes,
-} from "@/lib/utils";
+import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
 import { Dropdown } from "../Dropdown";
+import { Context } from "@/lib/execution/types";
 
 interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
@@ -179,8 +176,8 @@ const ObjectInputComponent = (
                     ? "Optional property"
                     : undefined
                   : isOptional
-                  ? "Make required"
-                  : "Make optional"
+                    ? "Make required"
+                    : "Make optional"
               }
               onClick={() => {
                 if (expectedType) return;
@@ -196,10 +193,6 @@ const ObjectInputComponent = (
             <Statement
               statement={entry.value}
               handleStatement={(val, remove) => handleUpdate(i, val, remove)}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({ context, expectedType }),
-              }}
               options={{
                 disableDelete: !!context.expectedType && !isOptional,
               }}

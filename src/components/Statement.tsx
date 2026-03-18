@@ -5,19 +5,17 @@ import {
   FaQuestion,
   FaEllipsis,
 } from "react-icons/fa6";
-import { Context, IData, IStatement, OperationType } from "../lib/types";
+import { IData, IStatement, OperationType } from "../lib/types";
 import {
   getStatementResult,
   createVariableName,
-  getSkipExecution,
   createStatement,
   createData,
 } from "../lib/utils";
 import {
   createOperationCall,
   getFilteredOperations,
-  applyTypeNarrowing,
-} from "../lib/execution";
+} from "@/lib/execution/execution";
 import { Data } from "./Data";
 import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
@@ -25,22 +23,24 @@ import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { memo, useMemo, type ReactNode } from "react";
-import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
+import { memo, useMemo } from "react";
+import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
+import {
+  getReservedNames,
+  useExecutionResultsStore,
+} from "@/lib/execution/store";
 
 const StatementComponent = ({
   statement,
   handleStatement,
-  context,
   addStatement,
   options,
 }: {
   statement: IStatement;
   handleStatement: (statement: IStatement, remove?: boolean) => void;
   addStatement?: (statement: IStatement, position: "before" | "after") => void;
-  context: Context;
   options?: {
     enableVariable?: boolean;
     isOptional?: boolean;
@@ -50,6 +50,11 @@ const StatementComponent = ({
     disableDelete?: boolean;
   };
 }) => {
+  const context = useExecutionResultsStore((s) =>
+    s.getContext(statement.name ?? statement.id)
+  );
+  const reservedNames = useMemo(() => getReservedNames(context), [context]);
+
   const hasName = statement.name !== undefined;
   const isEqualsFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_equals`
@@ -60,7 +65,6 @@ const StatementComponent = ({
   const isAddFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_add`
   );
-  const setResult = useExecutionResultsStore((s) => s.setResult);
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
@@ -83,7 +87,7 @@ const StatementComponent = ({
   );
 
   async function addOperationCall(data: IData, index: number) {
-    const operation = await createOperationCall({ data, context, setResult });
+    const operation = await createOperationCall({ data, context });
     const operations = [...statement.operations];
     operations.splice(index, 0, operation);
     handleStatement({ ...statement, operations });
@@ -116,7 +120,7 @@ const StatementComponent = ({
               ].join(" ")}
               onChange={(value) => {
                 const name = value || statement.name || "";
-                const isReserved = Array.from(context.reservedNames ?? []).find(
+                const isReserved = Array.from(reservedNames ?? []).find(
                   (r) => r.name === name
                 );
                 if (isReserved) {
@@ -185,16 +189,20 @@ const StatementComponent = ({
                       ? options?.isRest
                         ? { isOptional: undefined, isRest: undefined }
                         : options?.isOptional
-                          ? { isOptional: undefined, isRest: true, data: rest }
+                          ? {
+                              isOptional: undefined,
+                              isRest: true,
+                              data: rest,
+                            }
                           : { isOptional: true, isRest: undefined }
                       : {
                           name: hasName
                             ? undefined
                             : createVariableName({
                                 prefix: "var",
-                                prev: Array.from(
-                                  context.reservedNames ?? []
-                                ).map((r) => r.name),
+                                prev: Array.from(reservedNames).map(
+                                  (r) => r.name
+                                ),
                               }),
                         }),
                   });
@@ -236,14 +244,14 @@ const StatementComponent = ({
           <Data
             data={statement.data}
             disableDelete={options?.disableDelete}
+            context={context}
             addOperationCall={
               !options?.isParameter &&
               !context.skipExecution &&
               getFilteredOperations(statement.data, context).length
-                ? () => addOperationCall(statement.data, 0)
+                ? (_data) => addOperationCall(_data ?? statement.data, 0)
                 : undefined
             }
-            context={context}
             handleChange={(data, remove) =>
               handleStatement(
                 {
@@ -258,69 +266,42 @@ const StatementComponent = ({
             }
           />
         </ErrorBoundary>
-        {
-          statement.operations.reduce(
-            (acc, operation, i, operationsList) => {
-              const data = getStatementResult(statement, context, {
-                index: i,
-                prevEntity: true,
-                skipResolveReference: true,
-              });
-              acc.narrowedTypes = applyTypeNarrowing(
-                context,
-                acc.narrowedTypes,
-                data,
-                operation
-              );
-              const skipExecution = getSkipExecution({
-                context,
-                data,
-                operationName: operation.value.name,
-              });
+        {statement.operations.map((operation, i, operationsList) => {
+          const prevData = getStatementResult(statement, context, {
+            index: i,
+            prevEntity: true,
+            skipResolveReference: true,
+          });
 
-              acc.elements.push(
-                <div key={operation.id} className="flex items-start gap-1 ml-2">
-                  <PipeArrow
-                    size={10}
-                    className="text-disabled mt-1.5"
-                    style={{
-                      transform:
-                        operationsList.length > 1 ? "rotate(90deg)" : "",
-                    }}
-                  />
-                  <ErrorBoundary
-                    displayError={true}
-                    onRemove={() => handleOperationCall(operation, i, true)}
-                  >
-                    <OperationCall
-                      data={data}
-                      operation={operation}
-                      handleOperationCall={(op, remove) =>
-                        handleOperationCall(op, i, remove)
-                      }
-                      context={{
-                        ...context,
-                        skipExecution,
-                        narrowedTypes: acc.narrowedTypes,
-                      }}
-                      addOperationCall={
-                        !options?.isParameter && !skipExecution
-                          ? () =>
-                              addOperationCall(
-                                context.getResult(operation.id)?.data ?? data,
-                                i + 1
-                              )
-                          : undefined
-                      }
-                    />
-                  </ErrorBoundary>
-                </div>
-              );
-              return acc;
-            },
-            { elements: [] as ReactNode[], narrowedTypes: new Map() }
-          ).elements
-        }
+          return (
+            <div key={operation.id} className="flex items-start gap-1 ml-2">
+              <PipeArrow
+                size={10}
+                className="text-disabled mt-1.5"
+                style={{
+                  transform: operationsList.length > 1 ? "rotate(90deg)" : "",
+                }}
+              />
+              <ErrorBoundary
+                displayError={true}
+                onRemove={() => handleOperationCall(operation, i, true)}
+              >
+                <OperationCall
+                  data={prevData}
+                  operation={operation}
+                  handleOperationCall={(op, remove) =>
+                    handleOperationCall(op, i, remove)
+                  }
+                  addOperationCall={
+                    !options?.isParameter
+                      ? (_data) => addOperationCall(_data ?? prevData, i + 1)
+                      : undefined
+                  }
+                />
+              </ErrorBoundary>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

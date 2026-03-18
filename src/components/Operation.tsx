@@ -2,29 +2,17 @@ import {
   Fragment,
   forwardRef,
   HTMLAttributes,
-  ReactNode,
   useCallback,
   memo,
   useMemo,
 } from "react";
-import {
-  Context,
-  IData,
-  IStatement,
-  OperationType,
-  SetItem,
-} from "../lib/types";
+import { IData, IStatement, OperationType } from "../lib/types";
 import { updateStatements } from "@/lib/update";
-import {
-  createVariableName,
-  createContextVariables,
-  getOperationResultType,
-  getSkipExecution,
-  createContext,
-  getContextExpectedTypes,
-} from "../lib/utils";
+import { createVariableName, getOperationResultType } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
+import { getReservedNames } from "@/lib/execution/store";
+import { Context } from "@/lib/execution/types";
 
 interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
   operation: IData<OperationType>;
@@ -34,29 +22,8 @@ interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
 
 const OperationComponent = (
   { operation, handleChange, context, ...props }: OperationInputProps,
-  ref: React.ForwardedRef<HTMLDivElement>
+  ref: React.Ref<HTMLDivElement>
 ) => {
-  const reservedNames = useMemo(
-    () =>
-      new Set(
-        operation.value.parameters
-          .concat(operation.value.statements)
-          .reduce(
-            (acc, s) => {
-              if (s.name) acc.push({ kind: "variable", name: s.name });
-              return acc;
-            },
-            [] as SetItem<Context["reservedNames"]>[]
-          )
-          .concat([...(context.reservedNames ?? [])])
-      ),
-    [
-      context.reservedNames,
-      operation.value.parameters,
-      operation.value.statements,
-    ]
-  );
-
   const expectedParameterType = useMemo(
     () =>
       context.expectedType?.kind === "operation"
@@ -85,7 +52,6 @@ const OperationComponent = (
         context,
         changedStatement: statement,
         removeStatement: remove,
-        operation,
       });
 
       const updatedParameters = updatedStatements.slice(0, parameterLength);
@@ -146,7 +112,7 @@ const OperationComponent = (
           statement.name ??
           createVariableName({
             prefix: "param",
-            prev: [...reservedNames].map((r) => r.name),
+            prev: [...getReservedNames(context)].map((r) => r.name),
           }),
       };
       const updatedParameters = operation.value.parameters
@@ -168,7 +134,7 @@ const OperationComponent = (
         value: { ...operation.value, parameters: updatedParameters },
       });
     },
-    [reservedNames, handleChange, operation]
+    [context, handleChange, operation]
   );
 
   return (
@@ -205,15 +171,6 @@ const OperationComponent = (
                   return false;
                 })(),
               }}
-              context={createContext(context, {
-                variables: new Map(),
-                reservedNames,
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType: expectedParameterType?.[i]?.type,
-                  enforceExpectedType: true,
-                }),
-              })}
               addStatement={(statement, position) => {
                 addParameter(
                   { ...statement, isOptional: paramList[i - 1]?.isOptional },
@@ -246,51 +203,21 @@ const OperationComponent = (
         <span>{")"}</span>
       </div>
       <div className="pl-4 [&>div]:mb-1 w-fit">
-        {
-          operation.value.statements.reduce(
-            (acc, statement, index) => {
-              const _context = createContext(context, {
-                reservedNames,
-                variables: acc.variables,
-                skipExecution: getSkipExecution({
-                  context: { ...context, variables: acc.variables },
-                  data: statement.data,
-                }),
-              });
-
-              acc.variables = createContextVariables([statement], _context, {
-                parameters: operation.type.parameters,
-              });
-
-              acc.elements.push(
-                <Statement
-                  key={statement.id}
-                  statement={statement}
-                  options={{ enableVariable: true }}
-                  handleStatement={(statement, remove) =>
-                    handleStatement({
-                      statement,
-                      remove,
-                      context: _context,
-                    })
-                  }
-                  addStatement={(stmt, pos) => addStatement(stmt, pos, index)}
-                  context={_context}
-                />
-              );
-
-              return acc;
-            },
-            {
-              elements: [] as ReactNode[],
-              variables: createContextVariables(
-                operation.value.parameters.toReversed(),
-                context,
-                { parameters: operation.type.parameters }
-              ),
+        {operation.value.statements.map((statement, index) => (
+          <Statement
+            key={statement.id}
+            statement={statement}
+            options={{ enableVariable: true }}
+            handleStatement={(statement, remove) =>
+              handleStatement({
+                statement,
+                remove,
+                context: context.getContext(statement.id),
+              })
             }
-          ).elements
-        }
+            addStatement={(stmt, pos) => addStatement(stmt, pos, index)}
+          />
+        ))}
         <AddStatement
           id={`${operation.id}_statement`}
           onSelect={(statement) => {

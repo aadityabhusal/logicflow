@@ -1,5 +1,5 @@
 import { forwardRef, HTMLAttributes, memo, useMemo, useState } from "react";
-import { UnionType, IData, DataType, Context } from "@/lib/types";
+import { UnionType, IData, DataType } from "@/lib/types";
 import {
   createData,
   createDefaultValue,
@@ -16,6 +16,7 @@ import { Menu, Tooltip } from "@mantine/core";
 import { IconButton } from "@/ui/IconButton";
 import { Data } from "../Data";
 import { useNavigationStore } from "@/lib/store";
+import { Context } from "@/lib/execution/types";
 
 interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<UnionType>;
@@ -34,7 +35,7 @@ const UnionInputComponent = (
   const [menuOpened, setMenuOpened] = useState(false);
 
   const activeType = useMemo(() => {
-    const type = getUnionActiveType(data.type, data.value, context);
+    const type = getUnionActiveType(data.type, { value: data.value, context });
     const index = data.type.activeIndex ?? 0;
     return {
       data: createData({
@@ -90,8 +91,8 @@ const UnionInputComponent = (
     const newActiveIndex = wasActive
       ? Math.min(activeType.index, newTypes.length - 1)
       : index < activeType.index
-      ? activeType.index - 1
-      : activeType.index;
+        ? activeType.index - 1
+        : activeType.index;
 
     const newValue = wasActive
       ? createDefaultValue(newTypes[newActiveIndex], {

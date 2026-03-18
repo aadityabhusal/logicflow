@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { ParseStatement } from "./ParseStatement";
-import { Context, IData, OperationType } from "@/lib/types";
+import { IData, OperationType } from "@/lib/types";
+import { Context } from "@/lib/execution/types";
 
 export function ParseOperation({
   operation,

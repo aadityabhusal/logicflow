@@ -1,4 +1,5 @@
-import { Context, IStatement } from "@/lib/types";
+import { IStatement } from "@/lib/types";
+import { Context } from "@/lib/execution/types";
 import { ParseData } from "./ParseData";
 import { ParseOperation } from "./ParseOperation";
 import { getStatementResult, isDataOfType } from "@/lib/utils";

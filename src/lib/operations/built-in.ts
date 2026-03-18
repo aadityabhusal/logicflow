@@ -1,11 +1,4 @@
-import {
-  IData,
-  IStatement,
-  OperationType,
-  OperationListItem,
-  UnionType,
-  Context,
-} from "../types";
+import { IData, IStatement, OperationType, UnionType } from "../types";
 import { InstanceTypes } from "../data";
 import {
   createData,
@@ -31,6 +24,7 @@ import {
   getUnionParam,
   remedaOperations,
 } from "./remeda";
+import { Context, OperationListItem } from "../execution/types";
 
 export function createRuntimeError(error: unknown): IData {
   const errorMessage = error instanceof Error ? error.message : String(error);
@@ -72,7 +66,10 @@ const unionOperations: OperationListItem[] = [
       return createData({
         type: { kind: "boolean" },
         value: isTypeCompatible(
-          getUnionActiveType(data.type as UnionType, data.value, context),
+          getUnionActiveType(data.type as UnionType, {
+            value: data.value,
+            context,
+          }),
           type.type
         ),
       });

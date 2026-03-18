@@ -1,9 +1,9 @@
-import { IData, Context, InstanceDataType, IStatement } from "@/lib/types";
+import { IData, InstanceDataType, IStatement } from "@/lib/types";
 import { forwardRef, memo } from "react";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
-import { getContextExpectedTypes } from "@/lib/utils";
 import { AddStatement } from "../AddStatement";
+import { Context } from "@/lib/execution/types";
 
 interface InstanceInputProps {
   data: IData<InstanceDataType>;
@@ -13,7 +13,7 @@ interface InstanceInputProps {
 }
 
 const InstanceInputComponent = (
-  { data, handleData, context, onChange, ...props }: InstanceInputProps,
+  { data, handleData, onChange, ...props }: InstanceInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
   function handleConstructorArgs(
@@ -47,13 +47,6 @@ const InstanceInputComponent = (
                 val && handleConstructorArgs(val, paramIndex, remove)
               }
               options={{ disableDelete: !item.isOptional }}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType: data.type.constructorArgs[paramIndex]?.type,
-                }),
-              }}
             />
             {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
           </span>

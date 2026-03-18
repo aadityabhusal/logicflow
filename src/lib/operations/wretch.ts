@@ -1,11 +1,4 @@
-import {
-  IData,
-  OperationListItem,
-  OperationType,
-  Context,
-  IStatement,
-  DataType,
-} from "@/lib/types";
+import { IData, OperationType, IStatement, DataType } from "@/lib/types";
 import {
   getRawValueFromData,
   createDataFromRawValue,
@@ -19,6 +12,7 @@ import {
   WretchClass,
   WretchResponseChainClass,
 } from "@/lib/data";
+import { Context, OperationListItem } from "../execution/types";
 
 // Helper to create Wretch operations
 function createWretchOperation(

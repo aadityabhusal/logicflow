@@ -5,8 +5,8 @@ import { FaCircleInfo, FaRobot, FaFileCode } from "react-icons/fa6";
 import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "./Resizer";
-import { Context } from "@/lib/types";
 import { LoadingFallback } from "./LoadingFallback";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 const OperationsList = lazy(() =>
   import("./OperationsList").then((m) => ({ default: m.OperationsList }))
@@ -25,7 +25,8 @@ const TABS = [
     ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
     : []),
 ];
-export function SidebarTabs({ context }: { context: Context }) {
+export function SidebarTabs() {
+  const context = useExecutionResultsStore((s) => s.rootContext);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const { sidebar, setUiConfig } = useUiConfigStore((s) => ({
     sidebar: s.sidebar,
@@ -41,7 +42,7 @@ export function SidebarTabs({ context }: { context: Context }) {
       sidebar: {
         ...(s.sidebar || {}),
         activeTab:
-          value === s.sidebar?.activeTab ? undefined : value ?? undefined,
+          value === s.sidebar?.activeTab ? undefined : (value ?? undefined),
       },
     }));
   };

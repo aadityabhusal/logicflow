@@ -1,11 +1,12 @@
 import { forwardRef, HTMLAttributes, memo } from "react";
-import { ConditionType, Context, IData, IStatement } from "@/lib/types";
+import { ConditionType, IData, IStatement } from "@/lib/types";
 import {
   getStatementResult,
   isTypeCompatible,
   resolveUnionType,
 } from "@/lib/utils";
 import { Statement } from "../Statement";
+import { Context } from "@/lib/execution/types";
 
 interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
@@ -15,14 +16,16 @@ interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
 
 const ConditionInputComponent = (
   { data, handleData, context, ...props }: ConditionInputProps,
-  ref: React.ForwardedRef<HTMLDivElement>
+  ref: React.ForwardedRef<HTMLDivElement>,
 ) => {
   function handleUpdate(key: "condition" | "true" | "false", val: IStatement) {
     const value = { ...data.value, [key]: val };
     const trueType = getStatementResult(value.true, context).type;
     const falseType = getStatementResult(value.false, context).type;
     const unionType = resolveUnionType(
-      isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
+      isTypeCompatible(trueType, falseType)
+        ? [trueType]
+        : [trueType, falseType],
     );
     handleData({
       ...data,
@@ -43,7 +46,6 @@ const ConditionInputComponent = (
       <Statement
         statement={data.value.condition}
         handleStatement={(val) => handleUpdate("condition", val)}
-        context={context}
         options={{ disableDelete: true }}
       />
       <span>{"?"}</span>
@@ -51,13 +53,11 @@ const ConditionInputComponent = (
         statement={data.value.true}
         handleStatement={(val) => handleUpdate("true", val)}
         options={{ disableDelete: true }}
-        context={context}
       />
       <span>{":"}</span>
       <Statement
         statement={data.value.false}
         handleStatement={(val) => handleUpdate("false", val)}
-        context={context}
         options={{ disableDelete: true }}
       />
     </div>

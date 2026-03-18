@@ -21,10 +21,9 @@ import {
   useProjectStore,
   useNavigationStore,
   useUiConfigStore,
-  useExecutionResultsStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
-import { Context, IData, IDropdownItem, OperationType } from "../lib/types";
+import { IData, IDropdownItem, OperationType } from "../lib/types";
 import { useSearchParams } from "react-router";
 import {
   createOperationFromFile,
@@ -39,9 +38,13 @@ import {
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 import { nanoid } from "nanoid";
+import { Context } from "@/lib/execution/types";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
-interface IDropdownTargetProps
-  extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
+interface IDropdownTargetProps extends Omit<
+  HTMLAttributes<HTMLElement>,
+  "onChange" | "defaultValue"
+> {
   onChange?: (value: string) => void;
 }
 
@@ -64,7 +67,7 @@ const DropdownComponent = ({
   value?: string;
   items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
-  addOperationCall?: () => void;
+  addOperationCall?: (data?: IData) => void;
   handleChange?: (data: IData) => void;
   children?: ReactNode;
   options?: {
@@ -78,10 +81,7 @@ const DropdownComponent = ({
 }) => {
   const [, setSearchParams] = useSearchParams();
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
-  const navigationDirection = useNavigationStore(
-    (s) => s.navigation?.direction
-  );
-  const navigationModifier = useNavigationStore((s) => s.navigation?.modifier);
+
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
@@ -106,8 +106,8 @@ const DropdownComponent = ({
       operationResult
         ? resolveReference(operationResult, context)
         : data
-        ? resolveReference(data, context)
-        : undefined,
+          ? resolveReference(data, context)
+          : undefined,
     [operationResult, data, context]
   );
   const result = useDeferredValue(_result);
@@ -128,14 +128,17 @@ const DropdownComponent = ({
   });
 
   const dropdownOptions = useMemo(() => {
-    return items?.reduce((acc, [groupName, groupItems]) => {
-      const filteredItem = fuzzySearch(
-        groupItems,
-        value === search ? [] : [{ label: search, value: search }]
-      );
-      if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
-      return acc;
-    }, [] as [string, IDropdownItem[]][]);
+    return items?.reduce(
+      (acc, [groupName, groupItems]) => {
+        const filteredItem = fuzzySearch(
+          groupItems,
+          value === search ? [] : [{ label: search, value: search }]
+        );
+        if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
+        return acc;
+      },
+      [] as [string, IDropdownItem[]][]
+    );
   }, [items, search, value]);
 
   function handleSearch(val: string) {
@@ -180,7 +183,7 @@ const DropdownComponent = ({
           ]) as HotkeyItem[]),
           ...(["alt+=", "alt+≠"].map((key) => [
             key,
-            () => addOperationCall?.(),
+            () => addOperationCall?.(result),
             { preventDefault: true },
           ]) as HotkeyItem[]),
         ]
@@ -224,21 +227,16 @@ const DropdownComponent = ({
     const textInput = isTextInput(combobox.targetRef.current);
     if (textInput && textInput !== document.activeElement) {
       let caretPosition = 0;
+      const navigation = useNavigationStore.getState().navigation;
       if (
-        (navigationDirection === "right" && navigationModifier) ||
-        (navigationDirection === "left" && !navigationModifier)
+        (navigation?.direction === "right" && navigation.modifier) ||
+        (navigation?.direction === "left" && !navigation.modifier)
       ) {
         caretPosition = textInput.value.length;
       }
       textInput.setSelectionRange(caretPosition, caretPosition);
     }
-  }, [
-    isFocused,
-    combobox.targetRef,
-    navigationDirection,
-    navigationModifier,
-    data?.type.kind,
-  ]);
+  }, [isFocused, combobox.targetRef, data?.type.kind]);
 
   const handleExtractToFile = (data: IData<OperationType>) => {
     const newName = createVariableName({
@@ -373,7 +371,7 @@ const DropdownComponent = ({
               icon={FaCirclePlus}
               onClick={() => {
                 combobox?.closeDropdown();
-                addOperationCall();
+                addOperationCall(result);
               }}
               hidden={!isFocused && !isHovered}
             />
