@@ -131,6 +131,7 @@ const UnionInputComponent = (
                 : undefined,
             enforceExpectedType: true,
           }),
+          variables: new Map(),
         }}
       />
       <Menu

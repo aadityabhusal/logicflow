@@ -112,7 +112,13 @@ const OperationComponent = (
           statement.name ??
           createVariableName({
             prefix: "param",
-            prev: [...getReservedNames(context)].map((r) => r.name),
+            prev: [
+              ...getReservedNames(context),
+              ...operation.value.parameters,
+              ...operation.value.statements,
+            ]
+              .map((r) => r.name)
+              .filter(Boolean) as string[],
           }),
       };
       const updatedParameters = operation.value.parameters

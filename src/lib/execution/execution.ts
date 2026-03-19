@@ -53,15 +53,20 @@ export function getChildContext(
       )?.value;
     } else if (parentType.kind === "instance" && options?.index !== undefined) {
       expectedType = parentType.constructorArgs[options.index]?.type;
+    } else if (
+      parentType.kind === "operation" &&
+      options?.index !== undefined
+    ) {
+      expectedType = parentType.parameters[options.index].type;
     } else {
       expectedType = parentType;
     }
   }
-
+  const _context = createContext(context, { scopeId: context.scopeId });
   return {
-    ...context,
+    ..._context,
     ...getContextExpectedTypes({
-      context,
+      context: _context,
       expectedType,
       enforceExpectedType: options?.enforceExpectedType,
     }),
@@ -172,10 +177,12 @@ export async function createOperationCall({
 
   const result = newOperation.shouldCacheResult
     ? createData({ type: { kind: "undefined" } })
-    : await executeOperation(newOperation, data, newParameters, {
-        ...context,
-        isIsolated: true,
-      });
+    : await executeOperation(
+        newOperation,
+        data,
+        newParameters,
+        createContext(context, { scopeId: context.scopeId, isIsolated: true })
+      );
 
   if (!newOperation.shouldCacheResult) {
     const operationResult = { ...result, id: _operationId };
@@ -262,35 +269,36 @@ function executeDataValue(
 
 export function setOperationResults(
   operation: IData<OperationType>,
-  context: Context
+  _context: Context
 ): Thenable<void> {
   const { parameters, statements } = operation.value;
-  const _context = createContext(context);
-  const _execute = _context.isSync ? executeStatementSync : executeStatement;
+  const context = createContext(_context);
+  const _execute = context.isSync ? executeStatementSync : executeStatement;
 
   return [...parameters, ...statements].reduce(
-    (chain, statement, index) => {
+    (chain, stmt, index) => {
       return chain.then(() => {
+        const newContext = createContext(context, { scopeId: context.scopeId });
         const result = _execute(
-          statement,
+          stmt,
           index < parameters.length
-            ? getChildContext(_context, {
-                expectedType: operation.type.parameters[index]?.type,
-                enforceExpectedType: context.enforceExpectedType,
-              })
-            : _context
+            ? getChildContext(newContext, { index, enforceExpectedType: true })
+            : {
+                ...newContext,
+                skipExecution: getSkipExecution({ context, data: stmt.data }),
+              }
         );
         return (
           result instanceof Promise ? result : createThenable(result)
         ).then((result) => {
           const variable = createContextVariable(
-            statement,
-            _context,
+            stmt,
+            context,
             result,
             operation.type.parameters
           );
-          if (variable && statement.name) {
-            _context.variables.set(statement.name, variable);
+          if (variable && stmt.name) {
+            context.variables.set(stmt.name, variable);
           }
         });
       });
@@ -320,14 +328,14 @@ function executeStatementCore(
   const foundOp = getFilteredOperations(data, opCallContext).find(
     (op) => op.name === opName
   );
+  opCallContext.setContext(operation.id, opCallContext);
 
-  context.setContext(operation.id, opCallContext);
   operation.value.parameters.forEach((param, index) => {
-    context.setContext(param.name ?? param.id, {
+    const params = foundOp && resolveParameters(foundOp, data, opCallContext);
+    opCallContext.setContext(param.name ?? param.id, {
       ...updateContextWithNarrowedTypes(opCallContext, data, opName, index),
       ...getChildContext(opCallContext, {
-        expectedType: operation.type.parameters?.[index + 1]?.type,
-        enforceExpectedType: true,
+        expectedType: params?.[index + 1]?.type,
       }),
     });
   });
@@ -342,7 +350,7 @@ function executeStatementCore(
       }),
     };
   }
-  const existingResult = context.getResult(operation.id)?.data;
+  const existingResult = opCallContext.getResult(operation.id)?.data;
   const shouldCacheResult = foundOp.shouldCacheResult;
   if (shouldCacheResult && existingResult) {
     return { _narrowedTypes, result: existingResult, shouldCacheResult };
