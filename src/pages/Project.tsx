@@ -14,7 +14,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { useHotkeys, useClickOutside } from "@mantine/hooks";
+import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
@@ -59,7 +59,7 @@ export default function Project() {
     [currentProject, deleteFile, updateFile, currentOperation]
   );
 
-  const deferredOperation = useDeferredValue(currentOperation);
+  const [deferredOperation] = useDebouncedValue(currentOperation, 500);
   useEffect(() => {
     if (deferredOperation) {
       setNavigation({

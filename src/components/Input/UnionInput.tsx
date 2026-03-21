@@ -10,6 +10,7 @@ import {
   resolveUnionType,
   getContextExpectedTypes,
 } from "@/lib/utils";
+import { resolveReferenceType } from "@/lib/equality";
 import { FaChevronDown, FaX } from "react-icons/fa6";
 import { DataTypes } from "@/lib/data";
 import { Menu, Tooltip } from "@mantine/core";
@@ -60,7 +61,7 @@ const UnionInputComponent = (
   function handleActiveTypeChange(newData: IData) {
     const updatedTypes = [...data.type.types];
     updatedTypes[activeType.index] = isDataOfType(newData, "reference")
-      ? newData.type.dataType
+      ? resolveReferenceType(newData.type, context)
       : newData.type;
 
     handleData({
@@ -211,7 +212,7 @@ const UnionInputComponent = (
                       !["union", "operation"].includes(type) &&
                       // This is only for default types, if user updates a complex type, the default type options will be shown
                       !data.type.types.some((t) =>
-                        isTypeCompatible(t, value.type)
+                        isTypeCompatible(t, value.type, context)
                       )
                   )
                   .map(([name, { type }]) => (

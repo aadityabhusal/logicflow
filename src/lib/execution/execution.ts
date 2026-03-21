@@ -86,9 +86,11 @@ const dataSupportsOperation = (
   const firstParam = operationParameters[0]?.type ?? { kind: "undefined" };
   // This case is for union of two objects of different keys.
   if (isDataOfType(data, "union") && firstParam.kind !== "union") {
-    return data.type.types.every((t) => isTypeCompatible(t, firstParam));
+    return data.type.types.every((t) =>
+      isTypeCompatible(t, firstParam, context)
+    );
   }
-  return isTypeCompatible(data.type, firstParam);
+  return isTypeCompatible(data.type, firstParam, context);
 };
 
 type FilteredOperationsReturn<T extends boolean> = T extends true
@@ -165,7 +167,8 @@ export async function createOperationCall({
         prevParam &&
         isTypeCompatible(
           newParam.data.type,
-          getStatementResult(prevParam, context).type
+          getStatementResult(prevParam, context).type,
+          context
         )
       ) {
         return prevParam;
@@ -243,7 +246,8 @@ function executeDataValue(
         getChildContext(context, {
           narrowedTypes: getInverseTypes(
             context.variables,
-            context.narrowedTypes ?? new Map()
+            context.narrowedTypes ?? new Map(),
+            context
           ),
         })
       ),
@@ -518,7 +522,7 @@ export function executeOperationCore(
       const expectedType = p.isOptional
         ? resolveUnionType([p.type, { kind: "undefined" }])
         : p.type;
-      const typeMismatch = !isTypeCompatible(param.type, expectedType);
+      const typeMismatch = !isTypeCompatible(param.type, expectedType, context);
       return hasError || typeMismatch;
     });
     if (errorParamIndex !== -1) {
@@ -606,33 +610,42 @@ export function executeOperationSync(
   return lastResult;
 }
 
-function objectTypeMatch(source: DataType, target: DataType): boolean {
-  if (target.kind !== "object") return isTypeCompatible(source, target);
+function objectTypeMatch(
+  source: DataType,
+  target: DataType,
+  context: Context
+): boolean {
+  if (target.kind !== "object")
+    return isTypeCompatible(source, target, context);
   if (source.kind !== "object") return false;
   const sourceProps = new Map(source.properties.map((p) => [p.key, p.value]));
   return target.properties.every(({ key, value }) => {
     const sourceType = sourceProps.get(key);
-    return sourceType && isTypeCompatible(sourceType, value);
+    return sourceType && isTypeCompatible(sourceType, value, context);
   });
 }
 
 function narrowType(
   originalType: DataType,
-  targetType: DataType
+  targetType: DataType,
+  context: Context
 ): DataType | undefined {
   if (targetType.kind === "never") return { kind: "never" };
   if (originalType.kind === "unknown") return targetType;
   if (originalType.kind === "union") {
     const narrowedTypes = originalType.types.filter((t) => {
-      if (targetType.kind === "object") return objectTypeMatch(t, targetType);
-      return isTypeCompatible(t, targetType);
+      if (targetType.kind === "object")
+        return objectTypeMatch(t, targetType, context);
+      return isTypeCompatible(t, targetType, context);
     });
 
     if (narrowedTypes.length === 0) return undefined;
     return resolveUnionType(narrowedTypes);
   }
   if (originalType.kind === "object" && targetType.kind === "object") {
-    return objectTypeMatch(originalType, targetType) ? originalType : undefined;
+    return objectTypeMatch(originalType, targetType, context)
+      ? originalType
+      : undefined;
   }
   return originalType;
 }
@@ -662,11 +675,19 @@ export function applyTypeNarrowing(
         );
         const resolvedNarrowType =
           typeof foundOp.narrowType === "function"
-            ? foundOp.narrowType(resolveReference(data, context), ...params)
+            ? foundOp.narrowType(
+                context,
+                resolveReference(data, context),
+                ...params
+              )
             : foundOp.narrowType;
 
         if (resolvedNarrowType) {
-          narrowedType = narrowType(reference.data.type, resolvedNarrowType);
+          narrowedType = narrowType(
+            reference.data.type,
+            resolvedNarrowType,
+            context
+          );
         }
       }
     }
@@ -694,7 +715,7 @@ export function applyTypeNarrowing(
   }
 
   if (operation.value.name === "not") {
-    narrowedTypes = getInverseTypes(context.variables, narrowedTypes);
+    narrowedTypes = getInverseTypes(context.variables, narrowedTypes, context);
   }
 
   if (referenceName) {

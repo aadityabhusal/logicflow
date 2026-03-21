@@ -31,8 +31,7 @@ export type UnknownType = { kind: "unknown" };
 export type NeverType = { kind: "never" };
 export type ReferenceType = {
   kind: "reference";
-  // referenceType: "variable" | "env";
-  dataType: DataType;
+  name: string;
 };
 export type ErrorType = {
   kind: "error";

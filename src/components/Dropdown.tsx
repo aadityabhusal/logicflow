@@ -254,7 +254,7 @@ const DropdownComponent = ({
 
     handleChange?.({
       id: nanoid(),
-      type: { kind: "reference", dataType: data.type },
+      type: { kind: "reference", name: newName },
       value: { name: newName, id: data.id },
     });
   };

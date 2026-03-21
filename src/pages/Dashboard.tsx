@@ -54,7 +54,7 @@ export default function Dashboard() {
       parameters: [
         createStatement({
           data: createData({
-            type: { kind: "reference", dataType: nameParam.data.type },
+            type: { kind: "reference", name: "name" },
             value: { name: "name", id: nameParam.id },
           }),
         }),

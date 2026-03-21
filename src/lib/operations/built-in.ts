@@ -8,7 +8,6 @@ import {
   updateContextWithNarrowedTypes,
   getRawValueFromData,
   createDataFromRawValue,
-  resolveReference,
   createThenable,
   unwrapThenable,
   resolveConstructorArgs,
@@ -70,11 +69,12 @@ const unionOperations: OperationListItem[] = [
             value: data.value,
             context,
           }),
-          type.type
+          type.type,
+          context
         ),
       });
     },
-    narrowType: (_, param) => param.type,
+    narrowType: (_, _data, param) => param.type,
   },
 ];
 
@@ -586,22 +586,18 @@ const promiseOperations: OperationListItem[] = [
       { type: getResolveCallbackType(data) },
     ],
     isAsync: true,
-    lazyHandler: (context, promiseData: IData, _callback: IStatement) => {
+    handler: (context, promiseData: IData, callback: IData) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
           context
         ) as Promise<unknown>;
-        const callback = resolveReference(
-          _callback.data,
-          context
-        ) as IData<OperationType>;
         const newPromise = promiseValue.then(
           getRawValueFromData(callback, context) as (_: unknown) => unknown
         );
         return createDataFromRawValue(newPromise, {
           ...context,
-          expectedType: callback.type.result,
+          expectedType: (callback.type as OperationType).result,
         });
       } catch (error) {
         return createRuntimeError(error);
@@ -621,22 +617,18 @@ const promiseOperations: OperationListItem[] = [
       },
     ],
     isAsync: true,
-    lazyHandler: (context, promiseData: IData, _errorCallback: IStatement) => {
+    handler: (context, promiseData: IData, errorCallback: IData) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
           context
         ) as Promise<unknown>;
-        const errorCallback = resolveReference(
-          _errorCallback.data,
-          context
-        ) as IData<OperationType>;
         const newPromise = promiseValue.catch(
           getRawValueFromData(errorCallback, context) as (_: unknown) => unknown
         );
         return createDataFromRawValue(newPromise, {
           ...context,
-          expectedType: errorCallback.type.result,
+          expectedType: (errorCallback.type as OperationType).result,
         });
       } catch (error) {
         return createRuntimeError(error);
@@ -648,7 +640,7 @@ const promiseOperations: OperationListItem[] = [
     parameters: [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
     ],
-    lazyHandler: async (context, promiseData: IData) => {
+    handler: async (context, promiseData: IData) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,

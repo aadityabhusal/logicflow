@@ -61,7 +61,7 @@ export const DataTypes: {
     hideFromDropdown: true,
   },
   reference: {
-    type: { kind: "reference", dataType: { kind: "undefined" } },
+    type: { kind: "reference", name: "" },
     hideFromDropdown: true,
   },
   error: {

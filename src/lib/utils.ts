@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { isDeepEqual } from "remeda";
 import {
   DataTypes,
   ErrorTypesData,
@@ -27,6 +28,7 @@ import {
   OperationListItem,
   Thenable,
 } from "./execution/types";
+import { resolveReferenceType } from "./equality";
 
 /* Create */
 
@@ -274,15 +276,31 @@ export function createContext(
   parentContext: Context,
   overrides?: Partial<Context>
 ): Context {
+  // Determine if we need new Maps
+  const needsNewVariables = overrides?.variables !== undefined;
+  const needsNewNarrowedTypes = overrides?.narrowedTypes !== undefined;
+
   const context: Context = {
     ...parentContext,
-    scopeId: nanoid(),
-    variables: new Map(parentContext.variables),
-    narrowedTypes: new Map(parentContext.narrowedTypes),
-    expectedType: undefined,
-    enforceExpectedType: undefined,
+    scopeId: overrides?.scopeId ?? nanoid(),
+    variables: needsNewVariables
+      ? overrides.variables!
+      : new Map(parentContext.variables),
+    narrowedTypes: needsNewNarrowedTypes
+      ? overrides.narrowedTypes!
+      : new Map(parentContext.narrowedTypes),
+    expectedType: overrides?.expectedType,
+    enforceExpectedType: overrides?.enforceExpectedType,
     ...overrides,
   };
+
+  // Remove undefined values to keep context clean
+  if (context.expectedType === undefined) {
+    delete context.expectedType;
+  }
+  if (context.enforceExpectedType === undefined) {
+    delete context.enforceExpectedType;
+  }
 
   if (context.isIsolated) {
     const localResults = new Map<string, ExecutionResult>();
@@ -575,11 +593,22 @@ export function unwrapThenable<T>(thenable: T | Thenable<T>): T {
 
 /* Types */
 
-export function isTypeCompatible(first: DataType, second: DataType): boolean {
+export function isTypeCompatible(
+  first: DataType,
+  second: DataType,
+  context: Context
+): boolean {
   if (second.kind === "unknown") return true;
 
+  if (first.kind === "reference") {
+    first = resolveReferenceType(first, context);
+  }
+  if (second.kind === "reference") {
+    second = resolveReferenceType(second, context);
+  }
+
   if (first.kind === "operation" && second.kind === "operation") {
-    if (!isTypeCompatible(first.result, second.result)) return false;
+    if (!isTypeCompatible(first.result, second.result, context)) return false;
     const firstRest = first.parameters.find((p) => p.isRest);
     const secondRest = second.parameters.find((p) => p.isRest);
 
@@ -590,37 +619,49 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
       const newParams = first.parameters
         .slice(0, -1)
         .concat(Array(diff).fill({ type: firstRest.type.elementType }));
-      return isTypeCompatible(second, {
-        ...first,
-        parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
-      });
+      return isTypeCompatible(
+        second,
+        {
+          ...first,
+          parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+        },
+        context
+      );
     }
     if (secondRest && secondRest.type.kind === "array" && !firstRest) {
       const newParams = second.parameters
         .slice(0, -1)
         .concat(Array(diff).fill({ type: secondRest.type.elementType }));
-      return isTypeCompatible(first, {
-        ...second,
-        parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
-      });
+      return isTypeCompatible(
+        first,
+        {
+          ...second,
+          parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+        },
+        context
+      );
     }
     // TODO: Might change this to contravariant check
     return first.parameters.every((firstParam, index) => {
       if (firstParam.isOptional && !second.parameters[index]) return true;
       if (!second.parameters[index]) return false;
-      return isTypeCompatible(firstParam.type, second.parameters[index].type);
+      return isTypeCompatible(
+        firstParam.type,
+        second.parameters[index].type,
+        context
+      );
     });
   }
 
   if (first.kind === "array" && second.kind === "array") {
-    return isTypeCompatible(first.elementType, second.elementType);
+    return isTypeCompatible(first.elementType, second.elementType, context);
   }
 
   if (first.kind === "tuple" && second.kind === "tuple") {
     if (second.elements.length === 0) return true;
     if (first.elements.length !== second.elements.length) return false;
     return first.elements.every((firstElement, index) =>
-      isTypeCompatible(firstElement, second.elements[index])
+      isTypeCompatible(firstElement, second.elements[index], context)
     );
   }
 
@@ -634,7 +675,10 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     for (const key of second.properties.map((p) => p.key)) {
       const firstProp = firstProps.get(key);
       if (!firstProp && secondRequired.includes(key)) return false;
-      if (firstProp && !isTypeCompatible(firstProp, secondProps.get(key)!)) {
+      if (
+        firstProp &&
+        !isTypeCompatible(firstProp, secondProps.get(key)!, context)
+      ) {
         return false;
       }
     }
@@ -643,7 +687,7 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
 
   if (first.kind === "object" && second.kind === "dictionary") {
     return first.properties.every(({ value }) =>
-      isTypeCompatible(value, second.elementType)
+      isTypeCompatible(value, second.elementType, context)
     );
   }
 
@@ -652,12 +696,12 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
       second.required ?? second.properties.map((p) => p.key);
     if (secondRequired.length > 0) return false;
     return second.properties.every(({ value }) =>
-      isTypeCompatible(first.elementType, value)
+      isTypeCompatible(first.elementType, value, context)
     );
   }
 
   if (first.kind === "dictionary" && second.kind === "dictionary") {
-    return isTypeCompatible(first.elementType, second.elementType);
+    return isTypeCompatible(first.elementType, second.elementType, context);
   }
 
   if (first.kind === "instance" && second.kind === "instance") {
@@ -670,23 +714,17 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     return (
       first.types.every((firstType) =>
         second.types.some((secondType) =>
-          isTypeCompatible(firstType, secondType)
+          isTypeCompatible(firstType, secondType, context)
         )
       ) &&
       second.types.every((secondType) =>
-        first.types.some((firstType) => isTypeCompatible(firstType, secondType))
+        first.types.some((firstType) =>
+          isTypeCompatible(firstType, secondType, context)
+        )
       )
     );
   } else if (second.kind === "union") {
-    return second.types.some((t) => isTypeCompatible(first, t));
-  }
-
-  if (first.kind === "reference" && second.kind === "reference") {
-    return isTypeCompatible(first.dataType, second.dataType);
-  } else if (first.kind === "reference") {
-    return isTypeCompatible(first.dataType, second);
-  } else if (second.kind === "reference") {
-    return isTypeCompatible(first, second.dataType);
+    return second.types.some((t) => isTypeCompatible(first, t, context));
   }
 
   return first.kind === second.kind;
@@ -718,7 +756,8 @@ export function isObject<const K extends readonly string[]>(
 
 export function getInverseTypes(
   originalTypes: Context["variables"],
-  narrowedTypes: Context["variables"]
+  narrowedTypes: Context["variables"],
+  context: Context
 ): Context["variables"] {
   return narrowedTypes.entries().reduce((acc, [key, value]) => {
     const variable = originalTypes.get(key);
@@ -727,11 +766,11 @@ export function getInverseTypes(
 
     if (isDataOfType(variable.data, "union")) {
       const remainingTypes = variable.data.type.types.filter(
-        (t) => !isTypeCompatible(t, value.data.type)
+        (t) => !isTypeCompatible(t, value.data.type, context)
       );
       if (remainingTypes.length === 0) excludedType = { kind: "never" };
       else excludedType = resolveUnionType(remainingTypes);
-    } else if (isTypeCompatible(variable.data.type, value.data.type)) {
+    } else if (isTypeCompatible(variable.data.type, value.data.type, context)) {
       excludedType = { kind: "never" }; // If not a union and types are compatible
     }
 
@@ -768,7 +807,7 @@ export function updateContextWithNarrowedTypes(
   const narrowedTypes = context.narrowedTypes ?? new Map();
   const variables =
     operationName === "thenElse" && paramIndex === 1
-      ? getInverseTypes(context.variables, narrowedTypes)
+      ? getInverseTypes(context.variables, narrowedTypes, context)
       : mergeNarrowedTypes(context.variables, narrowedTypes, operationName);
 
   return {
@@ -801,9 +840,7 @@ export function resolveUnionType(
   });
 
   const uniqueTypes = flattenedTypes.reduce<DataType[]>((acc, type) => {
-    if (
-      !acc.some((t) => isTypeCompatible(t, type) && isTypeCompatible(type, t))
-    ) {
+    if (!acc.some((t) => isDeepEqual(t, type))) {
       acc.push(type);
     }
     return acc;
@@ -823,14 +860,15 @@ function getArrayElementType(
   const allSameType = elements.every((element) => {
     return isTypeCompatible(
       getStatementResult(element, context).type,
-      firstType
+      firstType,
+      context
     );
   });
   if (allSameType) return firstType;
 
   const unionTypes = elements.reduce((acc, element) => {
     const elementType = getStatementResult(element, context).type;
-    const exists = acc.some((t) => isTypeCompatible(t, elementType));
+    const exists = acc.some((t) => isDeepEqual(t, elementType));
     if (!exists) acc.push(elementType);
     return acc;
   }, [] as DataType[]);
@@ -946,13 +984,14 @@ export function inferTypeFromValue<T extends DataType>(
       context
     ).type;
     const unionType = resolveUnionType(
-      isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
+      isTypeCompatible(trueType, falseType, context)
+        ? [trueType]
+        : [trueType, falseType]
     );
     return { kind: "condition", result: unionType } as T;
   }
   if (isObject(value, ["name"]) && typeof value.name === "string") {
-    const type = context.variables.get(value.name)?.data.type;
-    return { kind: "reference", dataType: type ?? { kind: "unknown" } } as T;
+    return { kind: "reference", name: value.name } as T;
   }
 
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {
@@ -982,7 +1021,9 @@ export function getUnionActiveIndex(
   if (unionType.activeIndex !== undefined) return unionType.activeIndex;
   if (infer) {
     const value = inferTypeFromValue(infer.value, infer.context);
-    const index = unionType.types.findIndex((t) => isTypeCompatible(value, t));
+    const index = unionType.types.findIndex((t) =>
+      isTypeCompatible(value, t, infer.context)
+    );
     return index === -1 ? 0 : index;
   }
   return 0;
@@ -1061,7 +1102,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       return getTypeSignature(type.result, maxDepth - 1);
 
     case "reference":
-      return getTypeSignature(type.dataType, maxDepth - 1);
+      return type.name;
     case "instance": {
       return type.className;
     }
@@ -1401,7 +1442,7 @@ export function getDataDropdownList({
       };
       if (
         !context.expectedType ||
-        isTypeCompatible(instanceType, context.expectedType)
+        isTypeCompatible(instanceType, context.expectedType, context)
       ) {
         allowedOptions.push(option);
       } else if (!context.enforceExpectedType) {
@@ -1420,13 +1461,13 @@ export function getDataDropdownList({
         onSelect({
           ...variable.data,
           id: data.id,
-          type: { kind: "reference", dataType: variable.data.type },
+          type: { kind: "reference", name },
           value: { name, id: variable.data.id },
         }),
     };
     if (
       !context.expectedType ||
-      isTypeCompatible(variable.data.type, context.expectedType)
+      isTypeCompatible(variable.data.type, context.expectedType, context)
     ) {
       allowedOptions.unshift(option);
     } else if (!context.enforceExpectedType) {

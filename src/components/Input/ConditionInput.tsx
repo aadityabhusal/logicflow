@@ -16,16 +16,16 @@ interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
 
 const ConditionInputComponent = (
   { data, handleData, context, ...props }: ConditionInputProps,
-  ref: React.ForwardedRef<HTMLDivElement>,
+  ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   function handleUpdate(key: "condition" | "true" | "false", val: IStatement) {
     const value = { ...data.value, [key]: val };
     const trueType = getStatementResult(value.true, context).type;
     const falseType = getStatementResult(value.false, context).type;
     const unionType = resolveUnionType(
-      isTypeCompatible(trueType, falseType)
+      isTypeCompatible(trueType, falseType, context)
         ? [trueType]
-        : [trueType, falseType],
+        : [trueType, falseType]
     );
     handleData({
       ...data,

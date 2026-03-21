@@ -59,7 +59,9 @@ export type OperationListItem = {
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
   shouldCacheResult?: boolean;
-  narrowType?: ((...args: IData[]) => DataType | undefined) | DataType;
+  narrowType?:
+    | ((...args: [Context, ...IData[]]) => DataType | undefined)
+    | DataType;
   source?: { name: string };
   expectedType?: DataType | ((data: IData) => DataType);
   isAsync?: boolean;

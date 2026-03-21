@@ -1001,7 +1001,7 @@ export const remedaOperationList: (Omit<
   {
     name: "isObjectType",
     parameters: (data) => [getUnionParam(data)],
-    narrowType: (data) =>
+    narrowType: (_, data) =>
       isDataOfType(data, "union")
         ? resolveUnionType(
             data.type.types.filter((t) => OBJECT_TYPES.includes(t.kind))
@@ -1016,21 +1016,22 @@ export const remedaOperationList: (Omit<
   {
     name: "isDefined",
     parameters: (data) => [getUnionParam(data)],
-    narrowType: (data) =>
+    narrowType: (context, data) =>
       getInverseTypes(
         new Map([["data", { data }]]),
-        new Map([["data", { data: createData() }]])
+        new Map([["data", { data: createData() }]]),
+        context
       ).get("data")?.data.type,
   },
   {
     name: "isDeepEqual",
     parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
-    narrowType: (_, param) => param.type,
+    narrowType: (_, _data, param) => param.type,
   },
   {
     name: "isShallowEqual",
     parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
-    narrowType: (_, param) => param.type,
+    narrowType: (_, _data, param) => param.type,
   },
   {
     name: "isIncludedIn",
