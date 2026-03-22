@@ -10,7 +10,13 @@ import {
   isDataOfType,
   isObject,
 } from "../lib/utils";
-import { ComponentProps, HTMLAttributes, memo, useMemo } from "react";
+import {
+  ComponentProps,
+  HTMLAttributes,
+  memo,
+  useCallback,
+  useMemo,
+} from "react";
 import { BaseInput } from "./Input/BaseInput";
 import { isNumberLike } from "@mantine/core";
 import { DataTypes } from "../lib/data";
@@ -33,7 +39,7 @@ interface IDropdownTargetProps extends Omit<
 interface IProps {
   data: IData;
   disableDelete?: boolean;
-  addOperationCall?: (data?: IData) => void;
+  addOperationCall?: (data: IData) => void;
   handleChange(item: IStatement["data"], remove?: boolean): void;
   context: Context;
 }
@@ -69,13 +75,30 @@ const DataComponent = ({
     };
   }, [data]);
 
+  const handleNumberChange = useCallback(
+    (val: number) => {
+      handleChange({ ...data, value: Number(val) });
+    },
+    [data, handleChange]
+  );
+
+  const handleDelete = useMemo(() => {
+    if (disableDelete) return undefined;
+    return () => handleChange(data, true);
+  }, [disableDelete, handleChange, data]);
+
+  const handleAddOperationCall = useCallback(
+    (_data?: IData) => addOperationCall?.(_data ?? data),
+    [addOperationCall, data]
+  );
+
   return (
     <Dropdown
       id={data.id}
       data={data}
       items={dropdownItems}
-      handleDelete={!disableDelete ? () => handleChange(data, true) : undefined}
-      addOperationCall={addOperationCall}
+      handleDelete={handleDelete}
+      addOperationCall={handleAddOperationCall}
       handleChange={handleChange}
       options={dropdownOptions}
       context={context}
@@ -130,9 +153,7 @@ const DataComponent = ({
             type="number"
             className="text-number"
             value={data.value}
-            onChange={(val) => {
-              handleChange({ ...data, value: Number(val) });
-            }}
+            onChange={handleNumberChange}
           />
         ) : isDataOfType(data, "string") ? (
           <BaseInput

@@ -1,4 +1,4 @@
-import { IData, IStatement, OperationType } from "../lib/types";
+import { IData, IStatement, OperationType, IDropdownItem } from "../lib/types";
 import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
 import {
@@ -9,7 +9,7 @@ import {
 import { FaArrowRotateRight } from "react-icons/fa6";
 import { resolveParameters } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 import { IconButton } from "@/ui/IconButton";
@@ -27,7 +27,7 @@ const OperationCallComponent = ({
     operation: IData<OperationType>,
     remove?: boolean
   ) => void;
-  addOperationCall?: (data?: IData) => void;
+  addOperationCall?: (data: IData) => void;
 }) => {
   const context = useExecutionResultsStore((s) => s.getContext(operation.id));
 
@@ -53,7 +53,7 @@ const OperationCallComponent = ({
     return resolveParameters(originalOperation, data, context);
   }, [context, data, originalOperation]);
 
-  async function handleManualExecute() {
+  const handleManualExecute = useCallback(async () => {
     if (!originalOperation) return;
     const result = await executeOperation(
       originalOperation,
@@ -69,76 +69,93 @@ const OperationCallComponent = ({
       ...operation,
       type: { ...operation.type, result: result.type },
     });
-  }
+  }, [originalOperation, data, operation, context, handleOperationCall]);
 
-  async function handleDropdown(name: string) {
-    if (operation.value.name === name) return;
-    const operationCall = await createOperationCall({
-      data,
-      name,
-      parameters: operation.value.parameters,
-      context,
-      operationId: operation.id,
-    });
-    operationCall.id = operation.id;
-    handleOperationCall(operationCall);
-    const params = operationCall.value.parameters;
-    setNavigation({
-      navigation: {
-        id: params.length > 0 ? params[0].data.id : operation.id,
-        direction: "right",
-      },
-    });
-  }
+  const handleDropdown = useCallback(
+    async (name: string) => {
+      if (operation.value.name === name) return;
+      const operationCall = await createOperationCall({
+        data,
+        name,
+        parameters: operation.value.parameters,
+        context,
+        operationId: operation.id,
+      });
+      operationCall.id = operation.id;
+      handleOperationCall(operationCall);
+      const params = operationCall.value.parameters;
+      setNavigation({
+        navigation: {
+          id: params.length > 0 ? params[0].data.id : operation.id,
+          direction: "right",
+        },
+      });
+    },
+    [operation, data, context, handleOperationCall, setNavigation]
+  );
 
-  function handleParameter(item: IStatement, index: number, remove?: boolean) {
-    // eslint-disable-next-line prefer-const
-    let parameters = [...operation.value.parameters];
-    if (remove) parameters.splice(index, 1);
-    else parameters[index] = item;
-    handleOperationCall({
-      ...operation,
-      type: {
-        ...operation.type,
-        parameters: (originalParameters ?? operation.type.parameters).map(
-          (param, i) => {
-            const idx = (i >= index && remove ? i + 1 : i) - 1;
-            return {
-              ...param,
-              name: parameters[idx]?.name ?? param.name,
-              type: parameters[idx]?.data.type ?? param.type,
-            };
-          }
-        ),
-      },
-      value: { ...operation.value, parameters },
-    });
-  }
+  const handleParameter = useCallback(
+    (item: IStatement, remove?: boolean, _index?: number) => {
+      const parameters = [...operation.value.parameters];
+      const index = _index ?? parameters.findIndex((p) => p.id === item.id);
+      if (remove) parameters.splice(index, 1);
+      else parameters[index] = item;
+      handleOperationCall({
+        ...operation,
+        type: {
+          ...operation.type,
+          parameters: (originalParameters ?? operation.type.parameters).map(
+            (param, i) => {
+              const idx = (i >= index && remove ? i + 1 : i) - 1;
+              return {
+                ...param,
+                name: parameters[idx]?.name ?? param.name,
+                type: parameters[idx]?.data.type ?? param.type,
+              };
+            }
+          ),
+        },
+        value: { ...operation.value, parameters },
+      });
+    },
+    [operation, originalParameters, handleOperationCall]
+  );
+
+  const handleDelete = useCallback(() => {
+    handleOperationCall(operation, true);
+  }, [handleOperationCall, operation]);
+
+  const dropdownItems = useMemo(() => {
+    return filteredOperations.map(([groupName, groupItems]) => [
+      groupName,
+      groupItems.map((item) => ({
+        label: item.name,
+        value: `${
+          resolveParameters(item, data, context)?.[0]?.type.kind ?? "undefined"
+        }-${item.name}`,
+        color: "method",
+        entityType: "operationCall" as const,
+        onClick: () => handleDropdown(item.name),
+      })),
+    ]) as [string, IDropdownItem[]][];
+  }, [filteredOperations, data, context, handleDropdown]);
+
+  const handleAddOperationCall = useCallback(
+    (_data?: IData) => {
+      if (!filteredOperations.length || context.skipExecution) return undefined;
+      addOperationCall?.(_data ?? data);
+    },
+    [addOperationCall, context.skipExecution, data, filteredOperations.length]
+  );
 
   return (
     <Dropdown
       id={operation.id}
-      items={filteredOperations.map(([groupName, groupItems]) => [
-        groupName,
-        groupItems.map((item) => ({
-          label: item.name,
-          value: `${
-            resolveParameters(item, data, context)?.[0]?.type.kind ??
-            "undefined"
-          }-${item.name}`,
-          color: "method",
-          entityType: "operationCall",
-          onClick: () => handleDropdown(item.name),
-        })),
-      ])}
+      items={dropdownItems}
       context={context}
       value={operation.value.name}
-      addOperationCall={
-        filteredOperations.length && !context.skipExecution
-          ? addOperationCall
-          : undefined
-      }
-      handleDelete={() => handleOperationCall(operation, true)}
+      addOperationCall={handleAddOperationCall}
+      handleDelete={handleDelete}
       isInputTarget
       target={(props) => <BaseInput {...props} className="text-method" />}
     >
@@ -155,26 +172,26 @@ const OperationCallComponent = ({
         />
       )}
       <span>{"("}</span>
-      {operation.value.parameters.map((item, paramIndex, arr) => {
-        return (
-          <span key={item.id} className="flex">
-            <Statement
-              statement={item}
-              handleStatement={(val, remove) =>
-                val && handleParameter(val, paramIndex, remove)
-              }
-              options={{ disableDelete: !item.isOptional }}
-            />
-            {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
-          </span>
-        );
-      })}
+      {operation.value.parameters.map((item, paramIndex, arr) => (
+        <span key={item.id} className="flex">
+          <Statement
+            statement={item}
+            handleStatement={handleParameter}
+            disableDelete={!item.isOptional}
+          />
+          {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
+        </span>
+      ))}
       {operation.value.parameters.length + 1 <
         operation.type.parameters.length || restParamType ? (
         <AddStatement
           id={`${operation.id}_call_parameter`}
           onSelect={(statement) =>
-            handleParameter(statement, operation.value.parameters.length)
+            handleParameter(
+              statement,
+              undefined,
+              operation.value.parameters.length
+            )
           }
           iconProps={{ title: "Add parameter" }}
           config={{

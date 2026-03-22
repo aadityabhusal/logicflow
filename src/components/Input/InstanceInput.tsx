@@ -1,5 +1,5 @@
 import { IData, InstanceDataType, IStatement } from "@/lib/types";
-import { forwardRef, memo } from "react";
+import { forwardRef, memo, useCallback } from "react";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
@@ -16,19 +16,18 @@ const InstanceInputComponent = (
   { data, handleData, onChange, ...props }: InstanceInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
-  function handleConstructorArgs(
-    item: IStatement,
-    index: number,
-    remove?: boolean
-  ) {
-    const constructorArgs = [...data.value.constructorArgs];
-    if (remove) constructorArgs.splice(index, 1);
-    else constructorArgs[index] = item;
-    handleData({
-      ...data,
-      value: { ...data.value, constructorArgs },
-    });
-  }
+  const handleConstructorArgs = useCallback(
+    (item: IStatement, remove?: boolean, _index?: number) => {
+      const constructorArgs = [...data.value.constructorArgs];
+      const index =
+        _index ?? constructorArgs.findIndex((arg) => arg.id === item.id);
+      if (remove) constructorArgs.splice(index, 1);
+      else constructorArgs[index] = item;
+      handleData({ ...data, value: { ...data.value, constructorArgs } });
+    },
+    [data, handleData]
+  );
+
   return (
     <div className="flex items-start gap-1">
       <BaseInput
@@ -38,25 +37,25 @@ const InstanceInputComponent = (
         onChange={onChange}
       />
       <span>{"("}</span>
-      {data.value.constructorArgs.map((item, paramIndex, arr) => {
-        return (
-          <span key={item.id} className="flex">
-            <Statement
-              statement={item}
-              handleStatement={(val, remove) =>
-                val && handleConstructorArgs(val, paramIndex, remove)
-              }
-              options={{ disableDelete: !item.isOptional }}
-            />
-            {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
-          </span>
-        );
-      })}
+      {data.value.constructorArgs.map((item, paramIndex, arr) => (
+        <span key={item.id} className="flex">
+          <Statement
+            statement={item}
+            handleStatement={handleConstructorArgs}
+            disableDelete={!item.isOptional}
+          />
+          {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
+        </span>
+      ))}
       {data.value.constructorArgs.length < data.type.constructorArgs.length && (
         <AddStatement
           id={`${data.id}_call_parameter`}
           onSelect={(statement) =>
-            handleConstructorArgs(statement, data.value.constructorArgs.length)
+            handleConstructorArgs(
+              statement,
+              undefined,
+              data.value.constructorArgs.length
+            )
           }
           iconProps={{ title: "Add parameter" }}
           config={{

@@ -2,7 +2,7 @@ import { IData, IStatement, DictionaryType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo } from "react";
+import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
 import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
@@ -12,6 +12,7 @@ interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
   handleData: (data: IData<DictionaryType>) => void;
   context: Context;
 }
+
 const DictionaryInputComponent = (
   { data, handleData, context, ...props }: DictionaryInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
@@ -20,20 +21,24 @@ const DictionaryInputComponent = (
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
-  function handleUpdate(index: number, result: IStatement, remove?: boolean) {
-    const newEntries = [...data.value.entries];
-    if (remove) newEntries.splice(index, 1);
-    else newEntries[index] = { ...newEntries[index], value: result };
+  const handleUpdate = useCallback(
+    (result: IStatement, remove?: boolean) => {
+      const newEntries = [...data.value.entries];
+      const index = newEntries.findIndex((e) => e.value.id === result.id);
+      if (remove) newEntries.splice(index, 1);
+      else newEntries[index] = { ...newEntries[index], value: result };
 
-    handleData({
-      ...data,
-      type: inferTypeFromValue(
-        { entries: newEntries },
-        { ...context, expectedType: context.expectedType ?? data.type }
-      ),
-      value: { entries: newEntries },
-    });
-  }
+      handleData({
+        ...data,
+        type: inferTypeFromValue(
+          { entries: newEntries },
+          { ...context, expectedType: context.expectedType ?? data.type }
+        ),
+        value: { entries: newEntries },
+      });
+    },
+    [data, handleData, context]
+  );
 
   function handleKeyUpdate(index: number, newKey: string) {
     const existingKey = data.value.entries.some(
@@ -87,10 +92,7 @@ const DictionaryInputComponent = (
               }
             />
             <span style={{ marginRight: 4 }}>:</span>
-            <Statement
-              statement={entry.value}
-              handleStatement={(val, remove) => handleUpdate(i, val, remove)}
-            />
+            <Statement statement={entry.value} handleStatement={handleUpdate} />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>
         );

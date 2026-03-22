@@ -23,7 +23,7 @@ import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
@@ -36,24 +36,45 @@ const StatementComponent = ({
   statement,
   handleStatement,
   addStatement,
-  options,
+  enableVariable,
+  isOptional,
+  isParameter,
+  isRest,
+  disableNameToggle,
+  disableDelete,
 }: {
   statement: IStatement;
   handleStatement: (statement: IStatement, remove?: boolean) => void;
-  addStatement?: (statement: IStatement, position: "before" | "after") => void;
-  options?: {
-    enableVariable?: boolean;
-    isOptional?: boolean;
-    isParameter?: boolean;
-    isRest?: boolean;
-    disableNameToggle?: boolean;
-    disableDelete?: boolean;
-  };
+  addStatement?: (
+    newStatement: IStatement,
+    position: "before" | "after",
+    currentStatementId: string
+  ) => void;
+  enableVariable?: boolean;
+  isOptional?: boolean;
+  isParameter?: boolean;
+  isRest?: boolean;
+  disableNameToggle?: boolean;
+  disableDelete?: boolean;
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContext(statement.name ?? statement.id)
   );
   const reservedNames = useMemo(() => getReservedNames(context), [context]);
+
+  const handleDataChange = useCallback(
+    (data: IData, remove?: boolean) => {
+      const newStatement = {
+        ...statement,
+        data,
+        ...(statement.isRest && data.type.kind !== "array"
+          ? { isRest: undefined }
+          : {}),
+      };
+      handleStatement(newStatement, remove);
+    },
+    [statement, handleStatement]
+  );
 
   const hasName = statement.name !== undefined;
   const isEqualsFocused = useNavigationStore(
@@ -86,29 +107,34 @@ const StatementComponent = ({
     [openDropdown, closeDropdown]
   );
 
-  async function addOperationCall(data: IData, index: number) {
-    const operation = await createOperationCall({ data, context });
-    const operations = [...statement.operations];
-    operations.splice(index, 0, operation);
-    handleStatement({ ...statement, operations });
-    setNavigation({ navigation: { id: operation.id, direction: "right" } });
-  }
+  const addOperationCall = useCallback(
+    async (data: IData, operationId?: string) => {
+      const operation = await createOperationCall({ data, context });
+      const operations = [...statement.operations];
+      const index = operationId
+        ? operations.findIndex((op) => op.id === operationId) + 1
+        : 0;
+      operations.splice(index, 0, operation);
+      handleStatement({ ...statement, operations });
+      setNavigation({ navigation: { id: operation.id, direction: "right" } });
+    },
+    [context, handleStatement, setNavigation, statement]
+  );
 
-  function handleOperationCall(
-    operation: IData<OperationType>,
-    index: number,
-    remove?: boolean
-  ) {
-    // eslint-disable-next-line prefer-const
-    let operations = [...statement.operations];
-    if (remove) operations.splice(index, 1);
-    else operations[index] = operation;
-    handleStatement({ ...statement, operations });
-  }
+  const handleOperationCall = useCallback(
+    (operation: IData<OperationType>, remove?: boolean) => {
+      const operations = [...statement.operations];
+      const index = operations.findIndex((op) => op.id === operation.id);
+      if (remove) operations.splice(index, 1);
+      else operations[index] = operation;
+      handleStatement({ ...statement, operations });
+    },
+    [handleStatement, statement]
+  );
 
   return (
     <div className="flex items-start gap-1">
-      {options?.enableVariable ? (
+      {enableVariable ? (
         <div className="flex items-center gap-1 mr-1">
           {hasName ? (
             <BaseInput
@@ -149,46 +175,40 @@ const StatementComponent = ({
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={
-                  options?.isRest
-                    ? FaEllipsis
-                    : options?.isOptional
-                      ? FaQuestion
-                      : FaEquals
-                }
+                icon={isRest ? FaEllipsis : isOptional ? FaQuestion : FaEquals}
                 position="right"
                 className={[
                   "hover:outline hover:outline-border",
-                  options?.isOptional || options?.isRest ? "" : "mt-1",
+                  isOptional || isRest ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
-                  options?.disableNameToggle ? "text-disabled" : "",
+                  disableNameToggle ? "text-disabled" : "",
                 ].join(" ")}
                 title={
-                  options?.disableNameToggle
-                    ? options?.isRest
+                  disableNameToggle
+                    ? isRest
                       ? "Rest Parameter"
-                      : options?.isOptional
+                      : isOptional
                         ? "Optional Parameter"
                         : undefined
-                    : options?.isParameter
-                      ? options?.isRest
+                    : isParameter
+                      ? isRest
                         ? "Make required"
-                        : options?.isOptional
+                        : isOptional
                           ? "Make rest"
                           : "Make optional"
                       : "Create variable"
                 }
                 onClick={() => {
-                  if (options?.disableNameToggle) return;
+                  if (disableNameToggle) return;
                   const rest = createData({
                     value: [createStatement({ data: statement.data })],
                   });
                   handleStatement({
                     ...statement,
-                    ...(options?.isParameter
-                      ? options?.isRest
+                    ...(isParameter
+                      ? isRest
                         ? { isOptional: undefined, isRest: undefined }
-                        : options?.isOptional
+                        : isOptional
                           ? {
                               isOptional: undefined,
                               isRest: true,
@@ -216,8 +236,8 @@ const StatementComponent = ({
             <Popover.Dropdown {...hoverEvents}>
               <AddStatement
                 id={statement.id}
-                onSelect={(statement) => {
-                  addStatement?.(statement, "before");
+                onSelect={(newStatement) => {
+                  addStatement?.(newStatement, "before", statement.id);
                   closeDropdown();
                 }}
                 iconProps={{ title: "Add before" }}
@@ -236,34 +256,21 @@ const StatementComponent = ({
         <ErrorBoundary
           displayError={true}
           onRemove={
-            options?.disableDelete
-              ? undefined
-              : () => handleStatement(statement, true)
+            disableDelete ? undefined : () => handleStatement(statement, true)
           }
         >
           <Data
             data={statement.data}
-            disableDelete={options?.disableDelete}
+            disableDelete={disableDelete}
             context={context}
             addOperationCall={
-              !options?.isParameter &&
-              !context.skipExecution &&
-              getFilteredOperations(statement.data, context).length
-                ? (_data) => addOperationCall(_data ?? statement.data, 0)
+              isParameter ||
+              context.skipExecution ||
+              !getFilteredOperations(statement.data, context).length
+                ? addOperationCall
                 : undefined
             }
-            handleChange={(data, remove) =>
-              handleStatement(
-                {
-                  ...statement,
-                  data,
-                  ...(statement.isRest && data.type.kind !== "array"
-                    ? { isRest: undefined }
-                    : {}),
-                },
-                remove
-              )
-            }
+            handleChange={handleDataChange}
           />
         </ErrorBoundary>
         {statement.operations.map((operation, i, operationsList) => {
@@ -284,19 +291,13 @@ const StatementComponent = ({
               />
               <ErrorBoundary
                 displayError={true}
-                onRemove={() => handleOperationCall(operation, i, true)}
+                onRemove={() => handleOperationCall(operation, true)}
               >
                 <OperationCall
                   data={prevData}
                   operation={operation}
-                  handleOperationCall={(op, remove) =>
-                    handleOperationCall(op, i, remove)
-                  }
-                  addOperationCall={
-                    !options?.isParameter
-                      ? (_data) => addOperationCall(_data ?? prevData, i + 1)
-                      : undefined
-                  }
+                  handleOperationCall={handleOperationCall}
+                  addOperationCall={isParameter ? undefined : addOperationCall}
                 />
               </ErrorBoundary>
             </div>

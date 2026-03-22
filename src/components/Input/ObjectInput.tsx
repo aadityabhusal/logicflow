@@ -1,8 +1,8 @@
-import { IData, IStatement, ObjectType } from "@/lib/types";
+import { IData, IDropdownItem, IStatement, ObjectType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
+import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
@@ -23,20 +23,24 @@ const ObjectInputComponent = (
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
-  function handleUpdate(index: number, result: IStatement, remove?: boolean) {
-    const newEntries = [...data.value.entries];
-    if (remove) newEntries.splice(index, 1);
-    else newEntries[index] = { ...newEntries[index], value: result };
+  const handleUpdate = useCallback(
+    (result: IStatement, remove?: boolean) => {
+      const newEntries = [...data.value.entries];
+      const index = newEntries.findIndex((e) => e.value.id === result.id);
+      if (remove) newEntries.splice(index, 1);
+      else newEntries[index] = { ...newEntries[index], value: result };
 
-    handleData({
-      ...data,
-      type: inferTypeFromValue(
-        { entries: newEntries },
-        { ...context, expectedType: context.expectedType ?? data.type }
-      ),
-      value: { entries: newEntries },
-    });
-  }
+      handleData({
+        ...data,
+        type: inferTypeFromValue(
+          { entries: newEntries },
+          { ...context, expectedType: context.expectedType ?? data.type }
+        ),
+        value: { entries: newEntries },
+      });
+    },
+    [data, handleData, context]
+  );
 
   function handleKeyUpdate(index: number, newKey: string) {
     const oldKey = data.value.entries[index].key;
@@ -74,7 +78,7 @@ const ObjectInputComponent = (
 
   const optionalKeyOptions = useMemo(() => {
     const oldKey = navigationId?.slice(data.id.length + 1);
-    return remainingOptionalProperties.map(({ key, value }) => ({
+    const results = remainingOptionalProperties.map(({ key, value }) => ({
       value: key,
       entityType: "data" as const,
       type: value,
@@ -96,6 +100,7 @@ const ObjectInputComponent = (
         });
       },
     }));
+    return [["Properties", results]] as [string, IDropdownItem[]][];
   }, [navigationId, data, remainingOptionalProperties, handleData, context]);
 
   return (
@@ -129,13 +134,11 @@ const ObjectInputComponent = (
               <Dropdown
                 id={`${data.id}_${entry.key}`}
                 value={entry.key}
-                items={
-                  isOptional ? [["Properties", optionalKeyOptions]] : undefined
-                }
+                items={isOptional ? optionalKeyOptions : undefined}
                 context={context}
                 isInputTarget={true}
-                target={(props) => (
-                  <BaseInput {...props} className={"text-property"} />
+                target={(dropdownProps) => (
+                  <BaseInput {...dropdownProps} className={"text-property"} />
                 )}
               />
             ) : (
@@ -192,10 +195,8 @@ const ObjectInputComponent = (
             />
             <Statement
               statement={entry.value}
-              handleStatement={(val, remove) => handleUpdate(i, val, remove)}
-              options={{
-                disableDelete: !!context.expectedType && !isOptional,
-              }}
+              handleStatement={handleUpdate}
+              disableDelete={!!context.expectedType && !isOptional}
             />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>
@@ -212,10 +213,7 @@ const ObjectInputComponent = (
               {
                 key: remainingOptionalProperties[0]
                   ? remainingOptionalProperties[0].key
-                  : createVariableName({
-                      prefix: "key",
-                      prev: existingKeys,
-                    }),
+                  : createVariableName({ prefix: "key", prev: existingKeys }),
                 value: { ...value, name: undefined },
               },
             ];

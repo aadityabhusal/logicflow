@@ -1,4 +1,4 @@
-import { forwardRef, HTMLAttributes, memo } from "react";
+import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
 import { ConditionType, IData, IStatement } from "@/lib/types";
 import {
   getStatementResult,
@@ -18,21 +18,39 @@ const ConditionInputComponent = (
   { data, handleData, context, ...props }: ConditionInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  function handleUpdate(key: "condition" | "true" | "false", val: IStatement) {
-    const value = { ...data.value, [key]: val };
-    const trueType = getStatementResult(value.true, context).type;
-    const falseType = getStatementResult(value.false, context).type;
-    const unionType = resolveUnionType(
-      isTypeCompatible(trueType, falseType, context)
-        ? [trueType]
-        : [trueType, falseType]
-    );
-    handleData({
-      ...data,
-      type: { kind: "condition", result: unionType },
-      value,
-    });
-  }
+  const handleUpdate = useCallback(
+    (key: "condition" | "true" | "false", val: IStatement) => {
+      const value = { ...data.value, [key]: val };
+      const trueType = getStatementResult(value.true, context).type;
+      const falseType = getStatementResult(value.false, context).type;
+      const unionType = resolveUnionType(
+        isTypeCompatible(trueType, falseType, context)
+          ? [trueType]
+          : [trueType, falseType]
+      );
+      handleData({
+        ...data,
+        type: { kind: "condition", result: unionType },
+        value,
+      });
+    },
+    [context, data, handleData]
+  );
+
+  const handleConditionChange = useCallback(
+    (val: IStatement) => handleUpdate("condition", val),
+    [handleUpdate]
+  );
+
+  const handleTrueChange = useCallback(
+    (val: IStatement) => handleUpdate("true", val),
+    [handleUpdate]
+  );
+
+  const handleFalseChange = useCallback(
+    (val: IStatement) => handleUpdate("false", val),
+    [handleUpdate]
+  );
 
   return (
     <div
@@ -45,20 +63,20 @@ const ConditionInputComponent = (
     >
       <Statement
         statement={data.value.condition}
-        handleStatement={(val) => handleUpdate("condition", val)}
-        options={{ disableDelete: true }}
+        handleStatement={handleConditionChange}
+        disableDelete={true}
       />
       <span>{"?"}</span>
       <Statement
         statement={data.value.true}
-        handleStatement={(val) => handleUpdate("true", val)}
-        options={{ disableDelete: true }}
+        handleStatement={handleTrueChange}
+        disableDelete={true}
       />
       <span>{":"}</span>
       <Statement
         statement={data.value.false}
-        handleStatement={(val) => handleUpdate("false", val)}
-        options={{ disableDelete: true }}
+        handleStatement={handleFalseChange}
+        disableDelete={true}
       />
     </div>
   );

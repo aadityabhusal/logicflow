@@ -32,7 +32,7 @@ const OperationComponent = (
     [context.expectedType]
   );
 
-  const handleStatement = useCallback(
+  const handleStatementUpdate = useCallback(
     ({
       statement,
       context,
@@ -82,6 +82,30 @@ const OperationComponent = (
       });
     },
     [handleChange, operation]
+  );
+
+  const handleParameterStatement = useCallback(
+    (statement: IStatement, remove?: boolean) => {
+      const parameterLength = operation.value.parameters.length;
+      handleStatementUpdate({
+        statement,
+        context,
+        remove,
+        parameterLength: remove ? parameterLength - 1 : parameterLength,
+      });
+    },
+    [handleStatementUpdate, context, operation.value.parameters.length]
+  );
+
+  const handleStatement = useCallback(
+    (statement: IStatement, remove?: boolean) => {
+      handleStatementUpdate({
+        statement,
+        remove,
+        context: context.getContext(statement.id),
+      });
+    },
+    [handleStatementUpdate, context]
   );
 
   const addStatement = useCallback(
@@ -143,6 +167,23 @@ const OperationComponent = (
     [context, handleChange, operation]
   );
 
+  const handleAddParameterAt = useCallback(
+    (statement: IStatement, pos: "before" | "after", id: string) => {
+      const index = operation.value.parameters.findIndex((p) => p.id === id);
+      const isOptional = operation.value.parameters[index - 1]?.isOptional;
+      addParameter({ ...statement, isOptional }, pos, index);
+    },
+    [addParameter, operation.value.parameters]
+  );
+
+  const handleAddBodyStatementAt = useCallback(
+    (statement: IStatement, pos: "before" | "after", id: string) => {
+      const index = operation.value.statements.findIndex((s) => s.id === id);
+      addStatement(statement, pos, index);
+    },
+    [addStatement, operation.value.statements]
+  );
+
   return (
     <div {...props} ref={ref}>
       <div className="flex items-start gap-1">
@@ -151,39 +192,26 @@ const OperationComponent = (
           <Fragment key={parameter.id}>
             <Statement
               statement={parameter}
-              handleStatement={(statement, remove) => {
-                handleStatement({
-                  statement,
-                  remove,
-                  parameterLength: paramList.length + (remove ? -1 : 0),
-                  context,
-                });
-              }}
-              options={{
-                enableVariable: true,
-                disableDelete: expectedParameterType
+              handleStatement={handleParameterStatement}
+              enableVariable={true}
+              disableDelete={
+                expectedParameterType
                   ? !!paramList[i + 1] || !parameter.isOptional
-                  : false,
-                isParameter: true,
-                isOptional: parameter.isOptional,
-                isRest: parameter.isRest,
-                disableNameToggle: (() => {
-                  if (expectedParameterType) return true;
-                  const prev = operation.type.parameters[i - 1];
-                  const next = operation.type.parameters[i + 1];
-                  if (next && !next.isOptional) return true;
-                  if (prev && prev.isOptional) return true;
-                  if (prev && prev.isRest) return true;
-                  return false;
-                })(),
-              }}
-              addStatement={(statement, position) => {
-                addParameter(
-                  { ...statement, isOptional: paramList[i - 1]?.isOptional },
-                  position,
-                  i
-                );
-              }}
+                  : false
+              }
+              isParameter={true}
+              isOptional={parameter.isOptional}
+              isRest={parameter.isRest}
+              disableNameToggle={(() => {
+                if (expectedParameterType) return true;
+                const prev = operation.type.parameters[i - 1];
+                const next = operation.type.parameters[i + 1];
+                if (next && !next.isOptional) return true;
+                if (prev && prev.isOptional) return true;
+                if (prev && prev.isRest) return true;
+                return false;
+              })()}
+              addStatement={handleAddParameterAt}
             />
             {i + 1 < paramList.length && <span>,</span>}
           </Fragment>
@@ -209,19 +237,13 @@ const OperationComponent = (
         <span>{")"}</span>
       </div>
       <div className="pl-4 [&>div]:mb-1 w-fit">
-        {operation.value.statements.map((statement, index) => (
+        {operation.value.statements.map((statement) => (
           <Statement
             key={statement.id}
             statement={statement}
-            options={{ enableVariable: true }}
-            handleStatement={(statement, remove) =>
-              handleStatement({
-                statement,
-                remove,
-                context: context.getContext(statement.id),
-              })
-            }
-            addStatement={(stmt, pos) => addStatement(stmt, pos, index)}
+            enableVariable={true}
+            handleStatement={handleStatement}
+            addStatement={handleAddBodyStatementAt}
           />
         ))}
         <AddStatement
