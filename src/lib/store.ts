@@ -7,6 +7,7 @@ import {
   ProjectFile,
   NavigationEntity,
   DataType,
+  IStatement,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
@@ -15,6 +16,8 @@ import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
 import { AgentChange } from "./schemas";
 import { Context } from "./execution/types";
+import { produce } from "immer";
+import { EntityPath } from "./types";
 
 const IDbStore = openDB("logicflow", 2, {
   upgrade(db) {
@@ -107,6 +110,11 @@ interface ICurrentProjectStore {
   getFile: (fileId?: string | null) => ProjectFile | undefined;
   undo: () => void;
   redo: () => void;
+  updateStatementByPath: (
+    fileId: string,
+    path: EntityPath,
+    newStatement: IStatement
+  ) => void;
 }
 
 type ProjectStore = IProjectsStore & ICurrentProjectStore;
@@ -261,6 +269,37 @@ const createCurrentProjectSlice: StateCreator<
     useNavigationStore
       .getState()
       .setNavigation({ navigation: { id: nextItem.focusId } });
+  },
+
+  updateStatementByPath: (fileId, path, newStatement) => {
+    const currentProject = get().getCurrentProject();
+    if (!currentProject || path.length < 1) return;
+
+    const file = currentProject.files.find((f: ProjectFile) => f.id === fileId);
+    if (!file || file.type !== "operation") return;
+
+    fileHistoryActions.pushState(fileId, file.content);
+
+    set(
+      produce((state: ProjectStore) => {
+        const project = state.projects[currentProject.id];
+        const fileIndex = project.files.findIndex(
+          (f: ProjectFile) => f.id === fileId
+        );
+        if (fileIndex === -1) return;
+
+        const file = project.files[fileIndex];
+        if (file.type !== "operation") return;
+
+        let current: unknown = file.content.value;
+        for (let i = 0; i < path.length - 1; i++) {
+          current = (current as Record<string, unknown>)[path[i]];
+        }
+        (current as Record<string, unknown>)[path[path.length - 1]] =
+          newStatement;
+        (file as ProjectFile & { type: "operation" }).updatedAt = Date.now();
+      })
+    );
   },
 });
 

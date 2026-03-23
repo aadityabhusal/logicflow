@@ -31,6 +31,7 @@ import {
   getReservedNames,
   useExecutionResultsStore,
 } from "@/lib/execution/store";
+import { EntityPath } from "@/lib/types";
 
 const StatementComponent = ({
   statement,
@@ -42,9 +43,14 @@ const StatementComponent = ({
   isRest,
   disableNameToggle,
   disableDelete,
+  path,
 }: {
   statement: IStatement;
-  handleStatement: (statement: IStatement, remove?: boolean) => void;
+  handleStatement: (
+    statement: IStatement,
+    remove?: boolean,
+    path?: EntityPath
+  ) => void;
   addStatement?: (
     newStatement: IStatement,
     position: "before" | "after",
@@ -56,6 +62,7 @@ const StatementComponent = ({
   isRest?: boolean;
   disableNameToggle?: boolean;
   disableDelete?: boolean;
+  path: EntityPath;
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContext(statement.name ?? statement.id)
@@ -71,9 +78,9 @@ const StatementComponent = ({
           ? { isRest: undefined }
           : {}),
       };
-      handleStatement(newStatement, remove);
+      handleStatement(newStatement, remove, path);
     },
-    [statement, handleStatement]
+    [statement, handleStatement, path]
   );
 
   const hasName = statement.name !== undefined;
@@ -115,10 +122,10 @@ const StatementComponent = ({
         ? operations.findIndex((op) => op.id === operationId) + 1
         : 0;
       operations.splice(index, 0, operation);
-      handleStatement({ ...statement, operations });
+      handleStatement({ ...statement, operations }, false, path);
       setNavigation({ navigation: { id: operation.id, direction: "right" } });
     },
-    [context, handleStatement, setNavigation, statement]
+    [context, handleStatement, setNavigation, statement, path]
   );
 
   const handleOperationCall = useCallback(
@@ -127,10 +134,15 @@ const StatementComponent = ({
       const index = operations.findIndex((op) => op.id === operation.id);
       if (remove) operations.splice(index, 1);
       else operations[index] = operation;
-      handleStatement({ ...statement, operations });
+      handleStatement({ ...statement, operations }, false, path);
     },
-    [handleStatement, statement]
+    [handleStatement, statement, path]
   );
+
+  const operationPaths = useMemo(() => {
+    const arr = Array.from({ length: statement.operations.length });
+    return arr.map((_, i) => [...path, "operations", i]);
+  }, [path, statement.operations.length]);
 
   return (
     <div className="flex items-start gap-1">
@@ -155,7 +167,7 @@ const StatementComponent = ({
                   });
                   return;
                 }
-                handleStatement({ ...statement, name });
+                handleStatement({ ...statement, name }, false, path);
               }}
               onFocus={() =>
                 setNavigation(() => ({
@@ -203,29 +215,33 @@ const StatementComponent = ({
                   const rest = createData({
                     value: [createStatement({ data: statement.data })],
                   });
-                  handleStatement({
-                    ...statement,
-                    ...(isParameter
-                      ? isRest
-                        ? { isOptional: undefined, isRest: undefined }
-                        : isOptional
-                          ? {
-                              isOptional: undefined,
-                              isRest: true,
-                              data: rest,
-                            }
-                          : { isOptional: true, isRest: undefined }
-                      : {
-                          name: hasName
-                            ? undefined
-                            : createVariableName({
-                                prefix: "var",
-                                prev: Array.from(reservedNames).map(
-                                  (r) => r.name
-                                ),
-                              }),
-                        }),
-                  });
+                  handleStatement(
+                    {
+                      ...statement,
+                      ...(isParameter
+                        ? isRest
+                          ? { isOptional: undefined, isRest: undefined }
+                          : isOptional
+                            ? {
+                                isOptional: undefined,
+                                isRest: true,
+                                data: rest,
+                              }
+                            : { isOptional: true, isRest: undefined }
+                        : {
+                            name: hasName
+                              ? undefined
+                              : createVariableName({
+                                  prefix: "var",
+                                  prev: Array.from(reservedNames).map(
+                                    (r) => r.name
+                                  ),
+                                }),
+                          }),
+                    },
+                    false,
+                    path
+                  );
                   setNavigation(() => ({
                     navigation: { id: `${statement.id}_name` },
                   }));
@@ -256,7 +272,9 @@ const StatementComponent = ({
         <ErrorBoundary
           displayError={true}
           onRemove={
-            disableDelete ? undefined : () => handleStatement(statement, true)
+            disableDelete
+              ? undefined
+              : () => handleStatement(statement, true, path)
           }
         >
           <Data
@@ -264,13 +282,14 @@ const StatementComponent = ({
             disableDelete={disableDelete}
             context={context}
             addOperationCall={
-              isParameter ||
-              context.skipExecution ||
-              !getFilteredOperations(statement.data, context).length
+              !isParameter &&
+              !context.skipExecution &&
+              getFilteredOperations(statement.data, context).length
                 ? addOperationCall
                 : undefined
             }
             handleChange={handleDataChange}
+            basePath={path}
           />
         </ErrorBoundary>
         {statement.operations.map((operation, i, operationsList) => {
@@ -296,6 +315,7 @@ const StatementComponent = ({
                 <OperationCall
                   data={prevData}
                   operation={operation}
+                  path={operationPaths[i]}
                   handleOperationCall={handleOperationCall}
                   addOperationCall={isParameter ? undefined : addOperationCall}
                 />

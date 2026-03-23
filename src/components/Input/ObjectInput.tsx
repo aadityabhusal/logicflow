@@ -9,19 +9,26 @@ import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
 import { Dropdown } from "../Dropdown";
 import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
   handleData: (data: IData<ObjectType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
 const ObjectInputComponent = (
-  { data, handleData, context, ...props }: ObjectInputProps,
+  { data, handleData, context, basePath, ...props }: ObjectInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
+
+  const entryPaths = useMemo(() => {
+    const arr = Array.from({ length: data.value.entries.length });
+    return arr.map((_, i) => [...basePath, "entries", i, "value"]);
+  }, [basePath, data.value.entries.length]);
 
   const handleUpdate = useCallback(
     (result: IStatement, remove?: boolean) => {
@@ -195,6 +202,7 @@ const ObjectInputComponent = (
             />
             <Statement
               statement={entry.value}
+              path={entryPaths[i]}
               handleStatement={handleUpdate}
               disableDelete={!!context.expectedType && !isOptional}
             />

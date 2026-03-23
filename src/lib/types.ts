@@ -159,6 +159,8 @@ export type INavigation = {
   disable?: boolean;
 };
 
+export type EntityPath = (string | number)[];
+
 /* Project Types */
 
 export interface Project {

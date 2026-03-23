@@ -25,15 +25,17 @@ import { IconButton } from "@/ui/IconButton";
 import { Data } from "../Data";
 import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface UnionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<UnionType>;
   handleData: (data: IData<UnionType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
 
 const UnionInputComponent = (
-  { data, handleData, context, ...props }: UnionInputProps,
+  { data, handleData, context, basePath, ...props }: UnionInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isIconFocused = useNavigationStore(
@@ -173,6 +175,7 @@ const UnionInputComponent = (
         handleChange={handleDataChange}
         disableDelete={!!context.expectedType}
         context={dataContext}
+        basePath={basePath}
       />
       <Menu
         width={200}

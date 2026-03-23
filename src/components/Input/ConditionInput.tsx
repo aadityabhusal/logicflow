@@ -1,4 +1,4 @@
-import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
+import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { ConditionType, IData, IStatement } from "@/lib/types";
 import {
   getStatementResult,
@@ -7,17 +7,23 @@ import {
 } from "@/lib/utils";
 import { Statement } from "../Statement";
 import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
   handleData: (data: IData<ConditionType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
 
 const ConditionInputComponent = (
-  { data, handleData, context, ...props }: ConditionInputProps,
+  { data, handleData, context, basePath, ...props }: ConditionInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
+  const conditionPath = useMemo(() => [...basePath, "condition"], [basePath]);
+  const truePath = useMemo(() => [...basePath, "true"], [basePath]);
+  const falsePath = useMemo(() => [...basePath, "false"], [basePath]);
+
   const handleUpdate = useCallback(
     (key: "condition" | "true" | "false", val: IStatement) => {
       const value = { ...data.value, [key]: val };
@@ -63,18 +69,21 @@ const ConditionInputComponent = (
     >
       <Statement
         statement={data.value.condition}
+        path={conditionPath}
         handleStatement={handleConditionChange}
         disableDelete={true}
       />
       <span>{"?"}</span>
       <Statement
         statement={data.value.true}
+        path={truePath}
         handleStatement={handleTrueChange}
         disableDelete={true}
       />
       <span>{":"}</span>
       <Statement
         statement={data.value.false}
+        path={falsePath}
         handleStatement={handleFalseChange}
         disableDelete={true}
       />

@@ -2,24 +2,31 @@ import { IData, IStatement, DictionaryType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
+import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<DictionaryType>;
   handleData: (data: IData<DictionaryType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
 
 const DictionaryInputComponent = (
-  { data, handleData, context, ...props }: DictionaryInputProps,
+  { data, handleData, context, basePath, ...props }: DictionaryInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
+
+  const entryPaths = useMemo(() => {
+    const arr = Array.from({ length: data.value.entries.length });
+    return arr.map((_, i) => [...basePath, "entries", i, "value"]);
+  }, [basePath, data.value.entries.length]);
 
   const handleUpdate = useCallback(
     (result: IStatement, remove?: boolean) => {
@@ -92,7 +99,11 @@ const DictionaryInputComponent = (
               }
             />
             <span style={{ marginRight: 4 }}>:</span>
-            <Statement statement={entry.value} handleStatement={handleUpdate} />
+            <Statement
+              statement={entry.value}
+              path={entryPaths[i]}
+              handleStatement={handleUpdate}
+            />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>
         );

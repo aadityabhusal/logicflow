@@ -13,17 +13,26 @@ import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 import { getReservedNames } from "@/lib/execution/store";
 import { Context } from "@/lib/execution/types";
+import { useProjectStore } from "@/lib/store";
+import isEqual from "react-fast-compare";
+import { EntityPath } from "@/lib/types";
 
 interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
   operation: IData<OperationType>;
-  handleChange: (data: IData<OperationType>, remove?: boolean) => void;
+  handleChange: (
+    updater: (prev: IData<OperationType>) => IData<OperationType> | null,
+    remove?: boolean
+  ) => void;
   context: Context;
+  path: EntityPath;
 }
 
 const OperationComponent = (
-  { operation, handleChange, context, ...props }: OperationInputProps,
+  { operation, handleChange, context, path, ...props }: OperationInputProps,
   ref: React.Ref<HTMLDivElement>
 ) => {
+  const updateStatementByPath = useProjectStore((s) => s.updateStatementByPath);
+  const fileId = useProjectStore((s) => s.currentFileId);
   const expectedParameterType = useMemo(
     () =>
       context.expectedType?.kind === "operation"
@@ -32,77 +41,121 @@ const OperationComponent = (
     [context.expectedType]
   );
 
+  const parameterPaths = useMemo(() => {
+    const arr = Array.from({ length: operation.value.parameters.length });
+    return arr.map((_, i) => [...path, "parameters", i]);
+  }, [path, operation.value.parameters.length]);
+
+  const statementPaths = useMemo(() => {
+    const arr = Array.from({ length: operation.value.statements.length });
+    return arr.map((_, i) => [...path, "statements", i]);
+  }, [path, operation.value.statements.length]);
+
   const handleStatementUpdate = useCallback(
     ({
       statement,
+      path: statementPath,
       context,
       remove,
-      parameterLength = operation.value.parameters.length,
+      isParameter,
     }: {
       statement: IStatement;
+      path: EntityPath;
       context: Context;
       remove?: boolean;
-      parameterLength?: number;
+      isParameter: boolean;
     }) => {
-      const updatedStatements = updateStatements({
-        statements: [
-          ...operation.value.parameters,
-          ...operation.value.statements,
-        ],
-        context,
-        changedStatement: statement,
-        removeStatement: remove,
-      });
+      handleChange((prevOp) => {
+        const parameterLength = prevOp.value.parameters.length;
+        const allCurrent = [
+          ...prevOp.value.parameters,
+          ...prevOp.value.statements,
+        ];
+        const updatedStatements = updateStatements({
+          statements: allCurrent,
+          context,
+          changedStatement: statement,
+          removeStatement: remove,
+        });
 
-      const updatedParameters = updatedStatements.slice(0, parameterLength);
-      const updatedStatementsList = updatedStatements.slice(parameterLength);
+        const adjustedParameterLength = isParameter
+          ? remove
+            ? parameterLength - 1
+            : parameterLength
+          : parameterLength;
+        const updatedParameters = updatedStatements.slice(
+          0,
+          adjustedParameterLength
+        );
+        const updatedStatementsList = updatedStatements.slice(
+          adjustedParameterLength
+        );
+        const newResultType = getOperationResultType(
+          updatedStatementsList,
+          context
+        );
 
-      handleChange({
-        ...operation,
-        type: {
-          ...operation.type,
-          parameters: updatedParameters.map((param) => {
-            return {
+        const originalStatement = allCurrent.find((s) => s.id === statement.id);
+        const isNameChange = originalStatement?.name !== statement.name;
+        const resultTypeChanged = !isEqual(newResultType, prevOp.type.result);
+
+        if (!isNameChange && !resultTypeChanged && !remove && fileId) {
+          const updatedStatement = updatedStatements.find(
+            (s) => s.id === statement.id
+          );
+          if (updatedStatement) {
+            updateStatementByPath(fileId, statementPath, updatedStatement);
+            return null;
+          }
+        }
+
+        return {
+          ...prevOp,
+          type: {
+            ...prevOp.type,
+            parameters: updatedParameters.map((param) => ({
               name: param.name,
               type: param.data.type,
               isOptional: param.isOptional,
               isRest: param.isRest,
-            };
-          }),
-          result: getOperationResultType(updatedStatementsList, context),
-        },
-        value: {
-          ...operation.value,
-          isAsync: updatedStatementsList.some((statement) =>
-            statement.operations.some((op) => op.value.name === "await")
-          ),
-          parameters: updatedParameters,
-          statements: updatedStatementsList,
-        },
-      });
+            })),
+            result: newResultType,
+          },
+          value: {
+            ...prevOp.value,
+            isAsync: updatedStatementsList.some((s) =>
+              s.operations.some((op) => op.value.name === "await")
+            ),
+            parameters: updatedParameters,
+            statements: updatedStatementsList,
+          },
+        };
+      }, remove);
     },
-    [handleChange, operation]
+    [handleChange, updateStatementByPath, fileId]
   );
 
   const handleParameterStatement = useCallback(
-    (statement: IStatement, remove?: boolean) => {
-      const parameterLength = operation.value.parameters.length;
+    (statement: IStatement, remove?: boolean, path?: EntityPath) => {
       handleStatementUpdate({
         statement,
+        path: path ?? [],
         context,
         remove,
-        parameterLength: remove ? parameterLength - 1 : parameterLength,
+        isParameter: true,
       });
     },
-    [handleStatementUpdate, context, operation.value.parameters.length]
+    [handleStatementUpdate, context]
   );
 
   const handleStatement = useCallback(
-    (statement: IStatement, remove?: boolean) => {
+    (statement: IStatement, remove?: boolean, path?: EntityPath) => {
       handleStatementUpdate({
         statement,
+        path: path ?? [],
         remove,
         context: context.getContext(statement.id),
+        isParameter: false,
       });
     },
     [handleStatementUpdate, context]
@@ -110,61 +163,63 @@ const OperationComponent = (
 
   const addStatement = useCallback(
     (statement: IStatement, position: "before" | "after", index: number) => {
-      const _index = position === "before" ? index : index + 1;
-      const statements = operation.value.statements
-        .slice(0, _index)
-        .concat(statement)
-        .concat(operation.value.statements.slice(_index));
-      handleChange({
-        ...operation,
-        type: {
-          ...operation.type,
-          result: getOperationResultType(statements, context),
-        },
-        value: { ...operation.value, statements },
+      handleChange((prevOperation) => {
+        const _index = position === "before" ? index : index + 1;
+        const statements = prevOperation.value.statements
+          .slice(0, _index)
+          .concat(statement)
+          .concat(prevOperation.value.statements.slice(_index));
+        return {
+          ...prevOperation,
+          type: {
+            ...prevOperation.type,
+            result: getOperationResultType(statements, context),
+          },
+          value: { ...prevOperation.value, statements },
+        };
       });
     },
-    [handleChange, operation, context]
+    [handleChange, context]
   );
 
   const addParameter = useCallback(
     (statement: IStatement, position: "before" | "after", index: number) => {
-      const _index = position === "before" ? index : index + 1;
-      const newParameter = {
-        ...statement,
-        name:
-          statement.name ??
-          createVariableName({
-            prefix: "param",
-            prev: [
-              ...getReservedNames(context),
-              ...operation.value.parameters,
-              ...operation.value.statements,
-            ]
-              .map((r) => r.name)
-              .filter(Boolean) as string[],
-          }),
-      };
-      const updatedParameters = operation.value.parameters
-        .slice(0, _index)
-        .concat(newParameter)
-        .concat(operation.value.parameters.slice(_index));
-      const updatedParametersTypes = updatedParameters.map((param) => {
-        return {
+      handleChange((prevOp) => {
+        const _index = position === "before" ? index : index + 1;
+        const newParameter = {
+          ...statement,
+          name:
+            statement.name ??
+            createVariableName({
+              prefix: "param",
+              prev: [
+                ...getReservedNames(context),
+                ...prevOp.value.parameters,
+                ...prevOp.value.statements,
+              ]
+                .map((r) => r.name)
+                .filter(Boolean) as string[],
+            }),
+        };
+        const updatedParameters = prevOp.value.parameters
+          .slice(0, _index)
+          .concat(newParameter)
+          .concat(prevOp.value.parameters.slice(_index));
+        const updatedParametersTypes = updatedParameters.map((param) => ({
           name: param.name,
           type: param.data.type,
           isOptional: param.isOptional,
           isRest: param.isRest,
+        }));
+
+        return {
+          ...prevOp,
+          type: { ...prevOp.type, parameters: updatedParametersTypes },
+          value: { ...prevOp.value, parameters: updatedParameters },
         };
       });
-
-      handleChange({
-        ...operation,
-        type: { ...operation.type, parameters: updatedParametersTypes },
-        value: { ...operation.value, parameters: updatedParameters },
-      });
     },
-    [context, handleChange, operation]
+    [handleChange, context]
   );
 
   const handleAddParameterAt = useCallback(
@@ -192,6 +247,7 @@ const OperationComponent = (
           <Fragment key={parameter.id}>
             <Statement
               statement={parameter}
+              path={parameterPaths[i]}
               handleStatement={handleParameterStatement}
               enableVariable={true}
               disableDelete={
@@ -237,10 +293,11 @@ const OperationComponent = (
         <span>{")"}</span>
       </div>
       <div className="pl-4 [&>div]:mb-1 w-fit">
-        {operation.value.statements.map((statement) => (
+        {operation.value.statements.map((statement, i) => (
           <Statement
             key={statement.id}
             statement={statement}
+            path={statementPaths[i]}
             enableVariable={true}
             handleStatement={handleStatement}
             addStatement={handleAddBodyStatementAt}

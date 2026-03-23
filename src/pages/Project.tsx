@@ -7,13 +7,7 @@ import {
 import { Header } from "@/ui/Header";
 import { SidebarTabs } from "@/ui/SidebarTabs";
 import { NoteText } from "@/ui/NoteText";
-import {
-  MouseEvent,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-} from "react";
+import { MouseEvent, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
@@ -38,25 +32,37 @@ export default function Project() {
     [currentProject?.files, currentFileId]
   );
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
-
+  const rootPath = useMemo(() => [], []);
   useHotkeys(useCustomHotkeys(), []);
   const operationRef = useClickOutside(() => {
     setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));
   });
 
+  const getFile = useProjectStore((s) => s.getFile);
+
   const handleOperationChange = useCallback(
-    (operation: IData<OperationType>, remove?: boolean) => {
-      if (!currentProject) return;
-      if (remove) deleteFile(operation.id);
-      else {
-        if (currentOperation) {
-          const lastContent = createFileFromOperation(currentOperation).content;
-          fileHistoryActions.pushState(operation.id, lastContent);
-        }
-        updateFile(operation.id, createFileFromOperation(operation));
+    (
+      updater: (prev: IData<OperationType>) => IData<OperationType> | null,
+      remove?: boolean
+    ) => {
+      const file = getFile(currentFileId);
+      if (!file || file.type !== "operation") return;
+
+      if (remove) {
+        deleteFile(file.id);
+        return;
       }
+
+      const prevOperation = createOperationFromFile(file);
+      if (!prevOperation) return;
+
+      const newOperation = updater(prevOperation);
+      if (!newOperation) return;
+
+      fileHistoryActions.pushState(file.id, file.content);
+      updateFile(file.id, createFileFromOperation(newOperation));
     },
-    [currentProject, deleteFile, updateFile, currentOperation]
+    [getFile, currentFileId, deleteFile, updateFile]
   );
 
   const [deferredOperation] = useDebouncedValue(currentOperation, 500);
@@ -115,6 +121,7 @@ export default function Project() {
                 operation={currentOperation}
                 handleChange={handleOperationChange}
                 context={rootContext}
+                path={rootPath}
                 className="flex-1 min-w-0 min-h-0 overflow-auto p-1"
                 onClick={handleOperationClick}
               />

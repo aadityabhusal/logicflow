@@ -28,7 +28,6 @@ import {
   OperationListItem,
   Thenable,
 } from "./execution/types";
-import { resolveReferenceType } from "./equality";
 
 /* Create */
 
@@ -600,13 +599,6 @@ export function isTypeCompatible(
 ): boolean {
   if (second.kind === "unknown") return true;
 
-  if (first.kind === "reference") {
-    first = resolveReferenceType(first, context);
-  }
-  if (second.kind === "reference") {
-    second = resolveReferenceType(second, context);
-  }
-
   if (first.kind === "operation" && second.kind === "operation") {
     if (!isTypeCompatible(first.result, second.result, context)) return false;
     const firstRest = first.parameters.find((p) => p.isRest);
@@ -725,6 +717,26 @@ export function isTypeCompatible(
     );
   } else if (second.kind === "union") {
     return second.types.some((t) => isTypeCompatible(first, t, context));
+  }
+
+  if (first.kind === "reference" && second.kind === "reference") {
+    return isTypeCompatible(
+      resolveReferenceType(first, context),
+      resolveReferenceType(second, context),
+      context
+    );
+  } else if (first.kind === "reference") {
+    return isTypeCompatible(
+      resolveReferenceType(first, context),
+      second,
+      context
+    );
+  } else if (second.kind === "reference") {
+    return isTypeCompatible(
+      first,
+      resolveReferenceType(second, context),
+      context
+    );
   }
 
   return first.kind === second.kind;
@@ -918,6 +930,15 @@ export function resolveReference(data: IData, context: Context): IData {
     >);
   }
   return data;
+}
+
+export function resolveReferenceType(
+  type: DataType,
+  context: Context
+): DataType {
+  if (type.kind !== "reference") return type;
+  const variable = context.variables.get(type.name);
+  return variable?.data.type ?? { kind: "unknown" };
 }
 
 export function inferTypeFromValue<T extends DataType>(

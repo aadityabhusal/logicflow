@@ -14,12 +14,14 @@ import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 import { IconButton } from "@/ui/IconButton";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { EntityPath } from "@/lib/types";
 
 const OperationCallComponent = ({
   data,
   operation,
   handleOperationCall,
   addOperationCall,
+  path,
 }: {
   data: IData;
   operation: IData<OperationType>;
@@ -28,6 +30,7 @@ const OperationCallComponent = ({
     remove?: boolean
   ) => void;
   addOperationCall?: (data: IData) => void;
+  path: EntityPath;
 }) => {
   const context = useExecutionResultsStore((s) => s.getContext(operation.id));
 
@@ -95,9 +98,9 @@ const OperationCallComponent = ({
   );
 
   const handleParameter = useCallback(
-    (item: IStatement, remove?: boolean, _index?: number) => {
+    (item: IStatement, remove?: boolean) => {
       const parameters = [...operation.value.parameters];
-      const index = _index ?? parameters.findIndex((p) => p.id === item.id);
+      const index = parameters.findIndex((p) => p.id === item.id);
       if (remove) parameters.splice(index, 1);
       else parameters[index] = item;
       handleOperationCall({
@@ -148,6 +151,11 @@ const OperationCallComponent = ({
     [addOperationCall, context.skipExecution, data, filteredOperations.length]
   );
 
+  const parameterPaths = useMemo(() => {
+    const arr = Array.from({ length: operation.value.parameters.length });
+    return arr.map((_, i) => [...path, "value", "parameters", i]);
+  }, [path, operation.value.parameters.length]);
+
   return (
     <Dropdown
       id={operation.id}
@@ -176,6 +184,7 @@ const OperationCallComponent = ({
         <span key={item.id} className="flex">
           <Statement
             statement={item}
+            path={parameterPaths[paramIndex]}
             handleStatement={handleParameter}
             disableDelete={!item.isOptional}
           />
@@ -186,13 +195,7 @@ const OperationCallComponent = ({
         operation.type.parameters.length || restParamType ? (
         <AddStatement
           id={`${operation.id}_call_parameter`}
-          onSelect={(statement) =>
-            handleParameter(
-              statement,
-              undefined,
-              operation.value.parameters.length
-            )
-          }
+          onSelect={(statement) => handleParameter(statement, undefined)}
           iconProps={{ title: "Add parameter" }}
           config={{
             ...(restParamType

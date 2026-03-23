@@ -1,22 +1,29 @@
 import { ArrayType, TupleType, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useCallback } from "react";
+import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { inferTypeFromValue, isDataOfType } from "@/lib/utils";
 import { getChildContext } from "@/lib/execution/execution";
 import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
   handleData: (data: IData<ArrayType | TupleType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
 
 const ArrayInputComponent = (
-  { data, handleData, context, ...props }: ArrayInputProps,
+  { data, handleData, context, basePath, ...props }: ArrayInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.length > 3;
+
+  const itemPaths = useMemo(() => {
+    const arr = Array.from({ length: data.value.length });
+    return arr.map((_, i) => [...basePath, i]);
+  }, [basePath, data.value.length]);
 
   const handleStatement = useCallback(
     (result: IStatement, remove?: boolean) => {
@@ -54,6 +61,7 @@ const ArrayInputComponent = (
         >
           <Statement
             statement={item}
+            path={itemPaths[i]}
             handleStatement={handleStatement}
             disableDelete={
               isDataOfType(data, "tuple") && !!context.expectedType

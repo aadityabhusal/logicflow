@@ -28,6 +28,8 @@ import { DictionaryInput } from "./Input/Dictionary";
 import { InstanceInput } from "./Input/InstanceInput";
 import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
+import { OperationType } from "../lib/types";
+import { EntityPath } from "@/lib/types";
 
 interface IDropdownTargetProps extends Omit<
   HTMLAttributes<HTMLElement>,
@@ -42,6 +44,7 @@ interface IProps {
   addOperationCall?: (data: IData) => void;
   handleChange(item: IStatement["data"], remove?: boolean): void;
   context: Context;
+  basePath: EntityPath;
 }
 
 const DataComponent = ({
@@ -50,6 +53,7 @@ const DataComponent = ({
   addOperationCall,
   handleChange,
   context,
+  basePath,
 }: IProps) => {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const dropdownItems = useMemo(
@@ -92,6 +96,25 @@ const DataComponent = ({
     [addOperationCall, data]
   );
 
+  const handleOperationChange = useCallback(
+    (
+      updater: (prev: IData<OperationType>) => IData<OperationType> | null,
+      remove?: boolean
+    ) => {
+      if (remove) {
+        handleChange(data, true);
+        return;
+      }
+      const newOperation = updater(data as IData<OperationType>);
+      if (newOperation) {
+        handleChange(newOperation);
+      }
+    },
+    [data, handleChange]
+  );
+
+  const nestedPath = useMemo(() => [...basePath, "data", "value"], [basePath]);
+
   return (
     <Dropdown
       id={data.id}
@@ -117,14 +140,16 @@ const DataComponent = ({
         ) : isDataOfType(data, "operation") ? (
           <Operation
             operation={data}
-            handleChange={handleChange}
+            handleChange={handleOperationChange}
             context={context}
+            path={nestedPath}
           />
         ) : isDataOfType(data, "array") || isDataOfType(data, "tuple") ? (
           <ArrayInput
             data={data}
             handleData={handleChange}
             context={context}
+            basePath={nestedPath}
             onClick={props.onClick}
           />
         ) : isDataOfType(data, "object") ? (
@@ -132,6 +157,7 @@ const DataComponent = ({
             data={data}
             handleData={handleChange}
             context={context}
+            basePath={nestedPath}
             onClick={props.onClick}
           />
         ) : isDataOfType(data, "dictionary") ? (
@@ -139,6 +165,7 @@ const DataComponent = ({
             data={data}
             handleData={handleChange}
             context={context}
+            basePath={nestedPath}
             onClick={props.onClick}
           />
         ) : isDataOfType(data, "boolean") ? (
@@ -174,6 +201,7 @@ const DataComponent = ({
             data={data}
             handleData={handleChange}
             context={context}
+            basePath={nestedPath}
             onClick={props.onClick}
           />
         ) : isDataOfType(data, "union") ? (
@@ -181,6 +209,7 @@ const DataComponent = ({
             data={data}
             handleData={handleChange}
             context={context}
+            basePath={nestedPath}
             onClick={props.onClick}
           />
         ) : isDataOfType(data, "error") ? (
@@ -197,6 +226,7 @@ const DataComponent = ({
             data={data}
             handleData={handleChange}
             context={context}
+            basePath={nestedPath}
           />
         ) : (
           // Undefined type
