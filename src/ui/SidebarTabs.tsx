@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Tabs, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { FaCircleInfo, FaRobot, FaFileCode } from "react-icons/fa6";
+import { FaCircleInfo, FaRobot, FaFileCode, FaCode } from "react-icons/fa6";
 import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "./Resizer";
@@ -14,6 +14,9 @@ const OperationsList = lazy(() =>
 const DetailsPanel = lazy(() =>
   import("./DetailsPanel").then((m) => ({ default: m.DetailsPanel }))
 );
+const CodePanel = lazy(() =>
+  import("./CodePanel").then((m) => ({ default: m.CodePanel }))
+);
 const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
   ? lazy(() => import("./AgentPanel").then((m) => ({ default: m.AgentPanel })))
   : null;
@@ -21,6 +24,7 @@ const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
 const TABS = [
   { value: "operations", label: "Operations", Icon: FaFileCode },
   { value: "details", label: "Details", Icon: FaCircleInfo },
+  { value: "code", label: "Code", Icon: FaCode },
   ...(import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
     ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
     : []),
@@ -113,6 +117,11 @@ export function SidebarTabs() {
                 </Suspense>
               </Tabs.Panel>
             )}
+            <Tabs.Panel value="code" className="h-full w-full">
+              <Suspense fallback={<LoadingFallback />}>
+                <CodePanel />
+              </Suspense>
+            </Tabs.Panel>
           </div>
         )}
       </Tabs>

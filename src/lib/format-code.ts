@@ -1,4 +1,5 @@
-import { IData, IStatement, OperationType, OperationListItem } from "./types";
+import { IData, IStatement, OperationType } from "./types";
+import { OperationListItem } from "./execution/types";
 import { getUnionActiveType, isDataOfType } from "./utils";
 import { builtInOperations } from "./operations/built-in";
 
@@ -119,16 +120,10 @@ function generateStatement(
     .map((op) => generateOperationCall(op, context))
     .join("");
 
-  // TODO: resolve statement data reference and see it its async
-  const hasAsyncOp = statement.operations.some((op) => op.value.isAsync);
-  const hasAwaitOp = statement.operations.some(
-    (op) => op.value.name === "await"
-  );
+  const hasAwait = statement.operations.some((op) => op.value.name === "await");
+  const pipeFunc = hasAwait ? "await R.pipeAsync" : "R.pipe";
 
-  const pipeFunc = hasAsyncOp ? "R.pipeAsync" : "R.pipe";
-  const awaitPrefix = hasAwaitOp ? "await " : "";
-
-  return `${name}${awaitPrefix}${pipeFunc}(${data}${operations})`;
+  return `${name}${pipeFunc}(${data}${operations})`;
 }
 
 function generateCallback(
@@ -141,12 +136,13 @@ function generateCallback(
   );
   return `${asyncKeyword}(${operation.value.parameters.map((p) => p.name).join(", ")}) => {
     ${statements.slice(0, -1).join(";\n")}
-    ${statements.length ? `return ${statements[statements.length - 1]}` : "return undefined;"}
+    return ${statements.length ? statements[statements.length - 1] : "undefined"};
   }`;
 }
 
 export function generateOperation(operation: IData<OperationType>): string {
-  const context = createCodeGenContext();
-  const imports = `import * as R from 'remeda';import * as _ from './built-in';`;
-  return `${imports}const ${operation.value.name} = ${generateCallback(operation, context)};`;
+  const codeGenContext = createCodeGenContext();
+  const imports = `import * as _ from './built-in';\nimport * as R from 'remeda';\n\n`;
+  const callback = generateCallback(operation, codeGenContext);
+  return `${imports}export default ${callback};`;
 }

@@ -29,7 +29,7 @@ const OperationCallComponent = ({
     operation: IData<OperationType>,
     remove?: boolean
   ) => void;
-  addOperationCall?: (data: IData) => void;
+  addOperationCall?: (data: IData, operationId?: string) => void;
   path: EntityPath;
 }) => {
   const context = useExecutionResultsStore((s) => s.getContext(operation.id));
@@ -146,9 +146,15 @@ const OperationCallComponent = ({
   const handleAddOperationCall = useCallback(
     (_data?: IData) => {
       if (!filteredOperations.length || context.skipExecution) return undefined;
-      addOperationCall?.(_data ?? data);
+      addOperationCall?.(_data ?? data, operation.id);
     },
-    [addOperationCall, context.skipExecution, data, filteredOperations.length]
+    [
+      addOperationCall,
+      context.skipExecution,
+      data,
+      filteredOperations.length,
+      operation.id,
+    ]
   );
 
   const parameterPaths = useMemo(() => {

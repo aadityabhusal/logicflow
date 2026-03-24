@@ -18,12 +18,14 @@ export interface ExecutionResultsState {
   contexts: Map<string, Context>;
   results: Map<string, ExecutionResult>;
   instances: Map<string, unknown>;
+  generatedCode?: string;
   getContext: (entityId: string) => Context;
   setContext: (entityId: string, context: Context) => void;
   setResult: (entityId: string, result: Partial<ExecutionResult>) => void;
   getResult: (entityId: string) => ExecutionResult | undefined;
   getInstance: (entityId: string) => unknown;
   setInstance: (entityId: string, instance: unknown) => void;
+  setGeneratedCode: (code: string) => void;
   removeResult: (entityId: string) => void;
   removeAll: () => void;
 }
@@ -72,6 +74,9 @@ export const useExecutionResultsStore =
           return { instances: newInstances };
         });
       },
+      setGeneratedCode: (code) => {
+        set({ generatedCode: code });
+      },
       getContext: (entityId) => {
         return get().contexts.get(entityId) ?? get().rootContext;
       },
@@ -108,6 +113,7 @@ export const useExecutionResultsStore =
             results: newResults,
             instances: newInstances,
             rootContext: newRootContext,
+            generatedCode: undefined,
           };
         }),
       removeResult: (entityId) => {

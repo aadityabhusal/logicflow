@@ -71,7 +71,7 @@ function HeaderComponent({
       )}
       <div className="flex items-center gap-2">
         <IconButton
-          title="Copy"
+          title={clipboard.copied ? "Copied!" : "Copy"}
           icon={clipboard.copied ? FaCheck : FaRegCopy}
           size={16}
           onClick={() => {
@@ -83,7 +83,7 @@ function HeaderComponent({
           className={!currentOperation ? "cursor-not-allowed" : ""}
         />
         <IconButton
-          title="Paste"
+          title={isOperationPasted ? "Pasted!" : "Paste"}
           icon={isOperationPasted ? FaCheck : FaRegPaste}
           size={16}
           onClick={async () => {

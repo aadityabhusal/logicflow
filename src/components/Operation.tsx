@@ -130,7 +130,7 @@ const OperationComponent = (
             statements: updatedStatementsList,
           },
         };
-      }, remove);
+      });
     },
     [handleChange, updateStatementByPath, fileId]
   );
