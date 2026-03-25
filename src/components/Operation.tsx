@@ -12,7 +12,7 @@ import { createVariableName, getOperationResultType } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 import { getReservedNames } from "@/lib/execution/store";
-import { Context, ReservedNames } from "@/lib/execution/types";
+import { Context } from "@/lib/execution/types";
 import { useProjectStore } from "@/lib/store";
 import isEqual from "react-fast-compare";
 import { EntityPath } from "@/lib/types";
@@ -41,14 +41,22 @@ const OperationComponent = (
     [context.expectedType]
   );
 
-  const reservedNames = useMemo(
+  const reservedNamesStr = useMemo(
     () =>
       operation.value.parameters
         .concat(operation.value.statements)
         .filter((s) => s.name)
-        .map((s) => ({ kind: "variable", name: s.name! }))
-        .concat(getReservedNames(context.variables)) as ReservedNames,
-    [context.variables, operation.value.parameters, operation.value.statements]
+        .map((s) => s.name!)
+        .join(","),
+    [operation.value.parameters, operation.value.statements]
+  );
+
+  const reservedNames = useMemo(
+    () =>
+      getReservedNames(context.variables).concat(
+        reservedNamesStr.split(",").map((name) => ({ kind: "variable", name }))
+      ),
+    [context.variables, reservedNamesStr]
   );
 
   const parameterPaths = useMemo(() => {
@@ -172,20 +180,23 @@ const OperationComponent = (
   );
 
   const addStatement = useCallback(
-    (statement: IStatement, position: "before" | "after", index: number) => {
+    (statement: IStatement, position: "before" | "after", id?: string) => {
       handleChange((prevOperation) => {
-        const _index = position === "before" ? index : index + 1;
-        const statements = prevOperation.value.statements
-          .slice(0, _index)
+        const statements = prevOperation.value.statements;
+        const index = statements.findIndex((s) => s.id === id);
+        const insertIndex =
+          index === -1 ? (position === "after" ? statements.length : 0) : index;
+        const newStatements = statements
+          .slice(0, insertIndex)
           .concat(statement)
-          .concat(prevOperation.value.statements.slice(_index));
+          .concat(statements.slice(insertIndex));
         return {
           ...prevOperation,
           type: {
             ...prevOperation.type,
-            result: getOperationResultType(statements, context),
+            result: getOperationResultType(newStatements, context),
           },
-          value: { ...prevOperation.value, statements },
+          value: { ...prevOperation.value, statements: newStatements },
         };
       });
     },
@@ -193,11 +204,16 @@ const OperationComponent = (
   );
 
   const addParameter = useCallback(
-    (statement: IStatement, position: "before" | "after", index: number) => {
+    (statement: IStatement, position: "before" | "after", id?: string) => {
       handleChange((prevOp) => {
-        const _index = position === "before" ? index : index + 1;
+        const parameters = prevOp.value.parameters;
+        const index = parameters.findIndex((p) => p.id === id);
+        const insertIndex =
+          index === -1 ? (position === "after" ? parameters.length : 0) : index;
         const newParameter = {
           ...statement,
+          isOptional:
+            statement.isOptional ?? parameters[insertIndex - 1]?.isOptional,
           name:
             statement.name ??
             createVariableName({
@@ -205,10 +221,10 @@ const OperationComponent = (
               prev: reservedNames.map((r) => r.name).filter(Boolean),
             }),
         };
-        const updatedParameters = prevOp.value.parameters
-          .slice(0, _index)
+        const updatedParameters = parameters
+          .slice(0, insertIndex)
           .concat(newParameter)
-          .concat(prevOp.value.parameters.slice(_index));
+          .concat(parameters.slice(insertIndex));
         const updatedParametersTypes = updatedParameters.map((param) => ({
           name: param.name,
           type: param.data.type,
@@ -224,23 +240,6 @@ const OperationComponent = (
       });
     },
     [handleChange, reservedNames]
-  );
-
-  const handleAddParameterAt = useCallback(
-    (statement: IStatement, pos: "before" | "after", id: string) => {
-      const index = operation.value.parameters.findIndex((p) => p.id === id);
-      const isOptional = operation.value.parameters[index - 1]?.isOptional;
-      addParameter({ ...statement, isOptional }, pos, index);
-    },
-    [addParameter, operation.value.parameters]
-  );
-
-  const handleAddBodyStatementAt = useCallback(
-    (statement: IStatement, pos: "before" | "after", id: string) => {
-      const index = operation.value.statements.findIndex((s) => s.id === id);
-      addStatement(statement, pos, index);
-    },
-    [addStatement, operation.value.statements]
   );
 
   return (
@@ -271,7 +270,7 @@ const OperationComponent = (
                 if (prev && prev.isRest) return true;
                 return false;
               })()}
-              addStatement={handleAddParameterAt}
+              addStatement={addParameter}
               reservedNames={reservedNames}
             />
             {i + 1 < paramList.length && <span>,</span>}
@@ -282,13 +281,7 @@ const OperationComponent = (
         operation.type.parameters.slice(-1)?.[0]?.isRest ? null : (
           <AddStatement
             id={`${operation.id}_parameter`}
-            onSelect={(statement) => {
-              const lastIndex = operation.value.parameters.length - 1;
-              const isOptional =
-                statement.isOptional ??
-                operation.value.parameters[lastIndex]?.isOptional;
-              addParameter({ ...statement, isOptional }, "after", lastIndex);
-            }}
+            onSelect={(statement) => addParameter(statement, "after")}
             iconProps={{ title: "Add parameter" }}
             config={{
               ...expectedParameterType?.[operation.value.parameters.length],
@@ -305,16 +298,13 @@ const OperationComponent = (
             path={statementPaths[i]}
             enableVariable={true}
             handleStatement={handleStatement}
-            addStatement={handleAddBodyStatementAt}
+            addStatement={addStatement}
             reservedNames={reservedNames}
           />
         ))}
         <AddStatement
           id={`${operation.id}_statement`}
-          onSelect={(statement) => {
-            const lastStatement = operation.value.statements.length - 1;
-            addStatement(statement, "after", lastStatement);
-          }}
+          onSelect={(statement) => addStatement(statement, "after")}
           iconProps={{ title: "Add statement" }}
         />
       </div>
