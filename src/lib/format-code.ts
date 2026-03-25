@@ -55,25 +55,12 @@ function getOperationSource(
   context: CodeGenContext
 ): OperationSource {
   const opName = operation.value.name;
-  if (!opName) {
-    return "userDefined";
-  }
-
+  if (!opName) return "userDefined";
   const opItem = context.getOperation(opName);
-
-  if (opItem?.source?.name === "remeda") {
-    return "remeda";
-  }
-
+  if (opItem?.source?.name === "remeda") return "remeda";
   const firstParamType = operation.type.parameters[0]?.type;
-  if (firstParamType?.kind === "instance") {
-    return "instance";
-  }
-
-  if (!opItem) {
-    return "userDefined";
-  }
-
+  if (firstParamType?.kind === "instance") return "instance";
+  if (!opItem) return "userDefined";
   return "builtin";
 }
 
@@ -134,9 +121,12 @@ function generateCallback(
   const statements = operation.value.statements.map((statement) =>
     generateStatement(statement, context)
   );
+  const removeConst = (value: string) =>
+    value.startsWith("const") ? value.replace(/^[^=]*=/, "") : value;
+
   return `${asyncKeyword}(${operation.value.parameters.map((p) => p.name).join(", ")}) => {
     ${statements.slice(0, -1).join(";\n")}
-    return ${statements.length ? statements[statements.length - 1] : "undefined"};
+    return ${statements.length ? removeConst(statements[statements.length - 1]) : "undefined"};
   }`;
 }
 

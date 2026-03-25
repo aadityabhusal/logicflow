@@ -6,7 +6,6 @@ import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "./Resizer";
 import { LoadingFallback } from "./LoadingFallback";
-import { useExecutionResultsStore } from "@/lib/execution/store";
 
 const OperationsList = lazy(() =>
   import("./OperationsList").then((m) => ({ default: m.OperationsList }))
@@ -30,7 +29,6 @@ const TABS = [
     : []),
 ];
 export function SidebarTabs() {
-  const context = useExecutionResultsStore((s) => s.rootContext);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const { sidebar, setUiConfig } = useUiConfigStore((s) => ({
     sidebar: s.sidebar,
@@ -102,7 +100,7 @@ export function SidebarTabs() {
           <div className="overflow-hidden relative flex-1">
             <Tabs.Panel value="operations" className="h-full w-full">
               <Suspense fallback={<LoadingFallback />}>
-                <OperationsList context={context} />
+                <OperationsList />
               </Suspense>
             </Tabs.Panel>
             <Tabs.Panel value="details" className="h-full w-full">

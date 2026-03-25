@@ -129,20 +129,12 @@ export const useExecutionResultsStore =
     shallow
   );
 
-export function getReservedNames(context: Context): ReservedNames {
-  return new Set([
-    ...RESERVED_KEYWORDS.map((name) => ({ kind: "reserved" as const, name })),
-    ...Object.keys(DataTypes).map((name) => ({
-      kind: "data-type" as const,
-      name,
-    })),
-    ...builtInOperations.map((op) => ({
-      kind: "built-in-operation",
-      name: op.name,
-    })),
-    ...context.variables.keys().map((name) => ({
-      kind: "variable",
-      name,
-    })),
-  ]) as ReservedNames;
+export function getReservedNames(variables: Context["variables"]) {
+  return builtInOperations
+    .map((op) => ({ kind: "operation", name: op.name }))
+    .concat(RESERVED_KEYWORDS.map((name) => ({ kind: "reserved", name })))
+    .concat(Object.keys(DataTypes).map((name) => ({ kind: "data-type", name })))
+    .concat(
+      [...variables.keys()].map((name) => ({ kind: "variable", name }))
+    ) as ReservedNames;
 }

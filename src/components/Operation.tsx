@@ -12,7 +12,7 @@ import { createVariableName, getOperationResultType } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 import { getReservedNames } from "@/lib/execution/store";
-import { Context } from "@/lib/execution/types";
+import { Context, ReservedNames } from "@/lib/execution/types";
 import { useProjectStore } from "@/lib/store";
 import isEqual from "react-fast-compare";
 import { EntityPath } from "@/lib/types";
@@ -39,6 +39,16 @@ const OperationComponent = (
         ? context.expectedType.parameters
         : undefined,
     [context.expectedType]
+  );
+
+  const reservedNames = useMemo(
+    () =>
+      operation.value.parameters
+        .concat(operation.value.statements)
+        .filter((s) => s.name)
+        .map((s) => ({ kind: "variable", name: s.name! }))
+        .concat(getReservedNames(context.variables)) as ReservedNames,
+    [context.variables, operation.value.parameters, operation.value.statements]
   );
 
   const parameterPaths = useMemo(() => {
@@ -192,13 +202,7 @@ const OperationComponent = (
             statement.name ??
             createVariableName({
               prefix: "param",
-              prev: [
-                ...getReservedNames(context),
-                ...prevOp.value.parameters,
-                ...prevOp.value.statements,
-              ]
-                .map((r) => r.name)
-                .filter(Boolean) as string[],
+              prev: reservedNames.map((r) => r.name).filter(Boolean),
             }),
         };
         const updatedParameters = prevOp.value.parameters
@@ -219,7 +223,7 @@ const OperationComponent = (
         };
       });
     },
-    [handleChange, context]
+    [handleChange, reservedNames]
   );
 
   const handleAddParameterAt = useCallback(
@@ -268,6 +272,7 @@ const OperationComponent = (
                 return false;
               })()}
               addStatement={handleAddParameterAt}
+              reservedNames={reservedNames}
             />
             {i + 1 < paramList.length && <span>,</span>}
           </Fragment>
@@ -301,6 +306,7 @@ const OperationComponent = (
             enableVariable={true}
             handleStatement={handleStatement}
             addStatement={handleAddBodyStatementAt}
+            reservedNames={reservedNames}
           />
         ))}
         <AddStatement

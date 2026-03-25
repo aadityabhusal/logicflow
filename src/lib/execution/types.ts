@@ -9,10 +9,10 @@ export type Thenable<T> = {
 
 export type ExecutionResult = { data?: IData; shouldCacheResult?: boolean };
 
-export type ReservedNames = Set<{
+export type ReservedNames = {
   kind: "data-type" | "operation" | "variable" | "reserved";
   name: string;
-}>;
+}[];
 
 export type Context = {
   scopeId: string;

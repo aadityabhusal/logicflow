@@ -27,11 +27,9 @@ import { memo, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
-import {
-  getReservedNames,
-  useExecutionResultsStore,
-} from "@/lib/execution/store";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
+import { ReservedNames } from "@/lib/execution/types";
 
 const StatementComponent = ({
   statement,
@@ -44,6 +42,7 @@ const StatementComponent = ({
   disableNameToggle,
   disableDelete,
   path,
+  reservedNames,
 }: {
   statement: IStatement;
   handleStatement: (
@@ -63,11 +62,11 @@ const StatementComponent = ({
   disableNameToggle?: boolean;
   disableDelete?: boolean;
   path: EntityPath;
+  reservedNames?: ReservedNames;
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContext(statement.name ?? statement.id)
   );
-  const reservedNames = useMemo(() => getReservedNames(context), [context]);
 
   const handleDataChange = useCallback(
     (data: IData, remove?: boolean) => {
@@ -233,9 +232,7 @@ const StatementComponent = ({
                               ? undefined
                               : createVariableName({
                                   prefix: "var",
-                                  prev: Array.from(reservedNames).map(
-                                    (r) => r.name
-                                  ),
+                                  prev: reservedNames?.map((r) => r.name) ?? [],
                                 }),
                           }),
                     },

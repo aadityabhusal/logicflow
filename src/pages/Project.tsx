@@ -25,13 +25,11 @@ export default function Project() {
   const updateFile = useProjectStore((s) => s.updateFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const currentOperation = useMemo(
-    () =>
-      createOperationFromFile(
-        currentProject?.files.find((file) => file.id === currentFileId)
-      ),
-    [currentProject?.files, currentFileId]
-  );
+  const currentOperation = useMemo(() => {
+    return createOperationFromFile(
+      currentProject?.files.find((file) => file.id === currentFileId)
+    );
+  }, [currentProject?.files, currentFileId]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const setGeneratedCode = useExecutionResultsStore((s) => s.setGeneratedCode);
   const rootPath = useMemo(() => [], []);

@@ -144,17 +144,8 @@ const OperationCallComponent = ({
   }, [filteredOperations, data, context, handleDropdown]);
 
   const handleAddOperationCall = useCallback(
-    (_data?: IData) => {
-      if (!filteredOperations.length || context.skipExecution) return undefined;
-      addOperationCall?.(_data ?? data, operation.id);
-    },
-    [
-      addOperationCall,
-      context.skipExecution,
-      data,
-      filteredOperations.length,
-      operation.id,
-    ]
+    (_data?: IData) => addOperationCall?.(_data ?? data, operation.id),
+    [addOperationCall, data, operation.id]
   );
 
   const parameterPaths = useMemo(() => {
@@ -168,7 +159,11 @@ const OperationCallComponent = ({
       items={dropdownItems}
       context={context}
       value={operation.value.name}
-      addOperationCall={handleAddOperationCall}
+      addOperationCall={
+        filteredOperations.length && !context.skipExecution
+          ? handleAddOperationCall
+          : undefined
+      }
       handleDelete={handleDelete}
       isInputTarget
       target={(props) => <BaseInput {...props} className="text-method" />}
