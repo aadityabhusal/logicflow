@@ -100,7 +100,8 @@ const OperationCallComponent = ({
   const handleParameter = useCallback(
     (item: IStatement, remove?: boolean) => {
       const parameters = [...operation.value.parameters];
-      const index = parameters.findIndex((p) => p.id === item.id);
+      const _index = parameters.findIndex((p) => p.id === item.id);
+      const index = _index === -1 ? parameters.length : _index;
       if (remove) parameters.splice(index, 1);
       else parameters[index] = item;
       handleOperationCall({

@@ -288,8 +288,6 @@ export function createContext(
     narrowedTypes: needsNewNarrowedTypes
       ? overrides.narrowedTypes!
       : new Map(parentContext.narrowedTypes),
-    expectedType: overrides?.expectedType,
-    enforceExpectedType: overrides?.enforceExpectedType,
     ...overrides,
   };
 

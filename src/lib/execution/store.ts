@@ -81,6 +81,7 @@ export const useExecutionResultsStore =
         return get().contexts.get(entityId) ?? get().rootContext;
       },
       setContext: (entityId, context) => {
+        if (context.isIsolated) return;
         set((state) => {
           const newContexts = new Map(state.contexts);
           newContexts.set(entityId, context);

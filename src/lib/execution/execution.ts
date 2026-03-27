@@ -287,10 +287,7 @@ export function setOperationResults(
           stmt,
           index < parameters.length
             ? getChildContext(newContext, { index, enforceExpectedType: true })
-            : {
-                ...newContext,
-                skipExecution: getSkipExecution({ context, data: stmt.data }),
-              }
+            : newContext
         );
         return (
           result instanceof Promise ? result : createThenable(result)
@@ -336,12 +333,13 @@ function executeStatementCore(
 
   operation.value.parameters.forEach((param, index) => {
     const params = foundOp && resolveParameters(foundOp, data, opCallContext);
-    opCallContext.setContext(param.name ?? param.id, {
-      ...updateContextWithNarrowedTypes(opCallContext, data, opName, index),
-      ...getChildContext(opCallContext, {
-        expectedType: params?.[index + 1]?.type,
-      }),
-    });
+    opCallContext.setContext(
+      param.id,
+      getChildContext(
+        updateContextWithNarrowedTypes(opCallContext, data, opName, index),
+        { expectedType: params?.[index + 1]?.type }
+      )
+    );
   });
 
   if (!foundOp) {
@@ -373,9 +371,7 @@ export async function executeStatement(
   statement: IStatement,
   context: Context
 ): Promise<IData> {
-  if (!context.isIsolated) {
-    context.setContext(statement.name ?? statement.id, context);
-  }
+  context.setContext(statement.name ?? statement.id, context);
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const value = currentData.value;
@@ -418,9 +414,7 @@ export function executeStatementSync(
   statement: IStatement,
   context: Context
 ): IData {
-  if (!context.isIsolated) {
-    context.setContext(statement.name ?? statement.id, context);
-  }
+  context.setContext(statement.name ?? statement.id, context);
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const value = currentData.value;
@@ -495,11 +489,12 @@ export function executeOperationCore(
           value: undefined,
         });
       }
-      const expectedType =
-        p.isRest && p.type.kind === "array" ? p.type.elementType : p.type;
       return _execute(
         param,
-        getChildContext(context, { expectedType, enforceExpectedType: true })
+        getChildContext(context, {
+          expectedType:
+            p.isRest && p.type.kind === "array" ? p.type.elementType : p.type,
+        })
       );
     });
   });

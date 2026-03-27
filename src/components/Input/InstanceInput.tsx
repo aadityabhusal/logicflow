@@ -26,7 +26,8 @@ const InstanceInputComponent = (
   const handleConstructorArgs = useCallback(
     (item: IStatement, remove?: boolean) => {
       const constructorArgs = [...data.value.constructorArgs];
-      const index = constructorArgs.findIndex((arg) => arg.id === item.id);
+      const _index = constructorArgs.findIndex((arg) => arg.id === item.id);
+      const index = _index === -1 ? constructorArgs.length : _index;
       if (remove) constructorArgs.splice(index, 1);
       else constructorArgs[index] = item;
       handleData({ ...data, value: { ...data.value, constructorArgs } });
@@ -57,7 +58,7 @@ const InstanceInputComponent = (
       {data.value.constructorArgs.length < data.type.constructorArgs.length && (
         <AddStatement
           id={`${data.id}_call_parameter`}
-          onSelect={(statement) => handleConstructorArgs(statement, undefined)}
+          onSelect={(statement) => handleConstructorArgs(statement)}
           iconProps={{ title: "Add parameter" }}
           config={{
             ...data.type.constructorArgs[data.value.constructorArgs.length],

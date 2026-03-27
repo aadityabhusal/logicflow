@@ -92,10 +92,10 @@ const booleanOperations: OperationListItem[] = [
         ? context.executeStatementSync
         : context.executeStatement;
 
-      const result = execute(trueStatement, {
-        ...context,
-        ...updateContextWithNarrowedTypes(context, data),
-      });
+      const result = execute(
+        trueStatement,
+        updateContextWithNarrowedTypes(context, data)
+      );
 
       return (result instanceof Promise ? result : createThenable(result)).then(
         (r) => createDataFromRawValue(getRawValueFromData(r, context), context)
@@ -113,10 +113,10 @@ const booleanOperations: OperationListItem[] = [
         ? context.executeStatementSync
         : context.executeStatement;
 
-      const result = execute(falseStatement, {
-        ...context,
-        ...updateContextWithNarrowedTypes(context, data),
-      });
+      const result = execute(
+        falseStatement,
+        updateContextWithNarrowedTypes(context, data)
+      );
 
       return (result instanceof Promise ? result : createThenable(result)).then(
         (r) => createDataFromRawValue(getRawValueFromData(r, context), context)
@@ -150,15 +150,15 @@ const booleanOperations: OperationListItem[] = [
         : context.executeStatement;
 
       const result = value
-        ? execute(trueBranch, {
-            ...context,
-            ...updateContextWithNarrowedTypes(context, data, "thenElse", 0),
-          })
+        ? execute(
+            trueBranch,
+            updateContextWithNarrowedTypes(context, data, "thenElse", 0)
+          )
         : falseBranch
-          ? execute(falseBranch, {
-              ...context,
-              ...updateContextWithNarrowedTypes(context, data, "thenElse", 1),
-            })
+          ? execute(
+              falseBranch,
+              updateContextWithNarrowedTypes(context, data, "thenElse", 1)
+            )
           : createDataFromRawValue(undefined, context);
 
       return (result instanceof Promise ? result : createThenable(result)).then(
