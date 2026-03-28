@@ -3,7 +3,6 @@ import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { inferTypeFromValue, isDataOfType } from "@/lib/utils";
-import { getChildContext } from "@/lib/execution/execution";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 
@@ -85,7 +84,14 @@ const ArrayInputComponent = (
             });
           }}
           iconProps={{ title: "Add array item" }}
-          config={{ type: getChildContext(context, { index: 0 }).expectedType }}
+          config={{
+            type:
+              context.expectedType?.kind === "array"
+                ? context.expectedType.elementType
+                : context.expectedType?.kind === "tuple"
+                  ? context.expectedType.elements[0]
+                  : undefined,
+          }}
         />
       )}
       <span>{"]"}</span>

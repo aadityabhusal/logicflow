@@ -1,6 +1,5 @@
 import { Combobox, Tooltip, useCombobox } from "@mantine/core";
 import {
-  HTMLAttributes,
   memo,
   ReactNode,
   useDeferredValue,
@@ -23,7 +22,12 @@ import {
   useUiConfigStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
-import { IData, IDropdownItem, OperationType } from "../lib/types";
+import {
+  IData,
+  IDropdownItem,
+  IDropdownTargetProps,
+  OperationType,
+} from "../lib/types";
 import { useSearchParams } from "react-router";
 import {
   createOperationFromFile,
@@ -40,13 +44,6 @@ import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 import { nanoid } from "nanoid";
 import { Context } from "@/lib/execution/types";
 import { useExecutionResultsStore } from "@/lib/execution/store";
-
-interface IDropdownTargetProps extends Omit<
-  HTMLAttributes<HTMLElement>,
-  "onChange" | "defaultValue"
-> {
-  onChange?: (value: string) => void;
-}
 
 const DropdownComponent = ({
   id,

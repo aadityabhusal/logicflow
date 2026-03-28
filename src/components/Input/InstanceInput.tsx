@@ -5,6 +5,7 @@ import { AddStatement } from "../AddStatement";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { forwardRef, memo, useCallback, useMemo } from "react";
+import { inferTypeFromValue } from "@/lib/utils";
 
 interface InstanceInputProps {
   data: IData<InstanceDataType>;
@@ -15,7 +16,14 @@ interface InstanceInputProps {
 }
 
 const InstanceInputComponent = (
-  { data, handleData, onChange, basePath, ...props }: InstanceInputProps,
+  {
+    data,
+    handleData,
+    onChange,
+    basePath,
+    context,
+    ...props
+  }: InstanceInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
   const argPaths = useMemo(() => {
@@ -30,9 +38,14 @@ const InstanceInputComponent = (
       const index = _index === -1 ? constructorArgs.length : _index;
       if (remove) constructorArgs.splice(index, 1);
       else constructorArgs[index] = item;
-      handleData({ ...data, value: { ...data.value, constructorArgs } });
+      const newValue = { ...data.value, constructorArgs };
+      handleData({
+        ...data,
+        type: inferTypeFromValue(newValue, context),
+        value: newValue,
+      });
     },
-    [data, handleData]
+    [data, handleData, context]
   );
 
   return (

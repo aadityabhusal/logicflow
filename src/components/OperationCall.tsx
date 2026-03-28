@@ -1,4 +1,10 @@
-import { IData, IStatement, OperationType, IDropdownItem } from "../lib/types";
+import {
+  IData,
+  IStatement,
+  OperationType,
+  IDropdownItem,
+  IDropdownTargetProps,
+} from "../lib/types";
 import { Statement } from "./Statement";
 import { Dropdown } from "./Dropdown";
 import {
@@ -154,6 +160,13 @@ const OperationCallComponent = ({
     return arr.map((_, i) => [...path, "value", "parameters", i]);
   }, [path, operation.value.parameters.length]);
 
+  const TooltipTarget = useCallback(
+    (props: IDropdownTargetProps) => (
+      <BaseInput {...props} className="text-method" />
+    ),
+    []
+  );
+
   return (
     <Dropdown
       id={operation.id}
@@ -167,7 +180,7 @@ const OperationCallComponent = ({
       }
       handleDelete={handleDelete}
       isInputTarget
-      target={(props) => <BaseInput {...props} className="text-method" />}
+      target={TooltipTarget}
     >
       {originalOperation?.shouldCacheResult && (
         <IconButton

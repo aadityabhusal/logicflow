@@ -8,7 +8,11 @@ import {
 } from "react";
 import { IData, IStatement, OperationType } from "../lib/types";
 import { updateStatements } from "@/lib/update";
-import { createVariableName, getOperationResultType } from "../lib/utils";
+import {
+  createVariableName,
+  getOperationResultType,
+  inferTypeFromValue,
+} from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 import { getReservedNames } from "@/lib/execution/store";
@@ -108,16 +112,17 @@ const OperationComponent = (
         const updatedStatementsList = updatedStatements.slice(
           adjustedParameterLength
         );
-        const newResultType = getOperationResultType(
-          updatedStatementsList,
-          context
-        );
 
         const originalStatement = allCurrent.find((s) => s.id === statement.id);
         const isNameChange = originalStatement?.name !== statement.name;
-        const resultTypeChanged = !isEqual(newResultType, prevOp.type.result);
 
-        if (!isNameChange && !resultTypeChanged && !remove && fileId) {
+        const newOperationType = inferTypeFromValue<OperationType>(
+          { parameters: updatedParameters, statements: updatedStatementsList },
+          context
+        );
+        const operationTypeChanged = !isEqual(newOperationType, prevOp.type);
+
+        if (!isNameChange && !operationTypeChanged && !remove && fileId) {
           const updatedStatement = updatedStatements.find(
             (s) => s.id === statement.id
           );
@@ -129,16 +134,7 @@ const OperationComponent = (
 
         return {
           ...prevOp,
-          type: {
-            ...prevOp.type,
-            parameters: updatedParameters.map((param) => ({
-              name: param.name,
-              type: param.data.type,
-              isOptional: param.isOptional,
-              isRest: param.isRest,
-            })),
-            result: newResultType,
-          },
+          type: newOperationType,
           value: {
             ...prevOp.value,
             isAsync: updatedStatementsList.some((s) =>

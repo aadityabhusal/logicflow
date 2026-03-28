@@ -29,7 +29,7 @@ import {
   createRuntimeError,
 } from "@/lib/operations/built-in";
 
-export function getChildContext(
+function getChildContext(
   context: Context,
   options?: {
     index?: number;
@@ -254,7 +254,8 @@ function executeDataValue(
     ];
   } else if (isDataOfType(data, "instance")) {
     const args = data.value.constructorArgs.map((arg, index) => {
-      return _execute(arg, getChildContext(context, { index }));
+      const expectedType = data.type.constructorArgs[index]?.type;
+      return _execute(arg, getChildContext(context, { index, expectedType }));
     });
     return [
       (context.isSync
@@ -455,7 +456,7 @@ export function executeStatementSync(
   return finalResult;
 }
 
-export function executeOperationCore(
+function executeOperationCore(
   operation: OperationListItem,
   _data: IData,
   _parameters: IStatement[],
@@ -645,7 +646,7 @@ function narrowType(
   return originalType;
 }
 
-export function applyTypeNarrowing(
+function applyTypeNarrowing(
   context: Context,
   narrowedTypes: Context["variables"],
   data: IData,

@@ -133,6 +133,12 @@ export interface IStatement {
 
 /* UI Types */
 
+export interface IDropdownTargetProps extends Omit<
+  React.HTMLAttributes<HTMLElement>,
+  "onChange" | "defaultValue"
+> {
+  onChange?: (value: string) => void;
+}
 export interface IDropdownItem {
   label?: string;
   value: string;
