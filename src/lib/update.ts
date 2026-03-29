@@ -18,6 +18,7 @@ import {
   resolveParameters,
   createContext,
   createFileVariables,
+  getIsAsync,
 } from "./utils";
 import isEqual from "react-fast-compare";
 import { getFilteredOperations } from "./execution/execution";
@@ -68,7 +69,10 @@ function updateOperationCalls(
             }
             return params.map((_param) =>
               updateStatement(
-                { ..._param, isOptional: sourceParam.isOptional },
+                {
+                  ..._param,
+                  isOptional: sourceParam.isOptional || sourceParam.isRest,
+                },
                 context.getContext(_param.id)
               )
             );
@@ -215,9 +219,7 @@ function updateOperationValue(
   const parameterLength = operation.value.parameters.length;
   const parameters = updatedStatements.slice(0, parameterLength);
   const statements = updatedStatements.slice(parameterLength);
-  const isAsync = updatedStatements.some((statement) =>
-    statement.operations.some((operation) => operation.value.name === "await")
-  );
+  const isAsync = getIsAsync(updatedStatements);
   return { ...operation.value, parameters, statements, isAsync };
 }
 
@@ -247,7 +249,7 @@ export function updateFiles(
           ...operation,
           type: {
             ...operation.type,
-            result: getOperationResultType(value.statements, _context),
+            result: getOperationResultType(value, _context),
           },
           value,
         });

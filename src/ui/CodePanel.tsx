@@ -1,20 +1,39 @@
 import { Highlight, themes } from "prism-react-renderer";
-import { useExecutionResultsStore } from "@/lib/execution/store";
 import { useClipboard } from "@mantine/hooks";
 import { FaRegCopy, FaCheck } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
 import { useProjectStore } from "@/lib/store";
+import { createOperationFromFile } from "@/lib/utils";
+import { useMemo, useState, useEffect } from "react";
+import { formatCode, generateOperation } from "@/lib/format-code";
 
 export function CodePanel() {
   const currentOperationName = useProjectStore((s) => s.getCurrentFile()?.name);
-  const generatedCode = useExecutionResultsStore((s) => s.generatedCode);
+  const currentFile = useProjectStore((s) => s.getCurrentFile());
   const clipboard = useClipboard({ timeout: 500 });
+  const [formattedCode, setFormattedCode] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  if (!generatedCode) {
+  const currentOperation = useMemo(() => {
+    return createOperationFromFile(currentFile);
+  }, [currentFile]);
+
+  useEffect(() => {
+    if (!currentOperation) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsLoading(true);
+    formatCode(generateOperation(currentOperation))
+      .then((formatted) => setFormattedCode(formatted))
+      .finally(() => setIsLoading(false));
+  }, [currentOperation]);
+
+  if (!currentOperation || isLoading) {
     return (
       <div className="flex flex-col h-full bg-editor">
         <div className="p-1 border-b">Code</div>
-        <div className="p-2 text-gray-500">No code generated yet</div>
+        <div className="p-2 text-gray-500">
+          {!currentOperation ? "No operation selected" : "Formatting code..."}
+        </div>
       </div>
     );
   }
@@ -22,19 +41,19 @@ export function CodePanel() {
   return (
     <div className="flex flex-col h-full bg-editor">
       <div className="flex justify-between items-center p-1 border-b">
-        <span className="text-sm">Code</span>
+        <span>Code</span>
         <span className="text-sm">{currentOperationName}.js</span>
         <IconButton
           icon={clipboard.copied ? FaCheck : FaRegCopy}
           title={clipboard.copied ? "Copied!" : "Copy code"}
           size={14}
-          onClick={() => clipboard.copy(generatedCode)}
+          onClick={() => clipboard.copy(formattedCode)}
         />
       </div>
       <div className="flex-1 overflow-auto dropdown-scrollbar font-mono">
         <Highlight
           theme={themes.vsDark}
-          code={generatedCode}
+          code={formattedCode}
           language="javascript"
         >
           {({ className, style, tokens, getLineProps, getTokenProps }) => (

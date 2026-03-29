@@ -10,7 +10,7 @@ import { IData, IStatement, OperationType } from "../lib/types";
 import { updateStatements } from "@/lib/update";
 import {
   createVariableName,
-  getOperationResultType,
+  getIsAsync,
   inferTypeFromValue,
 } from "../lib/utils";
 import { Statement } from "./Statement";
@@ -116,13 +116,16 @@ const OperationComponent = (
         const originalStatement = allCurrent.find((s) => s.id === statement.id);
         const isNameChange = originalStatement?.name !== statement.name;
 
-        const newOperationType = inferTypeFromValue<OperationType>(
-          { parameters: updatedParameters, statements: updatedStatementsList },
-          context
-        );
-        const operationTypeChanged = !isEqual(newOperationType, prevOp.type);
+        const newValue = {
+          ...prevOp.value,
+          isAsync: getIsAsync(updatedStatementsList),
+          parameters: updatedParameters,
+          statements: updatedStatementsList,
+        };
+        const newType = inferTypeFromValue<OperationType>(newValue, context);
+        const hasTypeChanged = !isEqual(newType, prevOp.type);
 
-        if (!isNameChange && !operationTypeChanged && !remove && fileId) {
+        if (!isNameChange && !hasTypeChanged && !remove && fileId) {
           const updatedStatement = updatedStatements.find(
             (s) => s.id === statement.id
           );
@@ -131,19 +134,7 @@ const OperationComponent = (
             return null;
           }
         }
-
-        return {
-          ...prevOp,
-          type: newOperationType,
-          value: {
-            ...prevOp.value,
-            isAsync: updatedStatementsList.some((s) =>
-              s.operations.some((op) => op.value.name === "await")
-            ),
-            parameters: updatedParameters,
-            statements: updatedStatementsList,
-          },
-        };
+        return { ...prevOp, type: newType, value: newValue };
       });
     },
     [handleChange, updateStatementByPath, fileId]
@@ -186,13 +177,16 @@ const OperationComponent = (
           .slice(0, insertIndex)
           .concat(statement)
           .concat(statements.slice(insertIndex));
+
+        const newValue = {
+          ...prevOperation.value,
+          statements: newStatements,
+          isAsync: getIsAsync(newStatements),
+        };
         return {
           ...prevOperation,
-          type: {
-            ...prevOperation.type,
-            result: getOperationResultType(newStatements, context),
-          },
-          value: { ...prevOperation.value, statements: newStatements },
+          type: inferTypeFromValue(newValue, context),
+          value: newValue,
         };
       });
     },

@@ -10,7 +10,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ParseData } from "../components/Parse/ParseData";
 import { Tooltip } from "@mantine/core";
 import { useMemo } from "react";
-import { getTypeSignature } from "@/lib/utils";
+import { getTypeSignature, isPendingContext } from "@/lib/utils";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { useMediaQuery } from "@mantine/hooks";
 import { useExecutionResultsStore } from "@/lib/execution/store";
@@ -27,11 +27,6 @@ export function DetailsPanel() {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
 
-  const typeSignature = useMemo(
-    () => getTypeSignature(result?.type ?? { kind: "undefined" }),
-    [result?.type]
-  );
-
   const panelLockedId = useUiConfigStore((s) => {
     const lockedId = operationId && s.sidebar?.lockedIds?.[operationId];
     if (
@@ -46,6 +41,13 @@ export function DetailsPanel() {
   const context = useExecutionResultsStore((s) =>
     s.getContext(panelLockedId ?? navigationId ?? "_root_")
   );
+
+  const typeSignature = useMemo(() => {
+    if (result?.type.kind === "reference" && isPendingContext(context)) {
+      return "Pending";
+    }
+    return getTypeSignature(result?.type ?? { kind: "undefined" });
+  }, [result?.type, context]);
 
   if (!result) {
     return (

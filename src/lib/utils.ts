@@ -695,7 +695,11 @@ export function isTypeCompatible(
   }
 
   if (first.kind === "instance" && second.kind === "instance") {
-    return first.className === second.className;
+    if (first.className !== second.className) return false;
+    if (first.result && second.result) {
+      return isTypeCompatible(first.result, second.result, context);
+    }
+    return true; // Covariant case
   }
 
   if (first.kind === "union" && second.kind === "union") {
@@ -886,14 +890,23 @@ function getArrayElementType(
 }
 
 export function getOperationResultType(
-  statements: IStatement[],
+  value: DataValue<OperationType>,
   context: Context
 ): DataType {
   let resultType: DataType = { kind: "undefined" };
-  if (statements.length > 0) {
-    const lastStatement = statements[statements.length - 1];
+  if (value.statements.length > 0) {
+    const lastStatement = value.statements[value.statements.length - 1];
     resultType = getStatementResult(lastStatement, context).type;
   }
+  if (value.isAsync) {
+    return {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: resultType,
+    };
+  }
+
   return resultType;
 }
 
@@ -901,6 +914,8 @@ export function resolveReference(data: IData, context: Context): IData {
   if (isDataOfType(data, "reference")) {
     const variable = context.variables.get(data.value.name);
     if (!variable) {
+      // If context hasn't been set yet return the reference as-is
+      if (context.scopeId === "_root_") return data;
       return createData({
         id: data.id,
         type: { kind: "error", errorType: "reference_error" },
@@ -937,6 +952,17 @@ export function resolveReferenceType(
   if (type.kind !== "reference") return type;
   const variable = context.variables.get(type.name);
   return variable?.data.type ?? { kind: "unknown" };
+}
+
+export function isPendingContext(context: Context): boolean {
+  return context.scopeId === "_root_";
+}
+
+export function getIsAsync(statements: IStatement[]) {
+  const isAsync = statements.some((s) =>
+    s.operations.some((op) => op.value.name === "await")
+  );
+  return isAsync ?? undefined;
 }
 
 export function inferTypeFromValue<T extends DataType>(
@@ -993,7 +1019,10 @@ export function inferTypeFromValue<T extends DataType>(
         isOptional: param.isOptional,
         isRest: param.isRest,
       })),
-      result: getOperationResultType(value.statements, context),
+      result: getOperationResultType(
+        value as DataValue<OperationType>,
+        context
+      ),
     } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
@@ -1123,7 +1152,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
     case "reference":
       return type.name;
     case "instance": {
-      return type.className;
+      return `${type.className}${type.result ? `<${getTypeSignature(type.result)}>` : ``}`;
     }
     default:
       return "unknown";
@@ -1224,17 +1253,22 @@ export function getStatementResult(
     prevEntity?: boolean;
     skipResolveReference?: boolean;
   }
-  // TODO: Make use of the data type to create a better type for result e.g. a union type
+  // TODO: Make use of the data type to create a more accurate type for result e.g. a union type
 ): IData {
   let result = statement.data;
   if (isFatalError(result)) return result;
-  const lastOperation = statement.operations[statement.operations.length - 1];
-  if (options?.index) {
-    result =
-      context.getResult(statement.operations[options.index - 1]?.id)?.data ??
-      createData();
-  } else if (!options?.prevEntity && lastOperation) {
-    result = context.getResult(lastOperation.id)?.data ?? createData();
+  const operation = options?.index
+    ? statement.operations[options.index - 1]
+    : statement.operations[statement.operations.length - 1];
+
+  if (options?.index || (!options?.prevEntity && operation)) {
+    const cached = context.getResult(operation?.id)?.data;
+    if (cached) result = cached;
+    else if (operation?.type?.result) {
+      result = createData({ id: operation.id, type: operation.type.result });
+    } else {
+      result = createData();
+    }
   } else if (isDataOfType(result, "condition")) {
     result =
       context.getResult(result.id)?.data ??

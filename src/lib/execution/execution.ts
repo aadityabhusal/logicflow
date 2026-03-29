@@ -160,7 +160,7 @@ export async function createOperationCall({
           : item.type;
       const newParam = createStatement({
         data: createParamData({ ...item, type: type || data.type }),
-        isOptional: item.isOptional,
+        isOptional: item.isOptional || item.isRest,
       });
       const prevParam = parameters?.[index];
       if (
@@ -178,19 +178,18 @@ export async function createOperationCall({
 
   const _operationId = operationId ?? nanoid();
 
-  const result = newOperation.shouldCacheResult
-    ? createData({ type: { kind: "undefined" } })
-    : await executeOperation(
-        newOperation,
-        data,
-        newParameters,
-        createContext(context, { scopeId: context.scopeId, isIsolated: true })
-      );
+  const result = await executeOperation(
+    newOperation,
+    data,
+    newParameters,
+    createContext(context, { scopeId: context.scopeId, isIsolated: true })
+  );
 
-  if (!newOperation.shouldCacheResult) {
-    const operationResult = { ...result, id: _operationId };
-    context.setResult(_operationId, { data: operationResult });
-  }
+  const operationResult = { ...result, id: _operationId };
+  context.setResult(_operationId, {
+    data: operationResult,
+    shouldCacheResult: newOperation.shouldCacheResult,
+  });
   return {
     id: _operationId,
     type: {
@@ -202,7 +201,6 @@ export async function createOperationCall({
       name: newOperation.name,
       parameters: newParameters,
       statements: [],
-      isAsync: newOperation.isAsync,
     },
   };
 }
@@ -254,8 +252,10 @@ function executeDataValue(
     ];
   } else if (isDataOfType(data, "instance")) {
     const args = data.value.constructorArgs.map((arg, index) => {
-      const expectedType = data.type.constructorArgs[index]?.type;
-      return _execute(arg, getChildContext(context, { index, expectedType }));
+      return _execute(
+        arg,
+        getChildContext(context, { index, expectedType: data.type })
+      );
     });
     return [
       (context.isSync
@@ -372,7 +372,7 @@ export async function executeStatement(
   statement: IStatement,
   context: Context
 ): Promise<IData> {
-  context.setContext(statement.name ?? statement.id, context);
+  context.setContext(statement.id, context);
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const value = currentData.value;
@@ -415,7 +415,7 @@ export function executeStatementSync(
   statement: IStatement,
   context: Context
 ): IData {
-  context.setContext(statement.name ?? statement.id, context);
+  context.setContext(statement.id, context);
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const value = currentData.value;

@@ -14,6 +14,7 @@ import {
   getTypeSignature,
   isDataOfType,
   isObject,
+  isPendingContext,
 } from "../lib/utils";
 import { ComponentProps, memo, useCallback, useMemo } from "react";
 import { BaseInput } from "./Input/BaseInput";
@@ -110,7 +111,11 @@ const DataComponent = ({
   const TargetComponent = useCallback(
     ({ onChange, ...props }: IDropdownTargetProps) =>
       isDataOfType(data, "reference") ? (
-        <BaseInput {...props} onChange={onChange} className="text-variable" />
+        <BaseInput
+          {...props}
+          onChange={onChange}
+          className={`text-variable${isPendingContext(context) ? " opacity-50" : ""}`}
+        />
       ) : isDataOfType(data, "operation") ? (
         <Operation
           operation={data}

@@ -45,6 +45,7 @@ export type InstanceDataType = {
   kind: "instance";
   className: string;
   constructorArgs: OperationType["parameters"];
+  result?: DataType;
 };
 
 export type DataType =
@@ -90,6 +91,7 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
                           parameters: IStatement[];
                           statements: IStatement[];
                           name?: string;
+                          /* Assigned only when the 'await' operation is chained in a statement */
                           isAsync?: boolean;
                         }
                       : T extends ConditionType

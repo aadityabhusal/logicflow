@@ -1,7 +1,20 @@
 import { handleNavigation } from "@/lib/navigation";
-import { useProjectStore, useNavigationStore } from "@/lib/store";
+import {
+  useProjectStore,
+  useNavigationStore,
+  useUiConfigStore,
+} from "@/lib/store";
 import { NavigationDirection, NavigationModifier } from "@/lib/types";
 import { HotkeyItem } from "@mantine/hooks";
+
+const SIDEBAR_TABS = [
+  { value: "operations", key: "ctrl+shift+1" },
+  { value: "details", key: "ctrl+shift+@" },
+  { value: "code", key: "ctrl+shift+3" },
+  ...(import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
+    ? [{ value: "agent", key: "ctrl+shift+4" }]
+    : []),
+] as const;
 
 export function useCustomHotkeys(): HotkeyItem[] {
   const undo = useProjectStore((s) => s.undo);
@@ -14,6 +27,7 @@ export function useCustomHotkeys(): HotkeyItem[] {
   );
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const entities = useNavigationStore((state) => state.navigationEntities);
+  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
 
   const hotKeys: {
     key: string;
@@ -38,6 +52,16 @@ export function useCustomHotkeys(): HotkeyItem[] {
     ["mod+shift+z", () => redo()],
     ["mod+z", () => undo()],
     ["mod+y", () => redo()],
+    ...(SIDEBAR_TABS.map(({ value, key }) => [
+      key,
+      () => {
+        setUiConfig((s) => {
+          const activeTab = s.sidebar?.activeTab === value ? undefined : value;
+          return { sidebar: { ...s.sidebar, activeTab } };
+        });
+      },
+      { preventDefault: true },
+    ]) as HotkeyItem[]),
     ...(entities
       ? (hotKeys.map(({ modifier, direction, key }) => [
           (modifier ? `${modifier}+` : "") + key,

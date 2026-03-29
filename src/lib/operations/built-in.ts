@@ -568,13 +568,16 @@ function getResolveCallbackType(data: IData): OperationType {
   const fallback: OperationType = {
     kind: "operation",
     parameters: [{ name: "value", type: { kind: "unknown" } }],
-    result: { kind: "undefined" },
+    result: { kind: "unknown" },
   };
   if (!isDataOfType(data, "instance")) return fallback;
   const resolveCallback = data.value.constructorArgs?.[0]?.data;
   if (!isDataOfType(resolveCallback, "operation")) return fallback;
   return isDataOfType(resolveCallback.value.parameters[0].data, "operation")
-    ? resolveCallback.value.parameters[0].data.type
+    ? {
+        ...resolveCallback.value.parameters[0].data.type,
+        result: { kind: "unknown" },
+      }
     : fallback;
 }
 
@@ -585,7 +588,6 @@ const promiseOperations: OperationListItem[] = [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
       { type: getResolveCallbackType(data) },
     ],
-    isAsync: true,
     handler: (context, promiseData: IData, callback: IData) => {
       try {
         const promiseValue = getRawValueFromData(
@@ -616,7 +618,6 @@ const promiseOperations: OperationListItem[] = [
         },
       },
     ],
-    isAsync: true,
     handler: (context, promiseData: IData, errorCallback: IData) => {
       try {
         const promiseValue = getRawValueFromData(
@@ -656,7 +657,6 @@ const promiseOperations: OperationListItem[] = [
   {
     name: "fetch",
     shouldCacheResult: true,
-    isAsync: true,
     parameters: [
       { type: { kind: "string" } },
       {
@@ -688,7 +688,6 @@ const promiseOperations: OperationListItem[] = [
 const responseOperations: OperationListItem[] = [
   {
     name: "json",
-    isAsync: true,
     parameters: [
       {
         type: { kind: "instance", className: "Response", constructorArgs: [] },
@@ -702,7 +701,6 @@ const responseOperations: OperationListItem[] = [
   },
   {
     name: "text",
-    isAsync: true,
     parameters: [
       {
         type: { kind: "instance", className: "Response", constructorArgs: [] },

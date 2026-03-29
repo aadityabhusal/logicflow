@@ -64,7 +64,6 @@ export type OperationListItem = {
     | DataType;
   source?: { name: string };
   expectedType?: DataType | ((data: IData) => DataType);
-  isAsync?: boolean;
 } & (
   | { handler: (...args: [Context, ...IData[]]) => Thenable<IData> | IData }
   | {

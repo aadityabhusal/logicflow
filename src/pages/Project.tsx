@@ -17,7 +17,6 @@ import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { setOperationResults } from "@/lib/execution/execution";
 import { useExecutionResultsStore } from "@/lib/execution/store";
-import { formatCode, generateOperation } from "@/lib/format-code";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -31,7 +30,6 @@ export default function Project() {
     );
   }, [currentProject?.files, currentFileId]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
-  const setGeneratedCode = useExecutionResultsStore((s) => s.setGeneratedCode);
   const rootPath = useMemo(() => [], []);
   useHotkeys(useCustomHotkeys(), []);
   const operationRef = useClickOutside(() => {
@@ -74,11 +72,9 @@ export default function Project() {
           rootContext
         ),
       });
-      setOperationResults(deferredOperation, rootContext)
-        .then(() => formatCode(generateOperation(deferredOperation)))
-        .then((formattedCode) => setGeneratedCode(formattedCode));
+      setOperationResults(deferredOperation, rootContext);
     }
-  }, [deferredOperation, setNavigation, rootContext, setGeneratedCode]);
+  }, [deferredOperation, setNavigation, rootContext]);
 
   useEffect(() => {
     useExecutionResultsStore.getState().removeAll();
