@@ -1,45 +1,53 @@
-import { Context, IData, IStatement, ObjectType } from "@/lib/types";
+import { IData, IDropdownItem, IStatement, ObjectType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo, useMemo } from "react";
-import {
-  createVariableName,
-  inferTypeFromValue,
-  getContextExpectedTypes,
-} from "@/lib/utils";
+import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
+import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
 import { Dropdown } from "../Dropdown";
+import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
   handleData: (data: IData<ObjectType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
 const ObjectInputComponent = (
-  { data, handleData, context, ...props }: ObjectInputProps,
+  { data, handleData, context, basePath, ...props }: ObjectInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
-  function handleUpdate(index: number, result: IStatement, remove?: boolean) {
-    const newEntries = [...data.value.entries];
-    if (remove) newEntries.splice(index, 1);
-    else newEntries[index] = { ...newEntries[index], value: result };
+  const entryPaths = useMemo(() => {
+    const arr = Array.from({ length: data.value.entries.length });
+    return arr.map((_, i) => [...basePath, "entries", i, "value"]);
+  }, [basePath, data.value.entries.length]);
 
-    handleData({
-      ...data,
-      type: inferTypeFromValue(
-        { entries: newEntries },
-        { ...context, expectedType: context.expectedType ?? data.type }
-      ),
-      value: { entries: newEntries },
-    });
-  }
+  const handleUpdate = useCallback(
+    (result: IStatement, remove?: boolean) => {
+      const newEntries = [...data.value.entries];
+      const index = newEntries.findIndex((e) => e.value.id === result.id);
+      if (remove) newEntries.splice(index, 1);
+      else newEntries[index] = { ...newEntries[index], value: result };
+
+      handleData({
+        ...data,
+        type: inferTypeFromValue(
+          { entries: newEntries },
+          { ...context, expectedType: context.expectedType ?? data.type }
+        ),
+        value: { entries: newEntries },
+      });
+    },
+    [data, handleData, context]
+  );
 
   function handleKeyUpdate(index: number, newKey: string) {
     const oldKey = data.value.entries[index].key;
@@ -77,7 +85,7 @@ const ObjectInputComponent = (
 
   const optionalKeyOptions = useMemo(() => {
     const oldKey = navigationId?.slice(data.id.length + 1);
-    return remainingOptionalProperties.map(({ key, value }) => ({
+    const results = remainingOptionalProperties.map(({ key, value }) => ({
       value: key,
       entityType: "data" as const,
       type: value,
@@ -99,6 +107,7 @@ const ObjectInputComponent = (
         });
       },
     }));
+    return [["Properties", results]] as [string, IDropdownItem[]][];
   }, [navigationId, data, remainingOptionalProperties, handleData, context]);
 
   return (
@@ -123,19 +132,20 @@ const ObjectInputComponent = (
         return (
           <div
             key={entry.value.id}
-            className={["relative flex", isMultiline ? "ml-2" : ""].join(" ")}
+            className={[
+              "relative flex items-start",
+              isMultiline ? "ml-2" : "",
+            ].join(" ")}
           >
             {context.expectedType ? (
               <Dropdown
                 id={`${data.id}_${entry.key}`}
                 value={entry.key}
-                items={
-                  isOptional ? [["Properties", optionalKeyOptions]] : undefined
-                }
+                items={isOptional ? optionalKeyOptions : undefined}
                 context={context}
                 isInputTarget={true}
-                target={(props) => (
-                  <BaseInput {...props} className={"text-property"} />
+                target={(dropdownProps) => (
+                  <BaseInput {...dropdownProps} className={"text-property"} />
                 )}
               />
             ) : (
@@ -164,7 +174,7 @@ const ObjectInputComponent = (
                 isOptional ? FaQuestion : () => <span className="px-1">:</span>
               }
               className={[
-                "hover:outline hover:outline-border",
+                "mt-0.5 hover:outline hover:outline-border",
                 navigationId === `${data.id}_${entry.key}_colon`
                   ? "outline outline-border"
                   : "",
@@ -176,8 +186,8 @@ const ObjectInputComponent = (
                     ? "Optional property"
                     : undefined
                   : isOptional
-                  ? "Make required"
-                  : "Make optional"
+                    ? "Make required"
+                    : "Make optional"
               }
               onClick={() => {
                 if (expectedType) return;
@@ -192,14 +202,9 @@ const ObjectInputComponent = (
             />
             <Statement
               statement={entry.value}
-              handleStatement={(val, remove) => handleUpdate(i, val, remove)}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({ context, expectedType }),
-              }}
-              options={{
-                disableDelete: !!context.expectedType && !isOptional,
-              }}
+              path={entryPaths[i]}
+              handleStatement={handleUpdate}
+              disableDelete={!!context.expectedType && !isOptional}
             />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>
@@ -216,10 +221,7 @@ const ObjectInputComponent = (
               {
                 key: remainingOptionalProperties[0]
                   ? remainingOptionalProperties[0].key
-                  : createVariableName({
-                      prefix: "key",
-                      prev: existingKeys,
-                    }),
+                  : createVariableName({ prefix: "key", prev: existingKeys }),
                 value: { ...value, name: undefined },
               },
             ];

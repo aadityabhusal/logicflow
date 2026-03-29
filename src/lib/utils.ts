@@ -1,5 +1,11 @@
 import { nanoid } from "nanoid";
-import { DataTypes, ErrorTypesData, InstanceTypes } from "./data";
+import { isDeepEqual } from "remeda";
+import {
+  DataTypes,
+  ErrorTypesData,
+  InstanceTypeConfig,
+  InstanceTypes,
+} from "./data";
 import {
   IData,
   IStatement,
@@ -8,30 +14,42 @@ import {
   DataValue,
   OperationType,
   ConditionType,
-  Context,
   UnionType,
   ProjectFile,
-  OperationListItem,
   ArrayType,
   ObjectType,
   DictionaryType,
   TupleType,
+  MapValue,
 } from "./types";
+import {
+  Context,
+  ExecutionResult,
+  OperationListItem,
+  Thenable,
+} from "./execution/types";
 
 /* Create */
 
 export function createData<T extends DataType>(
   props?: Partial<IData<T>>
 ): IData<T> {
+  const emptyContext = {
+    scopeId: "_root_",
+    variables: new Map(),
+    getResult: () => undefined,
+    getInstance: () => undefined,
+    setInstance: () => undefined,
+    executeOperation: () => Promise.resolve(createData()),
+    executeOperationSync: () => createData(),
+    executeStatement: () => Promise.resolve(createData()),
+    executeStatementSync: () => createData(),
+    getContext: () => emptyContext,
+    setContext: () => undefined,
+    setResult: () => undefined,
+  };
   const type = (props?.type ??
-    inferTypeFromValue(props?.value, {
-      variables: new Map(),
-      getResult: () => undefined,
-      getInstance: () => undefined,
-      setInstance: () => undefined,
-      executeOperation: () => Promise.resolve(createData()),
-      executeStatement: () => Promise.resolve(createData()),
-    })) as T;
+    inferTypeFromValue(props?.value, emptyContext)) as T;
   return {
     id: props?.id ?? nanoid(),
     type,
@@ -73,14 +91,13 @@ export function createVariableName({
   return `${prefix}${index || ""}`;
 }
 
-function createStatementFromType(
-  type: DataType,
-  name?: string,
-  isOptional?: boolean
-) {
+function createStatementFromType({
+  type,
+  ...config
+}: OperationType["parameters"][number]) {
   const value = createDefaultValue(type);
   const data = createData({ type, value });
-  return createStatement({ data, name, isOptional });
+  return createStatement({ data, ...config });
 }
 
 export function createDefaultValue<T extends DataType>(
@@ -107,12 +124,14 @@ export function createDefaultValue<T extends DataType>(
         type.elementType.kind === "never"
       )
         return [] as DataValue<T>;
-      return [createStatementFromType(type.elementType)] as DataValue<T>;
+      return [
+        createStatementFromType({ type: type.elementType }),
+      ] as DataValue<T>;
     }
 
     case "tuple": {
       return type.elements.map((element) =>
-        createStatementFromType(element)
+        createStatementFromType({ type: element })
       ) as DataValue<T>;
     }
 
@@ -123,7 +142,10 @@ export function createDefaultValue<T extends DataType>(
           type.required?.includes(key) ||
           options?.includeOptionalProperties
         ) {
-          entries.push({ key, value: createStatementFromType(value) });
+          entries.push({
+            key,
+            value: createStatementFromType({ type: value }),
+          });
         }
       }
       return { entries } as DataValue<T>;
@@ -138,7 +160,10 @@ export function createDefaultValue<T extends DataType>(
       }
       return {
         entries: [
-          { key: "key", value: createStatementFromType(type.elementType) },
+          {
+            key: "key",
+            value: createStatementFromType({ type: type.elementType }),
+          },
         ],
       } as DataValue<T>;
     }
@@ -153,9 +178,7 @@ export function createDefaultValue<T extends DataType>(
 
     case "operation": {
       return {
-        parameters: type.parameters.map((param) =>
-          createStatementFromType(param.type, param.name, param.isOptional)
-        ),
+        parameters: type.parameters.map(createStatementFromType),
         statements: [],
         result: undefined,
       } as DataValue<T>;
@@ -221,12 +244,12 @@ export function createProjectFile(
           };
         })()
       : type === "globals"
-      ? { content: props ?? {} }
-      : type === "documentation"
-      ? { content: props.content ?? "" }
-      : type === "json"
-      ? { content: props.content ?? {} }
-      : {}),
+        ? { content: props ?? {} }
+        : type === "documentation"
+          ? { content: props.content ?? "" }
+          : type === "json"
+            ? { content: props.content ?? {} }
+            : {}),
   } as ProjectFile;
 }
 
@@ -249,28 +272,42 @@ export function createFileFromOperation(operation: IData<OperationType>) {
 }
 
 export function createContext(
-  context: Context,
-  overrides?: Partial<Context>,
-  scopedResults?: boolean
+  parentContext: Context,
+  overrides?: Partial<Context>
 ): Context {
-  const baseContext: Context = {
-    getResult: context.getResult,
-    setResult: context.setResult,
-    getInstance: context.getInstance,
-    setInstance: context.setInstance,
-    executeOperation: context.executeOperation,
-    executeStatement: context.executeStatement,
-    reservedNames: new Set(context.reservedNames),
-    variables: new Map(context.variables),
+  // Determine if we need new Maps
+  const needsNewVariables = overrides?.variables !== undefined;
+  const needsNewNarrowedTypes = overrides?.narrowedTypes !== undefined;
+
+  const context: Context = {
+    ...parentContext,
+    scopeId: overrides?.scopeId ?? nanoid(),
+    variables: needsNewVariables
+      ? overrides.variables!
+      : new Map(parentContext.variables),
+    narrowedTypes: needsNewNarrowedTypes
+      ? overrides.narrowedTypes!
+      : new Map(parentContext.narrowedTypes),
+    ...overrides,
   };
 
-  if (scopedResults) {
-    const localResults = new Map<string, ReturnType<Context["getResult"]>>();
-    baseContext.setResult = (id, result) => localResults.set(id, result);
-    baseContext.getResult = (id) =>
-      localResults.get(id) ?? context.getResult(id);
+  // Remove undefined values to keep context clean
+  if (context.expectedType === undefined) {
+    delete context.expectedType;
   }
-  return { ...baseContext, ...overrides };
+  if (context.enforceExpectedType === undefined) {
+    delete context.enforceExpectedType;
+  }
+
+  if (context.isIsolated) {
+    const localResults = new Map<string, ExecutionResult>();
+
+    context.setResult = (id, result) => localResults.set(id, result);
+    context.getResult = (id) =>
+      localResults.get(id) ?? parentContext.getResult(id);
+  }
+
+  return context;
 }
 
 export function getContextExpectedTypes({
@@ -295,48 +332,50 @@ export function getContextExpectedTypes({
   };
 }
 
-export function createContextVariables(
-  statements: IStatement[],
+export function createContextVariable(
+  statement: IStatement,
   context: Context,
-  operation?: IData<OperationType>
-): Context["variables"] {
-  return statements.reduce((variables, statement) => {
-    if (statement.name) {
-      const data = resolveReference(statement.data, context);
-      const result = getStatementResult({ ...statement, data }, context);
-
-      const isOptional = operation?.type.parameters.find(
-        (param) => param.name === statement.name && param.isOptional
-      );
-      if (isOptional) {
-        result.type = resolveUnionType([result.type, { kind: "undefined" }]);
-      }
-
-      variables.set(statement.name, {
-        data: { ...result, id: statement.id },
-        reference: isDataOfType(statement.data, "reference")
-          ? statement.data.value
-          : undefined,
-      });
-    }
-    return variables;
-  }, new Map(context.variables));
+  result: IData,
+  parameters?: OperationType["parameters"]
+): MapValue<Context["variables"]> | undefined {
+  if (!statement.name || isDataOfType(result, "error")) return undefined;
+  const paramInfo = parameters?.find((param) => param.name === statement.name);
+  let resultType = result.type;
+  if (paramInfo?.isOptional) {
+    const union = {
+      ...resolveUnionType([result.type, { kind: "undefined" }], true),
+      activeIndex: undefined,
+    };
+    resultType = {
+      ...union,
+      activeIndex: getUnionActiveIndex(union, { value: result.value, context }),
+    };
+  }
+  return {
+    data: { ...result, id: statement.id, type: resultType },
+    reference: isDataOfType(statement.data, "reference")
+      ? statement.data.value
+      : undefined,
+  };
 }
 
 export function createFileVariables(
   files: ProjectFile[] = [],
   currentOperationId?: string
 ): Context["variables"] {
-  return files.reduce((acc, operationFile) => {
-    const operation = createOperationFromFile(operationFile);
-    if (!operation || operationFile.id === currentOperationId) {
+  return files.reduce(
+    (acc, operationFile) => {
+      const operation = createOperationFromFile(operationFile);
+      if (!operation || operationFile.id === currentOperationId) {
+        return acc;
+      }
+      acc.set(operationFile.name, {
+        data: { ...operation, id: operationFile.id },
+      });
       return acc;
-    }
-    acc.set(operationFile.name, {
-      data: { ...operation, id: operationFile.id },
-    });
-    return acc;
-  }, new Map() as Context["variables"]);
+    },
+    new Map() as Context["variables"]
+  );
 }
 
 export function createParamData(
@@ -373,12 +412,17 @@ export function createParamData(
 
 export function createInstance<
   T extends keyof typeof InstanceTypes,
-  K extends (typeof InstanceTypes)[T]["Constructor"]
+  K extends (typeof InstanceTypes)[T]["Constructor"],
 >(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
-  const rawArgs = constructorArgs.map((arg) =>
+  const config = InstanceTypes[className];
+  let rawArgs = constructorArgs.map((arg) =>
     getRawValueFromData(arg, context)
   ) as ConstructorParameters<K>;
-  const Constructor = InstanceTypes[className].Constructor as new (
+  if (config.prepareArgs) {
+    rawArgs = config.prepareArgs(rawArgs) as ConstructorParameters<K>;
+  }
+
+  const Constructor = config.Constructor as new (
     ...args: ConstructorParameters<K>
   ) => InstanceType<K>;
   return new Constructor(...rawArgs);
@@ -395,11 +439,9 @@ export function operationToListItem(
   } as OperationListItem;
 }
 
-// TODO: add expectedType instead of expectedKind when needed
 export function createDataFromRawValue(
   value: unknown,
-  context: Context,
-  expectedKind?: DataType["kind"]
+  context: Context
 ): IData {
   if (value === undefined || value === null) {
     return createData({ type: { kind: "undefined" } });
@@ -414,19 +456,32 @@ export function createDataFromRawValue(
     return createData({ type: { kind: "boolean" }, value });
   }
   if (value instanceof Error) {
+    const errorType = Object.entries(ErrorTypesData).find(([_, val]) =>
+      value.message.startsWith(`${val.name}: `)
+    ) as [keyof typeof ErrorTypesData, unknown];
     return createData({
-      type: { kind: "error", errorType: "custom_error" },
+      type: { kind: "error", errorType: errorType?.[0] ?? "custom_error" },
       value: { reason: value.message },
     });
   }
 
   if (Array.isArray(value)) {
-    const _value = value.map((val) =>
-      createStatement({ data: createDataFromRawValue(val, context) })
+    const _value = value.map((val, i) =>
+      createStatement({
+        data: createDataFromRawValue(val, {
+          ...context,
+          expectedType:
+            context.expectedType?.kind === "tuple"
+              ? context.expectedType.elements[i]
+              : context.expectedType?.kind === "array"
+                ? context.expectedType.elementType
+                : undefined,
+        }),
+      })
     );
     return createData({
       type:
-        expectedKind === "tuple"
+        context.expectedType?.kind === "tuple"
           ? { kind: "tuple", elements: _value.map((v) => v.data.type) }
           : {
               kind: "array",
@@ -446,19 +501,32 @@ export function createDataFromRawValue(
         type: {
           kind: "instance",
           className,
-          constructorArgs: config.constructorArgs,
+          constructorArgs: resolveConstructorArgs(
+            config.constructorArgs,
+            context.expectedType
+          ),
         },
       });
       context.setInstance(data.value.instanceId, value);
       return data;
     } else {
-      const entries = Object.entries(value).map(([key, val]) => ({
+      const entries = Object.entries(value).map(([key, val], i) => ({
         key,
-        value: createStatement({ data: createDataFromRawValue(val, context) }),
+        value: createStatement({
+          data: createDataFromRawValue(val, {
+            ...context,
+            expectedType:
+              context.expectedType?.kind === "object"
+                ? context.expectedType.properties[i].value
+                : context.expectedType?.kind === "dictionary"
+                  ? context.expectedType.elementType
+                  : undefined,
+          }),
+        }),
       }));
       return createData({
         type:
-          expectedKind === "object"
+          context.expectedType?.kind === "object"
             ? {
                 kind: "object",
                 properties: entries.map(({ key, value }) => ({
@@ -479,7 +547,7 @@ export function createDataFromRawValue(
 
   if (typeof value === "function") {
     const data = createData({
-      type: {
+      type: context.expectedType ?? {
         kind: "operation",
         parameters: Array.from({ length: value.length }, () => ({
           type: { kind: "unknown" },
@@ -490,44 +558,106 @@ export function createDataFromRawValue(
     context.setInstance(`${data.id}-operation`, value);
     return data;
   }
-  return createData({ type: { kind: "unknown" }, value });
+  return createData({
+    type: context.expectedType ?? { kind: "unknown" },
+    value,
+  });
+}
+
+export function createThenable<T>(data: T): Thenable<T> {
+  // Allows nested Thenables to pass through
+  if (isObject(data, ["then"])) return data as Thenable<T>;
+  return {
+    then: ((onfulfilled?) => {
+      if (!onfulfilled) return createThenable(data);
+      const result = onfulfilled(data);
+      return createThenable(result);
+    }) as Thenable<T>["then"],
+  };
+}
+
+export function unwrapThenable<T>(thenable: T | Thenable<T>): T {
+  let result = thenable;
+  if (isObject(thenable, ["then"])) {
+    let unwrapped: T;
+    thenable.then((r) => {
+      unwrapped = r;
+    });
+    result = unwrapped!;
+  }
+  return result as T;
 }
 
 /* Types */
 
-export function isTypeCompatible(first: DataType, second: DataType): boolean {
-  if (first.kind === "unknown" || second.kind === "unknown") return true;
+export function isTypeCompatible(
+  first: DataType,
+  second: DataType,
+  context: Context
+): boolean {
+  if (second.kind === "unknown") return true;
 
   if (first.kind === "operation" && second.kind === "operation") {
-    if (!isTypeCompatible(first.result, second.result)) return false;
-    return (
-      first.parameters.every((firstParam, index) => {
-        if (firstParam.isOptional && !second.parameters[index]) return true;
-        if (!second.parameters[index]) return false;
-        return isTypeCompatible(firstParam.type, second.parameters[index].type);
-      }) &&
-      second.parameters.every((secondParam, index) => {
-        if (secondParam.isOptional && !first.parameters[index]) return true;
-        if (!first.parameters[index]) return false;
-        return isTypeCompatible(secondParam.type, first.parameters[index].type);
-      })
+    if (!isTypeCompatible(first.result, second.result, context)) return false;
+    const firstRest = first.parameters.find((p) => p.isRest);
+    const secondRest = second.parameters.find((p) => p.isRest);
+
+    const diff = Math.abs(
+      second.parameters.length - first.parameters.length + 1
     );
+    if (firstRest && firstRest.type.kind === "array" && !secondRest) {
+      const newParams = first.parameters
+        .slice(0, -1)
+        .concat(Array(diff).fill({ type: firstRest.type.elementType }));
+      return isTypeCompatible(
+        second,
+        {
+          ...first,
+          parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+        },
+        context
+      );
+    }
+    if (secondRest && secondRest.type.kind === "array" && !firstRest) {
+      const newParams = second.parameters
+        .slice(0, -1)
+        .concat(Array(diff).fill({ type: secondRest.type.elementType }));
+      return isTypeCompatible(
+        first,
+        {
+          ...second,
+          parameters: newParams.map((p) => ({ ...p, isRest: undefined })),
+        },
+        context
+      );
+    }
+    // TODO: Might change this to contravariant check
+    return first.parameters.every((firstParam, index) => {
+      if (firstParam.isOptional && !second.parameters[index]) return true;
+      if (!second.parameters[index]) return false;
+      return isTypeCompatible(
+        firstParam.type,
+        second.parameters[index].type,
+        context
+      );
+    });
   }
 
   if (first.kind === "array" && second.kind === "array") {
-    return isTypeCompatible(first.elementType, second.elementType);
+    return isTypeCompatible(first.elementType, second.elementType, context);
   }
 
   if (first.kind === "tuple" && second.kind === "tuple") {
-    return first.elements.every((firstElement) =>
-      second.elements.some((secondElement) =>
-        isTypeCompatible(firstElement, secondElement)
-      )
+    if (second.elements.length === 0) return true;
+    if (first.elements.length !== second.elements.length) return false;
+    return first.elements.every((firstElement, index) =>
+      isTypeCompatible(firstElement, second.elements[index], context)
     );
   }
 
   if (first.kind === "object" && second.kind === "object") {
-    const firstRequired = first.required ?? first.properties.map((p) => p.key);
+    if (second.properties.length === 0) return true;
+
     const secondRequired =
       second.required ?? second.properties.map((p) => p.key);
     const firstProps = new Map(first.properties.map((p) => [p.key, p.value]));
@@ -535,15 +665,41 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     for (const key of second.properties.map((p) => p.key)) {
       const firstProp = firstProps.get(key);
       if (!firstProp && secondRequired.includes(key)) return false;
-      if (firstProp && !isTypeCompatible(firstProp, secondProps.get(key)!)) {
+      if (
+        firstProp &&
+        !isTypeCompatible(firstProp, secondProps.get(key)!, context)
+      ) {
         return false;
       }
     }
-    return firstRequired.every((key) => secondProps.has(key));
+    return true;
+  }
+
+  if (first.kind === "object" && second.kind === "dictionary") {
+    return first.properties.every(({ value }) =>
+      isTypeCompatible(value, second.elementType, context)
+    );
+  }
+
+  if (first.kind === "dictionary" && second.kind === "object") {
+    const secondRequired =
+      second.required ?? second.properties.map((p) => p.key);
+    if (secondRequired.length > 0) return false;
+    return second.properties.every(({ value }) =>
+      isTypeCompatible(first.elementType, value, context)
+    );
   }
 
   if (first.kind === "dictionary" && second.kind === "dictionary") {
-    return isTypeCompatible(first.elementType, second.elementType);
+    return isTypeCompatible(first.elementType, second.elementType, context);
+  }
+
+  if (first.kind === "instance" && second.kind === "instance") {
+    if (first.className !== second.className) return false;
+    if (first.result && second.result) {
+      return isTypeCompatible(first.result, second.result, context);
+    }
+    return true; // Covariant case
   }
 
   if (first.kind === "union" && second.kind === "union") {
@@ -552,23 +708,37 @@ export function isTypeCompatible(first: DataType, second: DataType): boolean {
     return (
       first.types.every((firstType) =>
         second.types.some((secondType) =>
-          isTypeCompatible(firstType, secondType)
+          isTypeCompatible(firstType, secondType, context)
         )
       ) &&
       second.types.every((secondType) =>
-        first.types.some((firstType) => isTypeCompatible(firstType, secondType))
+        first.types.some((firstType) =>
+          isTypeCompatible(firstType, secondType, context)
+        )
       )
     );
   } else if (second.kind === "union") {
-    return second.types.some((t) => isTypeCompatible(first, t));
+    return second.types.some((t) => isTypeCompatible(first, t, context));
   }
 
   if (first.kind === "reference" && second.kind === "reference") {
-    return isTypeCompatible(first.dataType, second.dataType);
+    return isTypeCompatible(
+      resolveReferenceType(first, context),
+      resolveReferenceType(second, context),
+      context
+    );
   } else if (first.kind === "reference") {
-    return isTypeCompatible(first.dataType, second);
+    return isTypeCompatible(
+      resolveReferenceType(first, context),
+      second,
+      context
+    );
   } else if (second.kind === "reference") {
-    return isTypeCompatible(first, second.dataType);
+    return isTypeCompatible(
+      first,
+      resolveReferenceType(second, context),
+      context
+    );
   }
 
   return first.kind === second.kind;
@@ -598,9 +768,10 @@ export function isObject<const K extends readonly string[]>(
   return true;
 }
 
-function getInverseTypes(
+export function getInverseTypes(
   originalTypes: Context["variables"],
-  narrowedTypes: Context["variables"]
+  narrowedTypes: Context["variables"],
+  context: Context
 ): Context["variables"] {
   return narrowedTypes.entries().reduce((acc, [key, value]) => {
     const variable = originalTypes.get(key);
@@ -609,11 +780,11 @@ function getInverseTypes(
 
     if (isDataOfType(variable.data, "union")) {
       const remainingTypes = variable.data.type.types.filter(
-        (t) => !isTypeCompatible(t, value.data.type)
+        (t) => !isTypeCompatible(t, value.data.type, context)
       );
       if (remainingTypes.length === 0) excludedType = { kind: "never" };
       else excludedType = resolveUnionType(remainingTypes);
-    } else if (isTypeCompatible(variable.data.type, value.data.type)) {
+    } else if (isTypeCompatible(variable.data.type, value.data.type, context)) {
       excludedType = { kind: "never" }; // If not a union and types are compatible
     }
 
@@ -625,108 +796,6 @@ function getInverseTypes(
     }
     return acc;
   }, new Map(originalTypes));
-}
-
-function objectTypeMatch(source: DataType, target: DataType): boolean {
-  if (target.kind !== "object") return isTypeCompatible(source, target);
-  if (source.kind !== "object") return false;
-  const sourceProps = new Map(source.properties.map((p) => [p.key, p.value]));
-  return target.properties.every(({ key, value }) => {
-    const sourceType = sourceProps.get(key);
-    return sourceType && isTypeCompatible(sourceType, value);
-  });
-}
-
-function narrowType(
-  originalType: DataType,
-  targetType: DataType
-): DataType | undefined {
-  if (targetType.kind === "never") return { kind: "never" };
-  if (originalType.kind === "unknown") return targetType;
-  if (originalType.kind === "union") {
-    const narrowedTypes = originalType.types.filter((t) => {
-      if (targetType.kind === "object") return objectTypeMatch(t, targetType);
-      return isTypeCompatible(t, targetType);
-    });
-
-    if (narrowedTypes.length === 0) return undefined;
-    return resolveUnionType(narrowedTypes);
-  }
-  if (originalType.kind === "object" && targetType.kind === "object") {
-    return objectTypeMatch(originalType, targetType) ? originalType : undefined;
-  }
-  return originalType;
-}
-
-export function applyTypeNarrowing(
-  context: Context,
-  narrowedTypes: Context["variables"],
-  data: IData,
-  operation: IData<OperationType>
-): Context["variables"] {
-  if (!operation) return narrowedTypes;
-  const param = operation.value.parameters[0];
-  let narrowedType: DataType | undefined;
-  let referenceName: string | undefined;
-
-  if (
-    (operation.value.name === "isTypeOf" ||
-      operation.value.name === "isEqual") &&
-    param &&
-    isDataOfType(data, "reference")
-  ) {
-    referenceName = data.value.name;
-    const reference = context.variables.get(referenceName);
-    if (reference) {
-      const resolvedParamData = resolveReference(param.data, context);
-      const targetType = isDataOfType(resolvedParamData, "union")
-        ? getUnionActiveType(
-            resolvedParamData.type,
-            resolvedParamData.value,
-            context
-          )
-        : resolvedParamData.type;
-      narrowedType = narrowType(reference.data.type, targetType);
-    }
-  }
-
-  if (
-    (operation.value.name === "or" || operation.value.name === "and") &&
-    isDataOfType(param.data, "reference") &&
-    param.operations[0]
-  ) {
-    const resultType = applyTypeNarrowing(
-      context,
-      new Map(
-        operation.value.name === "or" ? context.variables : narrowedTypes
-      ),
-      param.data,
-      param.operations[0]
-    );
-    referenceName = param.data.value.name;
-    const types = [
-      narrowedTypes.get(referenceName)?.data.type,
-      resultType.get(referenceName)?.data.type,
-    ].filter(Boolean) as DataType[];
-
-    if (types.length > 0) narrowedType = resolveUnionType(types);
-  }
-
-  if (operation.value.name === "not") {
-    narrowedTypes = getInverseTypes(context.variables, narrowedTypes);
-  }
-
-  if (referenceName) {
-    const variable = context.variables.get(referenceName);
-    if (variable) {
-      narrowedTypes.set(referenceName, {
-        ...variable,
-        data: { ...variable.data, type: narrowedType ?? { kind: "never" } },
-      });
-    }
-  }
-
-  return narrowedTypes;
 }
 
 function mergeNarrowedTypes(
@@ -752,7 +821,7 @@ export function updateContextWithNarrowedTypes(
   const narrowedTypes = context.narrowedTypes ?? new Map();
   const variables =
     operationName === "thenElse" && paramIndex === 1
-      ? getInverseTypes(context.variables, narrowedTypes)
+      ? getInverseTypes(context.variables, narrowedTypes, context)
       : mergeNarrowedTypes(context.variables, narrowedTypes, operationName);
 
   return {
@@ -785,9 +854,7 @@ export function resolveUnionType(
   });
 
   const uniqueTypes = flattenedTypes.reduce<DataType[]>((acc, type) => {
-    if (
-      !acc.some((t) => isTypeCompatible(t, type) && isTypeCompatible(type, t))
-    ) {
+    if (!acc.some((t) => isDeepEqual(t, type))) {
       acc.push(type);
     }
     return acc;
@@ -807,14 +874,15 @@ function getArrayElementType(
   const allSameType = elements.every((element) => {
     return isTypeCompatible(
       getStatementResult(element, context).type,
-      firstType
+      firstType,
+      context
     );
   });
   if (allSameType) return firstType;
 
   const unionTypes = elements.reduce((acc, element) => {
     const elementType = getStatementResult(element, context).type;
-    const exists = acc.some((t) => isTypeCompatible(t, elementType));
+    const exists = acc.some((t) => isDeepEqual(t, elementType));
     if (!exists) acc.push(elementType);
     return acc;
   }, [] as DataType[]);
@@ -822,14 +890,23 @@ function getArrayElementType(
 }
 
 export function getOperationResultType(
-  statements: IStatement[],
+  value: DataValue<OperationType>,
   context: Context
 ): DataType {
   let resultType: DataType = { kind: "undefined" };
-  if (statements.length > 0) {
-    const lastStatement = statements[statements.length - 1];
+  if (value.statements.length > 0) {
+    const lastStatement = value.statements[value.statements.length - 1];
     resultType = getStatementResult(lastStatement, context).type;
   }
+  if (value.isAsync) {
+    return {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: resultType,
+    };
+  }
+
   return resultType;
 }
 
@@ -837,6 +914,8 @@ export function resolveReference(data: IData, context: Context): IData {
   if (isDataOfType(data, "reference")) {
     const variable = context.variables.get(data.value.name);
     if (!variable) {
+      // If context hasn't been set yet return the reference as-is
+      if (context.scopeId === "_root_") return data;
       return createData({
         id: data.id,
         type: { kind: "error", errorType: "reference_error" },
@@ -864,6 +943,26 @@ export function resolveReference(data: IData, context: Context): IData {
     >);
   }
   return data;
+}
+
+export function resolveReferenceType(
+  type: DataType,
+  context: Context
+): DataType {
+  if (type.kind !== "reference") return type;
+  const variable = context.variables.get(type.name);
+  return variable?.data.type ?? { kind: "unknown" };
+}
+
+export function isPendingContext(context: Context): boolean {
+  return context.scopeId === "_root_";
+}
+
+export function getIsAsync(statements: IStatement[]) {
+  const isAsync = statements.some((s) =>
+    s.operations.some((op) => op.value.name === "await")
+  );
+  return isAsync ?? undefined;
 }
 
 export function inferTypeFromValue<T extends DataType>(
@@ -918,8 +1017,12 @@ export function inferTypeFromValue<T extends DataType>(
         name: param.name,
         type: param.data.type,
         isOptional: param.isOptional,
+        isRest: param.isRest,
       })),
-      result: getOperationResultType(value.statements, context),
+      result: getOperationResultType(
+        value as DataValue<OperationType>,
+        context
+      ),
     } as T;
   }
   if (isObject(value, ["condition", "true", "false"])) {
@@ -929,13 +1032,14 @@ export function inferTypeFromValue<T extends DataType>(
       context
     ).type;
     const unionType = resolveUnionType(
-      isTypeCompatible(trueType, falseType) ? [trueType] : [trueType, falseType]
+      isTypeCompatible(trueType, falseType, context)
+        ? [trueType]
+        : [trueType, falseType]
     );
     return { kind: "condition", result: unionType } as T;
   }
   if (isObject(value, ["name"]) && typeof value.name === "string") {
-    const type = context.variables.get(value.name)?.data.type;
-    return { kind: "reference", dataType: type ?? { kind: "unknown" } } as T;
+    return { kind: "reference", name: value.name } as T;
   }
 
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {
@@ -958,19 +1062,27 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
+export function getUnionActiveIndex(
+  unionType: UnionType,
+  infer?: { value: unknown; context: Context }
+): number {
+  if (unionType.activeIndex !== undefined) return unionType.activeIndex;
+  if (infer) {
+    const value = inferTypeFromValue(infer.value, infer.context);
+    const index = unionType.types.findIndex((t) =>
+      isTypeCompatible(value, t, infer.context)
+    );
+    return index === -1 ? 0 : index;
+  }
+  return 0;
+}
+
 export function getUnionActiveType(
   unionType: UnionType,
-  value: unknown,
-  context: Context
+  infer?: { value: unknown; context: Context }
 ): DataType {
-  if (unionType.activeIndex !== undefined) {
-    return unionType.types[unionType.activeIndex] ?? unionType.types[0];
-  }
-  const inferredType = inferTypeFromValue(value, context);
-  const index = unionType.types.findIndex((t) =>
-    isTypeCompatible(inferredType, t)
-  );
-  return index === -1 ? unionType.types[0] : unionType.types[index];
+  const index = getUnionActiveIndex(unionType, infer);
+  return unionType.types[index] ?? unionType.types[0];
 }
 
 export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
@@ -1021,13 +1133,15 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
 
     case "operation": {
       const params = type.parameters
-        .map(
-          (p) =>
-            `${p.name || "_"}${p.isOptional ? "?" : ""}: ${getTypeSignature(
-              p.type,
-              maxDepth - 1
-            )}`
-        )
+        .map((p) => {
+          const typeSignature = getTypeSignature(p.type, maxDepth - 1);
+          return [
+            p.isRest ? "..." : "",
+            p.name || "_",
+            p.isOptional ? "?" : "",
+            ": " + (p.isRest ? `array<${typeSignature}>` : typeSignature),
+          ].join("");
+        })
         .join(", ");
       return `(${params}) => ${getTypeSignature(type.result, maxDepth - 1)}`;
     }
@@ -1036,12 +1150,64 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       return getTypeSignature(type.result, maxDepth - 1);
 
     case "reference":
-      return getTypeSignature(type.dataType, maxDepth - 1);
+      return type.name;
     case "instance": {
-      return type.className;
+      return `${type.className}${type.result ? `<${getTypeSignature(type.result)}>` : ``}`;
     }
     default:
       return "unknown";
+  }
+}
+
+function processDataType(type: DataType): DataType {
+  switch (type.kind) {
+    case "operation":
+      return {
+        ...type,
+        parameters: type.parameters.map((param) => {
+          const processedType = processDataType(param.type);
+          return {
+            ...param,
+            type: param.isOptional
+              ? resolveUnionType([processedType, { kind: "undefined" }])
+              : processedType,
+          };
+        }),
+        result: processDataType(type.result),
+      };
+    case "array":
+      return { ...type, elementType: processDataType(type.elementType) };
+    case "tuple":
+      return { ...type, elements: type.elements.map(processDataType) };
+    case "object":
+      return {
+        ...type,
+        properties: type.properties.map((prop) => ({
+          ...prop,
+          value: processDataType(prop.value),
+        })),
+      };
+    case "dictionary":
+      return { ...type, elementType: processDataType(type.elementType) };
+    case "union":
+      return { ...type, types: type.types.map(processDataType) };
+    case "condition":
+      return { ...type, result: processDataType(type.result) };
+    case "instance":
+      return {
+        ...type,
+        constructorArgs: type.constructorArgs.map((arg) => {
+          const processedType = processDataType(arg.type);
+          return {
+            ...arg,
+            type: arg.isOptional
+              ? resolveUnionType([processedType, { kind: "undefined" }])
+              : processedType,
+          };
+        }),
+      };
+    default:
+      return type;
   }
 }
 
@@ -1049,20 +1215,32 @@ export function resolveParameters(
   operationListItem: OperationListItem,
   _data: IData,
   context: Context
-) {
+): OperationType["parameters"] {
   const data = resolveReference(_data, context);
   const params =
     typeof operationListItem.parameters === "function"
       ? operationListItem.parameters(data)
       : operationListItem.parameters;
+
   return params.map((param) => {
-    if (param.isOptional)
+    const processedType = processDataType(param.type);
+    if (param.isOptional) {
       return {
         ...param,
-        type: resolveUnionType([param.type, { kind: "undefined" }]),
+        type: resolveUnionType([processedType, { kind: "undefined" }]),
       };
-    return param;
+    }
+    return { ...param, type: processedType };
   });
+}
+
+export function resolveConstructorArgs(
+  args: InstanceTypeConfig["constructorArgs"],
+  expectedType?: DataType
+): OperationType["parameters"] {
+  return typeof args === "function"
+    ? args(expectedType ? [{ type: expectedType, name: "value" }] : undefined)
+    : args;
 }
 
 /* Execution */
@@ -1075,17 +1253,22 @@ export function getStatementResult(
     prevEntity?: boolean;
     skipResolveReference?: boolean;
   }
-  // TODO: Make use of the data type to create a better type for result e.g. a union type
+  // TODO: Make use of the data type to create a more accurate type for result e.g. a union type
 ): IData {
   let result = statement.data;
   if (isFatalError(result)) return result;
-  const lastOperation = statement.operations[statement.operations.length - 1];
-  if (options?.index) {
-    result =
-      context.getResult(statement.operations[options.index - 1]?.id)?.data ??
-      createData();
-  } else if (!options?.prevEntity && lastOperation) {
-    result = context.getResult(lastOperation.id)?.data ?? createData();
+  const operation = options?.index
+    ? statement.operations[options.index - 1]
+    : statement.operations[statement.operations.length - 1];
+
+  if (options?.index || (!options?.prevEntity && operation)) {
+    const cached = context.getResult(operation?.id)?.data;
+    if (cached) result = cached;
+    else if (operation?.type?.result) {
+      result = createData({ id: operation.id, type: operation.type.result });
+    } else {
+      result = createData();
+    }
   } else if (isDataOfType(result, "condition")) {
     result =
       context.getResult(result.id)?.data ??
@@ -1155,21 +1338,30 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
   ) {
     return data.value;
   } else if (isDataOfType(data, "error")) {
-    return new Error(data.value.reason);
+    return new Error(
+      `${ErrorTypesData[data.type.errorType].name}: ${data.value.reason}`
+    );
   } else if (isDataOfType(data, "instance")) {
     return context.getInstance(data.value.instanceId);
   } else if (isDataOfType(data, "operation")) {
-    return async (...rawParams: unknown[]): Promise<unknown> => {
-      const mappedParameters = data.value.parameters.map((param, index) =>
-        createDataFromRawValue(rawParams[index], context, param.data.type.kind)
-      );
-      const result = await context.executeOperation(
+    const storedFunc = context.getInstance(`${data.id}-operation`);
+    if (typeof storedFunc === "function") return storedFunc;
+    return (..._args: unknown[]) => {
+      const [dataArg, ...args] = _args;
+      const execute = context.isSync
+        ? context.executeOperationSync
+        : context.executeOperation;
+      const result = execute(
         operationToListItem(data),
-        mappedParameters[0],
-        mappedParameters.slice(1).map((data) => createStatement({ data })),
+        createDataFromRawValue(dataArg, context),
+        args.map((arg) =>
+          createStatement({ data: createDataFromRawValue(arg, context) })
+        ),
         context
       );
-      return getRawValueFromData(result, context);
+      return result instanceof Promise
+        ? result.then((r) => getRawValueFromData(r, context))
+        : getRawValueFromData(result, context);
     };
   } else if (isDataOfType(data, "condition")) {
     return getRawValueFromData(
@@ -1186,17 +1378,23 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       getRawValueFromData(getStatementResult(element, context), context)
     );
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    return data.value.entries.reduce((acc, { key, value }) => {
-      acc[key] = getRawValueFromData(
-        getStatementResult(value, context),
-        context
-      );
-      return acc;
-    }, {} as Record<string, unknown>);
+    return data.value.entries.reduce(
+      (acc, { key, value }) => {
+        acc[key] = getRawValueFromData(
+          getStatementResult(value, context),
+          context
+        );
+        return acc;
+      },
+      {} as Record<string, unknown>
+    );
   } else if (isDataOfType(data, "union")) {
     return getRawValueFromData(
       createData({
-        type: getUnionActiveType(data.type, data.value, context),
+        type: getUnionActiveType(data.type, {
+          value: data.value,
+          context: context,
+        }),
         value: data.value,
       }),
       context
@@ -1283,7 +1481,7 @@ export function getDataDropdownList({
       const instanceType: DataType = {
         kind: "instance",
         className: instanceConfig.name,
-        constructorArgs: instanceConfig.constructorArgs,
+        constructorArgs: resolveConstructorArgs(instanceConfig.constructorArgs),
       };
 
       const option: IDropdownItem = {
@@ -1297,7 +1495,7 @@ export function getDataDropdownList({
       };
       if (
         !context.expectedType ||
-        isTypeCompatible(instanceType, context.expectedType)
+        isTypeCompatible(instanceType, context.expectedType, context)
       ) {
         allowedOptions.push(option);
       } else if (!context.enforceExpectedType) {
@@ -1316,13 +1514,13 @@ export function getDataDropdownList({
         onSelect({
           ...variable.data,
           id: data.id,
-          type: { kind: "reference", dataType: variable.data.type },
+          type: { kind: "reference", name },
           value: { name, id: variable.data.id },
         }),
     };
     if (
       !context.expectedType ||
-      isTypeCompatible(variable.data.type, context.expectedType)
+      isTypeCompatible(variable.data.type, context.expectedType, context)
     ) {
       allowedOptions.unshift(option);
     } else if (!context.enforceExpectedType) {
@@ -1353,4 +1551,36 @@ export function handleSearchParams(
     else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
+}
+
+export function fuzzySearch<T extends object>(
+  data: T[],
+  search?: Partial<{ [key in keyof T]: string }>[]
+): T[] {
+  if (!search || search.length === 0) return data;
+  return data.reduce<T[]>((acc, item) => {
+    for (const searchObj of search) {
+      for (const [key, searchValue] of Object.entries(searchObj)) {
+        if (!isObject(item) || typeof item[key] !== "string") continue;
+        const fieldValue = item[key].toLowerCase().trim();
+        const letters = String(searchValue).toLowerCase().trim().split("");
+        const foundIndices: number[] = [];
+
+        let lastIndex = -1;
+        const match = letters.every((letter) => {
+          const index = fieldValue.indexOf(letter, lastIndex + 1);
+          if (index === -1) return false;
+          foundIndices.push(index);
+          lastIndex = index;
+          return true;
+        });
+
+        if (match) {
+          acc.push(item);
+          return acc;
+        }
+      }
+    }
+    return acc;
+  }, []);
 }

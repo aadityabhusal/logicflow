@@ -18,7 +18,12 @@ export type UnionType = {
 };
 export type OperationType = {
   kind: "operation";
-  parameters: { type: DataType; name?: string; isOptional?: boolean }[];
+  parameters: {
+    type: DataType;
+    name?: string;
+    isOptional?: boolean;
+    isRest?: boolean;
+  }[];
   result: DataType;
 };
 export type ConditionType = { kind: "condition"; result: DataType };
@@ -26,8 +31,7 @@ export type UnknownType = { kind: "unknown" };
 export type NeverType = { kind: "never" };
 export type ReferenceType = {
   kind: "reference";
-  // referenceType: "variable" | "env";
-  dataType: DataType;
+  name: string;
 };
 export type ErrorType = {
   kind: "error";
@@ -41,6 +45,7 @@ export type InstanceDataType = {
   kind: "instance";
   className: string;
   constructorArgs: OperationType["parameters"];
+  result?: DataType;
 };
 
 export type DataType =
@@ -64,42 +69,48 @@ export type DataType =
 type BaseDataValue<T extends DataType> = T extends UnknownType
   ? unknown
   : T extends NeverType
-  ? never
-  : T extends UndefinedType
-  ? undefined
-  : T extends StringType
-  ? string
-  : T extends NumberType
-  ? number
-  : T extends BooleanType
-  ? boolean
-  : T extends ArrayType
-  ? IStatement[]
-  : T extends TupleType
-  ? IStatement[]
-  : T extends ObjectType
-  ? { entries: Array<{ key: string; value: IStatement }> }
-  : T extends DictionaryType
-  ? { entries: Array<{ key: string; value: IStatement }> }
-  : T extends OperationType
-  ? {
-      parameters: IStatement[];
-      statements: IStatement[];
-      name?: string; // for operations calls
-    }
-  : T extends ConditionType
-  ? {
-      condition: IStatement;
-      true: IStatement;
-      false: IStatement;
-    }
-  : T extends ReferenceType
-  ? { name: string; id: string }
-  : T extends ErrorType
-  ? { reason: string }
-  : T extends InstanceDataType
-  ? { className: string; constructorArgs: IStatement[]; instanceId: string }
-  : never;
+    ? never
+    : T extends UndefinedType
+      ? undefined
+      : T extends StringType
+        ? string
+        : T extends NumberType
+          ? number
+          : T extends BooleanType
+            ? boolean
+            : T extends ArrayType
+              ? IStatement[]
+              : T extends TupleType
+                ? IStatement[]
+                : T extends ObjectType
+                  ? { entries: Array<{ key: string; value: IStatement }> }
+                  : T extends DictionaryType
+                    ? { entries: Array<{ key: string; value: IStatement }> }
+                    : T extends OperationType
+                      ? {
+                          parameters: IStatement[];
+                          statements: IStatement[];
+                          name?: string;
+                          /* Assigned only when the 'await' operation is chained in a statement */
+                          isAsync?: boolean;
+                        }
+                      : T extends ConditionType
+                        ? {
+                            condition: IStatement;
+                            true: IStatement;
+                            false: IStatement;
+                          }
+                        : T extends ReferenceType
+                          ? { name: string; id: string }
+                          : T extends ErrorType
+                            ? { reason: string }
+                            : T extends InstanceDataType
+                              ? {
+                                  className: string;
+                                  constructorArgs: IStatement[];
+                                  instanceId: string;
+                                }
+                              : never;
 
 export type DataValue<T extends DataType> = T extends UnionType & {
   types: infer U extends DataType[];
@@ -119,10 +130,17 @@ export interface IStatement {
   operations: IData<OperationType>[];
   name?: string;
   isOptional?: boolean;
+  isRest?: boolean;
 }
 
 /* UI Types */
 
+export interface IDropdownTargetProps extends Omit<
+  React.HTMLAttributes<HTMLElement>,
+  "onChange" | "defaultValue"
+> {
+  onChange?: (value: string) => void;
+}
 export interface IDropdownItem {
   label?: string;
   value: string;
@@ -149,51 +167,7 @@ export type INavigation = {
   disable?: boolean;
 };
 
-/* Context and Execution */
-
-export type ExecutionResult = { data?: IData; shouldCacheResult?: boolean };
-export type Context = {
-  variables: Map<
-    string,
-    // TODO: remove the reference property since we resolve the statement result by default
-    { data: IData; reference?: { name: string; id: string } }
-  >;
-  reservedNames?: Set<{
-    kind: "data-type" | "operation" | "variable";
-    name: string;
-  }>;
-  narrowedTypes?: Context["variables"];
-  expectedType?: DataType;
-  enforceExpectedType?: boolean;
-  skipExecution?: { reason: string; kind: "unreachable" | "error" };
-  getResult: (entityId: string) => ExecutionResult | undefined;
-  getInstance: (entityId: string) => unknown;
-  setInstance: (entityId: string, instance: unknown) => void;
-  setResult?: (entityId: string, result: Partial<ExecutionResult>) => void; // Only for async execution of operation calls inside an operation definition
-  executeStatement: (statement: IStatement, context: Context) => Promise<IData>;
-  executeOperation: (
-    operation: OperationListItem,
-    data: IData,
-    parameters: IStatement[],
-    context: Context
-  ) => Promise<IData>;
-};
-export type OperationListItem = {
-  name: string;
-  parameters:
-    | ((data: IData) => OperationType["parameters"])
-    | OperationType["parameters"];
-  shouldCacheResult?: boolean;
-} & ( // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { handler: (...args: [Context, ...IData<any>[]]) => Promise<IData> | IData }
-  | {
-      lazyHandler: (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...args: [Context, IData<any>, ...IStatement[]]
-      ) => Promise<IData> | IData;
-    }
-  | { statements: IStatement[] }
-);
+export type EntityPath = (string | number)[];
 
 /* Project Types */
 
@@ -301,3 +275,4 @@ interface CronTrigger {
 }
 
 export type SetItem<T> = T extends Set<infer U> ? U : never;
+export type MapValue<T> = T extends Map<unknown, infer V> ? V : never;

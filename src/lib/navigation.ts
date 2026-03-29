@@ -1,3 +1,4 @@
+import { Context } from "./execution/types";
 import {
   ConditionType,
   DataValue,
@@ -8,7 +9,6 @@ import {
   NavigationModifier,
   OperationType,
   NavigationEntity,
-  Context,
 } from "./types";
 import {
   createData,
@@ -281,11 +281,10 @@ function getStatementEntities(
       });
     }
   } else if (isDataOfType(statement.data, "union")) {
-    const valueType = getUnionActiveType(
-      statement.data.type,
-      statement.data.value,
-      context
-    );
+    const valueType = getUnionActiveType(statement.data.type, {
+      value: statement.data.value,
+      context,
+    });
     const dataStatement = createStatement({
       data: createData({
         id: `${dataId}_data`,

@@ -2,37 +2,21 @@ import { Operation } from "@/components/Operation";
 import {
   useProjectStore,
   useNavigationStore,
-  useExecutionResultsStore,
   fileHistoryActions,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { SidebarTabs } from "@/ui/SidebarTabs";
 import { NoteText } from "@/ui/NoteText";
-import {
-  MouseEvent,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-} from "react";
-import { useHotkeys, useClickOutside } from "@mantine/hooks";
+import { MouseEvent, useCallback, useEffect, useMemo } from "react";
+import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
-import { Context, IData, OperationType } from "@/lib/types";
-import {
-  createFileFromOperation,
-  createFileVariables,
-  createOperationFromFile,
-} from "@/lib/utils";
+import { IData, OperationType } from "@/lib/types";
+import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { DataTypes } from "@/lib/data";
-import {
-  executeOperation,
-  executeStatement,
-  setOperationResults,
-} from "@/lib/operation";
-import { builtInOperations } from "@/lib/built-in-operations";
+import { setOperationResults } from "@/lib/execution/execution";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -40,89 +24,61 @@ export default function Project() {
   const updateFile = useProjectStore((s) => s.updateFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const setResult = useExecutionResultsStore((s) => s.setResult);
-
-  const currentOperation = useMemo(
-    () =>
-      createOperationFromFile(
-        currentProject?.files.find((file) => file.id === currentFileId)
-      ),
-    [currentProject?.files, currentFileId]
-  );
-
-  const context = useMemo<Context>(() => {
-    return {
-      variables: createFileVariables(
-        currentProject?.files,
-        currentOperation?.id
-      ),
-      reservedNames: new Set(
-        (currentProject?.files ?? [])
-          .map((file) => ({ kind: "operation", name: file.name }))
-          .concat(
-            Object.keys(DataTypes).map((type) => ({
-              kind: "data-type",
-              name: type,
-            }))
-          )
-          .concat(
-            builtInOperations.map((op) => ({
-              kind: "built-in-operation",
-              name: op.name,
-            }))
-          )
-      ),
-      getResult: useExecutionResultsStore.getState().getResult,
-      getInstance: useExecutionResultsStore.getState().getInstance,
-      setInstance: useExecutionResultsStore.getState().setInstance,
-      executeOperation,
-      executeStatement,
-    } as Context;
-  }, [currentProject?.files, currentOperation?.id]);
-
+  const currentOperation = useMemo(() => {
+    return createOperationFromFile(
+      currentProject?.files.find((file) => file.id === currentFileId)
+    );
+  }, [currentProject?.files, currentFileId]);
+  const rootContext = useExecutionResultsStore((s) => s.rootContext);
+  const rootPath = useMemo(() => [], []);
   useHotkeys(useCustomHotkeys(), []);
   const operationRef = useClickOutside(() => {
     setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));
   });
 
+  const getFile = useProjectStore((s) => s.getFile);
+
   const handleOperationChange = useCallback(
-    (operation: IData<OperationType>, remove?: boolean) => {
-      if (!currentProject) return;
-      if (remove) deleteFile(operation.id);
-      else {
-        if (currentOperation) {
-          const lastContent = createFileFromOperation(currentOperation).content;
-          fileHistoryActions.pushState(operation.id, lastContent);
-        }
-        updateFile(operation.id, createFileFromOperation(operation));
+    (
+      updater: (prev: IData<OperationType>) => IData<OperationType> | null,
+      remove?: boolean
+    ) => {
+      const file = getFile(currentFileId);
+      if (!file || file.type !== "operation") return;
+
+      if (remove) {
+        deleteFile(file.id);
+        return;
       }
+
+      const prevOperation = createOperationFromFile(file);
+      if (!prevOperation) return;
+
+      const newOperation = updater(prevOperation);
+      if (!newOperation) return;
+
+      fileHistoryActions.pushState(file.id, file.content);
+      updateFile(file.id, createFileFromOperation(newOperation));
     },
-    [currentProject, deleteFile, updateFile, currentOperation]
+    [getFile, currentFileId, deleteFile, updateFile]
   );
 
-  const deferredOperation = useDeferredValue(currentOperation);
-  const deferredContext = useDeferredValue(context);
+  const [deferredOperation] = useDebouncedValue(currentOperation, 500);
   useEffect(() => {
     if (deferredOperation) {
-      useExecutionResultsStore.getState().removeAll();
-      setOperationResults(deferredOperation, {
-        ...deferredContext,
-        setResult,
-      });
       setNavigation({
         navigationEntities: getOperationEntities(
           deferredOperation,
-          deferredContext
+          rootContext
         ),
       });
+      setOperationResults(deferredOperation, rootContext);
     }
-  }, [
-    currentFileId,
-    deferredContext,
-    deferredOperation,
-    setNavigation,
-    setResult,
-  ]);
+  }, [deferredOperation, setNavigation, rootContext]);
+
+  useEffect(() => {
+    useExecutionResultsStore.getState().removeAll();
+  }, [currentFileId]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
@@ -140,12 +96,11 @@ export default function Project() {
   return (
     <div className="flex flex-col h-dvh">
       <Header
-        context={context}
         currentOperation={currentOperation}
         currentProject={currentProject}
       />
       <div className="flex flex-col-reverse md:flex-row flex-1 min-h-0 relative">
-        <SidebarTabs context={context} />
+        <SidebarTabs />
         <div
           className={
             "relative flex-1 overflow-y-auto scroll flex flex-col pr-2"
@@ -163,7 +118,8 @@ export default function Project() {
                 ref={operationRef}
                 operation={currentOperation}
                 handleChange={handleOperationChange}
-                context={context}
+                context={rootContext}
+                path={rootPath}
                 className="flex-1 min-w-0 min-h-0 overflow-auto p-1"
                 onClick={handleOperationClick}
               />

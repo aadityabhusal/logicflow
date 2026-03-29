@@ -3,17 +3,18 @@ import { theme } from "@/lib/theme";
 import {
   ArrayType,
   ConditionType,
-  Context,
   DictionaryType,
   IData,
   ObjectType,
   TupleType,
 } from "@/lib/types";
+import { Context } from "@/lib/execution/types";
 import { ParseStatement } from "./ParseStatement";
 import {
   getConditionResult,
   inferTypeFromValue,
   isDataOfType,
+  isPendingContext,
 } from "@/lib/utils";
 
 export function ParseData({
@@ -29,6 +30,9 @@ export function ParseData({
 }) {
   if (!showData && isDataOfType(data, "reference")) {
     return <span className="text-variable">{data.value.name}</span>;
+  }
+  if (isDataOfType(data, "reference") && isPendingContext(context)) {
+    return <span className="text-disabled">Pending</span>;
   }
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return (

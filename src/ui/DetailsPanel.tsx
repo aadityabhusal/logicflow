@@ -4,17 +4,16 @@ import { IconButton } from "./IconButton";
 import {
   useNavigationStore,
   useProjectStore,
-  useExecutionResultsStore,
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ParseData } from "../components/Parse/ParseData";
 import { Tooltip } from "@mantine/core";
 import { useMemo } from "react";
-import { createData, getTypeSignature } from "@/lib/utils";
-import { Context } from "@/lib/types";
+import { getTypeSignature, isPendingContext } from "@/lib/utils";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { useMediaQuery } from "@mantine/hooks";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 export function DetailsPanel() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -28,11 +27,6 @@ export function DetailsPanel() {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
 
-  const typeSignature = useMemo(
-    () => getTypeSignature(result?.type ?? { kind: "undefined" }),
-    [result?.type]
-  );
-
   const panelLockedId = useUiConfigStore((s) => {
     const lockedId = operationId && s.sidebar?.lockedIds?.[operationId];
     if (
@@ -44,17 +38,16 @@ export function DetailsPanel() {
     return lockedId;
   });
 
-  const context = useMemo<Context>(
-    () => ({
-      variables: new Map(),
-      getResult: useExecutionResultsStore.getState().getResult,
-      getInstance: useExecutionResultsStore.getState().getInstance,
-      setInstance: useExecutionResultsStore.getState().setInstance,
-      executeOperation: () => Promise.resolve(createData()),
-      executeStatement: () => Promise.resolve(createData()),
-    }),
-    []
+  const context = useExecutionResultsStore((s) =>
+    s.getContext(panelLockedId ?? navigationId ?? "_root_")
   );
+
+  const typeSignature = useMemo(() => {
+    if (result?.type.kind === "reference" && isPendingContext(context)) {
+      return "Pending";
+    }
+    return getTypeSignature(result?.type ?? { kind: "undefined" });
+  }, [result?.type, context]);
 
   if (!result) {
     return (

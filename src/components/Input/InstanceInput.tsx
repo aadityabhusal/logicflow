@@ -1,34 +1,53 @@
-import { IData, Context, InstanceDataType, IStatement } from "@/lib/types";
-import { forwardRef, memo } from "react";
+import { IData, InstanceDataType, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
-import { getContextExpectedTypes } from "@/lib/utils";
 import { AddStatement } from "../AddStatement";
+import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
+import { forwardRef, memo, useCallback, useMemo } from "react";
+import { inferTypeFromValue } from "@/lib/utils";
 
 interface InstanceInputProps {
   data: IData<InstanceDataType>;
   handleData: (data: IData<InstanceDataType>) => void;
   context: Context;
   onChange?: (value: string) => void;
+  basePath: EntityPath;
 }
 
 const InstanceInputComponent = (
-  { data, handleData, context, onChange, ...props }: InstanceInputProps,
+  {
+    data,
+    handleData,
+    onChange,
+    basePath,
+    context,
+    ...props
+  }: InstanceInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
-  function handleConstructorArgs(
-    item: IStatement,
-    index: number,
-    remove?: boolean
-  ) {
-    const constructorArgs = [...data.value.constructorArgs];
-    if (remove) constructorArgs.splice(index, 1);
-    else constructorArgs[index] = item;
-    handleData({
-      ...data,
-      value: { ...data.value, constructorArgs },
-    });
-  }
+  const argPaths = useMemo(() => {
+    const arr = Array.from({ length: data.value.constructorArgs.length });
+    return arr.map((_, i) => [...basePath, "constructorArgs", i]);
+  }, [basePath, data.value.constructorArgs.length]);
+
+  const handleConstructorArgs = useCallback(
+    (item: IStatement, remove?: boolean) => {
+      const constructorArgs = [...data.value.constructorArgs];
+      const _index = constructorArgs.findIndex((arg) => arg.id === item.id);
+      const index = _index === -1 ? constructorArgs.length : _index;
+      if (remove) constructorArgs.splice(index, 1);
+      else constructorArgs[index] = item;
+      const newValue = { ...data.value, constructorArgs };
+      handleData({
+        ...data,
+        type: inferTypeFromValue(newValue, context),
+        value: newValue,
+      });
+    },
+    [data, handleData, context]
+  );
+
   return (
     <div className="flex items-start gap-1">
       <BaseInput
@@ -38,33 +57,21 @@ const InstanceInputComponent = (
         onChange={onChange}
       />
       <span>{"("}</span>
-      {data.value.constructorArgs.map((item, paramIndex, arr) => {
-        return (
-          <span key={item.id} className="flex">
-            <Statement
-              statement={item}
-              handleStatement={(val, remove) =>
-                val && handleConstructorArgs(val, paramIndex, remove)
-              }
-              options={{ disableDelete: !item.isOptional }}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType: data.type.constructorArgs[paramIndex].type,
-                }),
-              }}
-            />
-            {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
-          </span>
-        );
-      })}
+      {data.value.constructorArgs.map((item, paramIndex, arr) => (
+        <span key={item.id} className="flex">
+          <Statement
+            statement={item}
+            path={argPaths[paramIndex]}
+            handleStatement={handleConstructorArgs}
+            disableDelete={!item.isOptional}
+          />
+          {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
+        </span>
+      ))}
       {data.value.constructorArgs.length < data.type.constructorArgs.length && (
         <AddStatement
           id={`${data.id}_call_parameter`}
-          onSelect={(statement) =>
-            handleConstructorArgs(statement, data.value.constructorArgs.length)
-          }
+          onSelect={(statement) => handleConstructorArgs(statement)}
           iconProps={{ title: "Add parameter" }}
           config={{
             ...data.type.constructorArgs[data.value.constructorArgs.length],

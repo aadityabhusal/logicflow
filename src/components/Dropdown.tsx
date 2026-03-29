@@ -1,6 +1,5 @@
 import { Combobox, Tooltip, useCombobox } from "@mantine/core";
 import {
-  HTMLAttributes,
   memo,
   ReactNode,
   useDeferredValue,
@@ -14,31 +13,37 @@ import {
   FaCircleChevronDown,
   FaCirclePlus,
   FaCircleXmark,
+  FaObjectUngroup,
   FaSquareArrowUpRight,
 } from "react-icons/fa6";
 import {
   useProjectStore,
   useNavigationStore,
   useUiConfigStore,
-  useExecutionResultsStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
-import { Context, IData, IDropdownItem } from "../lib/types";
+import {
+  IData,
+  IDropdownItem,
+  IDropdownTargetProps,
+  OperationType,
+} from "../lib/types";
 import { useSearchParams } from "react-router";
 import {
   createOperationFromFile,
+  createFileFromOperation,
+  createVariableName,
   getTypeSignature,
   handleSearchParams,
   isDataOfType,
   isTextInput,
   resolveReference,
+  fuzzySearch,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
-
-interface IDropdownTargetProps
-  extends Omit<HTMLAttributes<HTMLElement>, "onChange" | "defaultValue"> {
-  onChange?: (value: string) => void;
-}
+import { nanoid } from "nanoid";
+import { Context } from "@/lib/execution/types";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 const DropdownComponent = ({
   id,
@@ -47,6 +52,7 @@ const DropdownComponent = ({
   items,
   handleDelete,
   addOperationCall,
+  handleChange,
   children,
   options,
   isInputTarget,
@@ -58,7 +64,8 @@ const DropdownComponent = ({
   value?: string;
   items?: [string, IDropdownItem[]][];
   handleDelete?: () => void;
-  addOperationCall?: () => void;
+  addOperationCall?: (data?: IData) => void;
+  handleChange?: (data: IData) => void;
   children?: ReactNode;
   options?: {
     withSearch?: boolean;
@@ -71,14 +78,12 @@ const DropdownComponent = ({
 }) => {
   const [, setSearchParams] = useSearchParams();
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
-  const navigationDirection = useNavigationStore(
-    (s) => s.navigation?.direction
-  );
-  const navigationModifier = useNavigationStore((s) => s.navigation?.modifier);
+
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const isOperationFile = useProjectStore((s) =>
     s.getCurrentProject()?.files.find((f) => f.name === value)
   );
+  const addFile = useProjectStore((s) => s.addFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const detailsPanelLockedId = useUiConfigStore((s) => {
     const lockedId = currentFileId && s.sidebar.lockedIds?.[currentFileId];
@@ -98,8 +103,8 @@ const DropdownComponent = ({
       operationResult
         ? resolveReference(operationResult, context)
         : data
-        ? resolveReference(data, context)
-        : undefined,
+          ? resolveReference(data, context)
+          : undefined,
     [operationResult, data, context]
   );
   const result = useDeferredValue(_result);
@@ -120,17 +125,17 @@ const DropdownComponent = ({
   });
 
   const dropdownOptions = useMemo(() => {
-    return items?.reduce((acc, [groupName, groupItems]) => {
-      const filteredItem = groupItems.filter((item) => {
-        return (
-          search === value ||
-          item.label?.toLowerCase().includes(search.toLowerCase().trim()) ||
-          item.value.toLowerCase().includes(search.toLowerCase().trim())
+    return items?.reduce(
+      (acc, [groupName, groupItems]) => {
+        const filteredItem = fuzzySearch(
+          groupItems,
+          value === search ? [] : [{ label: search, value: search }]
         );
-      });
-      if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
-      return acc;
-    }, [] as [string, IDropdownItem[]][]);
+        if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
+        return acc;
+      },
+      [] as [string, IDropdownItem[]][]
+    );
   }, [items, search, value]);
 
   function handleSearch(val: string) {
@@ -175,7 +180,7 @@ const DropdownComponent = ({
           ]) as HotkeyItem[]),
           ...(["alt+=", "alt+≠"].map((key) => [
             key,
-            () => addOperationCall?.(),
+            () => addOperationCall?.(result),
             { preventDefault: true },
           ]) as HotkeyItem[]),
         ]
@@ -219,21 +224,37 @@ const DropdownComponent = ({
     const textInput = isTextInput(combobox.targetRef.current);
     if (textInput && textInput !== document.activeElement) {
       let caretPosition = 0;
+      const navigation = useNavigationStore.getState().navigation;
       if (
-        (navigationDirection === "right" && navigationModifier) ||
-        (navigationDirection === "left" && !navigationModifier)
+        (navigation?.direction === "right" && navigation.modifier) ||
+        (navigation?.direction === "left" && !navigation.modifier)
       ) {
         caretPosition = textInput.value.length;
       }
       textInput.setSelectionRange(caretPosition, caretPosition);
     }
-  }, [
-    isFocused,
-    combobox.targetRef,
-    navigationDirection,
-    navigationModifier,
-    data?.type.kind,
-  ]);
+  }, [isFocused, combobox.targetRef, data?.type.kind]);
+
+  const handleExtractToFile = (data: IData<OperationType>) => {
+    const newName = createVariableName({
+      prefix: "operation",
+      prev: useProjectStore.getState().getCurrentProject()?.files || [],
+    });
+
+    addFile(
+      createFileFromOperation({
+        id: data.id,
+        type: data.type,
+        value: { ...data.value, name: newName },
+      })
+    );
+
+    handleChange?.({
+      id: nanoid(),
+      type: { kind: "reference", name: newName },
+      value: { name: newName, id: data.id },
+    });
+  };
 
   return (
     <Combobox
@@ -314,6 +335,17 @@ const DropdownComponent = ({
                 title="Go to operation"
               />
             )}
+          {isDataOfType(data, "operation") && handleChange && (
+            <IconButton
+              tabIndex={-1}
+              size={8}
+              className="absolute -top-1.5 right-2.5 text-white bg-border rounded-full z-10 p-0.5"
+              icon={FaObjectUngroup}
+              onClick={() => handleExtractToFile(data)}
+              hidden={!isFocused && !isHovered}
+              title="Extract operation"
+            />
+          )}
           {handleDelete && (
             <IconButton
               tabIndex={-1}
@@ -336,7 +368,7 @@ const DropdownComponent = ({
               icon={FaCirclePlus}
               onClick={() => {
                 combobox?.closeDropdown();
-                addOperationCall();
+                addOperationCall(result);
               }}
               hidden={!isFocused && !isHovered}
             />
@@ -399,13 +431,15 @@ const DropdownComponent = ({
                       <Combobox.Option
                         value={option.value}
                         key={option.value}
-                        className={`flex items-center justify-between gap-4 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
+                        className={`flex items-center justify-between gap-4 p-0.5 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
                         active={option.value === value}
                       >
-                        <span className="text-sm max-w-32 truncate">
+                        <span className="max-w-32 truncate">
                           {option.label || option.value}
                         </span>
-                        <span className="text-xs">{option.secondaryLabel}</span>
+                        <span className="text-sm text-disabled">
+                          {option.secondaryLabel}
+                        </span>
                       </Combobox.Option>
                     </Tooltip>
                   ))}

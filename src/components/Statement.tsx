@@ -3,15 +3,19 @@ import {
   FaArrowTurnUp,
   FaEquals,
   FaQuestion,
+  FaEllipsis,
 } from "react-icons/fa6";
-import { Context, IData, IStatement, OperationType } from "../lib/types";
+import { IData, IStatement, OperationType } from "../lib/types";
 import {
   getStatementResult,
   createVariableName,
-  applyTypeNarrowing,
-  getSkipExecution,
+  createStatement,
+  createData,
 } from "../lib/utils";
-import { createOperationCall, getFilteredOperations } from "../lib/operation";
+import {
+  createOperationCall,
+  getFilteredOperations,
+} from "@/lib/execution/execution";
 import { Data } from "./Data";
 import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
@@ -19,30 +23,63 @@ import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { memo, useMemo, type ReactNode } from "react";
-import { useExecutionResultsStore, useNavigationStore } from "@/lib/store";
+import { memo, useCallback, useMemo } from "react";
+import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
+import { useExecutionResultsStore } from "@/lib/execution/store";
+import { EntityPath } from "@/lib/types";
+import { ReservedNames } from "@/lib/execution/types";
 
 const StatementComponent = ({
   statement,
   handleStatement,
-  context,
   addStatement,
-  options,
+  enableVariable,
+  isOptional,
+  isParameter,
+  isRest,
+  disableNameToggle,
+  disableDelete,
+  path,
+  reservedNames,
 }: {
   statement: IStatement;
-  handleStatement: (statement: IStatement, remove?: boolean) => void;
-  addStatement?: (statement: IStatement, position: "before" | "after") => void;
-  context: Context;
-  options?: {
-    enableVariable?: boolean;
-    isOptional?: boolean;
-    isParameter?: boolean;
-    disableNameToggle?: boolean;
-    disableDelete?: boolean;
-  };
+  handleStatement: (
+    statement: IStatement,
+    remove?: boolean,
+    path?: EntityPath
+  ) => void;
+  addStatement?: (
+    newStatement: IStatement,
+    position: "before" | "after",
+    currentStatementId: string
+  ) => void;
+  enableVariable?: boolean;
+  isOptional?: boolean;
+  isParameter?: boolean;
+  isRest?: boolean;
+  disableNameToggle?: boolean;
+  disableDelete?: boolean;
+  path: EntityPath;
+  reservedNames?: ReservedNames;
 }) => {
+  const context = useExecutionResultsStore((s) => s.getContext(statement.id));
+
+  const handleDataChange = useCallback(
+    (data: IData, remove?: boolean) => {
+      const newStatement = {
+        ...statement,
+        data,
+        ...(statement.isRest && data.type.kind !== "array"
+          ? { isRest: undefined }
+          : {}),
+      };
+      handleStatement(newStatement, remove, path);
+    },
+    [statement, handleStatement, path]
+  );
+
   const hasName = statement.name !== undefined;
   const isEqualsFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_equals`
@@ -53,7 +90,6 @@ const StatementComponent = ({
   const isAddFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_add`
   );
-  const setResult = useExecutionResultsStore((s) => s.setResult);
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
@@ -75,29 +111,39 @@ const StatementComponent = ({
     [openDropdown, closeDropdown]
   );
 
-  async function addOperationCall(data: IData, index: number) {
-    const operation = await createOperationCall({ data, context, setResult });
-    const operations = [...statement.operations];
-    operations.splice(index, 0, operation);
-    handleStatement({ ...statement, operations });
-    setNavigation({ navigation: { id: operation.id, direction: "right" } });
-  }
+  const addOperationCall = useCallback(
+    async (data: IData, operationId?: string) => {
+      const operation = await createOperationCall({ data, context });
+      const operations = [...statement.operations];
+      const index = operationId
+        ? operations.findIndex((op) => op.id === operationId) + 1
+        : 0;
+      operations.splice(index, 0, operation);
+      handleStatement({ ...statement, operations }, false, path);
+      setNavigation({ navigation: { id: operation.id, direction: "right" } });
+    },
+    [context, handleStatement, setNavigation, statement, path]
+  );
 
-  function handleOperationCall(
-    operation: IData<OperationType>,
-    index: number,
-    remove?: boolean
-  ) {
-    // eslint-disable-next-line prefer-const
-    let operations = [...statement.operations];
-    if (remove) operations.splice(index, 1);
-    else operations[index] = operation;
-    handleStatement({ ...statement, operations });
-  }
+  const handleOperationCall = useCallback(
+    (operation: IData<OperationType>, remove?: boolean) => {
+      const operations = [...statement.operations];
+      const index = operations.findIndex((op) => op.id === operation.id);
+      if (remove) operations.splice(index, 1);
+      else operations[index] = operation;
+      handleStatement({ ...statement, operations }, false, path);
+    },
+    [handleStatement, statement, path]
+  );
+
+  const operationPaths = useMemo(() => {
+    const arr = Array.from({ length: statement.operations.length });
+    return arr.map((_, i) => [...path, "operations", i]);
+  }, [path, statement.operations.length]);
 
   return (
     <div className="flex items-start gap-1">
-      {options?.enableVariable ? (
+      {enableVariable ? (
         <div className="flex items-center gap-1 mr-1">
           {hasName ? (
             <BaseInput
@@ -109,7 +155,7 @@ const StatementComponent = ({
               ].join(" ")}
               onChange={(value) => {
                 const name = value || statement.name || "";
-                const isReserved = Array.from(context.reservedNames ?? []).find(
+                const isReserved = Array.from(reservedNames ?? []).find(
                   (r) => r.name === name
                 );
                 if (isReserved) {
@@ -118,7 +164,7 @@ const StatementComponent = ({
                   });
                   return;
                 }
-                handleStatement({ ...statement, name });
+                handleStatement({ ...statement, name }, false, path);
               }}
               onFocus={() =>
                 setNavigation(() => ({
@@ -138,42 +184,59 @@ const StatementComponent = ({
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={options?.isOptional ? FaQuestion : FaEquals}
+                icon={isRest ? FaEllipsis : isOptional ? FaQuestion : FaEquals}
                 position="right"
                 className={[
                   "hover:outline hover:outline-border",
-                  options?.isOptional ? "" : "mt-1",
+                  isOptional || isRest ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
-                  options?.disableNameToggle ? "text-disabled" : "",
+                  disableNameToggle ? "text-disabled" : "",
                 ].join(" ")}
                 title={
-                  options?.disableNameToggle
-                    ? options?.isOptional
-                      ? "Optional Parameter"
-                      : undefined
-                    : options?.isParameter
-                    ? options?.isOptional
-                      ? "Make required"
-                      : "Make optional"
-                    : "Create variable"
+                  disableNameToggle
+                    ? isRest
+                      ? "Rest Parameter"
+                      : isOptional
+                        ? "Optional Parameter"
+                        : undefined
+                    : isParameter
+                      ? isRest
+                        ? "Make required"
+                        : isOptional
+                          ? "Make rest"
+                          : "Make optional"
+                      : "Create variable"
                 }
                 onClick={() => {
-                  if (options?.disableNameToggle) return;
-                  handleStatement({
-                    ...statement,
-                    ...(options?.isParameter
-                      ? { isOptional: !options?.isOptional }
-                      : {
-                          name: hasName
-                            ? undefined
-                            : createVariableName({
-                                prefix: "var",
-                                prev: Array.from(
-                                  context.reservedNames ?? []
-                                ).map((r) => r.name),
-                              }),
-                        }),
+                  if (disableNameToggle) return;
+                  const rest = createData({
+                    value: [createStatement({ data: statement.data })],
                   });
+                  handleStatement(
+                    {
+                      ...statement,
+                      ...(isParameter
+                        ? isRest
+                          ? { isOptional: undefined, isRest: undefined }
+                          : isOptional
+                            ? {
+                                isOptional: undefined,
+                                isRest: true,
+                                data: rest,
+                              }
+                            : { isOptional: true, isRest: undefined }
+                        : {
+                            name: hasName
+                              ? undefined
+                              : createVariableName({
+                                  prefix: "var",
+                                  prev: reservedNames?.map((r) => r.name) ?? [],
+                                }),
+                          }),
+                    },
+                    false,
+                    path
+                  );
                   setNavigation(() => ({
                     navigation: { id: `${statement.id}_name` },
                   }));
@@ -184,8 +247,8 @@ const StatementComponent = ({
             <Popover.Dropdown {...hoverEvents}>
               <AddStatement
                 id={statement.id}
-                onSelect={(statement) => {
-                  addStatement?.(statement, "before");
+                onSelect={(newStatement) => {
+                  addStatement?.(newStatement, "before", statement.id);
                   closeDropdown();
                 }}
                 iconProps={{ title: "Add before" }}
@@ -204,90 +267,57 @@ const StatementComponent = ({
         <ErrorBoundary
           displayError={true}
           onRemove={
-            options?.disableDelete
+            disableDelete
               ? undefined
-              : () => handleStatement(statement, true)
+              : () => handleStatement(statement, true, path)
           }
         >
           <Data
             data={statement.data}
-            disableDelete={options?.disableDelete}
+            disableDelete={disableDelete}
+            context={context}
             addOperationCall={
-              !options?.isParameter &&
+              !isParameter &&
               !context.skipExecution &&
               getFilteredOperations(statement.data, context).length
-                ? () => addOperationCall(statement.data, 0)
+                ? addOperationCall
                 : undefined
             }
-            context={context}
-            handleChange={(data, remove) =>
-              handleStatement({ ...statement, data }, remove)
-            }
+            handleChange={handleDataChange}
+            basePath={path}
           />
         </ErrorBoundary>
-        {
-          statement.operations.reduce(
-            (acc, operation, i, operationsList) => {
-              const data = getStatementResult(statement, context, {
-                index: i,
-                prevEntity: true,
-                skipResolveReference: true,
-              });
-              acc.narrowedTypes = applyTypeNarrowing(
-                context,
-                acc.narrowedTypes,
-                data,
-                operation
-              );
-              const skipExecution = getSkipExecution({
-                context,
-                data,
-                operationName: operation.value.name,
-              });
+        {statement.operations.map((operation, i, operationsList) => {
+          const prevData = getStatementResult(statement, context, {
+            index: i,
+            prevEntity: true,
+            skipResolveReference: true,
+          });
 
-              acc.elements.push(
-                <div key={operation.id} className="flex items-start gap-1 ml-2">
-                  <PipeArrow
-                    size={10}
-                    className="text-disabled mt-1.5"
-                    style={{
-                      transform:
-                        operationsList.length > 1 ? "rotate(90deg)" : "",
-                    }}
-                  />
-                  <ErrorBoundary
-                    displayError={true}
-                    onRemove={() => handleOperationCall(operation, i, true)}
-                  >
-                    <OperationCall
-                      data={data}
-                      operation={operation}
-                      handleOperationCall={(op, remove) =>
-                        handleOperationCall(op, i, remove)
-                      }
-                      context={{
-                        ...context,
-                        skipExecution,
-                        narrowedTypes: acc.narrowedTypes,
-                      }}
-                      addOperationCall={
-                        !options?.isParameter && !skipExecution
-                          ? () =>
-                              addOperationCall(
-                                context.getResult(operation.id)?.data ?? data,
-                                i + 1
-                              )
-                          : undefined
-                      }
-                    />
-                  </ErrorBoundary>
-                </div>
-              );
-              return acc;
-            },
-            { elements: [] as ReactNode[], narrowedTypes: new Map() }
-          ).elements
-        }
+          return (
+            <div key={operation.id} className="flex items-start gap-1 ml-2">
+              <PipeArrow
+                size={10}
+                className="text-disabled mt-1.5"
+                style={{
+                  transform: operationsList.length > 1 ? "rotate(90deg)" : "",
+                }}
+              />
+              <ErrorBoundary
+                displayError={true}
+                onRemove={() => handleOperationCall(operation, true)}
+              >
+                <OperationCall
+                  data={prevData}
+                  operation={operation}
+                  path={operationPaths[i]}
+                  handleOperationCall={handleOperationCall}
+                  addOperationCall={isParameter ? undefined : addOperationCall}
+                />
+              </ErrorBoundary>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

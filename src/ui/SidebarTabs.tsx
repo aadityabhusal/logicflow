@@ -1,11 +1,10 @@
 import { lazy, Suspense } from "react";
 import { Tabs, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { FaCircleInfo, FaRobot, FaFileCode } from "react-icons/fa6";
+import { FaCircleInfo, FaRobot, FaFileCode, FaCode } from "react-icons/fa6";
 import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "./Resizer";
-import { Context } from "@/lib/types";
 import { LoadingFallback } from "./LoadingFallback";
 
 const OperationsList = lazy(() =>
@@ -14,6 +13,9 @@ const OperationsList = lazy(() =>
 const DetailsPanel = lazy(() =>
   import("./DetailsPanel").then((m) => ({ default: m.DetailsPanel }))
 );
+const CodePanel = lazy(() =>
+  import("./CodePanel").then((m) => ({ default: m.CodePanel }))
+);
 const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
   ? lazy(() => import("./AgentPanel").then((m) => ({ default: m.AgentPanel })))
   : null;
@@ -21,11 +23,12 @@ const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
 const TABS = [
   { value: "operations", label: "Operations", Icon: FaFileCode },
   { value: "details", label: "Details", Icon: FaCircleInfo },
+  { value: "code", label: "Code", Icon: FaCode },
   ...(import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
     ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
     : []),
 ];
-export function SidebarTabs({ context }: { context: Context }) {
+export function SidebarTabs() {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const { sidebar, setUiConfig } = useUiConfigStore((s) => ({
     sidebar: s.sidebar,
@@ -41,7 +44,7 @@ export function SidebarTabs({ context }: { context: Context }) {
       sidebar: {
         ...(s.sidebar || {}),
         activeTab:
-          value === s.sidebar?.activeTab ? undefined : value ?? undefined,
+          value === s.sidebar?.activeTab ? undefined : (value ?? undefined),
       },
     }));
   };
@@ -97,7 +100,7 @@ export function SidebarTabs({ context }: { context: Context }) {
           <div className="overflow-hidden relative flex-1">
             <Tabs.Panel value="operations" className="h-full w-full">
               <Suspense fallback={<LoadingFallback />}>
-                <OperationsList context={context} />
+                <OperationsList />
               </Suspense>
             </Tabs.Panel>
             <Tabs.Panel value="details" className="h-full w-full">
@@ -112,6 +115,11 @@ export function SidebarTabs({ context }: { context: Context }) {
                 </Suspense>
               </Tabs.Panel>
             )}
+            <Tabs.Panel value="code" className="h-full w-full">
+              <Suspense fallback={<LoadingFallback />}>
+                <CodePanel />
+              </Suspense>
+            </Tabs.Panel>
           </div>
         )}
       </Tabs>

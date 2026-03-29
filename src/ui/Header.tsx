@@ -15,22 +15,22 @@ import { IconButton } from "./IconButton";
 import { useClipboard, useTimeout } from "@mantine/hooks";
 import { createFileFromOperation } from "@/lib/utils";
 import { memo, useState } from "react";
-import { Context, IData, OperationType, Project } from "@/lib/types";
+import { IData, OperationType, Project } from "@/lib/types";
 import { OperationValueSchema } from "@/lib/schemas";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { updateFiles } from "@/lib/update";
 import { Button } from "@mantine/core";
 import { Link } from "react-router";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 function HeaderComponent({
   currentProject,
   currentOperation,
-  context,
 }: {
   currentOperation?: IData<OperationType>;
   currentProject: Project;
-  context: Context;
 }) {
+  const context = useExecutionResultsStore((s) => s.rootContext);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
@@ -71,7 +71,7 @@ function HeaderComponent({
       )}
       <div className="flex items-center gap-2">
         <IconButton
-          title="Copy"
+          title={clipboard.copied ? "Copied!" : "Copy"}
           icon={clipboard.copied ? FaCheck : FaRegCopy}
           size={16}
           onClick={() => {
@@ -83,7 +83,7 @@ function HeaderComponent({
           className={!currentOperation ? "cursor-not-allowed" : ""}
         />
         <IconButton
-          title="Paste"
+          title={isOperationPasted ? "Pasted!" : "Paste"}
           icon={isOperationPasted ? FaCheck : FaRegPaste}
           size={16}
           onClick={async () => {

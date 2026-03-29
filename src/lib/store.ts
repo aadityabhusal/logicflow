@@ -1,15 +1,13 @@
 import { StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
-  Context,
   IData,
   INavigation,
   Project,
   ProjectFile,
   NavigationEntity,
   DataType,
-  ExecutionResult,
-  InstanceDataType,
+  IStatement,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
@@ -17,6 +15,9 @@ import { openDB } from "idb";
 import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
 import { AgentChange } from "./schemas";
+import { Context } from "./execution/types";
+import { produce } from "immer";
+import { EntityPath } from "./types";
 
 const IDbStore = openDB("logicflow", 2, {
   upgrade(db) {
@@ -93,7 +94,7 @@ interface IProjectsStore {
   createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
-  getProject: (id?: string) => Project | undefined;
+  getProject: (id: string) => Project | undefined;
   getCurrentProject: () => Project | undefined;
 }
 
@@ -109,6 +110,11 @@ interface ICurrentProjectStore {
   getFile: (fileId?: string | null) => ProjectFile | undefined;
   undo: () => void;
   redo: () => void;
+  updateStatementByPath: (
+    fileId: string,
+    path: EntityPath,
+    newStatement: IStatement
+  ) => void;
 }
 
 type ProjectStore = IProjectsStore & ICurrentProjectStore;
@@ -148,7 +154,7 @@ const createProjectsSlice: StateCreator<
       return { projects: rest };
     });
   },
-  getProject: (id) => (id ? get().projects[id] : undefined),
+  getProject: (id) => get().projects[id],
   getCurrentProject: () => {
     const { currentProjectId, projects } = get();
     return currentProjectId ? projects[currentProjectId] : undefined;
@@ -237,7 +243,6 @@ const createCurrentProjectSlice: StateCreator<
       focusId,
     });
     const lastItem = history.past.pop()!;
-    useExecutionResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: lastItem.content,
     } as Partial<ProjectFile>);
@@ -258,13 +263,43 @@ const createCurrentProjectSlice: StateCreator<
       focusId: currentFocusId,
     });
     const nextItem = history.future.pop()!;
-    useExecutionResultsStore.getState().removeAll();
     updateFile(currentFile.id, {
       content: nextItem.content,
     } as Partial<ProjectFile>);
     useNavigationStore
       .getState()
       .setNavigation({ navigation: { id: nextItem.focusId } });
+  },
+
+  updateStatementByPath: (fileId, path, newStatement) => {
+    const currentProject = get().getCurrentProject();
+    if (!currentProject || path.length < 1) return;
+
+    const file = currentProject.files.find((f: ProjectFile) => f.id === fileId);
+    if (!file || file.type !== "operation") return;
+
+    fileHistoryActions.pushState(fileId, file.content);
+
+    set(
+      produce((state: ProjectStore) => {
+        const project = state.projects[currentProject.id];
+        const fileIndex = project.files.findIndex(
+          (f: ProjectFile) => f.id === fileId
+        );
+        if (fileIndex === -1) return;
+
+        const file = project.files[fileIndex];
+        if (file.type !== "operation") return;
+
+        let current: unknown = file.content.value;
+        for (let i = 0; i < path.length - 1; i++) {
+          current = (current as Record<string, unknown>)[path[i]];
+        }
+        (current as Record<string, unknown>)[path[path.length - 1]] =
+          newStatement;
+        (file as ProjectFile & { type: "operation" }).updatedAt = Date.now();
+      })
+    );
   },
 });
 
@@ -277,7 +312,7 @@ export const useProjectStore = createWithEqualityFn(
     {
       name: "projects",
       storage: createIDbStorage("projects"),
-      partialize: (state) => ({ projects: state.projects } as ProjectStore),
+      partialize: (state) => ({ projects: state.projects }) as ProjectStore,
     }
   ),
   shallow
@@ -326,72 +361,6 @@ export const useUiConfigStore = createWithEqualityFn(
   ),
   shallow
 );
-
-interface ExecutionResultsState {
-  results: Map<string, ExecutionResult>;
-  instances: Map<string, unknown>;
-  setResult: (entityId: string, result: Partial<ExecutionResult>) => void;
-  getResult: (entityId: string) => ExecutionResult | undefined;
-  getInstance: (entityId: string) => unknown;
-  setInstance: (entityId: string, instance: unknown) => void;
-  removeAll: () => void;
-  removeResult: (entityId: string) => void;
-}
-
-export const useExecutionResultsStore =
-  createWithEqualityFn<ExecutionResultsState>(
-    (set, get) => ({
-      results: new Map(),
-      instances: new Map(),
-      setResult: (entityId, result) => {
-        set((state) => {
-          const newResults = new Map(state.results);
-          const current = newResults.get(entityId) || {};
-          newResults.set(entityId, { ...current, ...result });
-          return { results: newResults };
-        });
-      },
-      getResult: (entityId) => {
-        return get().results.get(entityId);
-      },
-      getInstance: (entityId) => {
-        return get().instances.get(entityId);
-      },
-      setInstance: (entityId, instance) => {
-        set((state) => {
-          const newInstances = new Map(state.instances);
-          newInstances.set(entityId, instance);
-          return { instances: newInstances };
-        });
-      },
-      removeAll: () =>
-        set((state) => {
-          const newResults = new Map();
-          const newInstances = new Map();
-          for (const [key, value] of state.results) {
-            if (value.shouldCacheResult) {
-              newResults.set(key, value);
-              if (value.data?.type.kind === "instance") {
-                const instanceId = (value.data as IData<InstanceDataType>).value
-                  .instanceId;
-                newInstances.set(instanceId, state.instances.get(instanceId));
-              }
-            }
-          }
-          return { results: newResults, instances: newInstances };
-        }),
-      removeResult: (entityId) => {
-        set((state) => {
-          const newResults = new Map(state.results);
-          newResults.delete(entityId);
-          const newInstances = new Map(state.instances);
-          newInstances.delete(entityId);
-          return { results: newResults, instances: newInstances };
-        });
-      },
-    }),
-    shallow
-  );
 
 type NavigationStore = {
   navigation?: INavigation;

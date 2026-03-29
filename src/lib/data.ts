@@ -61,7 +61,7 @@ export const DataTypes: {
     hideFromDropdown: true,
   },
   reference: {
-    type: { kind: "reference", dataType: { kind: "undefined" } },
+    type: { kind: "reference", name: "" },
     hideFromDropdown: true,
   },
   error: {
@@ -77,10 +77,7 @@ export const DataTypes: {
   },
 };
 
-export function getPromiseArgsType(
-  resolveType?: OperationType["parameters"],
-  rejectType?: OperationType["parameters"]
-) {
+export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   return [
     {
       type: {
@@ -100,9 +97,7 @@ export function getPromiseArgsType(
             name: "reject",
             type: {
               kind: "operation",
-              parameters: rejectType ?? [
-                { name: "reason", type: { kind: "unknown" } },
-              ],
+              parameters: [{ name: "reason", type: { kind: "unknown" } }],
               result: { kind: "undefined" },
             },
             isOptional: true,
@@ -118,22 +113,56 @@ export function getPromiseArgsType(
   ] as OperationType["parameters"];
 }
 
-type InstanceTypeConfig<
+export type InstanceTypeConfig<
   K extends string = string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  C extends new (...args: any[]) => any = new (...args: any[]) => any
+  C extends new (...args: any[]) => any = new (...args: any[]) => any,
 > = {
   readonly name: K;
   readonly Constructor: C;
-  readonly constructorArgs: OperationType["parameters"];
+  readonly constructorArgs:
+    | OperationType["parameters"]
+    | ((data?: OperationType["parameters"]) => OperationType["parameters"]);
   readonly hideFromDropdown?: boolean;
+  readonly prepareArgs?: (args: unknown[]) => unknown[];
 };
+
+export const customInstances = new WeakMap<
+  object,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  new (...args: any[]) => any
+>();
+
+export class WretchClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === WretchClass
+    );
+  }
+  constructor(...args: Parameters<typeof wretch>) {
+    const instance = wretch(...args);
+    customInstances.set(instance, WretchClass);
+    return instance;
+  }
+}
+
+export class WretchResponseChainClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === WretchResponseChainClass
+    );
+  }
+}
 
 export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   Promise: {
     name: "Promise",
     Constructor: Promise,
-    constructorArgs: getPromiseArgsType(),
+    constructorArgs: getPromiseArgsType,
   },
   Date: {
     name: "Date",
@@ -159,14 +188,17 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
         isOptional: true,
       },
     ] as OperationType["parameters"],
+    prepareArgs(args) {
+      const [body, ...rest] = args;
+      if (body !== null && typeof body === "object") {
+        return [JSON.stringify(body), ...rest];
+      }
+      return args;
+    },
   },
   Wretch: {
     name: "Wretch",
-    Constructor: function (...args: Parameters<typeof wretch>) {
-      return wretch(...args);
-    } as unknown as new (...args: Parameters<typeof wretch>) => ReturnType<
-      typeof wretch
-    >,
+    Constructor: WretchClass,
     constructorArgs: [
       { type: { kind: "string" } },
       {
@@ -177,9 +209,7 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   },
   WretchResponseChain: {
     name: "WretchResponseChain",
-    Constructor: class WretchResponseChain {} as unknown as new (
-      ...args: unknown[]
-    ) => unknown,
+    Constructor: WretchResponseChainClass,
     constructorArgs: [],
     hideFromDropdown: true,
   },
@@ -210,3 +240,65 @@ export const AVAILABLE_MODELS = [
   { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic" },
   { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic" },
 ] as const;
+
+export const OBJECT_TYPES: DataType["kind"][] = [
+  "array",
+  "tuple",
+  "dictionary",
+  "object",
+  "error",
+  "instance",
+];
+
+export const RESERVED_KEYWORDS = [
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "let",
+  "static",
+  "yield",
+  "await",
+  "enum",
+  "implements",
+  "interface",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "arguments",
+  "async",
+  "eval",
+  "arg", // pipe callback first arg
+];

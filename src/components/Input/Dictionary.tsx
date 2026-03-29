@@ -1,42 +1,51 @@
-import { Context, IData, IStatement, DictionaryType } from "@/lib/types";
+import { IData, IStatement, DictionaryType } from "@/lib/types";
 import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
-import { forwardRef, HTMLAttributes, memo } from "react";
-import {
-  createVariableName,
-  inferTypeFromValue,
-  getContextExpectedTypes,
-} from "@/lib/utils";
+import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
+import { createVariableName, inferTypeFromValue } from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
+import { Context } from "@/lib/execution/types";
+import { EntityPath } from "@/lib/types";
 
 interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<DictionaryType>;
   handleData: (data: IData<DictionaryType>) => void;
   context: Context;
+  basePath: EntityPath;
 }
+
 const DictionaryInputComponent = (
-  { data, handleData, context, ...props }: DictionaryInputProps,
+  { data, handleData, context, basePath, ...props }: DictionaryInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isMultiline = data.value.entries.length > 2;
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
-  function handleUpdate(index: number, result: IStatement, remove?: boolean) {
-    const newEntries = [...data.value.entries];
-    if (remove) newEntries.splice(index, 1);
-    else newEntries[index] = { ...newEntries[index], value: result };
+  const entryPaths = useMemo(() => {
+    const arr = Array.from({ length: data.value.entries.length });
+    return arr.map((_, i) => [...basePath, "entries", i, "value"]);
+  }, [basePath, data.value.entries.length]);
 
-    handleData({
-      ...data,
-      type: inferTypeFromValue(
-        { entries: newEntries },
-        { ...context, expectedType: context.expectedType ?? data.type }
-      ),
-      value: { entries: newEntries },
-    });
-  }
+  const handleUpdate = useCallback(
+    (result: IStatement, remove?: boolean) => {
+      const newEntries = [...data.value.entries];
+      const index = newEntries.findIndex((e) => e.value.id === result.id);
+      if (remove) newEntries.splice(index, 1);
+      else newEntries[index] = { ...newEntries[index], value: result };
+
+      handleData({
+        ...data,
+        type: inferTypeFromValue(
+          { entries: newEntries },
+          { ...context, expectedType: context.expectedType ?? data.type }
+        ),
+        value: { entries: newEntries },
+      });
+    },
+    [data, handleData, context]
+  );
 
   function handleKeyUpdate(index: number, newKey: string) {
     const existingKey = data.value.entries.some(
@@ -72,7 +81,10 @@ const DictionaryInputComponent = (
         return (
           <div
             key={entry.value.id}
-            className={["flex", isMultiline ? "ml-2" : ""].join(" ")}
+            className={[
+              "flex items-start",
+              isMultiline ? "ml-2 mt-1" : "",
+            ].join(" ")}
           >
             <BaseInput
               ref={(elem) => isKeyInputFocused && elem?.focus()}
@@ -89,17 +101,8 @@ const DictionaryInputComponent = (
             <span style={{ marginRight: 4 }}>:</span>
             <Statement
               statement={entry.value}
-              handleStatement={(val, remove) => handleUpdate(i, val, remove)}
-              context={{
-                ...context,
-                ...getContextExpectedTypes({
-                  context,
-                  expectedType:
-                    context.expectedType?.kind === "dictionary"
-                      ? context.expectedType.elementType
-                      : undefined,
-                }),
-              }}
+              path={entryPaths[i]}
+              handleStatement={handleUpdate}
             />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>

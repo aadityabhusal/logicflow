@@ -1,7 +1,8 @@
-import { Context, ErrorType, IData } from "@/lib/types";
+import { ErrorType, IData } from "@/lib/types";
 import { forwardRef, HTMLAttributes, memo } from "react";
 import { FaCircleExclamation } from "react-icons/fa6";
 import { BaseInput } from "./BaseInput";
+import { Context } from "@/lib/execution/types";
 
 interface ErrorInputProps extends HTMLAttributes<HTMLInputElement> {
   data: IData<ErrorType>;
@@ -10,7 +11,7 @@ interface ErrorInputProps extends HTMLAttributes<HTMLInputElement> {
 }
 
 const ErrorInputComponent = (
-  { data, handleData, context: _context, ...props }: ErrorInputProps,
+  { data, handleData, ...props }: ErrorInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
   // TODO: Dropdown icon selector for error type
