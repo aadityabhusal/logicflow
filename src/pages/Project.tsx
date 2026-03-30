@@ -7,7 +7,13 @@ import {
 import { Header } from "@/ui/Header";
 import { SidebarTabs } from "@/ui/SidebarTabs";
 import { NoteText } from "@/ui/NoteText";
-import { MouseEvent, useCallback, useEffect, useMemo } from "react";
+import {
+  MouseEvent,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+} from "react";
 import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
@@ -63,7 +69,7 @@ export default function Project() {
     [getFile, currentFileId, deleteFile, updateFile]
   );
 
-  const [deferredOperation] = useDebouncedValue(currentOperation, 500);
+  const deferredOperation = useDeferredValue(currentOperation);
   useEffect(() => {
     if (deferredOperation) {
       setNavigation({
@@ -72,9 +78,15 @@ export default function Project() {
           rootContext
         ),
       });
-      setOperationResults(deferredOperation, rootContext);
     }
   }, [deferredOperation, setNavigation, rootContext]);
+
+  const [debouncedOperation] = useDebouncedValue(currentOperation, 500);
+  useEffect(() => {
+    if (debouncedOperation) {
+      setOperationResults(debouncedOperation, rootContext);
+    }
+  }, [debouncedOperation, rootContext, setNavigation]);
 
   useEffect(() => {
     useExecutionResultsStore.getState().removeAll();

@@ -244,14 +244,14 @@ function getStatementEntities(
     isDataOfType(statement.data, "object") ||
     isDataOfType(statement.data, "dictionary")
   ) {
-    statement.data.value.entries.forEach(({ key, value: property }) => {
-      const keyId = `${statement.data.id}_${key}`;
+    statement.data.value.entries.forEach((entry, index) => {
+      const keyId = `${statement.data.id}_key_${index}`;
       entities.push({ id: keyId, depth: depth + 1, ...parent });
       if (isDataOfType(statement.data, "object")) {
         entities.push({ id: `${keyId}_colon`, depth: depth + 1, ...parent });
       }
       entities.push(
-        ...getStatementEntities(property, depth + 1, parent, context)
+        ...getStatementEntities(entry.value, depth + 1, parent, context)
       );
     });
     if (isDataOfType(statement.data, "dictionary") || !context.expectedType) {
@@ -303,9 +303,11 @@ function getStatementEntities(
     operation.value.parameters.forEach((param) => {
       entities.push(...getStatementEntities(param, depth + 1, parent, context));
     });
+    const restParam = operation.type.parameters.findLast((p) => p.isRest)?.type;
     if (
       operation.value.parameters.length + 1 <
-      operation.type.parameters.length
+        operation.type.parameters.length ||
+      restParam?.kind === "array"
     ) {
       entities.push({
         id: `${operation.id}_call_parameter_add`,

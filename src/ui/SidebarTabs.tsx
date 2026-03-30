@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, memo, Suspense } from "react";
 import { Tabs, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { FaCircleInfo, FaRobot, FaFileCode, FaCode } from "react-icons/fa6";
@@ -28,16 +28,16 @@ const TABS = [
     ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
     : []),
 ];
-export function SidebarTabs() {
+function SidebarTabsComponent() {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
-  const { sidebar, setUiConfig } = useUiConfigStore((s) => ({
-    sidebar: s.sidebar,
-    setUiConfig: s.setUiConfig,
-  }));
-
-  const activeTab = sidebar.activeTab;
-  const panelWidth = activeTab ? sidebar.width || 300 : 0;
-  const panelHeight = activeTab ? sidebar.height || 300 : 0;
+  const { activeTab, panelWidth, panelHeight, setUiConfig } = useUiConfigStore(
+    (s) => ({
+      activeTab: s.sidebar.activeTab,
+      panelWidth: s.sidebar.activeTab ? s.sidebar.width || 300 : 0,
+      panelHeight: s.sidebar.activeTab ? s.sidebar.height || 300 : 0,
+      setUiConfig: s.setUiConfig,
+    })
+  );
 
   const handleTabChange = (value: string | null) => {
     setUiConfig((s) => ({
@@ -69,6 +69,7 @@ export function SidebarTabs() {
           root: "bg-editor",
           list: [smallScreen ? "border-t" : "border-r"].join(" "),
         }}
+        keepMounted={false}
       >
         <Tabs.List
           className={["flex", smallScreen ? "flex-row" : "flex-col"].join(" ")}
@@ -154,3 +155,5 @@ export function SidebarTabs() {
     </div>
   );
 }
+
+export const SidebarTabs = memo(SidebarTabsComponent);

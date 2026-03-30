@@ -13,7 +13,7 @@ import {
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
 import { builtInOperations } from "../operations/built-in";
 
-export interface ExecutionResultsState {
+interface ExecutionResultsState {
   rootContext: Context;
   contexts: Map<string, Context>;
   results: Map<string, ExecutionResult>;

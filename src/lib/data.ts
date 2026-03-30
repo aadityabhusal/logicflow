@@ -77,7 +77,7 @@ export const DataTypes: {
   },
 };
 
-export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
+function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   return [
     {
       type: {

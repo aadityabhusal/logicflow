@@ -4,7 +4,7 @@ import { FaRegCopy, FaCheck } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
 import { useProjectStore } from "@/lib/store";
 import { createOperationFromFile } from "@/lib/utils";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useDeferredValue } from "react";
 import { formatCode, generateOperation } from "@/lib/format-code";
 
 export function CodePanel() {
@@ -14,9 +14,10 @@ export function CodePanel() {
   const [formattedCode, setFormattedCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const currentOperation = useMemo(() => {
+  const _currentOperation = useMemo(() => {
     return createOperationFromFile(currentFile);
   }, [currentFile]);
+  const currentOperation = useDeferredValue(_currentOperation);
 
   useEffect(() => {
     if (!currentOperation) return;

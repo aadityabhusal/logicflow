@@ -77,7 +77,7 @@ const DictionaryInputComponent = (
     >
       <span>{"{"}</span>
       {data.value.entries.map((entry, i) => {
-        const isKeyInputFocused = navigationId === `${data.id}_${entry.key}`;
+        const isKeyInputFocused = navigationId === `${data.id}_key_${i}`;
         return (
           <div
             key={entry.value.id}
@@ -95,7 +95,7 @@ const DictionaryInputComponent = (
               value={entry.key}
               onChange={(value) => handleKeyUpdate(i, value)}
               onFocus={() =>
-                setNavigation({ navigation: { id: `${data.id}_${entry.key}` } })
+                setNavigation({ navigation: { id: `${data.id}_key_${i}` } })
               }
             />
             <span style={{ marginRight: 4 }}>:</span>

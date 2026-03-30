@@ -945,10 +945,7 @@ export function resolveReference(data: IData, context: Context): IData {
   return data;
 }
 
-export function resolveReferenceType(
-  type: DataType,
-  context: Context
-): DataType {
+function resolveReferenceType(type: DataType, context: Context): DataType {
   if (type.kind !== "reference") return type;
   const variable = context.variables.get(type.name);
   return variable?.data.type ?? { kind: "unknown" };
@@ -1062,7 +1059,7 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
-export function getUnionActiveIndex(
+function getUnionActiveIndex(
   unionType: UnionType,
   infer?: { value: unknown; context: Context }
 ): number {

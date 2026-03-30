@@ -68,7 +68,7 @@ export function getArrayCallbackParams(
   ] as OperationType["parameters"];
 }
 
-export function getOrderRuleParams(
+function getOrderRuleParams(
   data: IData,
   options?: { secondData: DataType }
 ): OperationType["parameters"] {
@@ -118,7 +118,7 @@ export function getUnionParam(
   };
 }
 
-export function getPredicateOperationType(
+function getPredicateOperationType(
   data: IData,
   returnType?: DataType
 ): DataType {
@@ -197,7 +197,7 @@ type FunctionKeys<T> = {
   [K in keyof T]: T[K] extends (...args: never[]) => unknown ? K : never;
 }[keyof T];
 
-export function createOperationHandler(
+function createOperationHandler(
   operationName: FunctionKeys<typeof R>,
   expectedType?: OperationListItem["expectedType"]
 ) {

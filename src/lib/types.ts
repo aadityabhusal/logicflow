@@ -274,5 +274,4 @@ interface CronTrigger {
   timezone?: string;
 }
 
-export type SetItem<T> = T extends Set<infer U> ? U : never;
 export type MapValue<T> = T extends Map<unknown, infer V> ? V : never;

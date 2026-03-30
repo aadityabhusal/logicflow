@@ -84,16 +84,14 @@ const ObjectInputComponent = (
   }, [context.expectedType, data.type.properties, data.value]);
 
   const optionalKeyOptions = useMemo(() => {
-    const oldKey = navigationId?.slice(data.id.length + 1);
+    const indexMatch = navigationId?.match(/_key_(\d+)$/);
+    const entryIndex = indexMatch ? parseInt(indexMatch[1], 10) : -1;
     const results = remainingOptionalProperties.map(({ key, value }) => ({
       value: key,
       entityType: "data" as const,
       type: value,
       onClick: () => {
-        const entryIndex = data.value.entries.findIndex(
-          (e) => e.key === oldKey
-        );
-        if (entryIndex === -1 || !oldKey) return;
+        if (entryIndex === -1) return;
         const newEntries = data.value.entries.map((e, i) =>
           i === entryIndex ? { ...e, key } : e
         );
@@ -128,7 +126,7 @@ const ObjectInputComponent = (
             ? context.expectedType.properties.find((p) => p.key === entry.key)
                 ?.value
             : undefined;
-        const isKeyInputFocused = navigationId === `${data.id}_${entry.key}`;
+        const isKeyInputFocused = navigationId === `${data.id}_key_${i}`;
         return (
           <div
             key={entry.value.id}
@@ -139,7 +137,7 @@ const ObjectInputComponent = (
           >
             {context.expectedType ? (
               <Dropdown
-                id={`${data.id}_${entry.key}`}
+                id={`${data.id}_key_${i}`}
                 value={entry.key}
                 items={isOptional ? optionalKeyOptions : undefined}
                 context={context}
@@ -159,14 +157,14 @@ const ObjectInputComponent = (
                 onChange={(value) => handleKeyUpdate(i, value)}
                 onFocus={() => {
                   setNavigation({
-                    navigation: { id: `${data.id}_${entry.key}` },
+                    navigation: { id: `${data.id}_key_${i}` },
                   });
                 }}
               />
             )}
             <IconButton
               ref={(elem) => {
-                if (navigationId === `${data.id}_${entry.key}_colon`) {
+                if (navigationId === `${data.id}_key_${i}_colon`) {
                   elem?.focus();
                 }
               }}
@@ -175,7 +173,7 @@ const ObjectInputComponent = (
               }
               className={[
                 "mt-0.5 hover:outline hover:outline-border",
-                navigationId === `${data.id}_${entry.key}_colon`
+                navigationId === `${data.id}_key_${i}_colon`
                   ? "outline outline-border"
                   : "",
                 expectedType ? "text-disabled" : "",
@@ -196,7 +194,7 @@ const ObjectInputComponent = (
                   : (data.type.required ?? []).filter((k) => k !== entry.key);
                 handleData({ ...data, type: { ...data.type, required } });
                 setNavigation(() => ({
-                  navigation: { id: `${data.id}_${entry.key}_colon` },
+                  navigation: { id: `${data.id}_key_${i}_colon` },
                 }));
               }}
             />
