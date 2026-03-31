@@ -1,4 +1,10 @@
-import { DataType, IData, IStatement, OperationType } from "../types";
+import {
+  DataType,
+  IData,
+  IStatement,
+  OperationSource,
+  OperationType,
+} from "../types";
 
 export type Thenable<T> = {
   then<TResult1 = T, TResult2 = never>(
@@ -62,7 +68,7 @@ export type OperationListItem = {
   narrowType?:
     | ((...args: [Context, ...IData[]]) => DataType | undefined)
     | DataType;
-  source?: { name: string };
+  source?: OperationSource;
   expectedType?: DataType | ((data: IData) => DataType);
 } & (
   | { handler: (...args: [Context, ...IData[]]) => Thenable<IData> | IData }

@@ -173,6 +173,7 @@ const OperationCallComponent = ({
       items={dropdownItems}
       context={context}
       value={operation.value.name}
+      operation={operation}
       addOperationCall={
         filteredOperations.length && !context.skipExecution
           ? handleAddOperationCall

@@ -327,7 +327,16 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
 );
 
 export const wretchOperations: OperationListItem[] = [
-  ...wretchInstanceOperations,
-  ...chainPromiseOperations,
-  ...wretchErrorOperations,
+  ...wretchInstanceOperations.map((operation) => ({
+    ...operation,
+    source: { name: "wretch" as const },
+  })),
+  ...chainPromiseOperations.map((operation) => ({
+    ...operation,
+    source: { name: "wretchResponseChain" as const },
+  })),
+  ...wretchErrorOperations.map((operation) => ({
+    ...operation,
+    source: { name: "wretchResponseChain" as const },
+  })),
 ];

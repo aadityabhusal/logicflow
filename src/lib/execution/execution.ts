@@ -201,6 +201,7 @@ export async function createOperationCall({
       name: newOperation.name,
       parameters: newParameters,
       statements: [],
+      source: newOperation.source,
     },
   };
 }

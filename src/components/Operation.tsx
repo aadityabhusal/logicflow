@@ -75,95 +75,91 @@ const OperationComponent = (
 
   const handleStatementUpdate = useCallback(
     ({
+      prevOp,
       statement,
       path: statementPath,
       context,
       remove,
       isParameter,
     }: {
+      prevOp: IData<OperationType>;
       statement: IStatement;
       path: EntityPath;
       context: Context;
       remove?: boolean;
       isParameter: boolean;
-    }) => {
-      handleChange((prevOp) => {
-        const parameterLength = prevOp.value.parameters.length;
-        const allCurrent = [
-          ...prevOp.value.parameters,
-          ...prevOp.value.statements,
-        ];
-        const updatedStatements = updateStatements({
-          statements: allCurrent,
-          context,
-          changedStatement: statement,
-          removeStatement: remove,
-        });
-
-        const adjustedParameterLength = isParameter
-          ? remove
-            ? parameterLength - 1
-            : parameterLength
-          : parameterLength;
-        const updatedParameters = updatedStatements.slice(
-          0,
-          adjustedParameterLength
-        );
-        const updatedStatementsList = updatedStatements.slice(
-          adjustedParameterLength
-        );
-
-        const originalStatement = allCurrent.find((s) => s.id === statement.id);
-        const isNameChange = originalStatement?.name !== statement.name;
-
-        const newValue = {
-          ...prevOp.value,
-          isAsync: getIsAsync(updatedStatementsList),
-          parameters: updatedParameters,
-          statements: updatedStatementsList,
-        };
-        const newType = inferTypeFromValue<OperationType>(newValue, context);
-        const hasTypeChanged = !isEqual(newType, prevOp.type);
-
-        if (!isNameChange && !hasTypeChanged && !remove && fileId) {
-          const updatedStatement = updatedStatements.find(
-            (s) => s.id === statement.id
-          );
-          if (updatedStatement) {
-            updateStatementByPath(fileId, statementPath, updatedStatement);
-            return null;
-          }
-        }
-        return { ...prevOp, type: newType, value: newValue };
+    }): IData<OperationType> | null => {
+      const statements = [
+        ...prevOp.value.parameters,
+        ...prevOp.value.statements,
+      ];
+      const updatedStatements = updateStatements({
+        statements,
+        context,
+        changedStatement: statement,
+        removeStatement: remove,
       });
+
+      const _paramLen = prevOp.value.parameters.length;
+      const paramLength = isParameter && remove ? _paramLen - 1 : _paramLen;
+      const updatedParameters = updatedStatements.slice(0, paramLength);
+      const updatedStatementsList = updatedStatements.slice(paramLength);
+
+      const newValue = {
+        ...prevOp.value,
+        isAsync: getIsAsync(updatedStatementsList),
+        parameters: updatedParameters,
+        statements: updatedStatementsList,
+      };
+      const newType = inferTypeFromValue<OperationType>(newValue, context);
+      const hasTypeChanged = !isEqual(newType, prevOp.type);
+      const hasNameChanged =
+        statements.find((s) => s.id === statement.id)?.name !== statement.name;
+
+      if (!hasNameChanged && !hasTypeChanged && !remove && fileId) {
+        const updatedStatement = updatedStatements.find(
+          (s) => s.id === statement.id
+        );
+        if (updatedStatement) {
+          updateStatementByPath(fileId, statementPath, updatedStatement);
+          return null;
+        }
+      }
+      return { ...prevOp, type: newType, value: newValue };
     },
-    [handleChange, updateStatementByPath, fileId]
+    [updateStatementByPath, fileId]
   );
 
   const handleParameterStatement = useCallback(
     (statement: IStatement, remove?: boolean, path?: EntityPath) => {
-      handleStatementUpdate({
-        statement,
-        path: path ?? [],
-        context,
-        remove,
-        isParameter: true,
-      });
+      handleChange((prevOp) =>
+        handleStatementUpdate({
+          prevOp,
+          statement,
+          path: path ?? [],
+          context,
+          remove,
+          isParameter: true,
+        })
+      );
     },
-    [handleStatementUpdate, context]
+    [handleChange, handleStatementUpdate, context]
   );
 
   const handleStatement = useCallback(
     (statement: IStatement, remove?: boolean, path?: EntityPath) => {
-      handleStatementUpdate({
-        statement,
-        path: path ?? [],
-        remove,
-        context: context.getContext(statement.id),
-        isParameter: false,
-      });
+      handleChange((prevOp) =>
+        handleStatementUpdate({
+          prevOp,
+          statement,
+          path: path ?? [],
+          remove,
+          context: context.getContext(statement.id),
+          isParameter: false,
+        })
+      );
     },
-    [handleStatementUpdate, context]
+    [handleChange, handleStatementUpdate, context]
   );
 
   const addStatement = useCallback(
@@ -178,19 +174,19 @@ const OperationComponent = (
           .concat(statement)
           .concat(statements.slice(insertIndex));
 
-        const newValue = {
-          ...prevOperation.value,
-          statements: newStatements,
-          isAsync: getIsAsync(newStatements),
-        };
-        return {
-          ...prevOperation,
-          type: inferTypeFromValue(newValue, context),
-          value: newValue,
-        };
+        return handleStatementUpdate({
+          prevOp: {
+            ...prevOperation,
+            value: { ...prevOperation.value, statements: newStatements },
+          },
+          statement,
+          path: [],
+          context: context.getContext(statement.id),
+          isParameter: false,
+        });
       });
     },
-    [handleChange, context]
+    [handleChange, handleStatementUpdate, context]
   );
 
   const addParameter = useCallback(
@@ -215,21 +211,20 @@ const OperationComponent = (
           .slice(0, insertIndex)
           .concat(newParameter)
           .concat(parameters.slice(insertIndex));
-        const updatedParametersTypes = updatedParameters.map((param) => ({
-          name: param.name,
-          type: param.data.type,
-          isOptional: param.isOptional,
-          isRest: param.isRest,
-        }));
 
-        return {
-          ...prevOp,
-          type: { ...prevOp.type, parameters: updatedParametersTypes },
-          value: { ...prevOp.value, parameters: updatedParameters },
-        };
+        return handleStatementUpdate({
+          prevOp: {
+            ...prevOp,
+            value: { ...prevOp.value, parameters: updatedParameters },
+          },
+          statement: newParameter,
+          path: [],
+          context,
+          isParameter: true,
+        });
       });
     },
-    [handleChange, reservedNames]
+    [handleChange, handleStatementUpdate, reservedNames, context]
   );
 
   return (

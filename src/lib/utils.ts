@@ -1220,7 +1220,11 @@ export function resolveParameters(
       : operationListItem.parameters;
 
   return params.map((param) => {
-    const processedType = processDataType(param.type);
+    const resolvedType =
+      param.type.kind === "reference"
+        ? resolveReferenceType(param.type, context)
+        : param.type;
+    const processedType = processDataType(resolvedType);
     if (param.isOptional) {
       return {
         ...param,
@@ -1527,8 +1531,8 @@ export function getDataDropdownList({
 
   return [
     ["Allowed", allowedOptions],
-    ["Data Types", dataTypeOptions],
     ["Variables", variableOptions],
+    ["Data Types", dataTypeOptions],
   ] as [string, IDropdownItem[]][];
 }
 

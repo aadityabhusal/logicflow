@@ -9,11 +9,10 @@ import { forwardRef, memo, useMemo, useState } from "react";
 import { useUiConfigStore } from "@/lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
-interface BaseInputProps<T extends string | number>
-  extends Omit<
-    TextInputProps & NumberInputProps,
-    "value" | "onChange" | "type" | "defaultValue"
-  > {
+interface BaseInputProps<T extends string | number> extends Omit<
+  TextInputProps & NumberInputProps,
+  "value" | "onChange" | "type" | "defaultValue"
+> {
   value?: T;
   onChange?: (change: T) => void;
   defaultValue?: T;
@@ -80,7 +79,10 @@ function BaseInputInner<T extends string | number>(
         className={[
           props.className,
           "self-start overflow-hidden whitespace-pre pointer-events-none",
-          isFocused ? "h-0" : "h-full absolute",
+          isFocused
+            ? "h-0"
+            : "h-full absolute " +
+              (options?.withQuotes ? "right-[7px]" : "right-0"),
         ].join(" ")}
         ref={(elem) => setTextWidth(elem?.clientWidth || 14)}
       >
@@ -108,7 +110,7 @@ function BaseInputInner<T extends string | number>(
 }
 
 export const BaseInput = memo(forwardRef(BaseInputInner)) as <
-  T extends string | number
+  T extends string | number,
 >(
   props: BaseInputProps<T> & { ref?: React.ForwardedRef<HTMLInputElement> }
 ) => React.ReactElement | null;

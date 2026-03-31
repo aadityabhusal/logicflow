@@ -58,6 +58,7 @@ const DropdownComponent = ({
   isInputTarget,
   target,
   context,
+  operation,
 }: {
   id: string;
   data?: IData;
@@ -75,6 +76,7 @@ const DropdownComponent = ({
   isInputTarget?: boolean;
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
+  operation?: IData<OperationType>;
 }) => {
   const [, setSearchParams] = useSearchParams();
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
@@ -204,7 +206,11 @@ const DropdownComponent = ({
   useEffect(() => {
     if (!result) return;
     if (detailsPanelLockedId ? detailsPanelLockedId === id : isFocused) {
-      setNavigation({ result, skipExecution: context.skipExecution });
+      setNavigation({
+        result,
+        skipExecution: context.skipExecution,
+        operation,
+      });
     }
   }, [
     detailsPanelLockedId,
@@ -213,6 +219,7 @@ const DropdownComponent = ({
     result,
     setNavigation,
     context.skipExecution,
+    operation,
   ]);
 
   useEffect(() => {

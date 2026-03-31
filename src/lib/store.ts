@@ -8,6 +8,7 @@ import {
   NavigationEntity,
   DataType,
   IStatement,
+  OperationType,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
@@ -368,6 +369,7 @@ type NavigationStore = {
   skipExecution?: Context["skipExecution"];
   type?: DataType;
   result?: IData;
+  operation?: IData<OperationType>;
   setNavigation: (
     change: SetStateAction<Partial<Omit<NavigationStore, "setNavigation">>>
   ) => void;

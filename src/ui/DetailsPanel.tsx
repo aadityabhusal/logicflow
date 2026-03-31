@@ -1,4 +1,4 @@
-import { FaCrosshairs, FaLock, FaUnlock } from "react-icons/fa6";
+import { FaCrosshairs, FaLink, FaLock, FaUnlock } from "react-icons/fa6";
 import { TbKeyboardOff } from "react-icons/tb";
 import { IconButton } from "./IconButton";
 import {
@@ -14,6 +14,7 @@ import { getTypeSignature, isPendingContext } from "@/lib/utils";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { useMediaQuery } from "@mantine/hooks";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
 
 export function DetailsPanel() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -26,6 +27,7 @@ export function DetailsPanel() {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
+  const operation = useNavigationStore((s) => s.operation);
 
   const panelLockedId = useUiConfigStore((s) => {
     const lockedId = operationId && s.sidebar?.lockedIds?.[operationId];
@@ -48,6 +50,14 @@ export function DetailsPanel() {
     }
     return getTypeSignature(result?.type ?? { kind: "undefined" });
   }, [result?.type, context]);
+
+  const docsUrl = useMemo(
+    () => getDocsUrl(operation?.value.source, operation?.value.name),
+    [operation]
+  );
+  const docsConfig = operation?.value.source
+    ? DOCS_REGISTRY[operation.value.source.name]
+    : undefined;
 
   if (!result) {
     return (
@@ -129,6 +139,22 @@ export function DetailsPanel() {
           <div className="p-1 border-b">
             <div className={"mb-1.5"}>Skipped</div>
             <div className="text-sm">{skipExecution.reason}</div>
+          </div>
+        )}
+        {docsUrl && docsConfig && (
+          <div className="p-1 border-b">
+            <div className="text-gray-300 mb-1.5">Documentation</div>
+            <a
+              href={docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline flex gap-1 items-center"
+            >
+              <FaLink className="shrink-0" />
+              <span>
+                {docsConfig.displayName}:{operation?.value.name}
+              </span>
+            </a>
           </div>
         )}
       </div>

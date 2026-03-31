@@ -48,6 +48,10 @@ export type InstanceDataType = {
   result?: DataType;
 };
 
+export type OperationSource = {
+  name: "remeda" | "wretch" | "wretchResponseChain";
+};
+
 export type DataType =
   | UnknownType
   | NeverType
@@ -91,8 +95,8 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
                           parameters: IStatement[];
                           statements: IStatement[];
                           name?: string;
-                          /* Assigned only when the 'await' operation is chained in a statement */
-                          isAsync?: boolean;
+                          isAsync?: boolean; // Assigned only when the 'await' operation is chained in a statement
+                          source?: OperationSource;
                         }
                       : T extends ConditionType
                         ? {
