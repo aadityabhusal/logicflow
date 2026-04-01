@@ -10,20 +10,21 @@ import {
   createDataFromRawValue,
   createThenable,
   unwrapThenable,
-  resolveConstructorArgs,
-  resolveUnionType,
   getStatementResult,
   createStatement,
-  isObject,
-  inferTypeFromValue,
+  resolveUnionType,
+  resolveConstructorArgs,
 } from "../utils";
 import { wretchOperations } from "./wretch";
 import {
+  createOperationHandler,
+  FunctionKeys,
   getArrayCallbackParams,
   getObjectParam,
   getUnionParam,
   remedaOperations,
 } from "./remeda";
+import * as _ from "./runtime";
 import { Context, OperationListItem } from "../execution/types";
 
 export function createRuntimeError(error: unknown) {
@@ -34,54 +35,151 @@ export function createRuntimeError(error: unknown) {
   });
 }
 
-const unknownOperations: OperationListItem[] = [
+const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
+  name: FunctionKeys<typeof _>;
+})[] = [
+  { name: "length", parameters: [{ type: { kind: "string" } }] },
   {
-    name: "toString",
-    parameters: [{ type: { kind: "unknown" } }],
-    handler: (context, data) => {
-      const rawValue = getRawValueFromData(data, context);
-      const value =
-        isObject(rawValue, ["toString"]) &&
-        typeof rawValue.toString === "function"
-          ? rawValue.toString()
-          : JSON.stringify(rawValue);
-      return createDataFromRawValue(value, context);
-    },
+    name: "concat",
+    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
+  },
+  {
+    name: "includes",
+    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
+  },
+  {
+    name: "localeCompare",
+    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
+  },
+  {
+    name: "power",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+  },
+  {
+    name: "mod",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+  },
+  {
+    name: "lessThan",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+  },
+  {
+    name: "lessThanOrEqual",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+  },
+  {
+    name: "greaterThan",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+  },
+  {
+    name: "greaterThanOrEqual",
+    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+  },
+  { name: "not", parameters: [{ type: { kind: "boolean" } }] },
+  {
+    name: "at",
+    parameters: [
+      { type: { kind: "tuple", elements: [] } },
+      { type: { kind: "number" } },
+    ],
+  },
+  {
+    name: "join",
+    parameters: [
+      { type: { kind: "tuple", elements: [] } },
+      { type: { kind: "string" } },
+    ],
+  },
+  {
+    name: "toArray",
+    parameters: [{ type: { kind: "tuple", elements: [] } }],
+    expectedType: { kind: "array", elementType: { kind: "unknown" } },
+  },
+  {
+    name: "at",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "number" } },
+    ],
+  },
+  {
+    name: "indexOf",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "unknown" } },
+    ],
+  },
+  {
+    name: "lastIndexOf",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "unknown" } },
+    ],
+  },
+  {
+    name: "slice",
+    parameters: [
+      { type: { kind: "array", elementType: { kind: "unknown" } } },
+      { type: { kind: "number" }, isOptional: true },
+      { type: { kind: "number" }, isOptional: true },
+    ],
+  },
+  {
+    name: "toTuple",
+    parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
+    expectedType: { kind: "tuple", elements: [] },
+  },
+  { name: "get", parameters: [getObjectParam(), { type: { kind: "string" } }] },
+  { name: "has", parameters: [getObjectParam(), { type: { kind: "string" } }] },
+  {
+    name: "toObject",
+    parameters: [
+      { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
+    ],
+    expectedType: { kind: "object", properties: [], required: [] },
+  },
+  {
+    name: "toDictionary",
+    parameters: [{ type: { kind: "object", properties: [] } }],
+    expectedType: { kind: "dictionary", elementType: { kind: "unknown" } },
+  },
+  {
+    name: "some",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
+  },
+  {
+    name: "every",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
   },
   {
     name: "log",
     parameters: [{ type: { kind: "unknown" }, isRest: true }],
-    handler: (context, data) => {
-      const value = console.log(getRawValueFromData(data, context));
-      return createDataFromRawValue(value, context);
-    },
   },
-];
-
-const unionOperations: OperationListItem[] = [
+  { name: "toString", parameters: [{ type: { kind: "unknown" } }] },
   {
-    name: "isTypeOf",
-    parameters: (data) => [getUnionParam(data), { type: { kind: "unknown" } }],
-    handler: (context, data, type) => {
-      return createData({
-        type: { kind: "boolean" },
-        value: isTypeCompatible(
-          getUnionActiveType(data.type as UnionType, {
-            value: data.value,
-            context,
-          }),
-          type.type,
-          context
-        ),
-      });
+    name: "fetch",
+    parameters: [
+      { type: { kind: "string" } },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        name: "options",
+        isOptional: true,
+      },
+    ],
+    expectedType: {
+      kind: "instance",
+      className: "Response",
+      constructorArgs: resolveConstructorArgs(
+        InstanceTypes.Response.constructorArgs
+      ),
     },
-    narrowType: (_, _data, param) => param.type,
+    shouldCacheResult: true,
   },
 ];
 
-const undefinedOperations: OperationListItem[] = [];
-
-const booleanOperations: OperationListItem[] = [
+const lazyOperations: OperationListItem[] = [
   {
     name: "and",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
@@ -125,14 +223,6 @@ const booleanOperations: OperationListItem[] = [
     },
   },
   {
-    name: "not",
-    parameters: [{ type: { kind: "boolean" } }],
-    handler: (context, data) => {
-      const value = getRawValueFromData(data, context);
-      return createDataFromRawValue(!value, context);
-    },
-  },
-  {
     name: "thenElse",
     parameters: [
       { type: { kind: "boolean" } },
@@ -172,301 +262,25 @@ const booleanOperations: OperationListItem[] = [
   },
 ];
 
-const stringOperations: OperationListItem[] = [
+const specialOperations: OperationListItem[] = [
   {
-    name: "length",
-    parameters: [{ type: { kind: "string" } }],
-    handler: (context, data) => {
-      const value = getRawValueFromData(data, context) as string;
-      return createDataFromRawValue(value.length, context);
-    },
-  },
-  {
-    name: "concat",
-    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as string;
-      const p1Value = getRawValueFromData(p1, context) as string;
-      return createDataFromRawValue(value.concat(p1Value), context);
-    },
-  },
-  {
-    name: "includes",
-    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as string;
-      const p1Value = getRawValueFromData(p1, context) as string;
-      return createDataFromRawValue(value.includes(p1Value), context);
-    },
-  },
-  {
-    name: "localeCompare",
-    parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as string;
-      const p1Value = getRawValueFromData(p1, context) as string;
-      return createDataFromRawValue(value.localeCompare(p1Value), context);
-    },
-  },
-];
-
-const numberOperations: OperationListItem[] = [
-  {
-    name: "power",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as number;
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(Math.pow(value, p1Value), context);
-    },
-  },
-  {
-    name: "mod",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as number;
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(value % p1Value, context);
-    },
-  },
-  {
-    name: "lessThan",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as number;
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(value < p1Value, context);
-    },
-  },
-  {
-    name: "lessThanOrEqual",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as number;
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(value <= p1Value, context);
-    },
-  },
-  {
-    name: "greaterThan",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as number;
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(value > p1Value, context);
-    },
-  },
-  {
-    name: "greaterThanOrEqual",
-    parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as number;
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(value >= p1Value, context);
-    },
-  },
-];
-
-const tupleOperations: OperationListItem[] = [
-  {
-    name: "get",
-    parameters: [
-      { type: { kind: "tuple", elements: [] } },
-      { type: { kind: "number" } },
-    ],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as [];
-      const p1Value = getRawValueFromData(p1, context) as number;
-      return createDataFromRawValue(value.at(p1Value), context);
-    },
-  },
-  {
-    name: "length",
-    parameters: [{ type: { kind: "tuple", elements: [] } }],
-    handler: (context, data) => {
-      const value = getRawValueFromData(data, context) as [];
-      return createDataFromRawValue(value.length, context);
-    },
-  },
-  {
-    name: "join",
-    parameters: [
-      { type: { kind: "tuple", elements: [] } },
-      { type: { kind: "string" } },
-    ],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as [];
-      const p1Value = getRawValueFromData(p1, context) as string;
-      return createDataFromRawValue(value.join(p1Value), context);
-    },
-  },
-  {
-    name: "toArray",
-    parameters: [{ type: { kind: "tuple", elements: [] } }],
-    handler: (context, data) => {
-      const type = inferTypeFromValue(data.value, {
-        ...context,
-        expectedType: { kind: "array", elementType: { kind: "unknown" } },
+    name: "isTypeOf",
+    parameters: (data) => [getUnionParam(data), { type: { kind: "unknown" } }],
+    handler: (context, data, type) => {
+      return createData({
+        type: { kind: "boolean" },
+        value: isTypeCompatible(
+          getUnionActiveType(data.type as UnionType, {
+            value: data.value,
+            context,
+          }),
+          type.type,
+          context
+        ),
       });
-      return createData({ type, value: data.value });
     },
+    narrowType: (_, _data, param) => param.type,
   },
-];
-
-const arrayOperations: OperationListItem[] = [
-  {
-    name: "at",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      { type: { kind: "number" } },
-    ],
-    handler: (context, data, index) => {
-      const value = getRawValueFromData(data, context) as unknown[];
-      const indexValue = getRawValueFromData(index, context) as number;
-      return createDataFromRawValue(value.at(indexValue), context);
-    },
-  },
-  {
-    name: "includes",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "string" } } },
-      { type: { kind: "unknown" } },
-    ],
-    handler: (context, data, element) => {
-      const value = getRawValueFromData(data, context) as unknown[];
-      const elementValue = getRawValueFromData(element, context);
-      return createDataFromRawValue(value.includes(elementValue), context);
-    },
-  },
-  {
-    name: "indexOf",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      { type: { kind: "unknown" } },
-    ],
-    handler: (context, data, element) => {
-      const value = getRawValueFromData(data, context) as unknown[];
-      const elementValue = getRawValueFromData(element, context);
-      return createDataFromRawValue(value.indexOf(elementValue), context);
-    },
-  },
-  {
-    name: "lastIndexOf",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      { type: { kind: "unknown" } },
-    ],
-    handler: (context, data, element) => {
-      const value = getRawValueFromData(data, context) as unknown[];
-      const elementValue = getRawValueFromData(element, context);
-      return createDataFromRawValue(value.lastIndexOf(elementValue), context);
-    },
-  },
-  {
-    name: "slice",
-    parameters: [
-      { type: { kind: "array", elementType: { kind: "unknown" } } },
-      { type: { kind: "number" }, isOptional: true },
-      { type: { kind: "number" }, isOptional: true },
-    ],
-    handler: (context, data, start, end) => {
-      const value = getRawValueFromData(data, context) as unknown[];
-      const startValue = getRawValueFromData(start, context) as number;
-      const endValue = getRawValueFromData(end, context) as number;
-      return createDataFromRawValue(value.slice(startValue, endValue), context);
-    },
-  },
-  {
-    name: "some",
-    parameters: (data) =>
-      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
-    handler: (context, data, callback) => {
-      const _context = { ...context, isSync: true } as Context;
-      const value = getRawValueFromData(data, _context) as unknown[];
-      const callbackOp = getRawValueFromData(callback, _context) as (
-        ...args: unknown[]
-      ) => unknown;
-      return createDataFromRawValue(value.some(callbackOp), _context);
-    },
-  },
-  {
-    name: "every",
-    parameters: (data) =>
-      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
-    handler: (context, data, callback) => {
-      const _context = { ...context, isSync: true } as Context;
-      const value = getRawValueFromData(data, _context) as unknown[];
-      const callbackOp = getRawValueFromData(callback, _context) as (
-        ...args: unknown[]
-      ) => unknown;
-      return createDataFromRawValue(value.every(callbackOp), _context);
-    },
-  },
-  {
-    name: "toTuple",
-    parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
-    handler: (context, data) => {
-      const type = inferTypeFromValue(data.value, {
-        ...context,
-        expectedType: { kind: "tuple", elements: [] },
-      });
-      return createData({ type, value: data.value });
-    },
-  },
-];
-
-const dictionaryOperations: OperationListItem[] = [
-  {
-    name: "get",
-    parameters: [getObjectParam(), { type: { kind: "string" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as Record<
-        string,
-        unknown
-      >;
-      const p1Value = getRawValueFromData(p1, context) as string;
-      return createDataFromRawValue(value[p1Value], context);
-    },
-  },
-  {
-    name: "has",
-    parameters: [getObjectParam(), { type: { kind: "string" } }],
-    handler: (context, data, p1) => {
-      const value = getRawValueFromData(data, context) as Record<
-        string,
-        unknown
-      >;
-      const p1Value = getRawValueFromData(p1, context) as string;
-      return createDataFromRawValue(p1Value in value, context);
-    },
-  },
-  {
-    name: "toDictionary",
-    parameters: [{ type: { kind: "object", properties: [] } }],
-    handler: (context, data) => {
-      const type = inferTypeFromValue(data.value, {
-        ...context,
-        expectedType: { kind: "dictionary", elementType: { kind: "unknown" } },
-      });
-      return createData({ type, value: data.value });
-    },
-  },
-  {
-    name: "toObject",
-    parameters: [
-      { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
-    ],
-    handler: (context, data) => {
-      const type = inferTypeFromValue(data.value, {
-        ...context,
-        expectedType: { kind: "object", properties: [], required: [] },
-      });
-      return createData({ type, value: data.value });
-    },
-  },
-];
-
-const operationOperations: OperationListItem[] = [
   {
     name: "call",
     parameters: (data) => [
@@ -696,35 +510,6 @@ const promiseOperations: OperationListItem[] = [
       }
     },
   },
-  {
-    name: "fetch",
-    shouldCacheResult: true,
-    parameters: [
-      { type: { kind: "string" } },
-      {
-        type: { kind: "dictionary", elementType: { kind: "unknown" } },
-        name: "options",
-        isOptional: true,
-      },
-    ],
-    handler: (context, url, options?) => {
-      const urlValue = getRawValueFromData(url, context) as string;
-      const fetchOptions = options?.value
-        ? (getRawValueFromData(options, context) as Record<string, unknown>)
-        : undefined;
-      const fetchPromise = fetch(urlValue, fetchOptions);
-      return createDataFromRawValue(fetchPromise, {
-        ...context,
-        expectedType: {
-          kind: "instance",
-          className: "Response",
-          constructorArgs: resolveConstructorArgs(
-            InstanceTypes.Response.constructorArgs
-          ),
-        },
-      });
-    },
-  },
 ];
 
 const responseOperations: OperationListItem[] = [
@@ -776,20 +561,16 @@ const responseOperations: OperationListItem[] = [
 ];
 
 export const builtInOperations: OperationListItem[] = [
-  ...undefinedOperations,
-  ...stringOperations,
-  ...numberOperations,
-  ...booleanOperations,
-  ...tupleOperations,
-  ...arrayOperations,
-  ...dictionaryOperations,
-  ...operationOperations,
-  ...unionOperations,
+  ...basicOperationList.map((operation) => ({
+    ...operation,
+    handler: createOperationHandler(_, operation.name, operation.expectedType),
+  })),
+  ...lazyOperations,
+  ...specialOperations,
   ...dateOperations,
   ...urlOperations,
   ...promiseOperations,
   ...responseOperations,
   ...wretchOperations,
   ...remedaOperations,
-  ...unknownOperations,
 ];

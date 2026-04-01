@@ -193,12 +193,16 @@ function getEvolverType(dataType: DataType): DataType {
   };
 }
 
-type FunctionKeys<T> = {
+export type FunctionKeys<T> = {
   [K in keyof T]: T[K] extends (...args: never[]) => unknown ? K : never;
 }[keyof T];
 
-function createOperationHandler(
-  operationName: FunctionKeys<typeof R>,
+export function createOperationHandler<
+  T extends object,
+  K extends FunctionKeys<T> & string,
+>(
+  operations: T,
+  operationName: K,
   expectedType?: OperationListItem["expectedType"]
 ) {
   return (context: Context, ...args: IData[]): IData => {
@@ -206,9 +210,9 @@ function createOperationHandler(
     const rawArgs = args.map((arg) =>
       unwrapThenable(getRawValueFromData(arg, _context))
     );
-    const result = (R[operationName] as (...args: unknown[]) => unknown)(
-      ...rawArgs
-    );
+    const result = (
+      operations[operationName] as (...args: unknown[]) => unknown
+    )(...rawArgs);
 
     return createDataFromRawValue(result, {
       ..._context,
@@ -1063,6 +1067,6 @@ export const remedaOperations: OperationListItem[] = remedaOperationList.map(
   (operation) => ({
     ...operation,
     source: { name: "remeda" },
-    handler: createOperationHandler(operation.name, operation.expectedType),
+    handler: createOperationHandler(R, operation.name, operation.expectedType),
   })
 );

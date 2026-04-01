@@ -116,7 +116,13 @@ const OperationComponent = (
       const hasNameChanged =
         statements.find((s) => s.id === statement.id)?.name !== statement.name;
 
-      if (!hasNameChanged && !hasTypeChanged && !remove && fileId) {
+      if (
+        !hasNameChanged &&
+        !hasTypeChanged &&
+        !remove &&
+        fileId &&
+        statementPath.length > 0
+      ) {
         const updatedStatement = updatedStatements.find(
           (s) => s.id === statement.id
         );

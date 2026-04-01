@@ -98,10 +98,9 @@ function generateOperationCall(
     case "instance":
       return `, (arg) => arg.${operation.value.name}(${params})`;
     case "remeda":
-      return `, R.${operation.value.name}${paramStr}`;
     case "builtin": {
-      const name = `_.${operation.value.name}`;
-      return `, ${paramStr ? `(arg) => ${name}${paramStr}` : name}`;
+      const name = `${source === "remeda" ? "R" : "_"}.${operation.value.name}`;
+      return `, ${name}${paramStr}`;
     }
     case "userDefined": {
       const name = operation.value.name;
