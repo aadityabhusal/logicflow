@@ -7,14 +7,19 @@ import {
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { ParseData } from "../components/Parse/ParseData";
 import { Tooltip } from "@mantine/core";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { getTypeSignature, isPendingContext } from "@/lib/utils";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { useMediaQuery } from "@mantine/hooks";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
+import { Highlight, themes } from "prism-react-renderer";
+import {
+  formatCode,
+  generateData,
+  createCodeGenContext,
+} from "@/lib/format-code";
 
 export function DetailsPanel() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -58,6 +63,29 @@ export function DetailsPanel() {
   const docsConfig = operation?.value.source
     ? DOCS_REGISTRY[operation.value.source.name]
     : undefined;
+
+  const [formattedValue, setFormattedValue] = useState("");
+
+  useEffect(() => {
+    if (!result) {
+      setFormattedValue("");
+      return;
+    }
+    if (result.type.kind === "reference" && isPendingContext(context)) {
+      setFormattedValue("Pending");
+      return;
+    }
+    const codeString = generateData(
+      result,
+      createCodeGenContext(context, { showResult: true })
+    );
+
+    formatCode(`export default ${codeString}`, { semi: false })
+      .then((formatted) =>
+        setFormattedValue(formatted.replace(/^export\s+default\s+/, "").trim())
+      )
+      .catch(() => setFormattedValue(codeString));
+  }, [result, context]);
 
   if (!result) {
     return (
@@ -118,32 +146,24 @@ export function DetailsPanel() {
           />
         )}
       </div>
-      <div className="flex-1 overflow-y-auto dropdown-scrollbar">
-        <div className="border-b p-1 flex items-center gap-1">
-          <span className="text-type">Type: </span>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="border-b p-1 gap-1">
+          <div className="text-gray-400 mb-1.5">Type</div>
           <Tooltip label={typeSignature}>
-            <div className="truncate">{typeSignature}</div>
+            <div className="overflow-x-auto dropdown-scrollbar whitespace-nowrap">
+              {typeSignature}
+            </div>
           </Tooltip>
         </div>
-        {result?.type.kind !== "operation" ? (
-          <div className="p-1 border-b">
-            <div className="text-gray-300 mb-1.5">Result</div>
-            <ErrorBoundary displayError={true}>
-              <pre className="overflow-x-auto dropdown-scrollbar text-wrap text-sm">
-                <ParseData data={result} showData={true} context={context} />
-              </pre>
-            </ErrorBoundary>
-          </div>
-        ) : null}
         {skipExecution && (
-          <div className="p-1 border-b">
-            <div className={"mb-1.5"}>Skipped</div>
+          <div className="p-1 border-b gap-1">
+            <div className="text-gray-400 mb-1.5">Skipped</div>
             <div className="text-sm">{skipExecution.reason}</div>
           </div>
         )}
         {docsUrl && docsConfig && (
-          <div className="p-1 border-b">
-            <div className="text-gray-300 mb-1.5">Documentation</div>
+          <div className="p-1 border-b gap-1">
+            <div className="text-gray-400 mb-1.5">Documentation</div>
             <a
               href={docsUrl}
               target="_blank"
@@ -157,6 +177,37 @@ export function DetailsPanel() {
             </a>
           </div>
         )}
+        {formattedValue ? (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="text-gray-400 mb-1.5 p-1">Result</div>
+            <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
+              <ErrorBoundary displayError={true}>
+                <Highlight
+                  theme={themes.vsDark}
+                  code={formattedValue}
+                  language="javascript"
+                >
+                  {({ className, style, tokens, getTokenProps }) => (
+                    <pre
+                      className={className}
+                      style={{ ...style, margin: 0, padding: 0 }}
+                    >
+                      {tokens.map((line, i) => (
+                        <div key={i} className="table-row leading-6">
+                          <span className="table-cell">
+                            {line.map((token, key) => (
+                              <span key={key} {...getTokenProps({ token })} />
+                            ))}
+                          </span>
+                        </div>
+                      ))}
+                    </pre>
+                  )}
+                </Highlight>
+              </ErrorBoundary>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

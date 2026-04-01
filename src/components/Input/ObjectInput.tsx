@@ -41,6 +41,7 @@ const ObjectInputComponent = (
         ...data,
         type: inferTypeFromValue(
           { entries: newEntries },
+          // the data fallback is for preserving object type
           { ...context, expectedType: context.expectedType ?? data.type }
         ),
         value: { entries: newEntries },

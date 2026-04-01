@@ -6,13 +6,14 @@ import { useProjectStore } from "@/lib/store";
 import { createOperationFromFile } from "@/lib/utils";
 import { useMemo, useState, useEffect, useDeferredValue } from "react";
 import { formatCode, generateOperation } from "@/lib/format-code";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 
 export function CodePanel() {
   const currentOperationName = useProjectStore((s) => s.getCurrentFile()?.name);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
+  const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const clipboard = useClipboard({ timeout: 500 });
   const [formattedCode, setFormattedCode] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
   const _currentOperation = useMemo(() => {
     return createOperationFromFile(currentFile);
@@ -21,20 +22,17 @@ export function CodePanel() {
 
   useEffect(() => {
     if (!currentOperation) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsLoading(true);
-    formatCode(generateOperation(currentOperation))
+    const codeString = generateOperation(currentOperation, rootContext);
+    formatCode(codeString)
       .then((formatted) => setFormattedCode(formatted))
-      .finally(() => setIsLoading(false));
-  }, [currentOperation]);
+      .catch(() => setFormattedCode(codeString));
+  }, [currentOperation, rootContext]);
 
-  if (!currentOperation || isLoading) {
+  if (!currentOperation) {
     return (
       <div className="flex flex-col h-full bg-editor">
         <div className="p-1 border-b">Code</div>
-        <div className="p-2 text-gray-500">
-          {!currentOperation ? "No operation selected" : "Formatting code..."}
-        </div>
+        <div className="p-2 text-gray-500">No operation selected</div>
       </div>
     );
   }

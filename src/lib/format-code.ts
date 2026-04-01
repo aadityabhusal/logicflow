@@ -1,9 +1,16 @@
 import { IData, IStatement, OperationType } from "./types";
 import { OperationListItem } from "./execution/types";
-import { getUnionActiveType, isDataOfType } from "./utils";
+import { Context } from "./execution/types";
+import {
+  getUnionActiveType,
+  isDataOfType,
+  inferTypeFromValue,
+  getStatementResult,
+} from "./utils";
 import { builtInOperations } from "./operations/built-in";
+import type { Options } from "prettier";
 
-export async function formatCode(code: string) {
+export async function formatCode(code: string, options?: Options) {
   const [prettier, estree, babel] = await Promise.all([
     import("prettier/standalone"),
     import("prettier/plugins/estree"),
@@ -12,24 +19,34 @@ export async function formatCode(code: string) {
   return prettier.format(code, {
     parser: "babel-ts",
     plugins: [estree, babel],
+    ...options,
   });
 }
 
 type OperationSource = "instance" | "remeda" | "builtin" | "userDefined";
 
-interface CodeGenContext {
+type CodeGenContext = Context & {
+  showResult?: boolean;
   getOperation: (name: string) => OperationListItem | undefined;
-}
+};
 
-function createCodeGenContext(): CodeGenContext {
+export function createCodeGenContext(
+  context: Context,
+  options?: { showResult?: boolean }
+): CodeGenContext {
   return {
+    ...context,
+    showResult: options?.showResult,
     getOperation: (name: string) =>
       builtInOperations.find((op) => op.name === name),
   };
 }
 
-function generateData(data: IData, context: CodeGenContext): string {
-  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
+export function generateData(data: IData, context: CodeGenContext): string {
+  if (isDataOfType(data, "unknown") || isDataOfType(data, "never")) {
+    const inferredType = inferTypeFromValue(data.value, context);
+    return generateData({ ...data, type: inferredType }, context);
+  } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return `[${data.value.map((item) => generateStatement(item, context, true)).join(", ")}]`;
   } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
     return `{${data.value.entries.map((entry) => `${entry.key}: ${generateStatement(entry.value, context, true)}`).join(", ")}}`;
@@ -38,14 +55,14 @@ function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "instance")) {
     return `new ${data.value.className}(${data.value.constructorArgs.map((arg) => generateStatement(arg, context, true)).join(", ")})`;
   } else if (isDataOfType(data, "operation")) {
-    return generateCallback(data, context);
+    return generateCallback(data, { ...context, showResult: undefined });
   } else if (isDataOfType(data, "reference")) {
     return data.value.name;
   } else if (isDataOfType(data, "union")) {
-    return generateData(
-      { ...data, type: getUnionActiveType(data.type) },
-      context
-    );
+    const activeType = getUnionActiveType(data.type);
+    return generateData({ ...data, type: activeType }, context);
+  } else if (data.value === undefined) {
+    return "undefined";
   }
   return JSON.stringify(data.value);
 }
@@ -98,6 +115,9 @@ function generateStatement(
   context: CodeGenContext,
   isParam?: boolean
 ): string {
+  if (context.showResult) {
+    return generateData(getStatementResult(statement, context), context);
+  }
   const declaration = isParam ? "" : "const ";
   const name =
     statement.name !== undefined ? `${declaration}${statement.name} = ` : "";
@@ -130,8 +150,11 @@ function generateCallback(
   }`;
 }
 
-export function generateOperation(operation: IData<OperationType>): string {
-  const codeGenContext = createCodeGenContext();
+export function generateOperation(
+  operation: IData<OperationType>,
+  context: Context
+): string {
+  const codeGenContext = createCodeGenContext(context);
   const imports = `import * as _ from './built-in';\nimport * as R from 'remeda';\n\n`;
   const callback = generateCallback(operation, codeGenContext);
   return `${imports}export default ${callback};`;

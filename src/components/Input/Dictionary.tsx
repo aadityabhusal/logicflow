@@ -37,10 +37,7 @@ const DictionaryInputComponent = (
 
       handleData({
         ...data,
-        type: inferTypeFromValue(
-          { entries: newEntries },
-          { ...context, expectedType: context.expectedType ?? data.type }
-        ),
+        type: inferTypeFromValue({ entries: newEntries }, context),
         value: { entries: newEntries },
       });
     },
@@ -56,10 +53,7 @@ const DictionaryInputComponent = (
       newEntries[index] = { ...newEntries[index], key: newKey };
       handleData({
         ...data,
-        type: inferTypeFromValue(
-          { entries: newEntries },
-          { ...context, expectedType: context.expectedType ?? data.type }
-        ),
+        type: inferTypeFromValue({ entries: newEntries }, context),
         value: { entries: newEntries },
       });
     }
@@ -122,10 +116,7 @@ const DictionaryInputComponent = (
           ];
           handleData({
             ...data,
-            type: inferTypeFromValue(
-              { entries: newEntries },
-              { ...context, expectedType: context.expectedType ?? data.type }
-            ),
+            type: inferTypeFromValue({ entries: newEntries }, context),
             value: { entries: newEntries },
           });
         }}
@@ -134,7 +125,7 @@ const DictionaryInputComponent = (
           type:
             context.expectedType?.kind === "dictionary"
               ? context.expectedType.elementType
-              : data.type.elementType,
+              : undefined,
         }}
       />
       <span>{"}"}</span>

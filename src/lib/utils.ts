@@ -288,16 +288,10 @@ export function createContext(
     narrowedTypes: needsNewNarrowedTypes
       ? overrides.narrowedTypes!
       : new Map(parentContext.narrowedTypes),
+    expectedType: undefined,
+    enforceExpectedType: undefined,
     ...overrides,
   };
-
-  // Remove undefined values to keep context clean
-  if (context.expectedType === undefined) {
-    delete context.expectedType;
-  }
-  if (context.enforceExpectedType === undefined) {
-    delete context.enforceExpectedType;
-  }
 
   if (context.isIsolated) {
     const localResults = new Map<string, ExecutionResult>();

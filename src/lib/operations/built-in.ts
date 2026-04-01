@@ -1,4 +1,4 @@
-import { IData, IStatement, OperationType, UnionType } from "../types";
+import { IData, OperationType, UnionType } from "../types";
 import { InstanceTypes } from "../data";
 import {
   createData,
@@ -15,6 +15,7 @@ import {
   getStatementResult,
   createStatement,
   isObject,
+  inferTypeFromValue,
 } from "../utils";
 import { wretchOperations } from "./wretch";
 import {
@@ -25,7 +26,7 @@ import {
 } from "./remeda";
 import { Context, OperationListItem } from "../execution/types";
 
-export function createRuntimeError(error: unknown): IData {
+export function createRuntimeError(error: unknown) {
   const errorMessage = error instanceof Error ? error.message : String(error);
   return createData({
     type: { kind: "error", errorType: "runtime_error" },
@@ -37,7 +38,7 @@ const unknownOperations: OperationListItem[] = [
   {
     name: "toString",
     parameters: [{ type: { kind: "unknown" } }],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const rawValue = getRawValueFromData(data, context);
       const value =
         isObject(rawValue, ["toString"]) &&
@@ -50,7 +51,7 @@ const unknownOperations: OperationListItem[] = [
   {
     name: "log",
     parameters: [{ type: { kind: "unknown" }, isRest: true }],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const value = console.log(getRawValueFromData(data, context));
       return createDataFromRawValue(value, context);
     },
@@ -61,7 +62,7 @@ const unionOperations: OperationListItem[] = [
   {
     name: "isTypeOf",
     parameters: (data) => [getUnionParam(data), { type: { kind: "unknown" } }],
-    handler: (context, data: IData, type: IData) => {
+    handler: (context, data, type) => {
       return createData({
         type: { kind: "boolean" },
         value: isTypeCompatible(
@@ -84,7 +85,7 @@ const booleanOperations: OperationListItem[] = [
   {
     name: "and",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: (context, data: IData, trueStatement: IStatement) => {
+    lazyHandler: (context, data, trueStatement) => {
       if (!getRawValueFromData(data, context)) {
         return createDataFromRawValue(false, context);
       }
@@ -105,7 +106,7 @@ const booleanOperations: OperationListItem[] = [
   {
     name: "or",
     parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: (context, data: IData, falseStatement: IStatement) => {
+    lazyHandler: (context, data, falseStatement) => {
       if (getRawValueFromData(data, context)) {
         return createDataFromRawValue(true, context);
       }
@@ -126,7 +127,7 @@ const booleanOperations: OperationListItem[] = [
   {
     name: "not",
     parameters: [{ type: { kind: "boolean" } }],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const value = getRawValueFromData(data, context);
       return createDataFromRawValue(!value, context);
     },
@@ -138,12 +139,7 @@ const booleanOperations: OperationListItem[] = [
       { type: { kind: "unknown" } },
       { type: { kind: "unknown" }, isOptional: true },
     ],
-    lazyHandler: (
-      context,
-      data: IData,
-      trueBranch: IStatement,
-      falseBranch?: IStatement
-    ) => {
+    lazyHandler: (context, data, trueBranch, falseBranch?) => {
       const value = getRawValueFromData(data, context);
       const execute = context.isSync
         ? context.executeStatementSync
@@ -180,7 +176,7 @@ const stringOperations: OperationListItem[] = [
   {
     name: "length",
     parameters: [{ type: { kind: "string" } }],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const value = getRawValueFromData(data, context) as string;
       return createDataFromRawValue(value.length, context);
     },
@@ -188,7 +184,7 @@ const stringOperations: OperationListItem[] = [
   {
     name: "concat",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as string;
       const p1Value = getRawValueFromData(p1, context) as string;
       return createDataFromRawValue(value.concat(p1Value), context);
@@ -197,7 +193,7 @@ const stringOperations: OperationListItem[] = [
   {
     name: "includes",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as string;
       const p1Value = getRawValueFromData(p1, context) as string;
       return createDataFromRawValue(value.includes(p1Value), context);
@@ -206,7 +202,7 @@ const stringOperations: OperationListItem[] = [
   {
     name: "localeCompare",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as string;
       const p1Value = getRawValueFromData(p1, context) as string;
       return createDataFromRawValue(value.localeCompare(p1Value), context);
@@ -218,7 +214,7 @@ const numberOperations: OperationListItem[] = [
   {
     name: "power",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as number;
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(Math.pow(value, p1Value), context);
@@ -227,7 +223,7 @@ const numberOperations: OperationListItem[] = [
   {
     name: "mod",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as number;
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(value % p1Value, context);
@@ -236,7 +232,7 @@ const numberOperations: OperationListItem[] = [
   {
     name: "lessThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as number;
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(value < p1Value, context);
@@ -245,7 +241,7 @@ const numberOperations: OperationListItem[] = [
   {
     name: "lessThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as number;
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(value <= p1Value, context);
@@ -254,7 +250,7 @@ const numberOperations: OperationListItem[] = [
   {
     name: "greaterThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as number;
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(value > p1Value, context);
@@ -263,7 +259,7 @@ const numberOperations: OperationListItem[] = [
   {
     name: "greaterThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as number;
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(value >= p1Value, context);
@@ -278,7 +274,7 @@ const tupleOperations: OperationListItem[] = [
       { type: { kind: "tuple", elements: [] } },
       { type: { kind: "number" } },
     ],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as [];
       const p1Value = getRawValueFromData(p1, context) as number;
       return createDataFromRawValue(value.at(p1Value), context);
@@ -287,7 +283,7 @@ const tupleOperations: OperationListItem[] = [
   {
     name: "length",
     parameters: [{ type: { kind: "tuple", elements: [] } }],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const value = getRawValueFromData(data, context) as [];
       return createDataFromRawValue(value.length, context);
     },
@@ -298,10 +294,21 @@ const tupleOperations: OperationListItem[] = [
       { type: { kind: "tuple", elements: [] } },
       { type: { kind: "string" } },
     ],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as [];
       const p1Value = getRawValueFromData(p1, context) as string;
       return createDataFromRawValue(value.join(p1Value), context);
+    },
+  },
+  {
+    name: "toArray",
+    parameters: [{ type: { kind: "tuple", elements: [] } }],
+    handler: (context, data) => {
+      const type = inferTypeFromValue(data.value, {
+        ...context,
+        expectedType: { kind: "array", elementType: { kind: "unknown" } },
+      });
+      return createData({ type, value: data.value });
     },
   },
 ];
@@ -313,7 +320,7 @@ const arrayOperations: OperationListItem[] = [
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       { type: { kind: "number" } },
     ],
-    handler: (context, data: IData, index: IData) => {
+    handler: (context, data, index) => {
       const value = getRawValueFromData(data, context) as unknown[];
       const indexValue = getRawValueFromData(index, context) as number;
       return createDataFromRawValue(value.at(indexValue), context);
@@ -325,7 +332,7 @@ const arrayOperations: OperationListItem[] = [
       { type: { kind: "array", elementType: { kind: "string" } } },
       { type: { kind: "unknown" } },
     ],
-    handler: (context, data: IData, element: IData) => {
+    handler: (context, data, element) => {
       const value = getRawValueFromData(data, context) as unknown[];
       const elementValue = getRawValueFromData(element, context);
       return createDataFromRawValue(value.includes(elementValue), context);
@@ -337,7 +344,7 @@ const arrayOperations: OperationListItem[] = [
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       { type: { kind: "unknown" } },
     ],
-    handler: (context, data: IData, element: IData) => {
+    handler: (context, data, element) => {
       const value = getRawValueFromData(data, context) as unknown[];
       const elementValue = getRawValueFromData(element, context);
       return createDataFromRawValue(value.indexOf(elementValue), context);
@@ -349,7 +356,7 @@ const arrayOperations: OperationListItem[] = [
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       { type: { kind: "unknown" } },
     ],
-    handler: (context, data: IData, element: IData) => {
+    handler: (context, data, element) => {
       const value = getRawValueFromData(data, context) as unknown[];
       const elementValue = getRawValueFromData(element, context);
       return createDataFromRawValue(value.lastIndexOf(elementValue), context);
@@ -362,7 +369,7 @@ const arrayOperations: OperationListItem[] = [
       { type: { kind: "number" }, isOptional: true },
       { type: { kind: "number" }, isOptional: true },
     ],
-    handler: (context, data: IData, start: IData, end: IData) => {
+    handler: (context, data, start, end) => {
       const value = getRawValueFromData(data, context) as unknown[];
       const startValue = getRawValueFromData(start, context) as number;
       const endValue = getRawValueFromData(end, context) as number;
@@ -373,7 +380,7 @@ const arrayOperations: OperationListItem[] = [
     name: "some",
     parameters: (data) =>
       getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
-    handler: (context, data: IData, callback: IData) => {
+    handler: (context, data, callback) => {
       const _context = { ...context, isSync: true } as Context;
       const value = getRawValueFromData(data, _context) as unknown[];
       const callbackOp = getRawValueFromData(callback, _context) as (
@@ -386,7 +393,7 @@ const arrayOperations: OperationListItem[] = [
     name: "every",
     parameters: (data) =>
       getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
-    handler: (context, data: IData, callback: IData) => {
+    handler: (context, data, callback) => {
       const _context = { ...context, isSync: true } as Context;
       const value = getRawValueFromData(data, _context) as unknown[];
       const callbackOp = getRawValueFromData(callback, _context) as (
@@ -395,13 +402,24 @@ const arrayOperations: OperationListItem[] = [
       return createDataFromRawValue(value.every(callbackOp), _context);
     },
   },
+  {
+    name: "toTuple",
+    parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
+    handler: (context, data) => {
+      const type = inferTypeFromValue(data.value, {
+        ...context,
+        expectedType: { kind: "tuple", elements: [] },
+      });
+      return createData({ type, value: data.value });
+    },
+  },
 ];
 
 const dictionaryOperations: OperationListItem[] = [
   {
     name: "get",
     parameters: [getObjectParam(), { type: { kind: "string" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as Record<
         string,
         unknown
@@ -413,13 +431,37 @@ const dictionaryOperations: OperationListItem[] = [
   {
     name: "has",
     parameters: [getObjectParam(), { type: { kind: "string" } }],
-    handler: (context, data: IData, p1: IData) => {
+    handler: (context, data, p1) => {
       const value = getRawValueFromData(data, context) as Record<
         string,
         unknown
       >;
       const p1Value = getRawValueFromData(p1, context) as string;
       return createDataFromRawValue(p1Value in value, context);
+    },
+  },
+  {
+    name: "toDictionary",
+    parameters: [{ type: { kind: "object", properties: [] } }],
+    handler: (context, data) => {
+      const type = inferTypeFromValue(data.value, {
+        ...context,
+        expectedType: { kind: "dictionary", elementType: { kind: "unknown" } },
+      });
+      return createData({ type, value: data.value });
+    },
+  },
+  {
+    name: "toObject",
+    parameters: [
+      { type: { kind: "dictionary", elementType: { kind: "unknown" } } },
+    ],
+    handler: (context, data) => {
+      const type = inferTypeFromValue(data.value, {
+        ...context,
+        expectedType: { kind: "object", properties: [], required: [] },
+      });
+      return createData({ type, value: data.value });
     },
   },
 ];
@@ -431,7 +473,7 @@ const operationOperations: OperationListItem[] = [
       { type: isDataOfType(data, "operation") ? data.type : { kind: "never" } },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
-    handler: (context, data: IData, ...params: IData[]) => {
+    handler: (context, data, ...params) => {
       const operation = getRawValueFromData(data, context) as (
         ..._: unknown[]
       ) => unknown;
@@ -474,7 +516,7 @@ function createInstanceOperation<T extends keyof typeof InstanceTypes>(
       { type: { kind: "instance", className, constructorArgs: [] } },
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const instance = getRawValueFromData(data, context) as InstanceValue<T>;
       if (!instance) {
         return createRuntimeError(`${className} instance not found`);
@@ -588,7 +630,7 @@ const promiseOperations: OperationListItem[] = [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
       { type: getResolveCallbackType(data) },
     ],
-    handler: (context, promiseData: IData, callback: IData) => {
+    handler: (context, promiseData, callback) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
@@ -618,7 +660,7 @@ const promiseOperations: OperationListItem[] = [
         },
       },
     ],
-    handler: (context, promiseData: IData, errorCallback: IData) => {
+    handler: (context, promiseData, errorCallback) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
@@ -641,7 +683,7 @@ const promiseOperations: OperationListItem[] = [
     parameters: [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
     ],
-    handler: async (context, promiseData: IData) => {
+    handler: async (context, promiseData) => {
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
@@ -665,7 +707,7 @@ const promiseOperations: OperationListItem[] = [
         isOptional: true,
       },
     ],
-    handler: (context, url: IData, options?: IData) => {
+    handler: (context, url, options?) => {
       const urlValue = getRawValueFromData(url, context) as string;
       const fetchOptions = options?.value
         ? (getRawValueFromData(options, context) as Record<string, unknown>)
@@ -693,7 +735,7 @@ const responseOperations: OperationListItem[] = [
         type: { kind: "instance", className: "Response", constructorArgs: [] },
       },
     ],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
       return createDataFromRawValue(instance.clone().json(), context);
@@ -706,7 +748,7 @@ const responseOperations: OperationListItem[] = [
         type: { kind: "instance", className: "Response", constructorArgs: [] },
       },
     ],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
       return createDataFromRawValue(instance.clone().text(), {
@@ -722,7 +764,7 @@ const responseOperations: OperationListItem[] = [
         type: { kind: "instance", className: "Response", constructorArgs: [] },
       },
     ],
-    handler: (context, data: IData) => {
+    handler: (context, data) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
       return createData({

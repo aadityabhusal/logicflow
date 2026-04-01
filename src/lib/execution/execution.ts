@@ -182,7 +182,7 @@ export async function createOperationCall({
     newOperation,
     data,
     newParameters,
-    createContext(context, { scopeId: context.scopeId, isIsolated: true })
+    context
   );
 
   const operationResult = { ...result, id: _operationId };
@@ -284,12 +284,11 @@ export function setOperationResults(
   return [...parameters, ...statements].reduce(
     (chain, stmt, index) => {
       return chain.then(() => {
-        const newContext = createContext(context, { scopeId: context.scopeId });
         const result = _execute(
           stmt,
           index < parameters.length
-            ? getChildContext(newContext, { index, enforceExpectedType: true })
-            : newContext
+            ? getChildContext(_context, { index, enforceExpectedType: true })
+            : context
         );
         return (
           result instanceof Promise ? result : createThenable(result)
@@ -324,10 +323,11 @@ function executeStatementCore(
 ) {
   const opName = operation.value.name;
   const _narrowedTypes = applyTypeNarrowing(context, narrowed, data, operation);
-  const opCallContext = createContext(context, {
+  const opCallContext = {
+    ...context,
     narrowedTypes: _narrowedTypes,
     skipExecution: getSkipExecution({ context, data, operationName: opName }),
-  });
+  };
   const foundOp = getFilteredOperations(data, opCallContext).find(
     (op) => op.name === opName
   );

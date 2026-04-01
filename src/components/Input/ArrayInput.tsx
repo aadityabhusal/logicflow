@@ -34,6 +34,7 @@ const ArrayInputComponent = (
         ...data,
         type: inferTypeFromValue(newValue, {
           ...context,
+          // the data fallback is for preserving tuple type
           expectedType: context.expectedType ?? data.type,
         }),
         value: newValue,
