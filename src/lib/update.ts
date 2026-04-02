@@ -10,6 +10,7 @@ import {
   getStatementResult,
   isDataOfType,
   getUnionActiveType,
+  getUnionActiveIndex,
   createStatement,
   createData,
   createOperationFromFile,
@@ -19,6 +20,7 @@ import {
   createContext,
   createFileVariables,
   getIsAsync,
+  inferTypeFromValue,
 } from "./utils";
 import isEqual from "react-fast-compare";
 import { getFilteredOperations } from "./execution/execution";
@@ -165,13 +167,31 @@ function updateStatement(
       ? { name: currentReference!.name, data: foundByName.data }
       : undefined;
 
+  const updatedValue = updateDataValue(
+    currentStatement.data,
+    context,
+    reference
+  );
+  const currentType = currentStatement.data.type;
+  const newType =
+    currentType.kind === "union"
+      ? {
+          ...currentType,
+          activeIndex: getUnionActiveIndex(currentType, {
+            value: updatedValue,
+            context,
+          }),
+        }
+      : inferTypeFromValue(updatedValue, {
+          ...context,
+          expectedType: context.expectedType ?? currentType,
+        });
   const newStatement = {
     ...currentStatement,
     data: {
       ...currentStatement.data,
-      // TODO: might need to update type based on the updated value,
-      // inferring type from value doesn't work for union data
-      value: updateDataValue(currentStatement.data, context, reference),
+      type: newType,
+      value: updatedValue,
     },
   };
   return {

@@ -864,6 +864,19 @@ function getArrayElementType(
   context: Context
 ): DataType {
   if (elements.length === 0) return { kind: "unknown" };
+
+  // If we have an expected array element type, check if all elements are compatible
+  if (context.expectedType?.kind === "array") {
+    const expectedElementType = context.expectedType.elementType;
+    const allCompatible = elements.every((element) => {
+      const elementType = getStatementResult(element, context).type;
+      return isTypeCompatible(elementType, expectedElementType, context);
+    });
+    if (allCompatible) {
+      return expectedElementType;
+    }
+  }
+
   const firstType = getStatementResult(elements[0], context).type;
   const allSameType = elements.every((element) => {
     return isTypeCompatible(
@@ -876,7 +889,7 @@ function getArrayElementType(
 
   const unionTypes = elements.reduce((acc, element) => {
     const elementType = getStatementResult(element, context).type;
-    const exists = acc.some((t) => isDeepEqual(t, elementType));
+    const exists = acc.some((t) => isTypeCompatible(elementType, t, context));
     if (!exists) acc.push(elementType);
     return acc;
   }, [] as DataType[]);
@@ -960,7 +973,6 @@ export function inferTypeFromValue<T extends DataType>(
   value: DataValue<T> | undefined,
   context: Context
 ): T {
-  // TODO: handle union types using context.expectedType
   if (value === undefined) return { kind: "undefined" } as T;
   if (typeof value === "string") return { kind: "string" } as T;
   if (typeof value === "number") return { kind: "number" } as T;
@@ -1053,17 +1065,35 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
-function getUnionActiveIndex(
+export function getUnionActiveIndex(
   unionType: UnionType,
   infer?: { value: unknown; context: Context }
 ): number {
-  if (unionType.activeIndex !== undefined) return unionType.activeIndex;
+  if (unionType.activeIndex !== undefined && !infer)
+    return unionType.activeIndex;
   if (infer) {
-    const value = inferTypeFromValue(infer.value, infer.context);
-    const index = unionType.types.findIndex((t) =>
-      isTypeCompatible(value, t, infer.context)
-    );
-    return index === -1 ? 0 : index;
+    // If activeIndex is set, prefer keeping it if the value is still compatible
+    if (unionType.activeIndex !== undefined) {
+      const currentType = unionType.types[unionType.activeIndex];
+      const inferredType = inferTypeFromValue(infer.value, {
+        ...infer.context,
+        expectedType: currentType,
+      });
+      if (isTypeCompatible(inferredType, currentType, infer.context)) {
+        return unionType.activeIndex;
+      }
+    }
+    // Fall back to finding the first matching type
+    for (const [index, candidateType] of unionType.types.entries()) {
+      const inferredType = inferTypeFromValue(infer.value, {
+        ...infer.context,
+        expectedType: candidateType,
+      });
+      if (isTypeCompatible(inferredType, candidateType, infer.context)) {
+        return index;
+      }
+    }
+    return 0;
   }
   return 0;
 }
