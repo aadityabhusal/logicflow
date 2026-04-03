@@ -60,6 +60,7 @@ export type Context = {
 };
 
 export type OperationListItem = {
+  id?: string;
   name: string;
   parameters:
     | ((data: IData) => OperationType["parameters"])

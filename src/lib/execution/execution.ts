@@ -22,6 +22,7 @@ import {
   getInverseTypes,
   updateContextWithNarrowedTypes,
   getContextExpectedTypes,
+  getCacheKey,
 } from "@/lib/utils";
 import { OperationListItem, Context, Thenable } from "./types";
 import {
@@ -278,7 +279,7 @@ export function setOperationResults(
   _context: Context
 ): Thenable<void> {
   const { parameters, statements } = operation.value;
-  const context = createContext(_context);
+  const context = createContext(_context, { scopeId: operation.id });
   const _execute = context.isSync ? executeStatementSync : executeStatement;
 
   return [...parameters, ...statements].reduce(
@@ -354,7 +355,9 @@ function executeStatementCore(
       }),
     };
   }
-  const existingResult = opCallContext.getResult(operation.id)?.data;
+  const existingResult = opCallContext.getResult(
+    getCacheKey(opCallContext, operation.id)
+  )?.data;
   const shouldCacheResult = foundOp.shouldCacheResult;
   if (shouldCacheResult && existingResult) {
     return { _narrowedTypes, result: existingResult, shouldCacheResult };
@@ -404,9 +407,10 @@ export async function executeStatement(
       ? await executeOperation(foundOp, resultData, parameters, opCallContext)
       : result;
     resultData = opResult;
-    if (!context.isIsolated) {
-      context.setResult(operation.id, { data: opResult, shouldCacheResult });
-    }
+    context.setResult(getCacheKey(context, operation.id), {
+      data: opResult,
+      shouldCacheResult,
+    });
   }
   const finalResult = resolveReference(resultData, context);
   return finalResult;
@@ -449,9 +453,10 @@ export function executeStatementSync(
       ? executeOperationSync(foundOp, resultData, parameters, opCallContext)
       : result;
     resultData = opResult;
-    if (!context.isIsolated) {
-      context.setResult(operation.id, { data: opResult, shouldCacheResult });
-    }
+    context.setResult(getCacheKey(context, operation.id), {
+      data: opResult,
+      shouldCacheResult,
+    });
   }
   const finalResult = resolveReference(resultData, context);
   return finalResult;
@@ -485,12 +490,7 @@ function executeOperationCore(
   const executedParams = resolvedParams.slice(1).flatMap((p, index) => {
     const params = p.isRest ? _parameters.slice(index) : [_parameters[index]];
     return params.map((param) => {
-      if (!param) {
-        return createData({
-          type: resolveUnionType([p.type, { kind: "undefined" }]),
-          value: undefined,
-        });
-      }
+      if (!param) return createData();
       return _execute(
         param,
         getChildContext(context, {
@@ -544,7 +544,7 @@ function executeOperationCore(
       return createData();
     }
     const newContext = createContext(context, {
-      scopeId: context.scopeId,
+      scopeId: operation.id,
       isIsolated: true,
     });
     const allInputs = [data, ...parameters];

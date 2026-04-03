@@ -22,12 +22,7 @@ import {
   TupleType,
   MapValue,
 } from "./types";
-import {
-  Context,
-  ExecutionResult,
-  OperationListItem,
-  Thenable,
-} from "./execution/types";
+import { Context, OperationListItem, Thenable } from "./execution/types";
 
 /* Create */
 
@@ -275,33 +270,16 @@ export function createContext(
   parentContext: Context,
   overrides?: Partial<Context>
 ): Context {
-  // Determine if we need new Maps
-  const needsNewVariables = overrides?.variables !== undefined;
-  const needsNewNarrowedTypes = overrides?.narrowedTypes !== undefined;
-
-  const context: Context = {
+  return {
     ...parentContext,
-    scopeId: overrides?.scopeId ?? nanoid(),
-    variables: needsNewVariables
-      ? overrides.variables!
-      : new Map(parentContext.variables),
-    narrowedTypes: needsNewNarrowedTypes
-      ? overrides.narrowedTypes!
-      : new Map(parentContext.narrowedTypes),
-    expectedType: undefined,
-    enforceExpectedType: undefined,
     ...overrides,
+    scopeId: overrides?.scopeId ?? nanoid(),
+    variables: overrides?.variables ?? new Map(parentContext.variables),
+    narrowedTypes:
+      overrides?.narrowedTypes ?? new Map(parentContext.narrowedTypes),
+    expectedType: overrides?.expectedType ?? undefined,
+    enforceExpectedType: overrides?.enforceExpectedType ?? undefined,
   };
-
-  if (context.isIsolated) {
-    const localResults = new Map<string, ExecutionResult>();
-
-    context.setResult = (id, result) => localResults.set(id, result);
-    context.getResult = (id) =>
-      localResults.get(id) ?? parentContext.getResult(id);
-  }
-
-  return context;
 }
 
 export function getContextExpectedTypes({
@@ -425,12 +403,13 @@ export function createInstance<
 export function operationToListItem(
   operation: IData<OperationType>,
   name?: string
-) {
+): OperationListItem {
   return {
+    id: operation.id,
     name: name ?? operation.value.name ?? "anonymous",
     parameters: operation.type.parameters,
     statements: operation.value.statements,
-  } as OperationListItem;
+  };
 }
 
 export function createDataFromRawValue(
@@ -1270,6 +1249,11 @@ export function resolveConstructorArgs(
 
 /* Execution */
 
+export function getCacheKey(context: Context, operationId: string): string {
+  if (!context.isIsolated) return operationId;
+  return `${context.scopeId}:${operationId}`;
+}
+
 export function getStatementResult(
   statement: IStatement,
   context: Context,
@@ -1287,7 +1271,10 @@ export function getStatementResult(
     : statement.operations[statement.operations.length - 1];
 
   if (options?.index || (!options?.prevEntity && operation)) {
-    const cached = context.getResult(operation?.id)?.data;
+    const cacheKey = operation?.id
+      ? getCacheKey(context, operation.id)
+      : undefined;
+    const cached = cacheKey ? context.getResult(cacheKey)?.data : undefined;
     if (cached) result = cached;
     else if (operation?.type?.result) {
       result = createData({ id: operation.id, type: operation.type.result });
@@ -1296,7 +1283,7 @@ export function getStatementResult(
     }
   } else if (isDataOfType(result, "condition")) {
     result =
-      context.getResult(result.id)?.data ??
+      context.getResult(getCacheKey(context, result.id))?.data ??
       getConditionResult(result.value, context);
   }
   return options?.skipResolveReference
