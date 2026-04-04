@@ -17,13 +17,13 @@ interface ExecutionResultsState {
   rootContext: Context;
   contexts: Map<string, Context>;
   results: Map<string, ExecutionResult>;
-  instances: Map<string, unknown>;
-  getContext: (entityId: string) => Context;
-  setContext: (entityId: string, context: Context) => void;
-  setResult: (entityId: string, result: Partial<ExecutionResult>) => void;
-  getResult: (entityId: string) => ExecutionResult | undefined;
-  getInstance: (entityId: string) => unknown;
-  setInstance: (entityId: string, instance: unknown) => void;
+  instances: Map<string, ReturnType<Context["getInstance"]>>;
+  getContext: Context["getContext"];
+  setContext: Context["setContext"];
+  setResult: Context["setResult"];
+  getResult: Context["getResult"];
+  getInstance: Context["getInstance"];
+  setInstance: Context["setInstance"];
   removeResult: (entityId: string) => void;
   removeAll: () => void;
 }

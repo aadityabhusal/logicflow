@@ -137,6 +137,9 @@ export interface IStatement {
   isRest?: boolean;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ConstructorType = new (...args: any[]) => any;
+
 /* UI Types */
 
 export interface IDropdownTargetProps extends Omit<

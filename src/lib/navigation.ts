@@ -191,15 +191,30 @@ export function getOperationEntities(
     )
   );
   const statementIndex = operation.value.statements.length + 1;
+
+  const expectedParameterType =
+    context.expectedType?.kind === "operation"
+      ? context.expectedType.parameters
+      : undefined;
+
+  const hideAddParameter =
+    (expectedParameterType &&
+      operation.value.parameters.length === expectedParameterType.length) ||
+    operation.type.parameters.slice(-1)?.[0]?.isRest;
+
   return [
     ...parameterEntities,
-    {
-      id: `${operation.id}_parameter_add`,
-      depth,
-      operationId: operation.id,
-      statementId: `${operation.id}_parameters`,
-      statementIndex: 0,
-    },
+    ...(hideAddParameter
+      ? []
+      : [
+          {
+            id: `${operation.id}_parameter_add`,
+            depth,
+            operationId: operation.id,
+            statementId: `${operation.id}_parameters`,
+            statementIndex: 0,
+          },
+        ]),
     ...statementEntities,
     {
       id: `${operation.id}_statement_add`,

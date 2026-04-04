@@ -119,7 +119,7 @@ function updateDataValue(
                   ...data,
                   type: getUnionActiveType(data.type, {
                     value: data.value,
-                    context: context.getContext(data.id),
+                    context,
                   }),
                 },
                 context

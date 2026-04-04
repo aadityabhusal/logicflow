@@ -1,4 +1,4 @@
-import { DataType, ErrorType, OperationType } from "./types";
+import { ConstructorType, DataType, ErrorType, OperationType } from "./types";
 import wretch from "wretch";
 import { SiAnthropic, SiOpenai, SiGooglegemini } from "react-icons/si";
 
@@ -115,8 +115,7 @@ function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
 
 export type InstanceTypeConfig<
   K extends string = string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  C extends new (...args: any[]) => any = new (...args: any[]) => any,
+  C extends ConstructorType = ConstructorType,
 > = {
   readonly name: K;
   readonly Constructor: C;
@@ -127,11 +126,7 @@ export type InstanceTypeConfig<
   readonly prepareArgs?: (args: unknown[]) => unknown[];
 };
 
-export const customInstances = new WeakMap<
-  object,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  new (...args: any[]) => any
->();
+export const customInstances = new WeakMap<object, ConstructorType>();
 
 export class WretchClass {
   static [Symbol.hasInstance](instance: unknown): boolean {
