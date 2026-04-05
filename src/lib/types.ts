@@ -97,6 +97,7 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
                           name?: string;
                           isAsync?: boolean; // Assigned only when the 'await' operation is chained in a statement
                           source?: OperationSource;
+                          instanceId?: string;
                         }
                       : T extends ConditionType
                         ? {

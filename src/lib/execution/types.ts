@@ -1,4 +1,5 @@
 import {
+  ConstructorType,
   DataType,
   IData,
   IStatement,
@@ -34,12 +35,17 @@ export type Context = {
   isSync?: boolean;
   isIsolated?: boolean;
   getResult: (id: string) => ExecutionResult | undefined;
-  getInstance: (id: string) => unknown;
+  getInstance: (
+    id: string
+  ) => { instance: InstanceType<ConstructorType>; type: DataType } | undefined;
 
   getContext: (id: string) => Context;
   setContext: (id: string, context: Context) => void;
   setResult: (id: string, result: Partial<ExecutionResult>) => void;
-  setInstance: (id: string, instance: unknown) => void;
+  setInstance: (
+    id: string,
+    data: { instance: InstanceType<ConstructorType>; type: DataType }
+  ) => void;
   // execute functions are here to avoid circular dependency in operation.ts and built-in-operations.ts
   executeStatement: (
     statement: IStatement,

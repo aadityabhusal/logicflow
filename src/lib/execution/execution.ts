@@ -265,9 +265,12 @@ function executeDataValue(
         : Promise.all(args)
       ).then((result) => {
         const instance =
-          context.getInstance(data.value.instanceId) ??
+          context.getInstance(data.value.instanceId)?.instance ??
           createInstance(data.value.className, result, context);
-        context.setInstance(data.value.instanceId, instance);
+        context.setInstance(data.value.instanceId, {
+          instance,
+          type: data.type,
+        });
       }),
     ];
   }

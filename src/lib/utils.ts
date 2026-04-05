@@ -175,7 +175,6 @@ export function createDefaultValue<T extends DataType>(
       return {
         parameters: type.parameters.map(createStatementFromType),
         statements: [],
-        result: undefined,
       } as DataValue<T>;
     }
 
@@ -376,7 +375,7 @@ export function createParamData(
     type: {
       kind: "operation",
       parameters: item.type.parameters,
-      result: { kind: "undefined" },
+      result: item.type.result,
     },
     value: { parameters: parameters, statements: [] },
   });
@@ -480,7 +479,10 @@ export function createDataFromRawValue(
           ),
         },
       });
-      context.setInstance(data.value.instanceId, value);
+      context.setInstance(data.value.instanceId, {
+        instance: value,
+        type: data.type,
+      });
       return data;
     } else {
       const entries = Object.entries(value).map(([key, val], i) => ({
@@ -519,17 +521,32 @@ export function createDataFromRawValue(
   }
 
   if (typeof value === "function") {
-    const data = createData({
-      type: context.expectedType ?? {
-        kind: "operation",
-        parameters: Array.from({ length: value.length }, () => ({
-          type: { kind: "unknown" },
-        })),
-        result: { kind: "unknown" },
-      },
-    });
-    context.setInstance(`${data.id}-operation`, value);
-    return data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existingInstanceId = (value as any)._operationInstanceId;
+    const fallbackType: OperationType =
+      context.expectedType?.kind === "operation"
+        ? context.expectedType
+        : {
+            kind: "operation",
+            parameters: Array.from({ length: value.length }, () => ({
+              type: { kind: "unknown" },
+            })),
+            result: { kind: "unknown" },
+          };
+
+    if (existingInstanceId) {
+      // This function was converted from an operation - retrieve stored type
+      const storedType = context.getInstance(existingInstanceId)?.type;
+      const type = storedType?.kind === "operation" ? storedType : fallbackType;
+
+      const data = createData({ type });
+      return {
+        ...data,
+        value: { ...data.value, instanceId: existingInstanceId },
+      };
+    }
+    // New function - not from operation conversion
+    return createData({ type: fallbackType });
   }
   return createData({
     type: context.expectedType ?? { kind: "unknown" },
@@ -842,18 +859,11 @@ function getArrayElementType(
   elements: IStatement[],
   context: Context
 ): DataType {
-  if (elements.length === 0) return { kind: "unknown" };
-
-  // If we have an expected array element type, check if all elements are compatible
-  if (context.expectedType?.kind === "array") {
-    const expectedElementType = context.expectedType.elementType;
-    const allCompatible = elements.every((element) => {
-      const elementType = getStatementResult(element, context).type;
-      return isTypeCompatible(elementType, expectedElementType, context);
-    });
-    if (allCompatible) {
-      return expectedElementType;
+  if (elements.length === 0) {
+    if (context.expectedType?.kind === "array") {
+      return context.expectedType.elementType;
     }
+    return { kind: "unknown" };
   }
 
   const firstType = getStatementResult(elements[0], context).type;
@@ -1354,15 +1364,22 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       `${ErrorTypesData[data.type.errorType].name}: ${data.value.reason}`
     );
   } else if (isDataOfType(data, "instance")) {
-    return context.getInstance(data.value.instanceId);
+    return context.getInstance(data.value.instanceId)?.instance;
   } else if (isDataOfType(data, "operation")) {
-    const storedFunc = context.getInstance(`${data.id}-operation`);
-    if (typeof storedFunc === "function") return storedFunc;
-    return (..._args: unknown[]) => {
+    if (data.value.instanceId) {
+      const stored = context.getInstance(data.value.instanceId);
+      if (typeof stored?.instance === "function") {
+        stored.instance._operationInstanceId = data.value.instanceId;
+        return stored.instance;
+      }
+    }
+
+    const func = (..._args: unknown[]) => {
       const [dataArg, ...args] = _args;
       const execute = context.isSync
         ? context.executeOperationSync
         : context.executeOperation;
+
       const result = execute(
         operationToListItem(data),
         createDataFromRawValue(dataArg, context),
@@ -1375,6 +1392,11 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
         ? result.then((r) => getRawValueFromData(r, context))
         : getRawValueFromData(result, context);
     };
+
+    const instanceId = nanoid();
+    func._operationInstanceId = instanceId;
+    context.setInstance(instanceId, { instance: func, type: data.type });
+    return func;
   } else if (isDataOfType(data, "condition")) {
     return getRawValueFromData(
       getConditionResult(data.value, context),
