@@ -294,7 +294,7 @@ const specialOperations: OperationListItem[] = [
 
       const restParamsIndex = (
         data as IData<OperationType>
-      ).value.parameters.findIndex((p) => p.isRest);
+      ).type.parameters.findIndex((p) => p.isRest);
 
       if (restParamsIndex !== -1) {
         const restParams = createData({

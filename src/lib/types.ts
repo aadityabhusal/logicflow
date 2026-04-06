@@ -97,6 +97,7 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
                           name?: string;
                           isAsync?: boolean; // Assigned only when the 'await' operation is chained in a statement
                           source?: OperationSource;
+                          instanceId?: string;
                         }
                       : T extends ConditionType
                         ? {
@@ -136,6 +137,9 @@ export interface IStatement {
   isOptional?: boolean;
   isRest?: boolean;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ConstructorType = new (...args: any[]) => any;
 
 /* UI Types */
 

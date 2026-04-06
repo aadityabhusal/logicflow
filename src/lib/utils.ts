@@ -22,12 +22,7 @@ import {
   TupleType,
   MapValue,
 } from "./types";
-import {
-  Context,
-  ExecutionResult,
-  OperationListItem,
-  Thenable,
-} from "./execution/types";
+import { Context, OperationListItem, Thenable } from "./execution/types";
 
 /* Create */
 
@@ -69,6 +64,7 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     data: newData,
     operations: props?.operations || [],
     isOptional: props?.isOptional,
+    isRest: props?.isRest,
   };
 }
 
@@ -180,7 +176,6 @@ export function createDefaultValue<T extends DataType>(
       return {
         parameters: type.parameters.map(createStatementFromType),
         statements: [],
-        result: undefined,
       } as DataValue<T>;
     }
 
@@ -275,33 +270,16 @@ export function createContext(
   parentContext: Context,
   overrides?: Partial<Context>
 ): Context {
-  // Determine if we need new Maps
-  const needsNewVariables = overrides?.variables !== undefined;
-  const needsNewNarrowedTypes = overrides?.narrowedTypes !== undefined;
-
-  const context: Context = {
+  return {
     ...parentContext,
-    scopeId: overrides?.scopeId ?? nanoid(),
-    variables: needsNewVariables
-      ? overrides.variables!
-      : new Map(parentContext.variables),
-    narrowedTypes: needsNewNarrowedTypes
-      ? overrides.narrowedTypes!
-      : new Map(parentContext.narrowedTypes),
-    expectedType: undefined,
-    enforceExpectedType: undefined,
     ...overrides,
+    scopeId: overrides?.scopeId ?? nanoid(),
+    variables: overrides?.variables ?? new Map(parentContext.variables),
+    narrowedTypes:
+      overrides?.narrowedTypes ?? new Map(parentContext.narrowedTypes),
+    expectedType: overrides?.expectedType ?? undefined,
+    enforceExpectedType: overrides?.enforceExpectedType ?? undefined,
   };
-
-  if (context.isIsolated) {
-    const localResults = new Map<string, ExecutionResult>();
-
-    context.setResult = (id, result) => localResults.set(id, result);
-    context.getResult = (id) =>
-      localResults.get(id) ?? parentContext.getResult(id);
-  }
-
-  return context;
 }
 
 export function getContextExpectedTypes({
@@ -389,6 +367,7 @@ export function createParamData(
           name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
           data: createParamData({ type: paramSpec.type }),
           isOptional: paramSpec.isOptional,
+          isRest: paramSpec.isRest,
         })
       );
       return prev;
@@ -398,7 +377,7 @@ export function createParamData(
     type: {
       kind: "operation",
       parameters: item.type.parameters,
-      result: { kind: "undefined" },
+      result: item.type.result,
     },
     value: { parameters: parameters, statements: [] },
   });
@@ -425,12 +404,13 @@ export function createInstance<
 export function operationToListItem(
   operation: IData<OperationType>,
   name?: string
-) {
+): OperationListItem {
   return {
+    id: operation.id,
     name: name ?? operation.value.name ?? "anonymous",
     parameters: operation.type.parameters,
     statements: operation.value.statements,
-  } as OperationListItem;
+  };
 }
 
 export function createDataFromRawValue(
@@ -501,7 +481,10 @@ export function createDataFromRawValue(
           ),
         },
       });
-      context.setInstance(data.value.instanceId, value);
+      context.setInstance(data.value.instanceId, {
+        instance: value,
+        type: data.type,
+      });
       return data;
     } else {
       const entries = Object.entries(value).map(([key, val], i) => ({
@@ -540,17 +523,32 @@ export function createDataFromRawValue(
   }
 
   if (typeof value === "function") {
-    const data = createData({
-      type: context.expectedType ?? {
-        kind: "operation",
-        parameters: Array.from({ length: value.length }, () => ({
-          type: { kind: "unknown" },
-        })),
-        result: { kind: "unknown" },
-      },
-    });
-    context.setInstance(`${data.id}-operation`, value);
-    return data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existingInstanceId = (value as any)._operationInstanceId;
+    const fallbackType: OperationType =
+      context.expectedType?.kind === "operation"
+        ? context.expectedType
+        : {
+            kind: "operation",
+            parameters: Array.from({ length: value.length }, () => ({
+              type: { kind: "unknown" },
+            })),
+            result: { kind: "unknown" },
+          };
+
+    if (existingInstanceId) {
+      // This function was converted from an operation - retrieve stored type
+      const storedType = context.getInstance(existingInstanceId)?.type;
+      const type = storedType?.kind === "operation" ? storedType : fallbackType;
+
+      const data = createData({ type });
+      return {
+        ...data,
+        value: { ...data.value, instanceId: existingInstanceId },
+      };
+    }
+    // New function - not from operation conversion
+    return createData({ type: fallbackType });
   }
   return createData({
     type: context.expectedType ?? { kind: "unknown" },
@@ -863,7 +861,13 @@ function getArrayElementType(
   elements: IStatement[],
   context: Context
 ): DataType {
-  if (elements.length === 0) return { kind: "unknown" };
+  if (elements.length === 0) {
+    if (context.expectedType?.kind === "array") {
+      return context.expectedType.elementType;
+    }
+    return { kind: "unknown" };
+  }
+
   const firstType = getStatementResult(elements[0], context).type;
   const allSameType = elements.every((element) => {
     return isTypeCompatible(
@@ -876,7 +880,7 @@ function getArrayElementType(
 
   const unionTypes = elements.reduce((acc, element) => {
     const elementType = getStatementResult(element, context).type;
-    const exists = acc.some((t) => isDeepEqual(t, elementType));
+    const exists = acc.some((t) => isTypeCompatible(elementType, t, context));
     if (!exists) acc.push(elementType);
     return acc;
   }, [] as DataType[]);
@@ -960,7 +964,6 @@ export function inferTypeFromValue<T extends DataType>(
   value: DataValue<T> | undefined,
   context: Context
 ): T {
-  // TODO: handle union types using context.expectedType
   if (value === undefined) return { kind: "undefined" } as T;
   if (typeof value === "string") return { kind: "string" } as T;
   if (typeof value === "number") return { kind: "number" } as T;
@@ -1053,17 +1056,35 @@ export function inferTypeFromValue<T extends DataType>(
   return { kind: "unknown" } as T;
 }
 
-function getUnionActiveIndex(
+export function getUnionActiveIndex(
   unionType: UnionType,
   infer?: { value: unknown; context: Context }
 ): number {
-  if (unionType.activeIndex !== undefined) return unionType.activeIndex;
+  if (unionType.activeIndex !== undefined && !infer)
+    return unionType.activeIndex;
   if (infer) {
-    const value = inferTypeFromValue(infer.value, infer.context);
-    const index = unionType.types.findIndex((t) =>
-      isTypeCompatible(value, t, infer.context)
-    );
-    return index === -1 ? 0 : index;
+    // If activeIndex is set, prefer keeping it if the value is still compatible
+    if (unionType.activeIndex !== undefined) {
+      const currentType = unionType.types[unionType.activeIndex];
+      const inferredType = inferTypeFromValue(infer.value, {
+        ...infer.context,
+        expectedType: currentType,
+      });
+      if (isTypeCompatible(inferredType, currentType, infer.context)) {
+        return unionType.activeIndex;
+      }
+    }
+    // Fall back to finding the first matching type
+    for (const [index, candidateType] of unionType.types.entries()) {
+      const inferredType = inferTypeFromValue(infer.value, {
+        ...infer.context,
+        expectedType: candidateType,
+      });
+      if (isTypeCompatible(inferredType, candidateType, infer.context)) {
+        return index;
+      }
+    }
+    return 0;
   }
   return 0;
 }
@@ -1240,6 +1261,11 @@ export function resolveConstructorArgs(
 
 /* Execution */
 
+export function getCacheKey(context: Context, operationId: string): string {
+  if (!context.isIsolated) return operationId;
+  return `${context.scopeId}:${operationId}`;
+}
+
 export function getStatementResult(
   statement: IStatement,
   context: Context,
@@ -1257,7 +1283,10 @@ export function getStatementResult(
     : statement.operations[statement.operations.length - 1];
 
   if (options?.index || (!options?.prevEntity && operation)) {
-    const cached = context.getResult(operation?.id)?.data;
+    const cacheKey = operation?.id
+      ? getCacheKey(context, operation.id)
+      : undefined;
+    const cached = cacheKey ? context.getResult(cacheKey)?.data : undefined;
     if (cached) result = cached;
     else if (operation?.type?.result) {
       result = createData({ id: operation.id, type: operation.type.result });
@@ -1266,7 +1295,7 @@ export function getStatementResult(
     }
   } else if (isDataOfType(result, "condition")) {
     result =
-      context.getResult(result.id)?.data ??
+      context.getResult(getCacheKey(context, result.id))?.data ??
       getConditionResult(result.value, context);
   }
   return options?.skipResolveReference
@@ -1337,15 +1366,22 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       `${ErrorTypesData[data.type.errorType].name}: ${data.value.reason}`
     );
   } else if (isDataOfType(data, "instance")) {
-    return context.getInstance(data.value.instanceId);
+    return context.getInstance(data.value.instanceId)?.instance;
   } else if (isDataOfType(data, "operation")) {
-    const storedFunc = context.getInstance(`${data.id}-operation`);
-    if (typeof storedFunc === "function") return storedFunc;
-    return (..._args: unknown[]) => {
+    if (data.value.instanceId) {
+      const stored = context.getInstance(data.value.instanceId);
+      if (typeof stored?.instance === "function") {
+        stored.instance._operationInstanceId = data.value.instanceId;
+        return stored.instance;
+      }
+    }
+
+    const func = (..._args: unknown[]) => {
       const [dataArg, ...args] = _args;
       const execute = context.isSync
         ? context.executeOperationSync
         : context.executeOperation;
+
       const result = execute(
         operationToListItem(data),
         createDataFromRawValue(dataArg, context),
@@ -1358,6 +1394,11 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
         ? result.then((r) => getRawValueFromData(r, context))
         : getRawValueFromData(result, context);
     };
+
+    const instanceId = nanoid();
+    func._operationInstanceId = instanceId;
+    context.setInstance(instanceId, { instance: func, type: data.type });
+    return func;
   } else if (isDataOfType(data, "condition")) {
     return getRawValueFromData(
       getConditionResult(data.value, context),

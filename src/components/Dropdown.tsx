@@ -242,6 +242,12 @@ const DropdownComponent = ({
     }
   }, [isFocused, combobox.targetRef, data?.type.kind]);
 
+  useEffect(() => {
+    if (!isFocused && combobox.dropdownOpened) {
+      combobox.closeDropdown();
+    }
+  }, [isFocused, combobox]);
+
   const handleExtractToFile = (data: IData<OperationType>) => {
     const newName = createVariableName({
       prefix: "operation",

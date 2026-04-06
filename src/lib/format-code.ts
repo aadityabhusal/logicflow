@@ -6,6 +6,7 @@ import {
   isDataOfType,
   inferTypeFromValue,
   getStatementResult,
+  getTypeSignature,
 } from "./utils";
 import { builtInOperations } from "./operations/built-in";
 import type { Options } from "prettier";
@@ -136,6 +137,18 @@ function generateCallback(
   operation: IData<OperationType>,
   context: CodeGenContext
 ): string {
+  // Only show internal logic for operations that were converted to raw values i.e. with instanceId
+  if (operation.value.instanceId) {
+    const storedType = context.getInstance(operation.value.instanceId)?.type;
+    if (storedType) {
+      const type = storedType?.kind === "operation" ? storedType : undefined;
+      return `(${type ? type.parameters.map((p) => p.name).join(", ") : "...args"}) => {
+    /* internal logic */ 
+    /* @returns ${getTypeSignature(type?.result ?? { kind: "unknown" })} */
+  }`;
+    }
+  }
+
   const asyncKeyword = operation.value.isAsync ? "async " : "";
   const statements = operation.value.statements.map((statement) =>
     generateStatement(statement, context)
