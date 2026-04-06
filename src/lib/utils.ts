@@ -64,6 +64,7 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     data: newData,
     operations: props?.operations || [],
     isOptional: props?.isOptional,
+    isRest: props?.isRest,
   };
 }
 
@@ -366,6 +367,7 @@ export function createParamData(
           name: paramSpec.name ?? createVariableName({ prefix: "param", prev }),
           data: createParamData({ type: paramSpec.type }),
           isOptional: paramSpec.isOptional,
+          isRest: paramSpec.isRest,
         })
       );
       return prev;

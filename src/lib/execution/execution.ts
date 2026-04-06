@@ -396,7 +396,6 @@ export async function executeStatement(
   let resultData = statement.data;
 
   for (const operation of statement.operations) {
-    if (isFatalError(resultData)) break;
     const {
       _narrowedTypes,
       foundOp,
@@ -405,10 +404,19 @@ export async function executeStatement(
       shouldCacheResult,
     } = executeStatementCore(context, narrowedTypes, resultData, operation);
     narrowedTypes = _narrowedTypes;
+
+    if (result !== undefined) {
+      const cacheKey = getCacheKey(context, operation.id);
+      context.setResult(cacheKey, { data: result, shouldCacheResult });
+      continue;
+    }
     const parameters = operation.value.parameters;
-    const opResult = foundOp
-      ? await executeOperation(foundOp, resultData, parameters, opCallContext)
-      : result;
+    const opResult = await executeOperation(
+      foundOp,
+      resultData,
+      parameters,
+      opCallContext
+    );
     resultData = opResult;
     context.setResult(getCacheKey(context, operation.id), {
       data: opResult,
@@ -442,7 +450,6 @@ export function executeStatementSync(
   let resultData = statement.data;
 
   for (const operation of statement.operations) {
-    if (isFatalError(resultData)) break;
     const {
       _narrowedTypes,
       foundOp,
@@ -451,10 +458,19 @@ export function executeStatementSync(
       shouldCacheResult,
     } = executeStatementCore(context, narrowedTypes, resultData, operation);
     narrowedTypes = _narrowedTypes;
+
+    if (result !== undefined) {
+      const cacheKey = getCacheKey(context, operation.id);
+      context.setResult(cacheKey, { data: result, shouldCacheResult });
+      continue;
+    }
     const parameters = operation.value.parameters;
-    const opResult = foundOp
-      ? executeOperationSync(foundOp, resultData, parameters, opCallContext)
-      : result;
+    const opResult = executeOperationSync(
+      foundOp,
+      resultData,
+      parameters,
+      opCallContext
+    );
     resultData = opResult;
     context.setResult(getCacheKey(context, operation.id), {
       data: opResult,
