@@ -153,7 +153,6 @@ Create handlers for developer-focused serverless/edge platforms:
 
 - **Supabase Edge Functions**
 - **Vercel Functions**
-- **Cloudflare Workers**
 - **Netlify Functions**
 
 Each template includes:

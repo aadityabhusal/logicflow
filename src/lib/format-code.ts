@@ -58,6 +58,7 @@ export function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "operation")) {
     return generateCallback(data, { ...context, showResult: undefined });
   } else if (isDataOfType(data, "reference")) {
+    if (data.type.isEnv) return `process.env.${data.value.name}`;
     return data.value.name;
   } else if (isDataOfType(data, "union")) {
     const activeType = getUnionActiveType(data.type);
@@ -167,7 +168,7 @@ export function generateOperation(
   context: Context
 ): string {
   const codeGenContext = createCodeGenContext(context);
-  const imports = `import * as _ from './built-in';\nimport * as R from 'remeda';\n\n`;
+  const imports = `import * as _ from '../built-in';\nimport * as R from 'remeda';\n\n`;
   const callback = generateCallback(operation, codeGenContext);
   return `${imports}export default ${callback};`;
 }

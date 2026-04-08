@@ -223,19 +223,44 @@ export function createProjectFile(
   prev: (string | ProjectFile)[] = []
 ): ProjectFile {
   const type = props.type || "operation";
+  const isTrigger = "trigger" in props && props.trigger;
+  const prefix = isTrigger ? "trigger" : "operation";
   return {
     id: nanoid(),
-    name:
-      props.name ??
-      createVariableName({ prefix: "operation", prev, indexOffset: 1 }),
+    name: props.name ?? createVariableName({ prefix, prev, indexOffset: 1 }),
     createdAt: Date.now(),
     tags: props.tags,
     type: type,
     ...(type === "operation"
       ? (() => {
-          const type = DataTypes["operation"].type;
+          const opType = DataTypes["operation"].type;
+          const defaultContent = {
+            type: opType,
+            value: createDefaultValue(opType),
+          };
+          let content =
+            (props.content as typeof defaultContent) ?? defaultContent;
+          if (isTrigger && !props.content) {
+            const requestParamType: DataType = {
+              kind: "instance",
+              className: "HttpRequest",
+              constructorArgs: resolveConstructorArgs(
+                InstanceTypes.HttpRequest.constructorArgs
+              ),
+            };
+            const requestParam = { name: "request", type: requestParamType };
+            const requestStatement = createStatement({
+              name: requestParam.name,
+              data: createData({ type: requestParamType }),
+            });
+            content = {
+              type: { ...opType, parameters: [requestParam] },
+              value: { ...content.value, parameters: [requestStatement] },
+            };
+          }
           return {
-            content: props.content ?? { type, value: createDefaultValue(type) },
+            content,
+            ...("trigger" in props ? { trigger: props.trigger } : {}),
           };
         })()
       : type === "globals"
@@ -333,21 +358,19 @@ export function createContextVariable(
 
 export function createFileVariables(
   files: ProjectFile[] = [],
-  currentOperationId?: string
+  currentOperationId?: string,
+  base?: Context["variables"]
 ): Context["variables"] {
-  return files.reduce(
-    (acc, operationFile) => {
-      const operation = createOperationFromFile(operationFile);
-      if (!operation || operationFile.id === currentOperationId) {
-        return acc;
-      }
-      acc.set(operationFile.name, {
-        data: { ...operation, id: operationFile.id },
-      });
+  return files.reduce((acc, operationFile) => {
+    const operation = createOperationFromFile(operationFile);
+    if (!operation || operationFile.id === currentOperationId) {
       return acc;
-    },
-    new Map() as Context["variables"]
-  );
+    }
+    acc.set(operationFile.name, {
+      data: { ...operation, id: operationFile.id },
+    });
+    return acc;
+  }, new Map(base));
 }
 
 export function createParamData(
@@ -1543,14 +1566,14 @@ export function getDataDropdownList({
   context.variables.forEach((variable, name) => {
     const option: IDropdownItem = {
       value: name,
-      secondaryLabel: variable.data.type.kind,
+      secondaryLabel: variable.isEnv ? "env" : variable.data.type.kind,
       type: variable.data.type,
       entityType: "data",
       onClick: () =>
         onSelect({
           ...variable.data,
           id: data.id,
-          type: { kind: "reference", name },
+          type: { kind: "reference", name, isEnv: variable.isEnv },
           value: { name, id: variable.data.id },
         }),
     };

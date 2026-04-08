@@ -4,11 +4,11 @@ import { FaRegCopy, FaCheck } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
 import { useProjectStore } from "@/lib/store";
 import { createOperationFromFile } from "@/lib/utils";
-import { useMemo, useState, useEffect, useDeferredValue } from "react";
+import { useMemo, useState, useEffect, useDeferredValue, memo } from "react";
 import { formatCode, generateOperation } from "@/lib/format-code";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 
-export function CodePanel() {
+function CodePanelComponent() {
   const currentOperationName = useProjectStore((s) => s.getCurrentFile()?.name);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
@@ -91,3 +91,5 @@ export function CodePanel() {
     </div>
   );
 }
+
+export const CodePanel = memo(CodePanelComponent);

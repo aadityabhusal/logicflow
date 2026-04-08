@@ -2,7 +2,7 @@ import { createWithEqualityFn } from "zustand/traditional";
 import { Context, ExecutionResult, ReservedNames } from "./types";
 import { shallow } from "zustand/shallow";
 import { IData, InstanceDataType } from "../types";
-import { createFileVariables } from "../utils";
+import { createFileVariables, createData } from "../utils";
 import { useProjectStore } from "../store";
 import {
   executeOperation,
@@ -12,6 +12,23 @@ import {
 } from "./execution";
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
 import { builtInOperations } from "../operations/built-in";
+
+function createRootContextVariables() {
+  const project = useProjectStore.getState().getCurrentProject();
+  const variables = createFileVariables(
+    project?.files,
+    useProjectStore.getState().currentFileId
+  );
+  if (project?.deployment) {
+    for (const envVar of project.deployment.environmentVariables) {
+      variables.set(envVar.key, {
+        data: createData({ value: envVar.value }),
+        isEnv: true,
+      });
+    }
+  }
+  return variables;
+}
 
 interface ExecutionResultsState {
   rootContext: Context;
@@ -33,10 +50,7 @@ export const useExecutionResultsStore =
     (set, get) => ({
       rootContext: {
         scopeId: "_root_",
-        variables: createFileVariables(
-          useProjectStore.getState().getCurrentProject()?.files,
-          useProjectStore.getState().currentFileId
-        ),
+        variables: createRootContextVariables(),
         getResult: (id) => get().getResult(id),
         getInstance: (id) => get().getInstance(id),
         getContext: (id) => get().getContext(id),
@@ -99,10 +113,7 @@ export const useExecutionResultsStore =
           }
           const newRootContext = {
             ...state.rootContext,
-            variables: createFileVariables(
-              useProjectStore.getState().getCurrentProject()?.files,
-              useProjectStore.getState().currentFileId
-            ),
+            variables: createRootContextVariables(),
           };
           return {
             contexts: new Map(),

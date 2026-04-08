@@ -1,4 +1,5 @@
-import { FaPencil, FaPlus, FaX } from "react-icons/fa6";
+import { FaPencil, FaPlus, FaX, FaGlobe, FaCode } from "react-icons/fa6";
+import { Menu } from "@mantine/core";
 import { fileHistoryActions, useProjectStore } from "../lib/store";
 import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
@@ -45,25 +46,45 @@ export function OperationsList() {
     ]);
   }, [context.variables, currentFileName]);
 
+  const handleAdd = (isTrigger: boolean) => {
+    const newFile = createProjectFile(
+      { type: "operation", trigger: isTrigger ? { type: "http" } : undefined },
+      Array.from(reservedNames).map((r) => r.name)
+    );
+    addFile(newFile);
+    navigate(`/project/${currentProject?.id}?file=${newFile.name}`);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-1 flex gap-2 justify-between items-center border-b">
         <span>Operations</span>
-        <IconButton
-          size={16}
-          icon={FaPlus}
-          title="Add operation"
-          onClick={() => {
-            const newFile = createProjectFile(
-              { type: "operation" },
-              Array.from(reservedNames).map((r) => r.name)
-            );
-            addFile(newFile);
-            navigate(`/project/${currentProject?.id}?file=${newFile.name}`);
-          }}
+        <Menu
+          width={200}
+          offset={1}
+          withinPortal={false}
+          position="bottom-start"
         >
-          Add
-        </IconButton>
+          <Menu.Target>
+            <IconButton size={16} icon={FaPlus} title="Add">
+              Add
+            </IconButton>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Item
+              rightSection={<FaCode size={10} />}
+              onClick={() => handleAdd(false)}
+            >
+              Operation
+            </Menu.Item>
+            <Menu.Item
+              rightSection={<FaGlobe size={10} />}
+              onClick={() => handleAdd(true)}
+            >
+              Trigger
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
       </div>
       <ul className="flex-1 overflow-y-auto dropdown-scrollbar list-none m-0">
         {!currentProject?.files.length && (
@@ -135,12 +156,17 @@ export function OperationsList() {
                 }}
               />
             ) : (
-              <span className="truncate mr-auto">{item.name}</span>
+              <span className="truncate mr-auto flex items-center gap-1">
+                {item.type === "operation" && item.trigger && (
+                  <FaGlobe size={10} className="text-blue-400" />
+                )}
+                {item.name}
+              </span>
             )}
             {!editingId && (smallScreen ? true : hoveringId === item.id) && (
               <IconButton
                 icon={FaPencil}
-                title="Edit operation name"
+                title="Edit name"
                 className="p-0.5 hover:outline hover:outline-border"
                 size={10}
                 onClick={(e) => {
@@ -152,7 +178,7 @@ export function OperationsList() {
             {(smallScreen ? true : hoveringId === item.id) && (
               <IconButton
                 icon={FaX}
-                title="Delete operation"
+                title="Delete"
                 className="p-0.5 hover:outline hover:outline-border"
                 size={10}
                 onClick={(e) => {

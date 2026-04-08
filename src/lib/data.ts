@@ -153,6 +153,25 @@ export class WretchResponseChainClass {
   }
 }
 
+export class HttpRequestClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === HttpRequestClass
+    );
+  }
+  constructor(
+    public method: string,
+    public headers: Record<string, string>,
+    public body: unknown,
+    public query: Record<string, string>,
+    public path: string
+  ) {
+    customInstances.set(this, HttpRequestClass);
+  }
+}
+
 export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   Promise: {
     name: "Promise",
@@ -206,6 +225,26 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
     name: "WretchResponseChain",
     Constructor: WretchResponseChainClass,
     constructorArgs: [],
+    hideFromDropdown: true,
+  },
+  HttpRequest: {
+    name: "HttpRequest",
+    Constructor: HttpRequestClass,
+    constructorArgs: [
+      { type: { kind: "string" }, name: "method" },
+      {
+        type: { kind: "object", properties: [] },
+        name: "headers",
+        isOptional: true,
+      },
+      { type: { kind: "unknown" }, name: "body", isOptional: true },
+      {
+        type: { kind: "object", properties: [] },
+        name: "query",
+        isOptional: true,
+      },
+      { type: { kind: "string" }, name: "path", isOptional: true },
+    ] as OperationType["parameters"],
     hideFromDropdown: true,
   },
 };
