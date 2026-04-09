@@ -1,4 +1,4 @@
-import { Project, ProjectFile } from "../../types";
+import { ProjectFile, DeploymentTarget } from "../../types";
 
 export interface GeneratedHandler {
   filename: string;
@@ -6,19 +6,12 @@ export interface GeneratedHandler {
 }
 
 export function generatePlatformHandlers(
-  project: Project,
+  platform: DeploymentTarget["platform"],
   triggeredOps: ProjectFile[]
 ): GeneratedHandler[] {
-  const deployment = project.deployment;
-  if (!deployment) {
-    throw new Error("Project has no deployment configuration");
-  }
+  if (triggeredOps.length === 0) return [];
 
-  if (triggeredOps.length === 0) {
-    throw new Error("No triggered operations found");
-  }
-
-  switch (deployment.platform) {
+  switch (platform) {
     case "vercel":
       return generateVercelHandlers(triggeredOps);
     case "netlify":
@@ -26,9 +19,7 @@ export function generatePlatformHandlers(
     case "supabase":
       return generateSupabaseHandlers(triggeredOps);
     default:
-      throw new Error(
-        `Unsupported platform: ${(deployment as Record<string, string>).platform}`
-      );
+      return [];
   }
 }
 

@@ -29,6 +29,7 @@ type OperationSource = "instance" | "remeda" | "builtin" | "userDefined";
 type CodeGenContext = Context & {
   showResult?: boolean;
   getOperation: (name: string) => OperationListItem | undefined;
+  importedOperations: Set<string>;
 };
 
 export function createCodeGenContext(
@@ -38,6 +39,7 @@ export function createCodeGenContext(
   return {
     ...context,
     showResult: options?.showResult,
+    importedOperations: new Set(),
     getOperation: (name: string) =>
       builtInOperations.find((op) => op.name === name),
   };
@@ -59,7 +61,11 @@ export function generateData(data: IData, context: CodeGenContext): string {
     return generateCallback(data, { ...context, showResult: undefined });
   } else if (isDataOfType(data, "reference")) {
     if (data.type.isEnv) return `process.env.${data.value.name}`;
-    return data.value.name;
+    const name = data.value.name;
+    if (name && context.variables.has(name)) {
+      context.importedOperations.add(name);
+    }
+    return name;
   } else if (isDataOfType(data, "union")) {
     const activeType = getUnionActiveType(data.type);
     return generateData({ ...data, type: activeType }, context);
@@ -106,6 +112,9 @@ function generateOperationCall(
     }
     case "userDefined": {
       const name = operation.value.name;
+      if (name && context.variables.has(name)) {
+        context.importedOperations.add(name);
+      }
       return `, ${paramStr ? `(arg) => ${name}${paramStr}` : name}`;
     }
   }
@@ -168,7 +177,10 @@ export function generateOperation(
   context: Context
 ): string {
   const codeGenContext = createCodeGenContext(context);
-  const imports = `import * as _ from '../built-in';\nimport * as R from 'remeda';\n\n`;
   const callback = generateCallback(operation, codeGenContext);
-  return `${imports}export default ${callback};`;
+  const userImports = Array.from(codeGenContext.importedOperations)
+    .map((name) => `import ${name} from './${name}.js';`)
+    .join("\n");
+  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${userImports}\n`;
+  return `${imports}\nexport default ${callback};`;
 }

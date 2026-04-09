@@ -58,12 +58,13 @@ export function generatePackageJson(
     type: "module",
     main: "api/handler.js",
     scripts: {
-      start:
-        project.deployment?.platform === "vercel"
-          ? "vercel dev"
-          : project.deployment?.platform === "netlify"
-            ? "netlify dev"
-            : "supabase functions serve",
+      start: project.deployment?.platforms.some((t) => t.platform === "vercel")
+        ? "vercel dev"
+        : project.deployment?.platforms.some((t) => t.platform === "netlify")
+          ? "netlify dev"
+          : project.deployment?.platforms.some((t) => t.platform === "supabase")
+            ? "supabase functions serve"
+            : "node .",
     },
     dependencies: depMap,
     engines: {

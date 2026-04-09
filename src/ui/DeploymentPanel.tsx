@@ -1,42 +1,72 @@
 import { memo, useState } from "react";
-import { Menu } from "@mantine/core";
+import { Button, Menu } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { FaChevronDown, FaChevronUp, FaTrash, FaPlus } from "react-icons/fa6";
+import {
+  FaChevronDown,
+  FaChevronUp,
+  FaTrash,
+  FaPlus,
+  FaRocket,
+} from "react-icons/fa6";
 import { useProjectStore } from "@/lib/store";
-import { Project } from "@/lib/types";
+import { DeploymentTarget } from "@/lib/types";
 import { createDeploymentConfig } from "@/lib/deployment/config";
 import { createVariableName } from "@/lib/utils";
 import { IconButton } from "./IconButton";
+import { NoteText } from "./NoteText";
+
+const PLATFORM_OPTIONS: DeploymentTarget[] = [
+  { platform: "vercel" },
+  { platform: "netlify" },
+  { platform: "supabase" },
+];
 
 const PLATFORM_LABELS: Record<string, string> = {
   vercel: "Vercel",
   netlify: "Netlify",
-  supabase: "Supabase Edge Functions",
+  supabase: "Supabase",
 };
 
 function DeploymentPanelComponent() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
   const updateProject = useProjectStore((s) => s.updateProject);
-  const [isEnvExpanded, setIsEnvExpanded] = useState(false);
+  const [expandedPlatforms, setExpandedPlatforms] = useState(new Set());
 
-  if (!currentProject) return null;
+  const deployment = currentProject?.deployment ?? createDeploymentConfig();
+  const availablePlatforms = PLATFORM_OPTIONS.filter(
+    (opt) => !deployment.platforms.some((t) => t.platform === opt.platform)
+  );
 
-  const deployment =
-    currentProject.deployment ?? createDeploymentConfig("vercel");
-
-  const handleUpdateDeployment = (
-    updates: Partial<Omit<Project["deployment"], "platform">>
-  ) => {
+  const handleUpdateDeployment = (updates: Partial<typeof deployment>) => {
+    if (!currentProject) return;
     updateProject(currentProject.id, {
       deployment: { ...deployment, ...updates },
     });
   };
 
-  const handleChangePlatform = (
-    platform: "vercel" | "netlify" | "supabase"
-  ) => {
-    updateProject(currentProject.id, {
-      deployment: createDeploymentConfig(platform),
+  const handleAddPlatform = (target: DeploymentTarget) => {
+    handleUpdateDeployment({ platforms: [...deployment.platforms, target] });
+    setExpandedPlatforms((prev) => new Set(prev).add(target.platform));
+  };
+
+  const handleRemovePlatform = (platform: string) => {
+    handleUpdateDeployment({
+      platforms: deployment.platforms.filter((t) => t.platform !== platform),
+    });
+  };
+
+  const handleDeploy = (platform: string) => {
+    notifications.show({
+      message: `Deployment to ${PLATFORM_LABELS[platform]} coming soon`,
+    });
+  };
+
+  const togglePlatformExpanded = (platform: string) => {
+    setExpandedPlatforms((prev) => {
+      const next = new Set(prev);
+      if (next.has(platform)) next.delete(platform);
+      else next.add(platform);
+      return next;
     });
   };
 
@@ -83,83 +113,120 @@ function DeploymentPanelComponent() {
   };
 
   return (
-    <div className="p-2 bg-editor h-full overflow-auto flex flex-col gap-2">
-      <div className="flex justify-between items-center">
-        <span className="font-semibold">Deployment</span>
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between items-center p-1 border-b">
+        <span>Deployment</span>
       </div>
 
-      <div className="flex flex-col gap-1 relative">
-        <span className="text-sm text-gray-400">Platform</span>
-        <Menu
-          width={"100%"}
-          offset={1}
-          withinPortal={false}
-          position="bottom-start"
-        >
-          <Menu.Target>
-            <button className="flex justify-between items-center gap-1 p-1 hover:bg-dropdown-hover outline outline-border w-full">
-              <span className="truncate">
-                {PLATFORM_LABELS[deployment.platform]}
-              </span>
-              <FaChevronDown size={12} />
-            </button>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item onClick={() => handleChangePlatform("vercel")}>
-              Vercel
-            </Menu.Item>
-            <Menu.Item onClick={() => handleChangePlatform("netlify")}>
-              Netlify
-            </Menu.Item>
-            <Menu.Item onClick={() => handleChangePlatform("supabase")}>
-              Supabase Edge Functions
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
-      </div>
+      <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
+        <div className="border-b p-1">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-gray-400">Platforms</span>
+            {availablePlatforms.length > 0 && (
+              <Menu withinPortal={false} position="bottom-end">
+                <Menu.Target>
+                  <IconButton icon={FaPlus} title="Add platform" />
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {availablePlatforms.map((opt) => (
+                    <Menu.Item
+                      key={opt.platform}
+                      onClick={() => handleAddPlatform(opt)}
+                    >
+                      {PLATFORM_LABELS[opt.platform]}
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            )}
+          </div>
 
-      <div className="flex justify-between items-center">
-        <span className="text-medium">Env Variables</span>
-        <IconButton
-          icon={isEnvExpanded ? FaChevronUp : FaChevronDown}
-          size={12}
-          onClick={() => setIsEnvExpanded(!isEnvExpanded)}
-        />
-      </div>
+          {deployment.platforms.length === 0 && (
+            <NoteText center>No platforms configured</NoteText>
+          )}
 
-      {isEnvExpanded && (
-        <div className="flex flex-col gap-1">
-          {deployment.environmentVariables.map((envVar, index) => (
-            <div key={index} className="flex items-center gap-1">
-              <input
-                className="flex-1 outline-0 bg-inherit border p-1 text-sm min-w-0"
-                placeholder="key"
-                value={envVar.key}
-                onChange={(e) =>
-                  handleUpdateEnvVar(index, { key: e.target.value })
-                }
-              />
-              <input
-                className="flex-1 outline-0 bg-inherit border p-1 text-sm min-w-0"
-                placeholder="value"
-                value={envVar.value || ""}
-                onChange={(e) =>
-                  handleUpdateEnvVar(index, { value: e.target.value })
-                }
-              />
-              <IconButton
-                icon={FaTrash}
-                size={12}
-                className="text-red-500"
-                onClick={() => handleRemoveEnvVar(index)}
-              />
-            </div>
-          ))}
-          <IconButton icon={FaPlus} size={12} onClick={handleAddEnvVar}>
-            Add Variable
-          </IconButton>
+          {deployment.platforms.map((target) => {
+            const isExpanded = expandedPlatforms.has(target.platform);
+            return (
+              <div key={target.platform}>
+                <div
+                  className="flex items-center gap-1 p-1 hover:bg-dropdown-hover cursor-pointer"
+                  onClick={() => togglePlatformExpanded(target.platform)}
+                >
+                  <span className="flex-1 truncate">
+                    {PLATFORM_LABELS[target.platform]}
+                  </span>
+                  <IconButton icon={isExpanded ? FaChevronUp : FaChevronDown} />
+                </div>
+                {isExpanded && (
+                  <div className="p-2 flex flex-col gap-1 bg-dropdown-hover/30">
+                    <NoteText italic>
+                      No platform-specific settings available yet
+                    </NoteText>
+                    <div className="flex gap-2 self-end">
+                      <Button
+                        leftSection={<FaTrash />}
+                        onClick={() => handleRemovePlatform(target.platform)}
+                        className="outline-none text-red-400"
+                      >
+                        Delete
+                      </Button>
+                      <Button
+                        leftSection={<FaRocket />}
+                        onClick={() => handleDeploy(target.platform)}
+                      >
+                        Deploy
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
+
+        <div className="border-b">
+          <div className="flex justify-between items-center p-1">
+            <span className="text-gray-400">Environment Variables</span>
+            <IconButton
+              icon={FaPlus}
+              title="Add variable"
+              onClick={handleAddEnvVar}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1 p-1">
+            {deployment.environmentVariables.length === 0 && (
+              <NoteText center>No environment variables</NoteText>
+            )}
+            {deployment.environmentVariables.map((envVar, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  className="focus:outline outline-white border border-border w-full p-0.5"
+                  placeholder="Key"
+                  value={envVar.key}
+                  onChange={(e) =>
+                    handleUpdateEnvVar(index, { key: e.target.value })
+                  }
+                />
+                <input
+                  className="focus:outline outline-white border border-border w-full p-0.5"
+                  placeholder="Value"
+                  value={envVar.value}
+                  onChange={(e) =>
+                    handleUpdateEnvVar(index, { value: e.target.value })
+                  }
+                />
+                <IconButton
+                  icon={FaTrash}
+                  title="Remove variable"
+                  onClick={() => handleRemoveEnvVar(index)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

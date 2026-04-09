@@ -1,4 +1,4 @@
-import { Project, ProjectFile } from "../../types";
+import { ProjectFile, DeploymentTarget } from "../../types";
 
 export interface PlatformConfig {
   filename: string;
@@ -6,15 +6,10 @@ export interface PlatformConfig {
 }
 
 export function generatePlatformConfig(
-  project: Project,
+  platform: DeploymentTarget["platform"],
   triggeredOps: ProjectFile[]
 ): PlatformConfig[] {
-  const deployment = project.deployment;
-  if (!deployment) {
-    throw new Error("Project has no deployment configuration");
-  }
-
-  switch (deployment.platform) {
+  switch (platform) {
     case "vercel":
       return generateVercelConfig(triggeredOps);
     case "netlify":

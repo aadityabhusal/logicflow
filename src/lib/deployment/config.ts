@@ -1,6 +1,11 @@
 import { Context } from "../execution/types";
 import { generateOperation } from "../format-code";
-import { Project, DeploymentConfig, ProjectFile } from "../types";
+import {
+  Project,
+  DeploymentConfig,
+  DeploymentTarget,
+  ProjectFile,
+} from "../types";
 import { createOperationFromFile } from "../utils";
 import {
   generatePackageJson,
@@ -10,17 +15,11 @@ import { generatePlatformHandlers } from "./codegen/entrypoint-wrapper";
 import { generatePlatformConfig } from "./templates/platform-config";
 import { generateBuiltInModule } from "./codegen/built-in-module";
 
-export type DeploymentPlatform = DeploymentConfig extends { platform: infer P }
-  ? P
-  : never;
-
 export function createDeploymentConfig(
-  platform: DeploymentPlatform = "vercel"
+  platforms: DeploymentTarget[] = [],
+  environmentVariables: DeploymentConfig["environmentVariables"] = []
 ): DeploymentConfig {
-  return {
-    platform,
-    environmentVariables: [],
-  };
+  return { platforms, environmentVariables };
 }
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
@@ -40,7 +39,7 @@ export function generateDeployableProject(
   const warnings: string[] = [];
   const files: ExportFile[] = [];
 
-  const deployment = project.deployment ?? createDeploymentConfig("vercel");
+  const deployment = project.deployment ?? createDeploymentConfig();
   const triggeredOps = getTriggeredOperations(project);
   const operationFiles = project.files.filter((f) => f.type === "operation");
 
@@ -55,28 +54,31 @@ export function generateDeployableProject(
   }
   files.push({ path: "src/built-in.js", content: generateBuiltInModule() });
 
-  try {
-    const platformConfigs = generatePlatformConfig(
-      { ...project, deployment },
-      triggeredOps
-    );
-    files.push(
-      ...platformConfigs.map((f) => ({ path: f.filename, content: f.content }))
-    );
-  } catch (error) {
-    errors.push(`Failed to generate platform config: ${error}`);
-  }
+  for (const target of deployment.platforms) {
+    try {
+      const configs = generatePlatformConfig(target.platform, triggeredOps);
+      files.push(
+        ...configs.map((f) => ({ path: f.filename, content: f.content }))
+      );
+    } catch (error) {
+      errors.push(
+        `Failed to generate platform config for ${target.platform}: ${error}`
+      );
+    }
 
-  try {
-    const handlerFiles = generatePlatformHandlers(
-      { ...project, deployment },
-      triggeredOps
-    );
-    files.push(
-      ...handlerFiles.map((f) => ({ path: f.filename, content: f.content }))
-    );
-  } catch (error) {
-    errors.push(`Failed to generate entrypoint wrapper: ${error}`);
+    try {
+      const handlerFiles = generatePlatformHandlers(
+        target.platform,
+        triggeredOps
+      );
+      files.push(
+        ...handlerFiles.map((f) => ({ path: f.filename, content: f.content }))
+      );
+    } catch (error) {
+      errors.push(
+        `Failed to generate entrypoint wrapper for ${target.platform}: ${error}`
+      );
+    }
   }
 
   try {

@@ -68,6 +68,10 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
   };
 }
 
+export function isValidIdentifier(name: string): boolean {
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
+}
+
 export function createVariableName({
   prefix,
   prev,
@@ -1056,7 +1060,8 @@ export function inferTypeFromValue<T extends DataType>(
     return { kind: "condition", result: unionType } as T;
   }
   if (isObject(value, ["name"]) && typeof value.name === "string") {
-    return { kind: "reference", name: value.name } as T;
+    const variable = context.variables.get(value.name);
+    return { kind: "reference", name: value.name, isEnv: variable?.isEnv } as T;
   }
 
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {

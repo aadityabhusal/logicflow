@@ -235,13 +235,18 @@ interface Dependencies {
   logicflow?: (DependencyBase & { projectId: string })[];
 }
 
+type VercelDeployment = { platform: "vercel" };
+type NetlifyDeployment = { platform: "netlify" };
+type SupabaseDeployment = { platform: "supabase" };
+export type DeploymentTarget =
+  | VercelDeployment
+  | NetlifyDeployment
+  | SupabaseDeployment;
+
 export type DeploymentConfig = {
   environmentVariables: { key: string; value: string }[];
-} & (
-  | { platform: "vercel" }
-  | { platform: "netlify" }
-  | { platform: "supabase" }
-);
+  platforms: DeploymentTarget[];
+};
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 interface HttpTrigger {

@@ -89,7 +89,7 @@ export function DetailsPanel() {
 
   if (!result) {
     return (
-      <div className="flex flex-col h-full bg-editor">
+      <div className="flex flex-col h-full">
         <div className="p-1 border-b">Details</div>
         <div className="p-2 text-gray-500">
           Select a data or an operation call
@@ -99,7 +99,7 @@ export function DetailsPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-editor">
+    <div className="flex flex-col h-full">
       <div className="flex justify-between p-1 border-b gap-3">
         <div className="mr-auto">Details</div>
         {smallScreen ? (

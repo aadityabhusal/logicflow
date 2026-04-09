@@ -11,6 +11,7 @@ import {
   createVariableName,
   createStatement,
   createData,
+  isValidIdentifier,
 } from "../lib/utils";
 import {
   createOperationCall,
@@ -155,6 +156,11 @@ const StatementComponent = ({
               ].join(" ")}
               onChange={(value) => {
                 const name = value || statement.name || "";
+                if (name && !isValidIdentifier(name)) {
+                  return notifications.show({
+                    message: `"${name}" is not a valid name`,
+                  });
+                }
                 const isReserved = Array.from(reservedNames ?? []).find(
                   (r) => r.name === name
                 );

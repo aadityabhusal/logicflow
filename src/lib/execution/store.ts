@@ -2,7 +2,11 @@ import { createWithEqualityFn } from "zustand/traditional";
 import { Context, ExecutionResult, ReservedNames } from "./types";
 import { shallow } from "zustand/shallow";
 import { IData, InstanceDataType } from "../types";
-import { createFileVariables, createData } from "../utils";
+import {
+  createFileVariables,
+  createData,
+  createOperationFromFile,
+} from "../utils";
 import { useProjectStore } from "../store";
 import {
   executeOperation,
@@ -29,6 +33,16 @@ function createRootContextVariables() {
   }
   return variables;
 }
+function getTriggerExpectedType() {
+  const currentFile = useProjectStore.getState().getCurrentFile();
+  if (!currentFile) return {};
+  const isTrigger = currentFile.type === "operation" && !!currentFile.trigger;
+  if (!isTrigger) return {};
+  return {
+    expectedType: createOperationFromFile(currentFile)?.type,
+    enforceExpectedType: true,
+  };
+}
 
 interface ExecutionResultsState {
   rootContext: Context;
@@ -51,6 +65,7 @@ export const useExecutionResultsStore =
       rootContext: {
         scopeId: "_root_",
         variables: createRootContextVariables(),
+        ...getTriggerExpectedType(),
         getResult: (id) => get().getResult(id),
         getInstance: (id) => get().getInstance(id),
         getContext: (id) => get().getContext(id),
@@ -114,6 +129,7 @@ export const useExecutionResultsStore =
           const newRootContext = {
             ...state.rootContext,
             variables: createRootContextVariables(),
+            ...getTriggerExpectedType(),
           };
           return {
             contexts: new Map(),

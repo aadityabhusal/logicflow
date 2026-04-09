@@ -1,7 +1,11 @@
 import { FaPencil, FaPlus, FaX, FaGlobe, FaCode } from "react-icons/fa6";
 import { Menu } from "@mantine/core";
 import { fileHistoryActions, useProjectStore } from "../lib/store";
-import { createProjectFile, handleSearchParams } from "../lib/utils";
+import {
+  createProjectFile,
+  handleSearchParams,
+  isValidIdentifier,
+} from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
 import { useNavigate, useSearchParams } from "react-router";
@@ -120,6 +124,12 @@ export function OperationsList() {
                 defaultValue={item.name}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={({ target }) => {
+                  if (target.value && !isValidIdentifier(target.value)) {
+                    setEditingId(undefined);
+                    return notifications.show({
+                      message: `"${target.value}" is not a valid name`,
+                    });
+                  }
                   const isReserved = Array.from(reservedNames).find(
                     (r) => r.name === target.value && item.name !== target.value
                   );
