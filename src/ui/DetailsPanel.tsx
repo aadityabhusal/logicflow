@@ -14,7 +14,7 @@ import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { useMediaQuery } from "@mantine/hooks";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
-import { Highlight, themes } from "prism-react-renderer";
+import { CodeHighlight } from "./CodeHighlight";
 import {
   formatCode,
   generateData,
@@ -182,28 +182,7 @@ export function DetailsPanel() {
             <div className="text-gray-400 mb-1.5 p-1">Result</div>
             <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
               <ErrorBoundary displayError={true}>
-                <Highlight
-                  theme={themes.vsDark}
-                  code={formattedValue}
-                  language="javascript"
-                >
-                  {({ className, style, tokens, getTokenProps }) => (
-                    <pre
-                      className={className}
-                      style={{ ...style, margin: 0, padding: 0 }}
-                    >
-                      {tokens.map((line, i) => (
-                        <div key={i} className="table-row leading-6">
-                          <span className="table-cell">
-                            {line.map((token, key) => (
-                              <span key={key} {...getTokenProps({ token })} />
-                            ))}
-                          </span>
-                        </div>
-                      ))}
-                    </pre>
-                  )}
-                </Highlight>
+                <CodeHighlight code={formattedValue} showLineNumbers={false} />
               </ErrorBoundary>
             </div>
           </div>
