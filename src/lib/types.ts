@@ -244,7 +244,7 @@ export type DeploymentTarget =
   | SupabaseDeployment;
 
 export type DeploymentConfig = {
-  environmentVariables: { key: string; value: string }[];
+  envVariables: { key: string; value: string }[];
   platforms: DeploymentTarget[];
 };
 

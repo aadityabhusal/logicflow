@@ -1,26 +1,14 @@
 import { Context } from "../execution/types";
 import { generateOperation } from "../format-code";
-import {
-  Project,
-  DeploymentConfig,
-  DeploymentTarget,
-  ProjectFile,
-} from "../types";
+import { Project, ProjectFile } from "../types";
 import { createOperationFromFile } from "../utils";
 import {
   generatePackageJson,
   resolveNpmDependencies,
-} from "./codegen/dependency-resolver";
-import { generatePlatformHandlers } from "./codegen/entrypoint-wrapper";
-import { generatePlatformConfig } from "./templates/platform-config";
-import { generateBuiltInModule } from "./codegen/built-in-module";
-
-export function createDeploymentConfig(
-  platforms: DeploymentTarget[] = [],
-  environmentVariables: DeploymentConfig["environmentVariables"] = []
-): DeploymentConfig {
-  return { platforms, environmentVariables };
-}
+} from "./dependency-resolver";
+import { generatePlatformHandlers } from "./entrypoint-wrapper";
+import { generatePlatformConfig } from "./platform-config";
+import { generateBuiltInModule } from "./built-in-module";
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
   return project.files.filter((f) => f.type === "operation" && f.trigger);
@@ -39,7 +27,7 @@ export function generateDeployableProject(
   const warnings: string[] = [];
   const files: ExportFile[] = [];
 
-  const deployment = project.deployment ?? createDeploymentConfig();
+  const deployment = project.deployment ?? { envVariables: [], platforms: [] };
   const triggeredOps = getTriggeredOperations(project);
   const operationFiles = project.files.filter((f) => f.type === "operation");
 

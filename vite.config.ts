@@ -10,7 +10,11 @@ interface VitestConfigExport extends UserConfig {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  test: { globals: true, environment: "jsdom" },
+  test: {
+    globals: true,
+    environment: "jsdom",
+    coverage: { provider: "v8", include: ["src/lib/**/*.ts"] },
+  },
   server: { port: 3000, open: true },
   resolve: {
     alias: {

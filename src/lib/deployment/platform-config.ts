@@ -1,4 +1,4 @@
-import { ProjectFile, DeploymentTarget } from "../../types";
+import { ProjectFile, DeploymentTarget } from "../types";
 
 export interface PlatformConfig {
   filename: string;

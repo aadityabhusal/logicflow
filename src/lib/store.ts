@@ -10,7 +10,6 @@ import {
   IStatement,
   OperationType,
 } from "./types";
-import { createDeploymentConfig } from "./deployment/config";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { openDB } from "idb";
@@ -136,7 +135,7 @@ const createProjectsSlice: StateCreator<
       version: "0.0.1",
       createdAt,
       files: initialFiles,
-      deployment: createDeploymentConfig(),
+      deployment: { envVariables: [], platforms: [] },
     };
     set((state) => ({
       projects: { ...state.projects, [newProject.id]: newProject },

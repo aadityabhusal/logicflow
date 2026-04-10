@@ -90,7 +90,7 @@ export default function Project() {
 
   useEffect(() => {
     useExecutionResultsStore.getState().removeAll();
-  }, [currentFileId, currentProject?.deployment?.environmentVariables]);
+  }, [currentFileId, currentProject?.deployment?.envVariables]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

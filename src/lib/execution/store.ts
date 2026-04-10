@@ -24,7 +24,7 @@ function createRootContextVariables() {
     useProjectStore.getState().currentFileId
   );
   if (project?.deployment) {
-    for (const envVar of project.deployment.environmentVariables) {
+    for (const envVar of project.deployment.envVariables) {
       variables.set(envVar.key, {
         data: createData({ value: envVar.value }),
         isEnv: true,

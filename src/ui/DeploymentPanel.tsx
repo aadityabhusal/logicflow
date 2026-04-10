@@ -10,7 +10,6 @@ import {
 } from "react-icons/fa6";
 import { useProjectStore } from "@/lib/store";
 import { DeploymentTarget } from "@/lib/types";
-import { createDeploymentConfig } from "@/lib/deployment/config";
 import { createVariableName } from "@/lib/utils";
 import { IconButton } from "./IconButton";
 import { NoteText } from "./NoteText";
@@ -28,18 +27,18 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 function DeploymentPanelComponent() {
-  const currentProject = useProjectStore((s) => s.getCurrentProject());
+  const project = useProjectStore((s) => s.getCurrentProject());
   const updateProject = useProjectStore((s) => s.updateProject);
   const [expandedPlatforms, setExpandedPlatforms] = useState(new Set());
 
-  const deployment = currentProject?.deployment ?? createDeploymentConfig();
+  const deployment = project?.deployment ?? { envVariables: [], platforms: [] };
   const availablePlatforms = PLATFORM_OPTIONS.filter(
     (opt) => !deployment.platforms.some((t) => t.platform === opt.platform)
   );
 
   const handleUpdateDeployment = (updates: Partial<typeof deployment>) => {
-    if (!currentProject) return;
-    updateProject(currentProject.id, {
+    if (!project) return;
+    updateProject(project.id, {
       deployment: { ...deployment, ...updates },
     });
   };
@@ -71,13 +70,13 @@ function DeploymentPanelComponent() {
   };
 
   const handleAddEnvVar = () => {
-    const envVars = deployment.environmentVariables;
+    const envVars = deployment.envVariables;
     const key = createVariableName({
       prefix: "ENV",
       prev: envVars.map((v) => v.key),
     });
     handleUpdateDeployment({
-      environmentVariables: [...envVars, { key, value: "" }],
+      envVariables: [...envVars, { key, value: "" }],
     });
   };
 
@@ -90,7 +89,7 @@ function DeploymentPanelComponent() {
         notifications.show({ message: "Key cannot be empty" });
         return;
       }
-      const isDuplicate = deployment.environmentVariables.some(
+      const isDuplicate = deployment.envVariables.some(
         (v, i) => i !== index && v.key === updates.key
       );
       if (isDuplicate) {
@@ -98,17 +97,15 @@ function DeploymentPanelComponent() {
         return;
       }
     }
-    const envVars = deployment.environmentVariables;
+    const envVars = deployment.envVariables;
     const updated = [...envVars];
     updated[index] = { ...updated[index], ...updates };
-    handleUpdateDeployment({ environmentVariables: updated });
+    handleUpdateDeployment({ envVariables: updated });
   };
 
   const handleRemoveEnvVar = (index: number) => {
     handleUpdateDeployment({
-      environmentVariables: deployment.environmentVariables.filter(
-        (_, i) => i !== index
-      ),
+      envVariables: deployment.envVariables.filter((_, i) => i !== index),
     });
   };
 
@@ -196,10 +193,10 @@ function DeploymentPanelComponent() {
           </div>
 
           <div className="flex flex-col gap-1 p-1">
-            {deployment.environmentVariables.length === 0 && (
+            {deployment.envVariables.length === 0 && (
               <NoteText center>No environment variables</NoteText>
             )}
-            {deployment.environmentVariables.map((envVar, index) => (
+            {deployment.envVariables.map((envVar, index) => (
               <div key={index} className="flex items-center gap-2">
                 <input
                   className="focus:outline outline-white border border-border w-full p-0.5"

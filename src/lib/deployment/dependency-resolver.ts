@@ -1,4 +1,4 @@
-import { Project, ProjectFile } from "../../types";
+import { Project, ProjectFile } from "../types";
 
 export interface Dependency {
   name: string;
