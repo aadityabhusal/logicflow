@@ -21,6 +21,7 @@ import { AddStatement } from "./AddStatement";
 import { IconButton } from "@/ui/IconButton";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
+import { getOperationCallLayout } from "@/lib/layout";
 
 const OperationCallComponent = ({
   data,
@@ -167,6 +168,8 @@ const OperationCallComponent = ({
     []
   );
 
+  const isMultiline = getOperationCallLayout(operation) === "multiline";
+
   return (
     <Dropdown
       id={operation.id}
@@ -196,34 +199,43 @@ const OperationCallComponent = ({
         />
       )}
       <span>{"("}</span>
-      {operation.value.parameters.map((item, paramIndex, arr) => (
-        <span key={item.id} className="flex">
-          <Statement
-            statement={item}
-            path={parameterPaths[paramIndex]}
-            handleStatement={handleParameter}
-            disableDelete={!item.isOptional}
+      <div
+        className={[
+          "flex items-start gap-1",
+          isMultiline ? "flex-col ml-2" : "flex-row",
+        ].join(" ")}
+      >
+        {operation.value.parameters.map((item, paramIndex, arr) => (
+          <div key={item.id} className="flex items-start">
+            <Statement
+              statement={item}
+              path={parameterPaths[paramIndex]}
+              handleStatement={handleParameter}
+              disableDelete={!item.isOptional}
+            />
+            {paramIndex < arr.length - 1 ? (
+              <span>{isMultiline ? "," : ", "}</span>
+            ) : null}
+          </div>
+        ))}
+        {operation.value.parameters.length + 1 <
+          operation.type.parameters.length || restParamType ? (
+          <AddStatement
+            id={`${operation.id}_call_parameter`}
+            onSelect={(statement) => handleParameter(statement, undefined)}
+            iconProps={{ title: "Add parameter" }}
+            config={{
+              ...(restParamType
+                ? { type: restParamType, isOptional: true }
+                : operation.type.parameters[
+                    operation.value.parameters.length + 1
+                  ]),
+              name: undefined,
+            }}
           />
-          {paramIndex < arr.length - 1 ? <span>{", "}</span> : null}
-        </span>
-      ))}
-      {operation.value.parameters.length + 1 <
-        operation.type.parameters.length || restParamType ? (
-        <AddStatement
-          id={`${operation.id}_call_parameter`}
-          onSelect={(statement) => handleParameter(statement, undefined)}
-          iconProps={{ title: "Add parameter" }}
-          config={{
-            ...(restParamType
-              ? { type: restParamType, isOptional: true }
-              : operation.type.parameters[
-                  operation.value.parameters.length + 1
-                ]),
-            name: undefined,
-          }}
-        />
-      ) : null}
-      <span className="self-end">{")"}</span>
+        ) : null}
+        <span className="self-end">{")"}</span>
+      </div>
     </Dropdown>
   );
 };
