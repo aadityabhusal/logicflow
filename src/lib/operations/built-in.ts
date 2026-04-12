@@ -537,39 +537,61 @@ const responseOperations: OperationListItem[] = [
   },
 ];
 
-const httpRequestOperations: OperationListItem[] = [
+const requestOperations: OperationListItem[] = [
+  createInstanceOperation("Request", "getUrl", (instance) => instance.url),
   createInstanceOperation(
-    "HttpRequest",
-    "getBody",
-    (instance) => instance.body
-  ),
-  createInstanceOperation(
-    "HttpRequest",
-    "getHeaders",
-    (instance) => instance.headers
-  ),
-  createInstanceOperation(
-    "HttpRequest",
-    "getQuery",
-    (instance) => instance.query
-  ),
-  createInstanceOperation(
-    "HttpRequest",
+    "Request",
     "getMethod",
     (instance) => instance.method
   ),
   createInstanceOperation(
-    "HttpRequest",
-    "getPath",
-    (instance) => instance.path
-  ),
-  createInstanceOperation(
-    "HttpRequest",
+    "Request",
     "getHeader",
     (instance, _context, headerName) =>
-      instance.headers[headerName as string] || "",
+      instance.headers.get(headerName as string) || "",
     [{ type: { kind: "string" }, name: "headerName" }]
   ),
+  createInstanceOperation(
+    "Request",
+    "getQuery",
+    (instance, _context, paramName) =>
+      new URL(instance.url).searchParams.get(paramName as string) || "",
+    [{ type: { kind: "string" }, name: "paramName" }]
+  ),
+  createInstanceOperation(
+    "Request",
+    "getPath",
+    (instance) => new URL(instance.url).pathname
+  ),
+  {
+    name: "json",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Request", constructorArgs: [] },
+      },
+    ],
+    handler: (context, data) => {
+      const instance = getRawValueFromData(data, context) as Request;
+      if (!instance) return createRuntimeError("Request instance not found");
+      return createDataFromRawValue(instance.clone().json(), context);
+    },
+  },
+  {
+    name: "text",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Request", constructorArgs: [] },
+      },
+    ],
+    handler: (context, data) => {
+      const instance = getRawValueFromData(data, context) as Request;
+      if (!instance) return createRuntimeError("Request instance not found");
+      return createDataFromRawValue(instance.clone().text(), {
+        ...context,
+        expectedType: { kind: "string" },
+      });
+    },
+  },
 ];
 
 export const builtInOperations: OperationListItem[] = [
@@ -585,5 +607,5 @@ export const builtInOperations: OperationListItem[] = [
   ...responseOperations,
   ...wretchOperations,
   ...remedaOperations,
-  ...httpRequestOperations,
+  ...requestOperations,
 ];

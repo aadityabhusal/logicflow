@@ -9,6 +9,7 @@ import {
   getTypeSignature,
 } from "./utils";
 import { builtInOperations } from "./operations/built-in";
+import { InstanceTypes } from "./data";
 import type { Options } from "prettier";
 
 export async function formatCode(code: string, options?: Options) {
@@ -84,7 +85,12 @@ function getOperationSource(
   const opItem = context.getOperation(opName);
   if (opItem?.source?.name === "remeda") return "remeda";
   const firstParamType = operation.type.parameters[0]?.type;
-  if (firstParamType?.kind === "instance") return "instance";
+  if (firstParamType?.kind === "instance") {
+    const Constructor = InstanceTypes[firstParamType.className]?.Constructor;
+    if (Constructor && typeof Constructor.prototype[opName] === "function") {
+      return "instance";
+    }
+  }
   if (!opItem) return "userDefined";
   return "builtin";
 }

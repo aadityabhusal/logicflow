@@ -32,19 +32,7 @@ function generateVercelHandlers(
 
 export default async function handler(request) {
   try {
-    const url = new URL(request.url);
-    const body = request.body ? await request.json() : undefined;
-    const query = Object.fromEntries(url.searchParams.entries());
-
-    const httpRequest = {
-      method: request.method,
-      headers: Object.fromEntries(request.headers.entries()),
-      body,
-      query,
-      path: url.pathname,
-    };
-
-    const result = await ${operationName}(httpRequest);
+    const result = await ${operationName}(request);
 
     return new Response(JSON.stringify(result), {
       status: result.status || 200,
@@ -72,19 +60,7 @@ function generateNetlifyHandlers(
 
 export default async (request) => {
   try {
-    const url = new URL(request.url);
-    const body = request.body ? await request.json() : undefined;
-    const query = Object.fromEntries(url.searchParams.entries());
-
-    const httpRequest = {
-      method: request.method,
-      headers: Object.fromEntries(request.headers.entries()),
-      body,
-      query,
-      path: url.pathname,
-    };
-
-    const result = await ${operationName}(httpRequest);
+    const result = await ${operationName}(request);
 
     return new Response(JSON.stringify(result), {
       status: result.status || 200,
@@ -113,21 +89,9 @@ function generateSupabaseHandlers(
     const operationName = op.name;
     const handlerContent = `import { ${operationName} } from '../../../../src/operations/${operationName}.js';
 
-Deno.serve(async (req) => {
+Deno.serve(async (request) => {
   try {
-    const url = new URL(req.url);
-    const body = req.body ? await req.json() : undefined;
-    const query = Object.fromEntries(url.searchParams.entries());
-
-    const httpRequest = {
-      method: req.method,
-      headers: Object.fromEntries(req.headers.entries()),
-      body,
-      query,
-      path: url.pathname,
-    };
-
-    const result = await ${operationName}(httpRequest);
+    const result = await ${operationName}(request);
 
     return new Response(JSON.stringify(result), {
       status: result.status || 200,

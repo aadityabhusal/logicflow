@@ -8,6 +8,7 @@ import {
   isSimpleStatement,
   THRESHOLD,
   SEPARATOR_WIDTH,
+  MAX_STRING_DISPLAY_LENGTH,
 } from "@/lib/layout";
 import {
   testString,
@@ -28,33 +29,33 @@ import { createData, createStatement } from "@/lib/utils";
 
 describe("isSimpleData", () => {
   it("returns true for string", () =>
-    expect(isSimpleData(testString("x"))).toBe(true));
+    expect(isSimpleData(testString("x").type)).toBe(true));
   it("returns true for number", () =>
-    expect(isSimpleData(testNumber(1))).toBe(true));
+    expect(isSimpleData(testNumber(1).type)).toBe(true));
   it("returns true for boolean", () =>
-    expect(isSimpleData(testBoolean(true))).toBe(true));
+    expect(isSimpleData(testBoolean(true).type)).toBe(true));
   it("returns true for undefined", () =>
-    expect(isSimpleData(createData({ type: { kind: "undefined" } }))).toBe(
+    expect(isSimpleData(createData({ type: { kind: "undefined" } }).type)).toBe(
       true
     ));
   it("returns true for reference", () =>
-    expect(isSimpleData(testReference("x", "1"))).toBe(true));
+    expect(isSimpleData(testReference("x", "1").type)).toBe(true));
   it("returns true for error", () =>
-    expect(isSimpleData(testError("oops"))).toBe(true));
+    expect(isSimpleData(testError("oops").type)).toBe(true));
   it("returns false for array", () =>
-    expect(isSimpleData(testArray([]))).toBe(false));
+    expect(isSimpleData(testArray([]).type)).toBe(false));
   it("returns false for object", () =>
-    expect(isSimpleData(testObject([]))).toBe(false));
+    expect(isSimpleData(testObject([]).type)).toBe(false));
   it("returns false for dictionary", () =>
-    expect(isSimpleData(testDictionary([]))).toBe(false));
+    expect(isSimpleData(testDictionary([]).type)).toBe(false));
   it("returns false for operation", () =>
-    expect(isSimpleData(testOperation())).toBe(false));
+    expect(isSimpleData(testOperation().type)).toBe(false));
   it("returns false for instance", () =>
     expect(
       isSimpleData(
         createData({
           type: { kind: "instance", className: "Date", constructorArgs: [] },
-        })
+        }).type
       )
     ).toBe(false));
 });
@@ -69,6 +70,8 @@ describe("isComplexData", () => {
 describe("constants", () => {
   it("THRESHOLD is 15", () => expect(THRESHOLD).toBe(15));
   it("SEPARATOR_WIDTH is 1", () => expect(SEPARATOR_WIDTH).toBe(1));
+  it("MAX_STRING_DISPLAY_LENGTH is 28", () =>
+    expect(MAX_STRING_DISPLAY_LENGTH).toBe(28));
 });
 
 describe("getEntityWidth — string content length", () => {
@@ -76,32 +79,32 @@ describe("getEntityWidth — string content length", () => {
     expect(getEntityWidth(testString(""))).toBe(1);
   });
 
-  it("short string (9 chars) = 1", () => {
-    expect(getEntityWidth(testString("helloworld".slice(0, 9)))).toBe(1);
+  it("short string (9 chars) = 2", () => {
+    expect(getEntityWidth(testString("helloworld".slice(0, 9)))).toBe(2);
   });
 
-  it("10-char string = 2", () => {
-    expect(getEntityWidth(testString("a".repeat(10)))).toBe(2);
+  it("10-char string = 3", () => {
+    expect(getEntityWidth(testString("a".repeat(10)))).toBe(3);
   });
 
-  it("20-char string = 3", () => {
-    expect(getEntityWidth(testString("a".repeat(20)))).toBe(3);
+  it("20-char string = 5", () => {
+    expect(getEntityWidth(testString("a".repeat(20)))).toBe(5);
   });
 
-  it("30-char string = 4", () => {
-    expect(getEntityWidth(testString("a".repeat(30)))).toBe(4);
+  it("30-char string capped at display length = 6", () => {
+    expect(getEntityWidth(testString("a".repeat(30)))).toBe(6);
   });
 
-  it("60-char string = 7", () => {
-    expect(getEntityWidth(testString("a".repeat(60)))).toBe(7);
+  it("60-char string capped at display length = 6", () => {
+    expect(getEntityWidth(testString("a".repeat(60)))).toBe(6);
   });
 
-  it("70-char string = 7 (1 + min(floor(70/10), 6) = 1 + 6)", () => {
-    expect(getEntityWidth(testString("a".repeat(70)))).toBe(7);
+  it("70-char string capped at display length = 6", () => {
+    expect(getEntityWidth(testString("a".repeat(70)))).toBe(6);
   });
 
-  it("200-char string capped at 7", () => {
-    expect(getEntityWidth(testString("a".repeat(200)))).toBe(7);
+  it("200-char string capped at display length = 6", () => {
+    expect(getEntityWidth(testString("a".repeat(200)))).toBe(6);
   });
 });
 
@@ -187,7 +190,7 @@ describe("getEntityWidth — arrays (sum + separators)", () => {
   it("array of medium strings (20 chars each) includes separator overhead", () => {
     const s = stringStatement("a".repeat(20));
     const arr = testArray([s, s, s]);
-    expect(getEntityWidth(arr)).toBe(1 + 3 * 3 + 2 * SEPARATOR_WIDTH);
+    expect(getEntityWidth(arr)).toBe(1 + 3 * 5 + 2 * SEPARATOR_WIDTH);
   });
 
   it("separator overhead grows with item count", () => {
@@ -305,7 +308,7 @@ describe("getEntityWidth — instances", () => {
         instanceId: "i1",
       },
     });
-    expect(getEntityWidth(instance)).toBe(3);
+    expect(getEntityWidth(instance)).toBe(4);
   });
 
   it("2 simple args include separator", () => {

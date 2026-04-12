@@ -212,3 +212,42 @@ function _fetch(
 export function fetch(...args: readonly unknown[]) {
   return purry(_fetch, args);
 }
+
+// ===== Request Instance Operations =====
+
+export const getUrl = (request: Request): string => request.url;
+export const getMethod = (request: Request): string => request.method;
+
+function _getHeader(request: Request, headerName: string): string {
+  return request.headers.get(headerName) || "";
+}
+export function getHeader(...args: readonly unknown[]) {
+  return purry(_getHeader, args);
+}
+
+function _getQuery(request: Request, paramName: string): string {
+  return new URL(request.url).searchParams.get(paramName) || "";
+}
+export function getQuery(...args: readonly unknown[]) {
+  return purry(_getQuery, args);
+}
+
+export const getPath = (request: Request): string =>
+  new URL(request.url).pathname;
+
+export const json = (instance: Request | Response): Promise<unknown> =>
+  instance.clone().json();
+export const text = (instance: Request | Response): Promise<string> =>
+  instance.clone().text();
+
+// ===== URL Instance Operations =====
+
+export const getHref = (url: URL): string => url.href;
+export const getOrigin = (url: URL): string => url.origin;
+export const getPort = (url: URL): string => url.port;
+export const getSearch = (url: URL): string => url.search;
+export const getHash = (url: URL): string => url.hash;
+
+// ===== Response Instance Operations =====
+
+export const getStatus = (response: Response): number => response.status;

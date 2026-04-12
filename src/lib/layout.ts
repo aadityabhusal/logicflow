@@ -1,9 +1,10 @@
-import { IData, IStatement, OperationType } from "./types";
+import { DataType, IData, IStatement, OperationType } from "./types";
 
 export type LayoutMode = "inline" | "multiline";
 
 const THRESHOLD = 15;
 const SEPARATOR_WIDTH = 1;
+const MAX_STRING_DISPLAY_LENGTH = 28;
 
 const COMPLEX_KINDS = new Set<string>([
   "object",
@@ -16,8 +17,8 @@ const COMPLEX_KINDS = new Set<string>([
   "union",
 ]);
 
-export function isSimpleData(data: IData): boolean {
-  return !COMPLEX_KINDS.has(data.type.kind);
+export function isSimpleData(dataType: DataType): boolean {
+  return !COMPLEX_KINDS.has(dataType.kind);
 }
 
 export function isComplexData(data: IData): boolean {
@@ -25,7 +26,8 @@ export function isComplexData(data: IData): boolean {
 }
 
 function getStringWidth(value: string): number {
-  return 1 + Math.min(Math.floor(value.length / 10), 6);
+  const effectiveLength = Math.min(value.length, MAX_STRING_DISPLAY_LENGTH);
+  return 1 + Math.min(Math.floor(effectiveLength / 5), 6);
 }
 
 function getNumberWidth(value: number): number {
@@ -44,16 +46,7 @@ export function getEntityWidth(data: IData): number {
     return getNumberWidth((data.value as number) ?? 0);
   }
 
-  if (
-    kind === "boolean" ||
-    kind === "undefined" ||
-    kind === "reference" ||
-    kind === "error" ||
-    kind === "unknown" ||
-    kind === "never"
-  ) {
-    return 1;
-  }
+  if (isSimpleData(data.type)) return 1;
 
   if (kind === "array" || kind === "tuple") {
     const items = data.value as IStatement[];
@@ -156,7 +149,7 @@ export function isSimpleStatement(statement: IStatement): boolean {
 }
 
 export function getEntityLayout(data: IData): LayoutMode {
-  if (isSimpleData(data)) return "inline";
+  if (isSimpleData(data.type)) return "inline";
   return getEntityWidth(data) >= THRESHOLD ? "multiline" : "inline";
 }
 
@@ -176,4 +169,4 @@ export function getOperationCallLayout(
   return getOperationCallWidth(operation) >= THRESHOLD ? "multiline" : "inline";
 }
 
-export { THRESHOLD, SEPARATOR_WIDTH };
+export { THRESHOLD, SEPARATOR_WIDTH, MAX_STRING_DISPLAY_LENGTH };

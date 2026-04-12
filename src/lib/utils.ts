@@ -247,9 +247,9 @@ export function createProjectFile(
           if (isTrigger && !props.content) {
             const requestParamType: DataType = {
               kind: "instance",
-              className: "HttpRequest",
+              className: "Request",
               constructorArgs: resolveConstructorArgs(
-                InstanceTypes.HttpRequest.constructorArgs
+                InstanceTypes.Request.constructorArgs
               ),
             };
             const requestParam = { name: "request", type: requestParamType };

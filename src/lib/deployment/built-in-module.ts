@@ -194,6 +194,42 @@ function _fetch(url, options) {
 export function fetch(...args) {
   return purry(_fetch, args);
 }
+
+// ===== Request Instance Operations =====
+
+export const getUrl = (request) => request.url;
+export const getMethod = (request) => request.method;
+
+function _getHeader(request, headerName) {
+  return request.headers.get(headerName) || "";
+}
+export function getHeader(...args) {
+  return purry(_getHeader, args);
+}
+
+function _getQuery(request, paramName) {
+  return new URL(request.url).searchParams.get(paramName) || "";
+}
+export function getQuery(...args) {
+  return purry(_getQuery, args);
+}
+
+export const getPath = (request) => new URL(request.url).pathname;
+
+export const json = (instance) => instance.clone().json();
+export const text = (instance) => instance.clone().text();
+
+// ===== URL Instance Operations =====
+
+export const getHref = (url) => url.href;
+export const getOrigin = (url) => url.origin;
+export const getPort = (url) => url.port;
+export const getSearch = (url) => url.search;
+export const getHash = (url) => url.hash;
+
+// ===== Response Instance Operations =====
+
+export const getStatus = (response) => response.status;
 `;
 
 export function generateBuiltInModule(): string {
