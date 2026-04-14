@@ -287,14 +287,19 @@ const specialOperations: OperationListItem[] = [
       { type: isDataOfType(data, "operation") ? data.type : { kind: "never" } },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
+    expectedType: (data) => {
+      if (isDataOfType(data, "operation")) return data.type.result;
+      return { kind: "unknown" };
+    },
     handler: (context, data, ...params) => {
+      const operationData = data as IData<OperationType>;
       const operation = getRawValueFromData(data, context) as (
         ..._: unknown[]
       ) => unknown;
 
-      const restParamsIndex = (
-        data as IData<OperationType>
-      ).type.parameters.findIndex((p) => p.isRest);
+      const restParamsIndex = operationData.type.parameters.findIndex(
+        (p) => p.isRest
+      );
 
       if (restParamsIndex !== -1) {
         const restParams = createData({
@@ -308,6 +313,14 @@ const specialOperations: OperationListItem[] = [
       const result = operation(
         ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
       );
+
+      if (operationData.value.isAsync) {
+        return createDataFromRawValue(
+          result instanceof Promise ? result : Promise.resolve(result),
+          { ...context, expectedType: operationData.type.result }
+        );
+      }
+
       return (result instanceof Promise ? result : createThenable(result)).then(
         (r) => createDataFromRawValue(r, context)
       );

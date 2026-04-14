@@ -21,6 +21,7 @@ import {
   DictionaryType,
   TupleType,
   MapValue,
+  InstanceDataType,
 } from "./types";
 import { Context, OperationListItem, Thenable } from "./execution/types";
 
@@ -498,16 +499,21 @@ export function createDataFromRawValue(
     );
     if (instanceClass) {
       const [className, config] = instanceClass;
-      const data = createData({
-        type: {
-          kind: "instance",
-          className,
-          constructorArgs: resolveConstructorArgs(
-            config.constructorArgs,
-            context.expectedType
-          ),
-        },
-      });
+      const instanceType: InstanceDataType = {
+        kind: "instance",
+        className,
+        constructorArgs: resolveConstructorArgs(
+          config.constructorArgs,
+          context.expectedType
+        ),
+      };
+      if (
+        context.expectedType?.kind === "instance" &&
+        context.expectedType.result
+      ) {
+        instanceType.result = context.expectedType.result;
+      }
+      const data = createData({ type: instanceType });
       context.setInstance(data.value.instanceId, {
         instance: value,
         type: data.type,
@@ -1071,14 +1077,28 @@ export function inferTypeFromValue<T extends DataType>(
     isObject(value, ["className", "constructorArgs"]) &&
     Array.isArray(value.constructorArgs)
   ) {
+    const valueConstructorArgs = value.constructorArgs.map((arg) => ({
+      name: arg.name,
+      type: arg.data.type,
+      isOptional: arg.isOptional,
+    }));
+    if (
+      context.expectedType?.kind === "instance" &&
+      context.expectedType.className === value.className
+    ) {
+      return {
+        kind: "instance",
+        className: value.className,
+        constructorArgs: context.expectedType.constructorArgs.map(
+          (expectedArg, i) => valueConstructorArgs[i] ?? expectedArg
+        ),
+        result: context.expectedType.result,
+      } as T;
+    }
     return {
       kind: "instance",
       className: value.className,
-      constructorArgs: value.constructorArgs.map((arg) => ({
-        name: arg.name,
-        type: arg.data.type,
-        isOptional: arg.isOptional,
-      })),
+      constructorArgs: valueConstructorArgs,
     } as T;
   }
   return { kind: "unknown" } as T;

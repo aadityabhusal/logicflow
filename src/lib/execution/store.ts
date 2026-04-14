@@ -35,9 +35,13 @@ function createRootContextVariables() {
 }
 function getTriggerExpectedType() {
   const currentFile = useProjectStore.getState().getCurrentFile();
-  if (!currentFile) return {};
+  if (!currentFile) {
+    return { expectedType: undefined, enforceExpectedType: undefined };
+  }
   const isTrigger = currentFile.type === "operation" && !!currentFile.trigger;
-  if (!isTrigger) return {};
+  if (!isTrigger) {
+    return { expectedType: undefined, enforceExpectedType: undefined };
+  }
   return {
     expectedType: createOperationFromFile(currentFile)?.type,
     enforceExpectedType: true,

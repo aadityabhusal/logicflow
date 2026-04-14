@@ -85,6 +85,26 @@ export const OperationValueSchema = z.object({
   instanceId: z.string().optional(),
 });
 
+const HttpMethodSchema = z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]);
+
+const HttpTriggerSchema = z.object({
+  type: z.literal("http"),
+  path: z.string().optional(),
+  methods: z.union([HttpMethodSchema, z.array(HttpMethodSchema)]).optional(),
+  cors: z
+    .object({
+      origin: z.union([z.string(), z.array(z.string())]),
+      methods: z.array(HttpMethodSchema).optional(),
+      allowedHeaders: z.array(z.string()).optional(),
+      credentials: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+export const ClipboardSchema = OperationValueSchema.extend({
+  trigger: HttpTriggerSchema.optional(),
+});
+
 const ConditionTypeSchema = z.object({
   kind: z.literal("condition"),
   get result() {

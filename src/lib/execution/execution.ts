@@ -408,6 +408,7 @@ export async function executeStatement(
     if (result !== undefined) {
       const cacheKey = getCacheKey(context, operation.id);
       context.setResult(cacheKey, { data: result, shouldCacheResult });
+      resultData = result;
       continue;
     }
     const parameters = operation.value.parameters;
@@ -462,6 +463,7 @@ export function executeStatementSync(
     if (result !== undefined) {
       const cacheKey = getCacheKey(context, operation.id);
       context.setResult(cacheKey, { data: result, shouldCacheResult });
+      resultData = result;
       continue;
     }
     const parameters = operation.value.parameters;

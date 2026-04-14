@@ -223,7 +223,7 @@ export function updateStatements({
     if (changedStatement && !currentIndexFound) return currentStatement;
     return updateStatement(
       statementToProcess,
-      context.getContext(statementToProcess.name ?? statementToProcess.id)
+      context.getContext(statementToProcess.id)
     );
   });
 }

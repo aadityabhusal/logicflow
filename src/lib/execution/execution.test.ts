@@ -931,3 +931,119 @@ describe("createOperationCall additional coverage", () => {
     expect(result.type.kind).toBe("operation");
   });
 });
+
+describe("call operation with async operations", () => {
+  function findBuiltIn(name: string): OperationListItem {
+    const op = builtInOperations.find((o) => o.name === name);
+    if (!op) throw new Error(`Operation "${name}" not found`);
+    return op;
+  }
+
+  it("returns Promise instance type when calling an async operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const asyncOp = testOperation(
+      [stringStatement("input", "param")],
+      [stringStatement("result")],
+      "asyncOp"
+    );
+    (asyncOp.value as Record<string, unknown>).isAsync = true;
+    asyncOp.type.result = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: { kind: "string" },
+    };
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      asyncOp,
+      [stringStatement("hello")],
+      ctx
+    );
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("Promise");
+      expect(result.type.result).toBeDefined();
+      expect(result.type.result?.kind).toBe("string");
+    }
+  });
+
+  it("returns unwrapped type when calling a sync operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const syncOp = testOperation(
+      [stringStatement("input", "param")],
+      [stringStatement("result")],
+      "syncOp"
+    );
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      syncOp,
+      [stringStatement("hello")],
+      ctx
+    );
+    expect(result.type.kind).not.toBe("instance");
+  });
+
+  it("preserves Promise value when calling async operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const asyncOp = testOperation(
+      [stringStatement("input", "param")],
+      [stringStatement("result")],
+      "asyncOp"
+    );
+    (asyncOp.value as Record<string, unknown>).isAsync = true;
+    asyncOp.type.result = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: { kind: "string" },
+    };
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      asyncOp,
+      [stringStatement("hello")],
+      ctx
+    );
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("Promise");
+      const instanceData = result.value as { instanceId: string };
+      const instance = ctx.getInstance(instanceData.instanceId)?.instance;
+      expect(instance).toBeDefined();
+    }
+  });
+
+  it("call expectedType returns operation result type for operations", () => {
+    const asyncOp = testOperation(
+      [stringStatement("input", "param")],
+      [stringStatement("result")],
+      "asyncOp"
+    );
+    (asyncOp.value as Record<string, unknown>).isAsync = true;
+    asyncOp.type.result = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: { kind: "string" },
+    };
+
+    const callOp = builtInOperations.find((o) => o.name === "call")!;
+
+    expect(callOp.expectedType).toBeDefined();
+    const expectedType =
+      typeof callOp.expectedType === "function"
+        ? callOp.expectedType(asyncOp)
+        : callOp.expectedType;
+    if (!expectedType) return;
+    expect(expectedType.kind).toBe("instance");
+    if (expectedType.kind === "instance") {
+      expect(expectedType.className).toBe("Promise");
+      expect(expectedType.result?.kind).toBe("string");
+    }
+  });
+});

@@ -84,13 +84,14 @@ const StatementComponent = ({
 
   const hasName = statement.name !== undefined;
   const isEqualsFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${statement.id}_equals`
+    (s) =>
+      s.navigation?.id === `${statement.id}_equals` && !s.navigation?.disable
   );
   const isNameFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${statement.id}_name`
+    (s) => s.navigation?.id === `${statement.id}_name` && !s.navigation?.disable
   );
   const isAddFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${statement.id}_add`
+    (s) => s.navigation?.id === `${statement.id}_add` && !s.navigation?.disable
   );
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);

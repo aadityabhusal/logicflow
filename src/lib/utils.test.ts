@@ -1778,6 +1778,35 @@ describe("createDataFromRawValue", () => {
       expect(result.type.parameters).toHaveLength(2);
     }
   });
+
+  it("propagates result type for Promise instance with expectedType", () => {
+    const ctxWithExpected = createTestContext({
+      expectedType: {
+        kind: "instance",
+        className: "Promise",
+        constructorArgs: [],
+        result: { kind: "string" },
+      },
+    });
+    const promise = Promise.resolve("hello");
+    const result = createDataFromRawValue(promise, ctxWithExpected);
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("Promise");
+      expect(result.type.result).toBeDefined();
+      expect(result.type.result?.kind).toBe("string");
+    }
+  });
+
+  it("does not set result type for Promise instance without expectedType", () => {
+    const promise = Promise.resolve("hello");
+    const result = createDataFromRawValue(promise, ctx);
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("Promise");
+      expect(result.type.result).toBeUndefined();
+    }
+  });
 });
 
 describe("getRawValueFromData", () => {

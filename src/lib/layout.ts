@@ -133,7 +133,7 @@ export function getEntityWidth(data: IData): number {
 export function getOperationCallWidth(operation: IData<OperationType>): number {
   const params = operation.value.parameters;
   const paramsWidth = params.reduce((sum, p) => sum + getStatementWidth(p), 0);
-  return 1 + paramsWidth + Math.max(0, params.length - 1) * SEPARATOR_WIDTH;
+  return 2 + paramsWidth + Math.max(0, params.length - 1) * SEPARATOR_WIDTH;
 }
 
 export function getStatementWidth(statement: IStatement): number {
@@ -154,13 +154,7 @@ export function getEntityLayout(data: IData): LayoutMode {
 }
 
 export function getStatementLayout(statement: IStatement): LayoutMode {
-  if (getEntityWidth(statement.data) >= THRESHOLD) return "multiline";
-
-  for (const op of statement.operations) {
-    if (getOperationCallWidth(op) >= THRESHOLD) return "multiline";
-  }
-
-  return "inline";
+  return getStatementWidth(statement) >= THRESHOLD ? "multiline" : "inline";
 }
 
 export function getOperationCallLayout(

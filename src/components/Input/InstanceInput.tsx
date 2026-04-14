@@ -42,7 +42,10 @@ const InstanceInputComponent = (
       const newValue = { ...data.value, constructorArgs };
       handleData({
         ...data,
-        type: inferTypeFromValue(newValue, context),
+        type: inferTypeFromValue(newValue, {
+          ...context,
+          expectedType: context.expectedType ?? data.type,
+        }),
         value: newValue,
       });
     },

@@ -20,7 +20,10 @@ const AddStatementComponent = ({
   className?: string;
   config?: Partial<OperationType["parameters"][number]>;
 }) => {
-  const isFocused = useNavigationStore((s) => s.navigation?.id === `${id}_add`);
+  const isFocused = useNavigationStore(
+    (s) => s.navigation?.id === `${id}_add` && !s.navigation?.disable
+  );
+
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   return (

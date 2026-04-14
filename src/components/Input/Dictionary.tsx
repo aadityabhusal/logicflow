@@ -22,6 +22,7 @@ const DictionaryInputComponent = (
 ) => {
   const isMultiline = getEntityLayout(data) === "multiline";
   const navigationId = useNavigationStore((s) => s.navigation?.id);
+  const isDisabled = useNavigationStore((s) => s.navigation?.disable);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   const entryPaths = useMemo(() => {
@@ -82,7 +83,7 @@ const DictionaryInputComponent = (
             ].join(" ")}
           >
             <BaseInput
-              ref={(elem) => isKeyInputFocused && elem?.focus()}
+              ref={(elem) => isKeyInputFocused && !isDisabled && elem?.focus()}
               className={[
                 "text-property",
                 isKeyInputFocused ? "outline outline-border" : "",
