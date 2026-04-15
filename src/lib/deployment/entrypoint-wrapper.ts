@@ -28,7 +28,9 @@ function generateVercelHandlers(
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
     const operationName = op.name;
-    const handlerContent = `import { ${operationName} } from '../src/operations/${operationName}.js';
+    const handlerContent = `import ${operationName} from '../src/operations/${operationName}.js';
+
+export const config = { runtime: 'edge' };
 
 export default async function handler(request) {
   try {
@@ -56,7 +58,7 @@ function generateNetlifyHandlers(
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
     const operationName = op.name;
-    const handlerContent = `import { ${operationName} } from '../../src/operations/${operationName}.js';
+    const handlerContent = `import ${operationName} from '../../src/operations/${operationName}.js';
 
 export default async (request) => {
   try {
@@ -87,7 +89,7 @@ function generateSupabaseHandlers(
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
     const operationName = op.name;
-    const handlerContent = `import { ${operationName} } from '../../../../src/operations/${operationName}.js';
+    const handlerContent = `import ${operationName} from '../../../../src/operations/${operationName}.js';
 
 Deno.serve(async (request) => {
   try {

@@ -1,5 +1,15 @@
 const builtInModuleCode = `import { purry } from "remeda";
 
+// ===== Pipe Operations =====
+
+export const pipeAsync = async (value, ...fns) => {
+  let result = value;
+  for (const fn of fns) {
+    result = await fn(result);
+  }
+  return result;
+};
+
 // ===== Polymorphic Operations =====
 
 export const length = (value) => value.length;
@@ -188,11 +198,11 @@ export const log = (value) => {
 
 export const isTypeOf = (type) => (value) => typeof value === type;
 
-function _fetch(url, options) {
-  return globalThis.fetch(url, options);
-}
 export function fetch(...args) {
-  return purry(_fetch, args);
+  if (args.length === 2) return globalThis.fetch(args[0], args[1]);
+  if (args.length === 1 && typeof args[0] === "string") return globalThis.fetch(args[0]);
+  if (args.length === 1) return (url) => globalThis.fetch(url, args[0]);
+  return (url) => globalThis.fetch(url);
 }
 
 // ===== Request Instance Operations =====

@@ -1,5 +1,18 @@
 import { purry } from "remeda";
 
+// ===== Pipe Operations =====
+
+export const pipeAsync = async <T>(
+  value: T,
+  ...fns: ((arg: unknown) => Promise<unknown>)[]
+): Promise<unknown> => {
+  let result: unknown = value;
+  for (const fn of fns) {
+    result = await fn(result);
+  }
+  return result;
+};
+
 // ===== Polymorphic Operations (work on multiple types) =====
 
 export const length = (value: string | unknown[]) => value.length;
@@ -203,14 +216,14 @@ export const isTypeOf =
   (value: unknown): boolean =>
     typeof value === type;
 
-function _fetch(
-  url: string,
-  options: RequestInit | undefined
-): Promise<Response> {
-  return globalThis.fetch(url, options);
-}
 export function fetch(...args: readonly unknown[]) {
-  return purry(_fetch, args);
+  if (args.length === 2)
+    return globalThis.fetch(args[0] as string, args[1] as RequestInit);
+  if (args.length === 1 && typeof args[0] === "string")
+    return globalThis.fetch(args[0]);
+  if (args.length === 1)
+    return (url: string) => globalThis.fetch(url, args[0] as RequestInit);
+  return (url: string) => globalThis.fetch(url);
 }
 
 // ===== Request Instance Operations =====

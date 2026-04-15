@@ -278,3 +278,42 @@ export const AgentResponseSchema = z.object({
 });
 
 export type AgentChange = z.infer<typeof AgentChangeSchema>;
+
+const DeploymentCredentialsSchema = z.object({
+  token: z.string(),
+});
+
+const DeploymentRecordSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  state: z.enum(["queued", "building", "ready", "error"]),
+  createdAt: z.number(),
+  dashboardUrl: z.string().optional(),
+  triggerUrls: z.array(z.string()).optional(),
+});
+
+const DeploymentBase = z.object({
+  credentials: DeploymentCredentialsSchema.optional(),
+  deployments: z.array(DeploymentRecordSchema),
+});
+
+const VercelDeploymentSchema = DeploymentBase.extend({
+  platform: z.literal("vercel"),
+  projectId: z.string().optional(),
+});
+
+const NetlifyDeploymentSchema = DeploymentBase.extend({
+  platform: z.literal("netlify"),
+  siteId: z.string().optional(),
+});
+
+const SupabaseDeploymentSchema = z.object({
+  platform: z.literal("supabase"),
+  projectRef: z.string().optional(),
+});
+
+export const DeploymentTargetSchema = z.discriminatedUnion("platform", [
+  VercelDeploymentSchema,
+  NetlifyDeploymentSchema,
+  SupabaseDeploymentSchema,
+]);

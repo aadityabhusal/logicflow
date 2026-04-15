@@ -144,7 +144,7 @@ function generateStatement(
     .join("");
 
   const hasAwait = statement.operations.some((op) => op.value.name === "await");
-  const pipeFunc = hasAwait ? "await R.pipeAsync" : "R.pipe";
+  const pipeFunc = hasAwait ? "await _.pipeAsync" : "R.pipe";
 
   return `${name}${pipeFunc}(${data}${operations})`;
 }

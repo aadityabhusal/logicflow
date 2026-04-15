@@ -235,9 +235,39 @@ interface Dependencies {
   logicflow?: (DependencyBase & { projectId: string })[];
 }
 
-type VercelDeployment = { platform: "vercel" };
-type NetlifyDeployment = { platform: "netlify" };
-type SupabaseDeployment = { platform: "supabase" };
+export type DeploymentCredentials = {
+  token: string;
+};
+
+export type DeploymentStatus = "queued" | "building" | "ready" | "error";
+
+export type DeploymentRecord = {
+  id: string;
+  url: string;
+  state: DeploymentStatus;
+  createdAt: number;
+  dashboardUrl?: string;
+  triggerUrls?: string[];
+};
+
+type VercelDeployment = {
+  platform: "vercel";
+  credentials?: DeploymentCredentials;
+  projectId?: string;
+  deployments: DeploymentRecord[];
+};
+type NetlifyDeployment = {
+  platform: "netlify";
+  credentials?: DeploymentCredentials;
+  siteId?: string;
+  deployments: DeploymentRecord[];
+};
+type SupabaseDeployment = {
+  platform: "supabase";
+  credentials?: DeploymentCredentials;
+  projectRef?: string;
+  deployments: DeploymentRecord[];
+};
 export type DeploymentTarget =
   | VercelDeployment
   | NetlifyDeployment
@@ -246,6 +276,18 @@ export type DeploymentTarget =
 export type DeploymentConfig = {
   envVariables: { key: string; value: string }[];
   platforms: DeploymentTarget[];
+};
+
+export type DeploymentResult = Partial<DeploymentRecord> & {
+  success: boolean;
+  projectId?: string;
+  error?: string;
+};
+
+export type DeploymentProgress = {
+  stage: "generating" | "uploading" | "building" | "ready" | "error";
+  message?: string;
+  url?: string;
 };
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
