@@ -12,10 +12,6 @@ export function generatePlatformConfig(
   switch (platform) {
     case "vercel":
       return generateVercelConfig(triggeredOps);
-    case "netlify":
-      return generateNetlifyConfig(triggeredOps);
-    case "supabase":
-      return [];
     default:
       return [];
   }
@@ -32,30 +28,4 @@ function generateVercelConfig(triggeredOps: ProjectFile[]): PlatformConfig[] {
   return [
     { filename: "vercel.json", content: JSON.stringify(vercelConfig, null, 2) },
   ];
-}
-
-function generateNetlifyConfig(triggeredOps: ProjectFile[]): PlatformConfig[] {
-  const triggerNames = triggeredOps.map((op) => op.name);
-
-  const redirects = triggerNames
-    .map(
-      (name) => `
-[[redirects]]
-  from = "/api/${name}"
-  to = "/.netlify/functions/${name}"
-  status = 200`
-    )
-    .join("\n");
-
-  const netlifyConfig = `[build]
-  command = "npm install"
-  publish = "dist"
-
-[functions]
-  directory = "netlify/functions"
-  node_bundler = "esbuild"
-${redirects}
-`;
-
-  return [{ filename: "netlify.toml", content: netlifyConfig }];
 }

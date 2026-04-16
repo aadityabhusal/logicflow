@@ -7,7 +7,6 @@ import {
 } from "../../types";
 import { generateDeployableProject, getTriggeredOperations } from "../config";
 import { deployToVercel } from "./vercel";
-import { deployToNetlify } from "./netlify";
 import { deployToSupabase } from "./supabase";
 import { capitalize } from "remeda";
 
@@ -34,7 +33,7 @@ export async function deployToPlatform(
 
   onProgress?.({ stage: "generating", message: "Generating project files..." });
 
-  const { files, errors } = generateDeployableProject(
+  const { files, errors } = await generateDeployableProject(
     project,
     context,
     target.platform
@@ -54,13 +53,6 @@ export async function deployToPlatform(
         files,
         target.credentials!.token,
         { projectName, projectId: target.projectId, triggerNames, envVars },
-        onProgress
-      );
-    case "netlify":
-      return deployToNetlify(
-        files,
-        target.credentials!.token,
-        { projectName, siteId: target.siteId, triggerNames, envVars },
         onProgress
       );
     case "supabase":

@@ -1,28 +1,29 @@
 import { Context } from "../execution/types";
-import { generateOperation } from "../format-code";
-import { Project, ProjectFile, DeploymentTarget } from "../types";
+import { generateOperation, formatCode } from "../format-code";
+import {
+  Project,
+  ProjectFile,
+  DeploymentTarget,
+  DeploymentFile,
+} from "../types";
 import { createOperationFromFile } from "../utils";
 import { generatePlatformHandlers } from "./entrypoint-wrapper";
 import { generatePlatformConfig } from "./platform-config";
 import { generateBuiltInModule } from "./built-in-module";
+import { prefixNpmImports } from "./utils";
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
   return project.files.filter((f) => f.type === "operation" && f.trigger);
 }
 
-export interface ExportFile {
-  path: string;
-  content: string;
-}
-
-export function generateDeployableProject(
+export async function generateDeployableProject(
   project: Project,
   context: Context,
   platform?: DeploymentTarget["platform"]
-): { files: ExportFile[]; errors: string[]; warnings: string[] } {
+): Promise<{ files: DeploymentFile[]; errors: string[]; warnings: string[] }> {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const files: ExportFile[] = [];
+  let files: DeploymentFile[] = [];
 
   const deployment = project.deployment ?? { envVariables: [], platforms: [] };
   const triggeredOps = getTriggeredOperations(project);
@@ -70,18 +71,29 @@ export function generateDeployableProject(
     }
   }
 
-  try {
-    const npmDeps = resolveNpmDependencies(project, operationFiles);
-    const packageJson = generatePackageJson(
-      { ...project, deployment },
-      npmDeps
-    );
-    files.push({ path: "package.json", content: packageJson });
-  } catch (error) {
-    errors.push(`Failed to generate package.json: ${error}`);
+  if (platform === "supabase") {
+    files = prefixNpmImports(files);
+  } else {
+    try {
+      const npmDeps = resolveNpmDependencies(project, operationFiles);
+      const packageJson = generatePackageJson(
+        { ...project, deployment },
+        npmDeps
+      );
+      files.push({ path: "package.json", content: packageJson });
+    } catch (error) {
+      errors.push(`Failed to generate package.json: ${error}`);
+    }
   }
 
-  return { files, errors, warnings };
+  const results = await Promise.allSettled(
+    files.map(async (f) => ({ ...f, content: await formatCode(f.content) }))
+  );
+  const formattedFiles = results.map((result, i) =>
+    result.status === "fulfilled" ? result.value : files[i]
+  );
+
+  return { files: formattedFiles, errors, warnings };
 }
 
 type Dependency = { name: string; version: string };
@@ -133,11 +145,9 @@ export function generatePackageJson(
     scripts: {
       start: project.deployment?.platforms.some((t) => t.platform === "vercel")
         ? "vercel dev"
-        : project.deployment?.platforms.some((t) => t.platform === "netlify")
-          ? "netlify dev"
-          : project.deployment?.platforms.some((t) => t.platform === "supabase")
-            ? "supabase functions serve"
-            : "node .",
+        : project.deployment?.platforms.some((t) => t.platform === "supabase")
+          ? "supabase functions serve"
+          : "node .",
     },
     dependencies: depMap,
     engines: {

@@ -256,22 +256,13 @@ type VercelDeployment = {
   projectId?: string;
   deployments: DeploymentRecord[];
 };
-type NetlifyDeployment = {
-  platform: "netlify";
-  credentials?: DeploymentCredentials;
-  siteId?: string;
-  deployments: DeploymentRecord[];
-};
 type SupabaseDeployment = {
   platform: "supabase";
   credentials?: DeploymentCredentials;
   projectRef?: string;
   deployments: DeploymentRecord[];
 };
-export type DeploymentTarget =
-  | VercelDeployment
-  | NetlifyDeployment
-  | SupabaseDeployment;
+export type DeploymentTarget = VercelDeployment | SupabaseDeployment;
 
 export type DeploymentConfig = {
   envVariables: { key: string; value: string }[];
@@ -283,6 +274,11 @@ export type DeploymentResult = Partial<DeploymentRecord> & {
   projectId?: string;
   error?: string;
 };
+
+export interface DeploymentFile {
+  path: string;
+  content: string;
+}
 
 export type DeploymentProgress = {
   stage: "generating" | "uploading" | "building" | "ready" | "error";

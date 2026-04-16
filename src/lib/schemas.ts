@@ -302,11 +302,6 @@ const VercelDeploymentSchema = DeploymentBase.extend({
   projectId: z.string().optional(),
 });
 
-const NetlifyDeploymentSchema = DeploymentBase.extend({
-  platform: z.literal("netlify"),
-  siteId: z.string().optional(),
-});
-
 const SupabaseDeploymentSchema = z.object({
   platform: z.literal("supabase"),
   projectRef: z.string().optional(),
@@ -314,6 +309,5 @@ const SupabaseDeploymentSchema = z.object({
 
 export const DeploymentTargetSchema = z.discriminatedUnion("platform", [
   VercelDeploymentSchema,
-  NetlifyDeploymentSchema,
   SupabaseDeploymentSchema,
 ]);

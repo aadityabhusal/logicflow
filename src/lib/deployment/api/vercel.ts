@@ -1,5 +1,8 @@
-import { ExportFile } from "../config";
-import { DeploymentResult, DeploymentProgress } from "../../types";
+import {
+  DeploymentFile,
+  DeploymentResult,
+  DeploymentProgress,
+} from "../../types";
 import { createPlatformFetch, parseError } from "../utils";
 
 const vercelFetch = createPlatformFetch("/api/vercel");
@@ -20,7 +23,7 @@ type VercelDeploymentResponse = {
 };
 
 export async function deployToVercel(
-  files: ExportFile[],
+  files: DeploymentFile[],
   token: string,
   options: {
     projectName: string;

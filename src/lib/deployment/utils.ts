@@ -1,3 +1,5 @@
+import { DeploymentFile } from "../types";
+
 export function createPlatformFetch(proxyBase: string) {
   return async (
     path: string,
@@ -8,7 +10,9 @@ export function createPlatformFetch(proxyBase: string) {
       ...options,
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+        ...(!(options.body instanceof FormData) && {
+          "Content-Type": "application/json",
+        }),
         ...options.headers,
       },
     });
@@ -33,4 +37,16 @@ export function formatRelativeTime(timestamp: number): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+const npmImportPattern = /from ['"]([a-z@][^'"]+)['"]/g;
+
+export function prefixNpmImports<T extends DeploymentFile>(files: T[]): T[] {
+  return files.map((file) => ({
+    ...file,
+    content: file.content.replace(npmImportPattern, (match, pkg) => {
+      if (pkg.startsWith(".") || pkg.startsWith("npm:")) return match;
+      return `from "npm:${pkg}"`;
+    }),
+  }));
 }
