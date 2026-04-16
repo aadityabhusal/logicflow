@@ -302,7 +302,7 @@ const VercelDeploymentSchema = DeploymentBase.extend({
   projectId: z.string().optional(),
 });
 
-const SupabaseDeploymentSchema = z.object({
+const SupabaseDeploymentSchema = DeploymentBase.extend({
   platform: z.literal("supabase"),
   projectRef: z.string().optional(),
 });

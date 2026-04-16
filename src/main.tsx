@@ -41,7 +41,7 @@ const theme = createTheme({
     }),
     Button: Button.extend({
       classNames: {
-        root: "outline outline-white p-1 hover:bg-dropdown-hover truncate",
+        root: "outline outline-white p-1 hover:bg-dropdown-hover truncate disabled:bg-disabled/75",
         inner: "flex items-center gap-1 outline-white",
         label: "truncate",
       },
