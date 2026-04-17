@@ -1,6 +1,7 @@
 import { DeploymentFile } from "../types";
 
-export function createPlatformFetch(proxyBase: string) {
+export function createPlatformFetch(platformPath: string) {
+  const proxyBase = `${import.meta.env.VITE_API_PROXY_URL || "/api"}${platformPath}`;
   return async (
     path: string,
     token: string,

@@ -5,7 +5,7 @@ import {
 } from "../../types";
 import { createPlatformFetch, parseError } from "../utils";
 
-const vercelFetch = createPlatformFetch("/api/vercel");
+const vercelFetch = createPlatformFetch("/vercel");
 
 type VercelDeploymentResponse = {
   id: string;
@@ -134,19 +134,40 @@ async function setVercelEnvVars(
   token: string,
   envVars: { key: string; value: string }[]
 ): Promise<void> {
+  const vars = envVars.filter((v) => v.value);
+  if (vars.length === 0) return;
+
+  let existing: { id: string; key: string }[] = [];
+  try {
+    const res = await vercelFetch(`/v9/projects/${projectId}/env`, token);
+    if (res.ok) {
+      const body = await res.json();
+      existing = body.envs;
+    }
+  } catch {
+    console.error("Couldn't fetch Vercel env variables");
+  }
+
+  const idsByKey = new Map(existing.map((e) => [e.key, e.id]));
+
   await Promise.allSettled(
-    envVars
-      .filter((v) => v.value)
-      .map((envVar) =>
-        vercelFetch(`/v9/projects/${projectId}/env`, token, {
-          method: "POST",
-          body: JSON.stringify({
-            key: envVar.key,
-            value: envVar.value,
-            type: "encrypted",
-            target: ["production", "preview"],
-          }),
-        })
-      )
+    vars.map(({ key, value }) => {
+      const id = idsByKey.get(key);
+      if (id) {
+        return vercelFetch(`/v9/projects/${projectId}/env/${id}`, token, {
+          method: "PATCH",
+          body: JSON.stringify({ value, target: ["production", "preview"] }),
+        });
+      }
+      return vercelFetch(`/v9/projects/${projectId}/env`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          key,
+          value,
+          type: "encrypted",
+          target: ["production", "preview"],
+        }),
+      });
+    })
   );
 }

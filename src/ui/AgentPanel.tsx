@@ -1,5 +1,5 @@
 import { PasswordInput, Popover } from "@mantine/core";
-import { FaKey, FaTrash } from "react-icons/fa6";
+import { FaTrash } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
 import {
@@ -14,6 +14,7 @@ import {
 import { AVAILABLE_MODELS, LLM_PROVIDERS } from "@/lib/data";
 import { IconButton } from "./IconButton";
 import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
+import { MdVpnKey } from "react-icons/md";
 
 export function AgentPanel() {
   const {
@@ -90,7 +91,7 @@ export function AgentPanel() {
         />
         <Popover position="top-start">
           <Popover.Target>
-            <IconButton icon={FaKey} size={14} title="Add API keys" />
+            <IconButton icon={MdVpnKey} title="Add API keys" />
           </Popover.Target>
           <Popover.Dropdown classNames={{ dropdown: "border" }}>
             <div className="flex flex-col gap-1">

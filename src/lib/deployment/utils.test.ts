@@ -164,22 +164,37 @@ describe("createPlatformFetch", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete import.meta.env.VITE_API_PROXY_URL;
   });
 
   it("returns a function", () => {
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     expect(typeof fetchFn).toBe("function");
   });
 
-  it("calls fetch with proxyBase + path", async () => {
+  it("calls fetch with default proxy base + platform path + path", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     await fetchFn("/v1/resource", "token123");
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/test/v1/resource",
+      expect.stringContaining("/api/test/v1/resource"),
+      expect.any(Object)
+    );
+  });
+
+  it("uses VITE_API_PROXY_URL env var as proxy base", async () => {
+    import.meta.env.VITE_API_PROXY_URL = "https://proxy.example.com";
+    const mockFetch = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const fetchFn = createPlatformFetch("/vercel");
+    await fetchFn("/v13/deployments", "token");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://proxy.example.com/vercel/v13/deployments",
       expect.any(Object)
     );
   });
@@ -188,7 +203,7 @@ describe("createPlatformFetch", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     await fetchFn("/path", "my-token");
 
     const callArgs = mockFetch.mock.calls[0];
@@ -201,7 +216,7 @@ describe("createPlatformFetch", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     await fetchFn("/path", "token", {
       method: "POST",
       body: JSON.stringify({ data: 1 }),
@@ -217,7 +232,7 @@ describe("createPlatformFetch", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     const formData = new FormData();
     formData.append("key", "value");
     await fetchFn("/path", "token", {
@@ -233,7 +248,7 @@ describe("createPlatformFetch", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     await fetchFn("/path", "token", {
       headers: { "X-Custom": "value" },
     });
@@ -250,7 +265,7 @@ describe("createPlatformFetch", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     await fetchFn("/path", "token", {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
@@ -266,7 +281,7 @@ describe("createPlatformFetch", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
-    const fetchFn = createPlatformFetch("/api/test");
+    const fetchFn = createPlatformFetch("/test");
     await fetchFn("/path", "token", {
       method: "DELETE",
       body: '{"id":1}',

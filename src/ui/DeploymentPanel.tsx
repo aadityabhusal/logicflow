@@ -9,11 +9,10 @@ import {
   FaCircleCheck,
   FaCircleXmark,
   FaArrowUpRightFromSquare,
-  FaKey,
   FaChevronDown,
-  FaChartLine,
   FaChevronRight,
 } from "react-icons/fa6";
+import { MdVpnKey } from "react-icons/md";
 import { useProjectStore } from "@/lib/store";
 import {
   DeploymentTarget,
@@ -261,7 +260,11 @@ function DeploymentPanelComponent() {
                   </span>
                   <Popover position="bottom-start" withinPortal={false}>
                     <Popover.Target>
-                      <IconButton icon={FaKey} title="Credentials" />
+                      <IconButton
+                        icon={MdVpnKey}
+                        title="Credentials"
+                        className="mr-1 p-1"
+                      />
                     </Popover.Target>
                     <Popover.Dropdown classNames={{ dropdown: "border" }}>
                       <div className="flex flex-col gap-1.5 min-w-[200px] p-1">
@@ -338,7 +341,7 @@ function DeploymentPanelComponent() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="outline-none text-sm"
-                          leftSection={<FaChartLine />}
+                          rightSection={<FaArrowUpRightFromSquare size={12} />}
                         >
                           Dashboard
                         </Button>
@@ -354,7 +357,7 @@ function DeploymentPanelComponent() {
                     </div>
                     {latestDeploy?.triggerUrls && (
                       <div className="flex flex-col gap-1 p-2 bg-dropdown-hover/30">
-                        <p className="text-sm">Triggers</p>
+                        <p className="text-sm">Live Endpoints</p>
                         <div className="flex gap-3 flex-wrap">
                           {latestDeploy.triggerUrls.map((url) => {
                             const name =
@@ -362,16 +365,19 @@ function DeploymentPanelComponent() {
                                 ? url.split("/").pop()
                                 : url.split("/api/").pop();
                             return (
-                              <a
+                              <Button
+                                component={Link}
                                 key={url}
-                                href={url}
+                                to={url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="hover:underline truncate flex items-center gap-1 text-sm"
+                                className="outline-none text-sm"
+                                rightSection={
+                                  <FaArrowUpRightFromSquare size={10} />
+                                }
                               >
                                 {name || url}
-                                <FaArrowUpRightFromSquare size={7} />
-                              </a>
+                              </Button>
                             );
                           })}
                         </div>

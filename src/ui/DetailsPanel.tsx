@@ -1,4 +1,9 @@
-import { FaCrosshairs, FaLink, FaLock, FaUnlock } from "react-icons/fa6";
+import {
+  FaArrowUpRightFromSquare,
+  FaCrosshairs,
+  FaLock,
+  FaUnlock,
+} from "react-icons/fa6";
 import { TbKeyboardOff } from "react-icons/tb";
 import { IconButton } from "./IconButton";
 import {
@@ -7,7 +12,7 @@ import {
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { Tooltip } from "@mantine/core";
+import { Button, Tooltip } from "@mantine/core";
 import { useMemo, useState, useEffect } from "react";
 import { getTypeSignature, isPendingContext } from "@/lib/utils";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
@@ -20,6 +25,7 @@ import {
   generateData,
   createCodeGenContext,
 } from "@/lib/format-code";
+import { Link } from "react-router";
 
 export function DetailsPanel() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -162,19 +168,18 @@ export function DetailsPanel() {
           </div>
         )}
         {docsUrl && docsConfig && (
-          <div className="p-1 border-b gap-1">
+          <div className="p-1 border-b gap-1 flex flex-col">
             <div className="text-gray-300 mb-1.5">Documentation</div>
-            <a
-              href={docsUrl}
+            <Button
+              component={Link}
+              to={docsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:underline flex gap-1 items-center"
+              className="outline-none w-fit"
+              rightSection={<FaArrowUpRightFromSquare />}
             >
-              <FaLink className="shrink-0" />
-              <span>
-                {docsConfig.displayName}:{operation?.value.name}
-              </span>
-            </a>
+              {docsConfig.displayName}:{operation?.value.name}
+            </Button>
           </div>
         )}
         {formattedValue ? (

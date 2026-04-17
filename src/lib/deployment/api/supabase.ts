@@ -5,7 +5,7 @@ import {
 } from "../../types";
 import { createPlatformFetch, parseError } from "../utils";
 
-const supabaseFetch = createPlatformFetch("/api/supabase");
+const supabaseFetch = createPlatformFetch("/supabase");
 
 export async function deployToSupabase(
   files: DeploymentFile[],
