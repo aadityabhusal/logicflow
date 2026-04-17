@@ -11,20 +11,20 @@ export async function deployToSupabase(
   files: DeploymentFile[],
   token: string,
   options: {
-    projectRef?: string;
+    projectId?: string;
     triggerNames: string[];
     envVars?: { key: string; value: string }[];
   },
   onProgress?: (progress: DeploymentProgress) => void
 ): Promise<DeploymentResult> {
-  const { projectRef, triggerNames, envVars } = options;
-  if (!projectRef) {
+  const { projectId, triggerNames, envVars } = options;
+  if (!projectId) {
     return { success: false, error: "Supabase project reference is required" };
   }
 
   if (envVars?.length) {
     onProgress?.({ stage: "uploading", message: "Setting secrets..." });
-    await setSupabaseSecrets(projectRef, token, envVars);
+    await setSupabaseSecrets(projectId, token, envVars);
   }
 
   const handlerFiles = files.filter((f) =>
@@ -42,7 +42,7 @@ export async function deployToSupabase(
   onProgress?.({ stage: "uploading", message: "Deploying functions..." });
 
   const results = await Promise.allSettled(
-    fnNames.map((fnName) => deployFunction(projectRef, fnName, files, token))
+    fnNames.map((fnName) => deployFunction(projectId, fnName, files, token))
   );
 
   const errors = results
@@ -56,11 +56,11 @@ export async function deployToSupabase(
   if (errors.length === fnNames.length) {
     const errorMsg = errors.join("; ");
     onProgress?.({ stage: "error", message: errorMsg });
-    return { success: false, error: errorMsg, projectId: projectRef };
+    return { success: false, error: errorMsg, projectId };
   }
 
   const triggerUrls = triggerNames.map(
-    (name) => `https://${projectRef}.supabase.co/functions/v1/${name}`
+    (name) => `https://${projectId}.supabase.co/functions/v1/${name}`
   );
   const url = triggerUrls[0];
 
@@ -75,10 +75,10 @@ export async function deployToSupabase(
     success: true,
     url,
     state: "ready",
-    projectId: projectRef,
-    id: `supabase-${projectRef}`,
+    projectId,
+    id: `supabase-${projectId}`,
     triggerUrls,
-    dashboardUrl: `https://supabase.com/dashboard/project/${projectRef}/functions`,
+    dashboardUrl: `https://supabase.com/dashboard/project/${projectId}/functions`,
   };
 }
 

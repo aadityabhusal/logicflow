@@ -35,7 +35,7 @@ export default async function handler(request) {
     const result = await ${operationName}(request);
 
     return new Response(JSON.stringify(result), {
-      status: result.status || 200,
+      status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
@@ -63,7 +63,7 @@ Deno.serve(async (request) => {
     const result = await ${operationName}(request);
 
     return new Response(JSON.stringify(result), {
-      status: result.status || 200,
+      status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {

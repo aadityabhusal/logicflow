@@ -39,8 +39,8 @@ function CodePanelComponent() {
 
   return (
     <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between items-center p-1 border-b">
-        <span>Code</span>
+      <div className="flex justify-between items-center p-1 border-b bg-dropdown-default">
+        <p className="font-bold">Code</p>
         <span className="text-sm">{currentOperationName}.js</span>
         <IconButton
           icon={clipboard.copied ? FaCheck : FaRegCopy}

@@ -324,3 +324,28 @@ export const RESERVED_KEYWORDS = [
   "eval",
   "arg", // pipe callback first arg
 ];
+
+export const PLATFORMS = {
+  vercel: {
+    label: "Vercel",
+    token: {
+      label: "Vercel API token",
+      url: "https://vercel.com/account/tokens",
+    },
+    projectId: {
+      label: "Project ID (Optional)",
+      url: "https://vercel.com/dashboard",
+    },
+  },
+  supabase: {
+    label: "Supabase",
+    token: {
+      label: "Supabase access token",
+      url: "https://supabase.com/dashboard/account/tokens",
+    },
+    projectId: {
+      label: "Project reference",
+      url: "https://supabase.com/dashboard",
+    },
+  },
+} as const;

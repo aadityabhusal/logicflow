@@ -81,8 +81,8 @@ export function AgentPanel() {
 
   return (
     <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between items-center p-1 border-b gap-4">
-        <div className="mr-auto">Agent</div>
+      <div className="flex justify-between items-center p-1 border-b gap-4 bg-dropdown-default">
+        <p className="mr-auto font-bold">Agent</p>
         <IconButton
           icon={FaTrash}
           onClick={clearMessages}

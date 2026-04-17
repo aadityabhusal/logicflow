@@ -250,18 +250,13 @@ export type DeploymentRecord = {
   triggerUrls?: string[];
 };
 
-type VercelDeployment = {
-  platform: "vercel";
+type BaseDeployment = {
   credentials?: DeploymentCredentials;
   projectId?: string;
   deployments: DeploymentRecord[];
 };
-type SupabaseDeployment = {
-  platform: "supabase";
-  credentials?: DeploymentCredentials;
-  projectRef?: string;
-  deployments: DeploymentRecord[];
-};
+type VercelDeployment = BaseDeployment & { platform: "vercel" };
+type SupabaseDeployment = BaseDeployment & { platform: "supabase" };
 export type DeploymentTarget = VercelDeployment | SupabaseDeployment;
 
 export type DeploymentConfig = {

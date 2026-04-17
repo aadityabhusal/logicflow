@@ -61,8 +61,8 @@ export function OperationsList() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-1 flex gap-2 justify-between items-center border-b">
-        <span>Operations</span>
+      <div className="p-1 flex gap-2 justify-between items-center border-b bg-dropdown-default">
+        <p className="font-bold">Operations</p>
         <Menu
           width={200}
           offset={1}

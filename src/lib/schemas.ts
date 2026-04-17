@@ -293,21 +293,12 @@ const DeploymentRecordSchema = z.object({
 });
 
 const DeploymentBase = z.object({
-  credentials: DeploymentCredentialsSchema.optional(),
   deployments: z.array(DeploymentRecordSchema),
-});
-
-const VercelDeploymentSchema = DeploymentBase.extend({
-  platform: z.literal("vercel"),
+  credentials: DeploymentCredentialsSchema.optional(),
   projectId: z.string().optional(),
 });
 
-const SupabaseDeploymentSchema = DeploymentBase.extend({
-  platform: z.literal("supabase"),
-  projectRef: z.string().optional(),
-});
-
 export const DeploymentTargetSchema = z.discriminatedUnion("platform", [
-  VercelDeploymentSchema,
-  SupabaseDeploymentSchema,
+  DeploymentBase.extend({ platform: z.literal("vercel") }),
+  DeploymentBase.extend({ platform: z.literal("supabase") }),
 ]);

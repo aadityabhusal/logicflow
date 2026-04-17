@@ -11,8 +11,8 @@ import {
   FaArrowUpRightFromSquare,
   FaKey,
   FaChevronDown,
-  FaChevronUp,
   FaChartLine,
+  FaChevronRight,
 } from "react-icons/fa6";
 import { useProjectStore } from "@/lib/store";
 import {
@@ -29,46 +29,13 @@ import { NoteText } from "./NoteText";
 import { formatRelativeTime } from "@/lib/deployment/utils";
 import { Link } from "react-router";
 import { capitalize } from "remeda";
-
-const PLATFORM_OPTIONS: DeploymentTarget[] = [
-  { platform: "vercel", deployments: [] },
-  { platform: "supabase", deployments: [] },
-];
-
-const PLATFORM_LABELS: Record<string, string> = {
-  vercel: "Vercel",
-  supabase: "Supabase",
-};
-
-const TOKEN_PLACEHOLDERS: Record<string, string> = {
-  vercel: "Vercel API token",
-  supabase: "Supabase access token",
-};
+import { PLATFORMS } from "@/lib/data";
 
 type DeploymentState = {
   isDeploying: boolean;
   progress?: DeploymentProgress;
   error?: string;
 };
-
-function updateTargetAfterDeploy(
-  target: DeploymentTarget,
-  projectId?: string,
-  record?: DeploymentRecord
-): DeploymentTarget {
-  const deployments = [...(record ? [record] : []), ...target.deployments];
-
-  switch (target.platform) {
-    case "vercel":
-      return { ...target, ...(projectId ? { projectId } : {}), deployments };
-    case "supabase":
-      return {
-        ...target,
-        ...(projectId ? { projectRef: projectId } : {}),
-        deployments,
-      };
-  }
-}
 
 function DeploymentPanelComponent() {
   const project = useProjectStore((s) => s.getCurrentProject());
@@ -80,9 +47,11 @@ function DeploymentPanelComponent() {
   >({});
 
   const deployment = project?.deployment ?? { envVariables: [], platforms: [] };
-  const availablePlatforms = PLATFORM_OPTIONS.filter(
-    (opt) => !deployment.platforms.some((t) => t.platform === opt.platform)
-  );
+  const availablePlatforms = Object.keys(PLATFORMS)
+    .map((p) => ({ platform: p as keyof typeof PLATFORMS, deployments: [] }))
+    .filter(
+      (p) => !deployment.platforms.some((t) => t.platform === p.platform)
+    );
 
   const handleUpdateDeployment = (updates: Partial<typeof deployment>) => {
     if (!project) return;
@@ -110,30 +79,6 @@ function DeploymentPanelComponent() {
     });
   };
 
-  const handleUpdateCredentials = (platform: string, token: string) => {
-    handleUpdateDeployment({
-      platforms: deployment.platforms.map((t) =>
-        t.platform === platform
-          ? { ...t, credentials: token ? { token } : undefined }
-          : t
-      ),
-    });
-  };
-
-  const handleUpdateProjectRef = (platform: string, ref: string) => {
-    handleUpdateDeployment({
-      platforms: deployment.platforms.map((t) => {
-        if (t.platform !== platform) return t;
-        switch (t.platform) {
-          case "vercel":
-            return { ...t, projectId: ref || undefined };
-          case "supabase":
-            return { ...t, projectRef: ref || undefined };
-        }
-      }),
-    });
-  };
-
   const togglePlatformExpanded = (platform: string) => {
     setExpandedPlatforms((prev) => {
       const next = new Set(prev);
@@ -143,13 +88,13 @@ function DeploymentPanelComponent() {
     });
   };
 
-  const handleDeploy = async (platform: string) => {
+  const handleDeploy = async (platform: keyof typeof PLATFORMS) => {
     if (!project || !rootContext) return;
 
     const target = deployment.platforms.find((t) => t.platform === platform);
     if (!target?.credentials?.token) {
       notifications.show({
-        message: `Please add your ${PLATFORM_LABELS[platform]} API token first`,
+        message: `Please add your ${PLATFORMS[platform].label} API token first`,
       });
       return;
     }
@@ -191,11 +136,14 @@ function DeploymentPanelComponent() {
       updateProject(project.id, {
         deployment: {
           ...deployment,
-          platforms: deployment.platforms.map((t) =>
-            t.platform === platform
-              ? updateTargetAfterDeploy(t, result.projectId, record)
-              : t
-          ),
+          platforms: deployment.platforms.map((t) => {
+            if (t.platform !== platform) return t;
+            return {
+              ...target,
+              ...(result.projectId ? { projectId: result.projectId } : {}),
+              deployments: [...(record ? [record] : []), ...target.deployments],
+            };
+          }),
         },
       });
     }
@@ -213,7 +161,7 @@ function DeploymentPanelComponent() {
 
     if (result.success) {
       notifications.show({
-        message: `Deployed to ${PLATFORM_LABELS[platform]}!`,
+        message: `Deployed to ${PLATFORMS[platform].label}!`,
       });
     } else if (result.error) {
       notifications.show({ message: result.error });
@@ -260,14 +208,14 @@ function DeploymentPanelComponent() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex justify-between items-center p-1 border-b">
-        <span>Deployment</span>
+      <div className="flex justify-between items-center p-1 border-b gap-4 bg-dropdown-default">
+        <p className="font-bold">Deployment</p>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
-        <div className="border-b p-1">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-gray-400">Platforms</span>
+        <div className="border-b">
+          <div className="flex justify-between items-center p-1">
+            <span className="text-gray-300">Platforms</span>
             {availablePlatforms.length > 0 && (
               <Menu withinPortal={false} position="bottom-end">
                 <Menu.Target>
@@ -279,7 +227,7 @@ function DeploymentPanelComponent() {
                       key={opt.platform}
                       onClick={() => handleAddPlatform(opt)}
                     >
-                      {PLATFORM_LABELS[opt.platform]}
+                      {PLATFORMS[opt.platform].label}
                     </Menu.Item>
                   ))}
                 </Menu.Dropdown>
@@ -294,72 +242,93 @@ function DeploymentPanelComponent() {
           {deployment.platforms.map((target) => {
             const latestDeploy = target.deployments?.[0];
             const deployState = deploymentStates[target.platform];
+            const isExpanded = expanded.has(target.platform);
             return (
               <div
                 key={target.platform}
                 className="border-b border-border last:border-b-0"
               >
-                <div className="flex items-center gap-3 p-1">
+                <div className="flex items-center gap-1">
                   <span
-                    className="flex-1 truncate text-sm"
+                    className={[
+                      "flex items-center gap-2 p-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
+                      isExpanded ? "" : "text-gray-300",
+                    ].join(" ")}
                     onClick={() => togglePlatformExpanded(target.platform)}
                   >
-                    {PLATFORM_LABELS[target.platform]}
+                    {isExpanded ? <FaChevronDown /> : <FaChevronRight />}
+                    {PLATFORMS[target.platform].label}
                   </span>
                   <Popover position="bottom-start" withinPortal={false}>
                     <Popover.Target>
-                      <IconButton icon={FaKey} size={14} title="Credentials" />
+                      <IconButton icon={FaKey} title="Credentials" />
                     </Popover.Target>
                     <Popover.Dropdown classNames={{ dropdown: "border" }}>
                       <div className="flex flex-col gap-1.5 min-w-[200px] p-1">
-                        <span className="text-sm">
-                          {TOKEN_PLACEHOLDERS[target.platform]}
-                        </span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm">
+                              {PLATFORMS[target.platform].token.label}
+                            </span>
+                            <a
+                              href={PLATFORMS[target.platform].token.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <FaArrowUpRightFromSquare size={9} />
+                            </a>
+                          </div>
                           <input
-                            type={"password"}
+                            type="password"
                             className="focus:outline outline-white border w-full p-0.5 text-sm"
-                            placeholder={TOKEN_PLACEHOLDERS[target.platform]}
+                            placeholder={PLATFORMS[target.platform].token.label}
                             value={target.credentials?.token}
-                            onChange={(e) =>
-                              handleUpdateCredentials(
-                                target.platform,
-                                e.target.value
-                              )
-                            }
+                            onChange={({ target: { value: token } }) => {
+                              handleUpdateDeployment({
+                                platforms: deployment.platforms.map((p) => {
+                                  if (p.platform !== target.platform) return p;
+                                  return { ...p, credentials: { token } };
+                                }),
+                              });
+                            }}
                           />
                         </div>
-                        {target.platform === "supabase" && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-sm">Project reference</span>
-                            <input
-                              type="text"
-                              className="focus:outline outline-white border w-full p-0.5 text-sm"
-                              value={target.projectRef || ""}
-                              onChange={(e) =>
-                                handleUpdateProjectRef(
-                                  target.platform,
-                                  e.target.value
-                                )
-                              }
-                            />
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm">
+                              {PLATFORMS[target.platform].projectId.label}
+                            </span>
+                            <a
+                              href={PLATFORMS[target.platform].projectId.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <FaArrowUpRightFromSquare size={9} />
+                            </a>
                           </div>
-                        )}
+                          <input
+                            type="text"
+                            className="focus:outline outline-white border w-full p-0.5 text-sm"
+                            placeholder={
+                              PLATFORMS[target.platform].projectId.label
+                            }
+                            value={target.projectId || ""}
+                            onChange={(e) => {
+                              handleUpdateDeployment({
+                                platforms: deployment.platforms.map((t) => {
+                                  if (t.platform !== target.platform) return t;
+                                  return { ...t, projectId: e.target.value };
+                                }),
+                              });
+                            }}
+                          />
+                        </div>
                       </div>
                     </Popover.Dropdown>
                   </Popover>
-                  <IconButton
-                    icon={
-                      expanded.has(target.platform)
-                        ? FaChevronUp
-                        : FaChevronDown
-                    }
-                    title="Toggle section"
-                    onClick={() => togglePlatformExpanded(target.platform)}
-                  />
                 </div>
 
-                {expanded.has(target.platform) && (
+                {isExpanded && (
                   <div className="flex flex-col">
                     <div className="flex items-center gap-3 p-1 justify-between">
                       {latestDeploy?.dashboardUrl && (
@@ -374,14 +343,16 @@ function DeploymentPanelComponent() {
                           Dashboard
                         </Button>
                       )}
-                      <div className="flex items-center gap-1 text-sm">
-                        <FaCircleCheck className="text-green-400" />
-                        <span className="text-gray-400 truncate">
-                          {formatRelativeTime(latestDeploy.createdAt)}
-                        </span>
-                      </div>
+                      {latestDeploy?.createdAt && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <FaCircleCheck className="text-green-400" />
+                          <span className="text-gray-400 truncate">
+                            {formatRelativeTime(latestDeploy.createdAt)}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    {latestDeploy.triggerUrls && (
+                    {latestDeploy?.triggerUrls && (
                       <div className="flex flex-col gap-1 p-2 bg-dropdown-hover/30">
                         <p className="text-sm">Triggers</p>
                         <div className="flex gap-3 flex-wrap">
@@ -425,12 +396,10 @@ function DeploymentPanelComponent() {
                         </Popover.Target>
                         <Popover.Dropdown classNames={{ dropdown: "border" }}>
                           <div className="flex flex-col gap-2 p-1">
-                            <span className="text-xs">
-                              Are you sure you want to remove?
-                            </span>
+                            <span className="text-sm">Are you sure?</span>
                             <Button
                               leftSection={<FaTrash className="text-red-400" />}
-                              className="text-xs self-end"
+                              className="text-sm self-end"
                               onClick={() =>
                                 handleRemovePlatform(target.platform)
                               }
@@ -468,7 +437,7 @@ function DeploymentPanelComponent() {
 
         <div className="border-b">
           <div className="flex justify-between items-center p-1">
-            <span className="text-gray-400">Environment Variables</span>
+            <span className="text-gray-300">Environment Variables</span>
             <IconButton
               icon={FaPlus}
               title="Add variable"

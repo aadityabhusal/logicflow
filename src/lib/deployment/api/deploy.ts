@@ -59,7 +59,7 @@ export async function deployToPlatform(
       return deployToSupabase(
         files,
         target.credentials!.token,
-        { projectRef: target.projectRef, triggerNames, envVars },
+        { projectId: target.projectId, triggerNames, envVars },
         onProgress
       );
     default:

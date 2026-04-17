@@ -285,7 +285,7 @@ describe("generateOperation", () => {
     op.value.isAsync = true;
     const result = generateOperation(op, ctx);
     expect(result).toContain("async");
-    expect(result).toContain("R.pipeAsync");
+    expect(result).toContain("_.pipeAsync");
   });
 
   it("generates with showResult option resolving values", () => {

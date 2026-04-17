@@ -100,8 +100,8 @@ export function DetailsPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex justify-between p-1 border-b gap-3">
-        <div className="mr-auto">Details</div>
+      <div className="flex justify-between p-1 border-b gap-3 bg-dropdown-default">
+        <p className="font-bold">Details</p>
         {smallScreen ? (
           <IconButton
             icon={TbKeyboardOff}
@@ -148,7 +148,7 @@ export function DetailsPanel() {
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="border-b p-1 gap-1">
-          <div className="text-gray-400 mb-1.5">Type</div>
+          <div className="text-gray-300 mb-1.5">Type</div>
           <Tooltip label={typeSignature}>
             <div className="overflow-x-auto dropdown-scrollbar whitespace-nowrap">
               {typeSignature}
@@ -157,13 +157,13 @@ export function DetailsPanel() {
         </div>
         {skipExecution && (
           <div className="p-1 border-b gap-1">
-            <div className="text-gray-400 mb-1.5">Skipped</div>
+            <div className="text-gray-300 mb-1.5">Skipped</div>
             <div className="text-sm">{skipExecution.reason}</div>
           </div>
         )}
         {docsUrl && docsConfig && (
           <div className="p-1 border-b gap-1">
-            <div className="text-gray-400 mb-1.5">Documentation</div>
+            <div className="text-gray-300 mb-1.5">Documentation</div>
             <a
               href={docsUrl}
               target="_blank"
@@ -179,7 +179,7 @@ export function DetailsPanel() {
         )}
         {formattedValue ? (
           <div className="flex-1 min-h-0 flex flex-col">
-            <div className="text-gray-400 mb-1.5 p-1">Result</div>
+            <div className="text-gray-300 mb-1.5 p-1">Result</div>
             <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
               <ErrorBoundary displayError={true}>
                 <CodeHighlight code={formattedValue} showLineNumbers={false} />

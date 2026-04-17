@@ -212,3 +212,53 @@ export function numberStatement(value = 0, name?: string): IStatement {
 export function booleanStatement(value = false, name?: string): IStatement {
   return simpleStatement({ kind: "boolean" }, value, name);
 }
+
+export function createTestProject(
+  overrides?: Partial<
+    Pick<
+      import("@/lib/types").Project,
+      "id" | "name" | "version" | "files" | "deployment" | "dependencies"
+    >
+  >
+): import("@/lib/types").Project {
+  return {
+    id: "test-project",
+    name: "Test Project",
+    version: "1.0.0",
+    createdAt: Date.now(),
+    files: [],
+    ...overrides,
+  };
+}
+
+export function createTriggeredOperationFile(
+  name: string
+): import("@/lib/types").ProjectFile {
+  return {
+    id: `op-${name}`,
+    name,
+    type: "operation",
+    createdAt: Date.now(),
+    content: {
+      type: { kind: "operation", parameters: [], result: { kind: "string" } },
+      value: { parameters: [], statements: [] },
+    },
+    trigger: { type: "http" },
+  };
+}
+
+export function createOperationFile(
+  name: string,
+  source?: import("@/lib/types").OperationSource
+): import("@/lib/types").ProjectFile {
+  return {
+    id: `op-${name}`,
+    name,
+    type: "operation",
+    createdAt: Date.now(),
+    content: {
+      type: { kind: "operation", parameters: [], result: { kind: "string" } },
+      value: { parameters: [], statements: [], ...(source ? { source } : {}) },
+    },
+  };
+}
