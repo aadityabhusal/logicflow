@@ -18,9 +18,9 @@ Each project can contain multiple files (operations), making it easy to organize
 
 The editor has three main areas:
 
-- **Sidebar**: Lists all files in your project (toggle with keyboard shortcut)
+- **Sidebar**: Tabs for managing operations, viewing details, generated code, and deployment settings. Toggle tabs with keyboard shortcuts (**Ctrl+Shift+1** for Operations, **Ctrl+Shift+2** for Details, **Ctrl+Shift+3** for Code).
 - **Editor Canvas**: Where you build your program by adding statements
-- **Details Panel**: Shows execution results and type information (toggle with keyboard shortcut)
+- **Details Panel**: Shows type information and execution results for the selected element. Lock it to a specific item to keep it visible while navigating.
 
 ![Logicflow's editor interface](/docs-images/getting-started-02.png)
 
@@ -59,3 +59,5 @@ Every statement executes immediately as you build. Click any statement to see it
 - Use different data types (numbers, booleans, arrays) and their operations
 - Try creating larger programs with complex logic
 - Create additional operation files from the sidebar to organize your code
+- Create a **trigger** operation to expose it as an HTTP endpoint (click the "+" button in the Operations sidebar tab and select "Trigger")
+- View the generated code for your operation in the Code panel

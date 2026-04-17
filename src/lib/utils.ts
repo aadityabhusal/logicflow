@@ -21,6 +21,7 @@ import {
   DictionaryType,
   TupleType,
   MapValue,
+  InstanceDataType,
 } from "./types";
 import { Context, OperationListItem, Thenable } from "./execution/types";
 
@@ -66,6 +67,10 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     isOptional: props?.isOptional,
     isRest: props?.isRest,
   };
+}
+
+export function isValidIdentifier(name: string): boolean {
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
 }
 
 export function createVariableName({
@@ -223,19 +228,44 @@ export function createProjectFile(
   prev: (string | ProjectFile)[] = []
 ): ProjectFile {
   const type = props.type || "operation";
+  const isTrigger = "trigger" in props && props.trigger;
+  const prefix = isTrigger ? "trigger" : "operation";
   return {
     id: nanoid(),
-    name:
-      props.name ??
-      createVariableName({ prefix: "operation", prev, indexOffset: 1 }),
+    name: props.name ?? createVariableName({ prefix, prev, indexOffset: 1 }),
     createdAt: Date.now(),
     tags: props.tags,
     type: type,
     ...(type === "operation"
       ? (() => {
-          const type = DataTypes["operation"].type;
+          const opType = DataTypes["operation"].type;
+          const defaultContent = {
+            type: opType,
+            value: createDefaultValue(opType),
+          };
+          let content =
+            (props.content as typeof defaultContent) ?? defaultContent;
+          if (isTrigger && !props.content) {
+            const requestParamType: DataType = {
+              kind: "instance",
+              className: "Request",
+              constructorArgs: resolveConstructorArgs(
+                InstanceTypes.Request.constructorArgs
+              ),
+            };
+            const requestParam = { name: "request", type: requestParamType };
+            const requestStatement = createStatement({
+              name: requestParam.name,
+              data: createData({ type: requestParamType }),
+            });
+            content = {
+              type: { ...opType, parameters: [requestParam] },
+              value: { ...content.value, parameters: [requestStatement] },
+            };
+          }
           return {
-            content: props.content ?? { type, value: createDefaultValue(type) },
+            content,
+            ...("trigger" in props ? { trigger: props.trigger } : {}),
           };
         })()
       : type === "globals"
@@ -333,21 +363,19 @@ export function createContextVariable(
 
 export function createFileVariables(
   files: ProjectFile[] = [],
-  currentOperationId?: string
+  currentOperationId?: string,
+  base?: Context["variables"]
 ): Context["variables"] {
-  return files.reduce(
-    (acc, operationFile) => {
-      const operation = createOperationFromFile(operationFile);
-      if (!operation || operationFile.id === currentOperationId) {
-        return acc;
-      }
-      acc.set(operationFile.name, {
-        data: { ...operation, id: operationFile.id },
-      });
+  return files.reduce((acc, operationFile) => {
+    const operation = createOperationFromFile(operationFile);
+    if (!operation || operationFile.id === currentOperationId) {
       return acc;
-    },
-    new Map() as Context["variables"]
-  );
+    }
+    acc.set(operationFile.name, {
+      data: { ...operation, id: operationFile.id },
+    });
+    return acc;
+  }, new Map(base));
 }
 
 export function createParamData(
@@ -471,16 +499,21 @@ export function createDataFromRawValue(
     );
     if (instanceClass) {
       const [className, config] = instanceClass;
-      const data = createData({
-        type: {
-          kind: "instance",
-          className,
-          constructorArgs: resolveConstructorArgs(
-            config.constructorArgs,
-            context.expectedType
-          ),
-        },
-      });
+      const instanceType: InstanceDataType = {
+        kind: "instance",
+        className,
+        constructorArgs: resolveConstructorArgs(
+          config.constructorArgs,
+          context.expectedType
+        ),
+      };
+      if (
+        context.expectedType?.kind === "instance" &&
+        context.expectedType.result
+      ) {
+        instanceType.result = context.expectedType.result;
+      }
+      const data = createData({ type: instanceType });
       context.setInstance(data.value.instanceId, {
         instance: value,
         type: data.type,
@@ -1033,7 +1066,8 @@ export function inferTypeFromValue<T extends DataType>(
     return { kind: "condition", result: unionType } as T;
   }
   if (isObject(value, ["name"]) && typeof value.name === "string") {
-    return { kind: "reference", name: value.name } as T;
+    const variable = context.variables.get(value.name);
+    return { kind: "reference", name: value.name, isEnv: variable?.isEnv } as T;
   }
 
   if (isObject(value, ["reason"]) && typeof value.reason === "string") {
@@ -1043,14 +1077,28 @@ export function inferTypeFromValue<T extends DataType>(
     isObject(value, ["className", "constructorArgs"]) &&
     Array.isArray(value.constructorArgs)
   ) {
+    const valueConstructorArgs = value.constructorArgs.map((arg) => ({
+      name: arg.name,
+      type: arg.data.type,
+      isOptional: arg.isOptional,
+    }));
+    if (
+      context.expectedType?.kind === "instance" &&
+      context.expectedType.className === value.className
+    ) {
+      return {
+        kind: "instance",
+        className: value.className,
+        constructorArgs: context.expectedType.constructorArgs.map(
+          (expectedArg, i) => valueConstructorArgs[i] ?? expectedArg
+        ),
+        result: context.expectedType.result,
+      } as T;
+    }
     return {
       kind: "instance",
       className: value.className,
-      constructorArgs: value.constructorArgs.map((arg) => ({
-        name: arg.name,
-        type: arg.data.type,
-        isOptional: arg.isOptional,
-      })),
+      constructorArgs: valueConstructorArgs,
     } as T;
   }
   return { kind: "unknown" } as T;
@@ -1543,14 +1591,14 @@ export function getDataDropdownList({
   context.variables.forEach((variable, name) => {
     const option: IDropdownItem = {
       value: name,
-      secondaryLabel: variable.data.type.kind,
+      secondaryLabel: variable.isEnv ? "env" : variable.data.type.kind,
       type: variable.data.type,
       entityType: "data",
       onClick: () =>
         onSelect({
           ...variable.data,
           id: data.id,
-          type: { kind: "reference", name },
+          type: { kind: "reference", name, isEnv: variable.isEnv },
           value: { name, id: variable.data.id },
         }),
     };

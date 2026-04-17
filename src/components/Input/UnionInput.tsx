@@ -39,7 +39,7 @@ const UnionInputComponent = (
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const isIconFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${data.id}_options`
+    (s) => s.navigation?.id === `${data.id}_options` && !s.navigation?.disable
   );
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const [menuOpened, setMenuOpened] = useState(false);

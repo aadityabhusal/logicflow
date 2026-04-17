@@ -1,14 +1,14 @@
-import { Highlight, themes } from "prism-react-renderer";
 import { useClipboard } from "@mantine/hooks";
 import { FaRegCopy, FaCheck } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
+import { CodeHighlight } from "./CodeHighlight";
 import { useProjectStore } from "@/lib/store";
 import { createOperationFromFile } from "@/lib/utils";
-import { useMemo, useState, useEffect, useDeferredValue } from "react";
+import { useMemo, useState, useEffect, useDeferredValue, memo } from "react";
 import { formatCode, generateOperation } from "@/lib/format-code";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 
-export function CodePanel() {
+function CodePanelComponent() {
   const currentOperationName = useProjectStore((s) => s.getCurrentFile()?.name);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
@@ -39,8 +39,8 @@ export function CodePanel() {
 
   return (
     <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between items-center p-1 border-b">
-        <span>Code</span>
+      <div className="flex justify-between items-center p-1 border-b bg-dropdown-default">
+        <p className="font-bold">Code</p>
         <span className="text-sm">{currentOperationName}.js</span>
         <IconButton
           icon={clipboard.copied ? FaCheck : FaRegCopy}
@@ -50,44 +50,10 @@ export function CodePanel() {
         />
       </div>
       <div className="flex-1 overflow-auto dropdown-scrollbar font-mono">
-        <Highlight
-          theme={themes.vsDark}
-          code={formattedCode}
-          language="javascript"
-        >
-          {({ className, style, tokens, getLineProps, getTokenProps }) => (
-            <pre
-              className={className}
-              style={{
-                ...style,
-                background: "transparent",
-                margin: 0,
-                padding: "0.5rem 0",
-                minWidth: "100%",
-              }}
-            >
-              <div className="table">
-                {tokens.map((line, i) => (
-                  <div
-                    key={i}
-                    {...getLineProps({ line })}
-                    className="table-row leading-6"
-                  >
-                    <span className="table-cell w-10 min-w-10 pr-3 text-right text-white/25 select-none sticky left-0 bg-editor">
-                      {i + 1}
-                    </span>
-                    <span className="table-cell pl-2">
-                      {line.map((token, key) => (
-                        <span key={key} {...getTokenProps({ token })} />
-                      ))}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </pre>
-          )}
-        </Highlight>
+        <CodeHighlight code={formattedCode} />
       </div>
     </div>
   );
 }
+
+export const CodePanel = memo(CodePanelComponent);

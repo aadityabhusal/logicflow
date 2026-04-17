@@ -80,7 +80,7 @@ LogicFlow follows a functional programming paradigm where:
 - Represents a callable function/operation
 
 **reference**
-- Type: \`{ kind: "reference", dataType: DataType }\`
+- Type: \`{ kind: "reference", name: string, isEnv?: boolean }\`
 - Value: \`{ name: string, id: string }\`
 - Points to a named variable in scope
 
@@ -324,14 +324,17 @@ Modify an existing entity. The entity's \`id\` determines what is updated:
   "action": "update",
   "entity": {
     "id": "D5",
-    "type": { "kind": "reference", "dataType": { "kind": "unknown" } },
+    "type": { "kind": "reference", "name": "myVariable" },
     "value": { "name": "myVariable", "id": "S2" }
   }
 }
 \`\`\`
 `;
 
-export function buildContextPrompt(operationJson: string, userPrompt: string): string {
+export function buildContextPrompt(
+  operationJson: string,
+  userPrompt: string
+): string {
   return `
 ## Current Operation
 

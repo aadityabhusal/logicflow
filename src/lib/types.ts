@@ -32,6 +32,7 @@ export type NeverType = { kind: "never" };
 export type ReferenceType = {
   kind: "reference";
   name: string;
+  isEnv?: boolean;
 };
 export type ErrorType = {
   kind: "error";
@@ -203,6 +204,7 @@ export type ProjectFile = {
   | {
       type: "operation";
       content: { type: OperationType; value: DataValue<OperationType> };
+      trigger?: HttpTrigger;
       tests?: TestCase[];
       documentation?: string;
     }
@@ -233,40 +235,56 @@ interface Dependencies {
   logicflow?: (DependencyBase & { projectId: string })[];
 }
 
-type DeploymentConfig = {
-  trigger: (HttpTrigger | CronTrigger)[]; // TODO: trigger should be the entrypoint file with 'request' as a parameter
-  runtime: {
-    type: "node" | "deno" | "edge";
-    version: string;
-    language: "typescript";
-    target: "ES2019" | "ES2020" | "ES2021" | "ES2022" | "ESNext";
-    timeout?: number;
-    memory?: number;
-    regions?: string[];
-  };
-  build: {
-    outDir: string;
-    tsconfig: Record<string, unknown>;
-    include?: string[];
-    exclude?: string[];
-  };
-  environmentVariables: { key: string; required: boolean }[];
-  ciCd?: Record<string, unknown>;
-} & (
-  | { platform: "vercel" }
-  | { platform: "netlify" }
-  | { platform: "cloudflare"; compatibility_flags?: string[] }
-  | {
-      platform: "supabase";
-      permissions?: { read?: string[]; write?: string[]; env?: string[] };
-      verify_jwt: boolean;
-    }
-);
+export type DeploymentCredentials = {
+  token: string;
+};
+
+export type DeploymentStatus = "queued" | "building" | "ready" | "error";
+
+export type DeploymentRecord = {
+  id: string;
+  url: string;
+  state: DeploymentStatus;
+  createdAt: number;
+  dashboardUrl?: string;
+  triggerUrls?: string[];
+};
+
+type BaseDeployment = {
+  credentials?: DeploymentCredentials;
+  projectId?: string;
+  deployments: DeploymentRecord[];
+};
+type VercelDeployment = BaseDeployment & { platform: "vercel" };
+type SupabaseDeployment = BaseDeployment & { platform: "supabase" };
+export type DeploymentTarget = VercelDeployment | SupabaseDeployment;
+
+export type DeploymentConfig = {
+  envVariables: { key: string; value: string }[];
+  platforms: DeploymentTarget[];
+};
+
+export type DeploymentResult = Partial<DeploymentRecord> & {
+  success: boolean;
+  projectId?: string;
+  error?: string;
+};
+
+export interface DeploymentFile {
+  path: string;
+  content: string;
+}
+
+export type DeploymentProgress = {
+  stage: "generating" | "uploading" | "building" | "ready" | "error";
+  message?: string;
+  url?: string;
+};
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 interface HttpTrigger {
   type: "http";
-  path: string;
+  path?: string;
   methods?: HttpMethod | HttpMethod[]; // If undefined, accepts all methods
   cors?: {
     origin: string | string[];
@@ -274,12 +292,6 @@ interface HttpTrigger {
     allowedHeaders?: string[];
     credentials?: boolean;
   };
-}
-
-interface CronTrigger {
-  type: "cron";
-  schedule: string; // Cron expression
-  timezone?: string;
 }
 
 export type MapValue<T> = T extends Map<unknown, infer V> ? V : never;

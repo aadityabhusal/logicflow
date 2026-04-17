@@ -176,7 +176,7 @@ export default function Dashboard() {
                 <Menu.Dropdown>
                   <Menu.Item
                     leftSection={<FaTrash />}
-                    classNames={{ item: "p-2 text-red-600" }}
+                    classNames={{ item: "p-2 text-red-400" }}
                     onClick={() => deleteProject(project.id)}
                   >
                     Delete

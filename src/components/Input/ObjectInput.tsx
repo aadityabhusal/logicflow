@@ -10,6 +10,7 @@ import { FaQuestion } from "react-icons/fa6";
 import { Dropdown } from "../Dropdown";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
+import { getEntityLayout } from "@/lib/layout";
 
 interface ObjectInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ObjectType>;
@@ -21,8 +22,9 @@ const ObjectInputComponent = (
   { data, handleData, context, basePath, ...props }: ObjectInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const isMultiline = data.value.entries.length > 2;
+  const isMultiline = getEntityLayout(data) === "multiline";
   const navigationId = useNavigationStore((s) => s.navigation?.id);
+  const isDisabled = useNavigationStore((s) => s.navigation?.disable);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
 
   const entryPaths = useMemo(() => {
@@ -149,7 +151,9 @@ const ObjectInputComponent = (
               />
             ) : (
               <BaseInput
-                ref={(elem) => isKeyInputFocused && elem?.focus()}
+                ref={(elem) =>
+                  isKeyInputFocused && !isDisabled && elem?.focus()
+                }
                 className={[
                   "text-property",
                   isKeyInputFocused ? "outline outline-border" : "",
@@ -165,7 +169,10 @@ const ObjectInputComponent = (
             )}
             <IconButton
               ref={(elem) => {
-                if (navigationId === `${data.id}_key_${i}_colon`) {
+                if (
+                  navigationId === `${data.id}_key_${i}_colon` &&
+                  !isDisabled
+                ) {
                   elem?.focus();
                 }
               }}

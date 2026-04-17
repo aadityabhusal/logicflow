@@ -96,6 +96,10 @@ function BaseInputInner<T extends string | number>(
           placeholder={"0"}
           withKeyboardEvents={false}
           hideControls
+          max={Number.MAX_SAFE_INTEGER}
+          min={-Number.MAX_SAFE_INTEGER}
+          clampBehavior="strict"
+          maxLength={16}
         />
       ) : (
         <TextInput

@@ -8,7 +8,9 @@ import gettingStarted from "@/../docs/getting-started.md?raw";
 import coreConcepts from "@/../docs/core-concepts.md?raw";
 import dataTypes from "@/../docs/data-types.md?raw";
 import additionalFeatures from "@/../docs/additional-features.md?raw";
+import codeGeneration from "@/../docs/code-generation.md?raw";
 import { Fragment, ReactNode, useEffect, useState } from "react";
+import { CodeHighlight } from "@/ui/CodeHighlight";
 
 function createSubHeadingSlug(text: string): string {
   return text
@@ -70,6 +72,12 @@ const docSections = [
     subHeadings: extractHeadings(additionalFeatures).filter(
       (h) => h.level === 2
     ),
+  },
+  {
+    id: "code-generation",
+    title: "Code Generation",
+    content: codeGeneration,
+    subHeadings: extractHeadings(codeGeneration).filter((h) => h.level === 2),
   },
 ];
 
@@ -198,6 +206,20 @@ export default function Docs() {
                   strong: ({ node: _, ...props }) => (
                     <strong className="font-semibold" {...props} />
                   ),
+                  pre: ({ node: _, children }) => {
+                    const child = Array.isArray(children)
+                      ? children.find(
+                          (c: ReactNode) =>
+                            typeof c === "object" && c !== null && "props" in c
+                        )
+                      : children;
+
+                    if (typeof child !== "object" || !("props" in child)) {
+                      return <pre>{children}</pre>;
+                    }
+                    const code: string = child?.props?.children?.toString();
+                    return <CodeHighlight code={code.trim() || ""} />;
+                  },
                   code: ({ node: _, ...props }) => (
                     <code
                       className="bg-dropdown-hover p-1 rounded text-xs"
@@ -212,7 +234,7 @@ export default function Docs() {
                         className="rounded border border-border max-w-5xl w-full"
                         {...props}
                       />
-                      {title ?? alt ? (
+                      {(title ?? alt) ? (
                         <figcaption className="text-sm text-gray-300">
                           {title ?? alt}
                         </figcaption>

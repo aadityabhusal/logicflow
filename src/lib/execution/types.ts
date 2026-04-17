@@ -26,7 +26,7 @@ export type Context = {
   variables: Map<
     string,
     // TODO: Should we remove the reference property since we resolve the statement result by default?
-    { data: IData; reference?: { name: string; id: string } }
+    { data: IData; reference?: { name: string; id: string }; isEnv?: boolean }
   >;
   narrowedTypes?: Context["variables"];
   expectedType?: DataType;

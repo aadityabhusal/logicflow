@@ -135,6 +135,7 @@ const createProjectsSlice: StateCreator<
       version: "0.0.1",
       createdAt,
       files: initialFiles,
+      deployment: { envVariables: [], platforms: [] },
     };
     set((state) => ({
       projects: { ...state.projects, [newProject.id]: newProject },

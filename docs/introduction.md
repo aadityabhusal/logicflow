@@ -23,8 +23,8 @@ Logicflow is built on a core principle: **programming is simply operations on da
 
 - **Structured editor** with keyboard navigation for efficient workflow
 - **First-class operations** - operations themselves are data that can be passed around
-- **Type narrowing** - automatically skip unreachable branches based on type checks
-- **Code generation** - export production-ready TypeScript code
-- **Error handling** - first-class error data type that can be passed around and handled like any other data
+- **[Type narrowing](#type-narrowing)** - automatically skip unreachable branches based on type checks
+- **[Code generation](#code-generation)** - live preview of generated TypeScript/JavaScript code
+- **[Error handling](#error-handling)** - first-class error data type that can be passed around and handled like any other data
 
 ![Logicflow program with advanced data types like arrays, operations and errors](/docs-images/introduction-02.png)

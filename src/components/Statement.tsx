@@ -11,6 +11,7 @@ import {
   createVariableName,
   createStatement,
   createData,
+  isValidIdentifier,
 } from "../lib/utils";
 import {
   createOperationCall,
@@ -30,6 +31,7 @@ import { notifications } from "@mantine/notifications";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { ReservedNames } from "@/lib/execution/types";
+import { getStatementLayout } from "@/lib/layout";
 
 const StatementComponent = ({
   statement,
@@ -82,13 +84,14 @@ const StatementComponent = ({
 
   const hasName = statement.name !== undefined;
   const isEqualsFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${statement.id}_equals`
+    (s) =>
+      s.navigation?.id === `${statement.id}_equals` && !s.navigation?.disable
   );
   const isNameFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${statement.id}_name`
+    (s) => s.navigation?.id === `${statement.id}_name` && !s.navigation?.disable
   );
   const isAddFocused = useNavigationStore(
-    (s) => s.navigation?.id === `${statement.id}_add`
+    (s) => s.navigation?.id === `${statement.id}_add` && !s.navigation?.disable
   );
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const [hoverOpened, { open, close }] = useDisclosure(false);
@@ -98,8 +101,8 @@ const StatementComponent = ({
     openDelay: 0,
     closeDelay: 150,
   });
-  const PipeArrow =
-    statement.operations.length > 1 ? FaArrowTurnUp : FaArrowRightLong;
+  const isMultiline = getStatementLayout(statement) === "multiline";
+  const PipeArrow = isMultiline ? FaArrowTurnUp : FaArrowRightLong;
 
   const hoverEvents = useMemo(
     () => ({
@@ -155,6 +158,11 @@ const StatementComponent = ({
               ].join(" ")}
               onChange={(value) => {
                 const name = value || statement.name || "";
+                if (name && !isValidIdentifier(name)) {
+                  return notifications.show({
+                    message: `"${name}" is not a valid name`,
+                  });
+                }
                 const isReserved = Array.from(reservedNames ?? []).find(
                   (r) => r.name === name
                 );
@@ -260,8 +268,7 @@ const StatementComponent = ({
       ) : null}
       <div
         className={
-          "flex items-start gap-0 " +
-          (statement.operations.length > 1 ? "flex-col" : "flex-row")
+          "flex items-start gap-0 " + (isMultiline ? "flex-col" : "flex-row")
         }
       >
         <ErrorBoundary
@@ -287,7 +294,7 @@ const StatementComponent = ({
             basePath={path}
           />
         </ErrorBoundary>
-        {statement.operations.map((operation, i, operationsList) => {
+        {statement.operations.map((operation, i) => {
           const prevData = getStatementResult(statement, context, {
             index: i,
             prevEntity: true,
@@ -300,7 +307,7 @@ const StatementComponent = ({
                 size={10}
                 className="text-disabled mt-1.5"
                 style={{
-                  transform: operationsList.length > 1 ? "rotate(90deg)" : "",
+                  transform: isMultiline ? "rotate(90deg)" : "",
                 }}
               />
               <ErrorBoundary

@@ -264,9 +264,7 @@ function executeDataValue(
         ? createThenable(args as IData[])
         : Promise.all(args)
       ).then((result) => {
-        const instance =
-          context.getInstance(data.value.instanceId)?.instance ??
-          createInstance(data.value.className, result, context);
+        const instance = createInstance(data.value.className, result, context);
         context.setInstance(data.value.instanceId, {
           instance,
           type: data.type,
@@ -408,6 +406,7 @@ export async function executeStatement(
     if (result !== undefined) {
       const cacheKey = getCacheKey(context, operation.id);
       context.setResult(cacheKey, { data: result, shouldCacheResult });
+      resultData = result;
       continue;
     }
     const parameters = operation.value.parameters;
@@ -462,6 +461,7 @@ export function executeStatementSync(
     if (result !== undefined) {
       const cacheKey = getCacheKey(context, operation.id);
       context.setResult(cacheKey, { data: result, shouldCacheResult });
+      resultData = result;
       continue;
     }
     const parameters = operation.value.parameters;

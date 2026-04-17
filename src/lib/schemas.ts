@@ -1,5 +1,7 @@
 import * as z from "zod";
 
+const UnknownTypeSchema = z.object({ kind: z.literal("unknown") });
+const NeverTypeSchema = z.object({ kind: z.literal("never") });
 const UndefinedTypeSchema = z.object({ kind: z.literal("undefined") });
 const StringTypeSchema = z.object({ kind: z.literal("string") });
 const NumberTypeSchema = z.object({ kind: z.literal("number") });
@@ -25,7 +27,7 @@ const ObjectTypeSchema = z.object({
   get properties() {
     return z.array(z.object({ key: z.string(), value: DataTypeSchema }));
   },
-  required: z.array(z.string()).nullable(),
+  required: z.array(z.string()).optional(),
 });
 
 // Used record instead of map because serialized data don't have a map
@@ -44,18 +46,19 @@ const DictionaryTypeSchema = z.object({
 
 const UnionTypeSchema = z.object({
   kind: z.literal("union"),
-  activeIndex: z.number().nullable(),
+  activeIndex: z.number().optional(),
   get types() {
     return z.array(DataTypeSchema);
   },
 });
 
 const ParameterSchema = z.object({
-  name: z.string().nullable(),
+  name: z.string().optional(),
   get type() {
     return DataTypeSchema;
   },
-  isOptional: z.boolean().nullable(),
+  isOptional: z.boolean().optional(),
+  isRest: z.boolean().optional(),
 });
 
 const OperationTypeSchema = z.object({
@@ -74,7 +77,32 @@ export const OperationValueSchema = z.object({
   get parameters() {
     return z.array(IStatementSchema);
   },
-  name: z.string().nullable(),
+  name: z.string().optional(),
+  isAsync: z.boolean().optional(),
+  source: z
+    .object({ name: z.enum(["remeda", "wretch", "wretchResponseChain"]) })
+    .optional(),
+  instanceId: z.string().optional(),
+});
+
+const HttpMethodSchema = z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]);
+
+const HttpTriggerSchema = z.object({
+  type: z.literal("http"),
+  path: z.string().optional(),
+  methods: z.union([HttpMethodSchema, z.array(HttpMethodSchema)]).optional(),
+  cors: z
+    .object({
+      origin: z.union([z.string(), z.array(z.string())]),
+      methods: z.array(HttpMethodSchema).optional(),
+      allowedHeaders: z.array(z.string()).optional(),
+      credentials: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+export const ClipboardSchema = OperationValueSchema.extend({
+  trigger: HttpTriggerSchema.optional(),
 });
 
 const ConditionTypeSchema = z.object({
@@ -97,9 +125,8 @@ const ConditionValueSchema = z.object({
 
 const ReferenceTypeSchema = z.object({
   kind: z.literal("reference"),
-  get dataType() {
-    return DataTypeSchema;
-  },
+  name: z.string(),
+  isEnv: z.boolean().optional(),
 });
 const ReferenceValueSchema = z.object({ name: z.string(), id: z.string() });
 
@@ -120,6 +147,9 @@ const InstanceTypeSchema = z.object({
   get constructorArgs() {
     return z.array(ParameterSchema);
   },
+  get result() {
+    return DataTypeSchema.optional();
+  },
 });
 const InstanceValueSchema = z.object({
   instanceId: z.string(),
@@ -130,6 +160,8 @@ const InstanceValueSchema = z.object({
 });
 
 const DataTypeSchema = z.union([
+  UnknownTypeSchema,
+  NeverTypeSchema,
   UndefinedTypeSchema,
   StringTypeSchema,
   NumberTypeSchema,
@@ -148,7 +180,9 @@ const DataTypeSchema = z.union([
 
 const BaseData = z.object({ id: z.string() });
 const DataVariants = [
-  BaseData.extend({ type: UndefinedTypeSchema, value: z.null() }),
+  BaseData.extend({ type: UnknownTypeSchema, value: z.unknown() }),
+  BaseData.extend({ type: NeverTypeSchema, value: z.never() }),
+  BaseData.extend({ type: UndefinedTypeSchema, value: z.undefined() }),
   BaseData.extend({ type: StringTypeSchema, value: z.string() }),
   BaseData.extend({ type: NumberTypeSchema, value: z.number() }),
   BaseData.extend({ type: BooleanTypeSchema, value: z.boolean() }),
@@ -165,7 +199,9 @@ const DataVariants = [
     type: UnionTypeSchema,
     get value() {
       return z.union([
-        z.null(),
+        z.unknown(),
+        z.never(),
+        z.undefined(),
         z.string(),
         z.number(),
         z.boolean(),
@@ -184,8 +220,9 @@ const IDataSchema = z.union(DataVariants);
 
 const IStatementSchema = z.object({
   id: z.string(),
-  name: z.string().nullable(),
-  isOptional: z.boolean().nullable(),
+  name: z.string().optional(),
+  isOptional: z.boolean().optional(),
+  isRest: z.boolean().optional(),
   get data() {
     return IDataSchema;
   },
@@ -241,3 +278,27 @@ export const AgentResponseSchema = z.object({
 });
 
 export type AgentChange = z.infer<typeof AgentChangeSchema>;
+
+const DeploymentCredentialsSchema = z.object({
+  token: z.string(),
+});
+
+const DeploymentRecordSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  state: z.enum(["queued", "building", "ready", "error"]),
+  createdAt: z.number(),
+  dashboardUrl: z.string().optional(),
+  triggerUrls: z.array(z.string()).optional(),
+});
+
+const DeploymentBase = z.object({
+  deployments: z.array(DeploymentRecordSchema),
+  credentials: DeploymentCredentialsSchema.optional(),
+  projectId: z.string().optional(),
+});
+
+export const DeploymentTargetSchema = z.discriminatedUnion("platform", [
+  DeploymentBase.extend({ platform: z.literal("vercel") }),
+  DeploymentBase.extend({ platform: z.literal("supabase") }),
+]);

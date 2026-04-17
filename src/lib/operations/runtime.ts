@@ -1,5 +1,18 @@
 import { purry } from "remeda";
 
+// ===== Pipe Operations =====
+
+export const pipeAsync = async <T>(
+  value: T,
+  ...fns: ((arg: unknown) => Promise<unknown>)[]
+): Promise<unknown> => {
+  let result: unknown = value;
+  for (const fn of fns) {
+    result = await fn(result);
+  }
+  return result;
+};
+
 // ===== Polymorphic Operations (work on multiple types) =====
 
 export const length = (value: string | unknown[]) => value.length;
@@ -203,12 +216,51 @@ export const isTypeOf =
   (value: unknown): boolean =>
     typeof value === type;
 
-function _fetch(
-  url: string,
-  options: RequestInit | undefined
-): Promise<Response> {
-  return globalThis.fetch(url, options);
-}
 export function fetch(...args: readonly unknown[]) {
-  return purry(_fetch, args);
+  if (args.length === 2)
+    return globalThis.fetch(args[0] as string, args[1] as RequestInit);
+  if (args.length === 1 && typeof args[0] === "string")
+    return globalThis.fetch(args[0]);
+  if (args.length === 1)
+    return (url: string) => globalThis.fetch(url, args[0] as RequestInit);
+  return (url: string) => globalThis.fetch(url);
 }
+
+// ===== Request Instance Operations =====
+
+export const getUrl = (request: Request): string => request.url;
+export const getMethod = (request: Request): string => request.method;
+
+function _getHeader(request: Request, headerName: string): string {
+  return request.headers.get(headerName) || "";
+}
+export function getHeader(...args: readonly unknown[]) {
+  return purry(_getHeader, args);
+}
+
+function _getQuery(request: Request, paramName: string): string {
+  return new URL(request.url).searchParams.get(paramName) || "";
+}
+export function getQuery(...args: readonly unknown[]) {
+  return purry(_getQuery, args);
+}
+
+export const getPath = (request: Request): string =>
+  new URL(request.url).pathname;
+
+export const json = (instance: Request | Response): Promise<unknown> =>
+  instance.clone().json();
+export const text = (instance: Request | Response): Promise<string> =>
+  instance.clone().text();
+
+// ===== URL Instance Operations =====
+
+export const getHref = (url: URL): string => url.href;
+export const getOrigin = (url: URL): string => url.origin;
+export const getPort = (url: URL): string => url.port;
+export const getSearch = (url: URL): string => url.search;
+export const getHash = (url: URL): string => url.hash;
+
+// ===== Response Instance Operations =====
+
+export const getStatus = (response: Response): number => response.status;

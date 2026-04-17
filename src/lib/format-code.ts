@@ -9,6 +9,7 @@ import {
   getTypeSignature,
 } from "./utils";
 import { builtInOperations } from "./operations/built-in";
+import { InstanceTypes } from "./data";
 import type { Options } from "prettier";
 
 export async function formatCode(code: string, options?: Options) {
@@ -29,6 +30,7 @@ type OperationSource = "instance" | "remeda" | "builtin" | "userDefined";
 type CodeGenContext = Context & {
   showResult?: boolean;
   getOperation: (name: string) => OperationListItem | undefined;
+  importedOperations: Set<string>;
 };
 
 export function createCodeGenContext(
@@ -38,6 +40,7 @@ export function createCodeGenContext(
   return {
     ...context,
     showResult: options?.showResult,
+    importedOperations: new Set(),
     getOperation: (name: string) =>
       builtInOperations.find((op) => op.name === name),
   };
@@ -58,7 +61,12 @@ export function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "operation")) {
     return generateCallback(data, { ...context, showResult: undefined });
   } else if (isDataOfType(data, "reference")) {
-    return data.value.name;
+    if (data.type.isEnv) return `process.env.${data.value.name}`;
+    const name = data.value.name;
+    if (name && context.variables.has(name)) {
+      context.importedOperations.add(name);
+    }
+    return name;
   } else if (isDataOfType(data, "union")) {
     const activeType = getUnionActiveType(data.type);
     return generateData({ ...data, type: activeType }, context);
@@ -77,7 +85,12 @@ function getOperationSource(
   const opItem = context.getOperation(opName);
   if (opItem?.source?.name === "remeda") return "remeda";
   const firstParamType = operation.type.parameters[0]?.type;
-  if (firstParamType?.kind === "instance") return "instance";
+  if (firstParamType?.kind === "instance") {
+    const Constructor = InstanceTypes[firstParamType.className]?.Constructor;
+    if (Constructor && typeof Constructor.prototype[opName] === "function") {
+      return "instance";
+    }
+  }
   if (!opItem) return "userDefined";
   return "builtin";
 }
@@ -105,6 +118,9 @@ function generateOperationCall(
     }
     case "userDefined": {
       const name = operation.value.name;
+      if (name && context.variables.has(name)) {
+        context.importedOperations.add(name);
+      }
       return `, ${paramStr ? `(arg) => ${name}${paramStr}` : name}`;
     }
   }
@@ -128,7 +144,7 @@ function generateStatement(
     .join("");
 
   const hasAwait = statement.operations.some((op) => op.value.name === "await");
-  const pipeFunc = hasAwait ? "await R.pipeAsync" : "R.pipe";
+  const pipeFunc = hasAwait ? "await _.pipeAsync" : "R.pipe";
 
   return `${name}${pipeFunc}(${data}${operations})`;
 }
@@ -167,7 +183,10 @@ export function generateOperation(
   context: Context
 ): string {
   const codeGenContext = createCodeGenContext(context);
-  const imports = `import * as _ from './built-in';\nimport * as R from 'remeda';\n\n`;
   const callback = generateCallback(operation, codeGenContext);
-  return `${imports}export default ${callback};`;
+  const userImports = Array.from(codeGenContext.importedOperations)
+    .map((name) => `import ${name} from './${name}.js';`)
+    .join("\n");
+  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${userImports}\n`;
+  return `${imports}\nexport default ${callback};`;
 }

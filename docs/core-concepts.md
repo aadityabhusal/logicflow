@@ -29,9 +29,16 @@ Operations transform data from one type to another. They're filtered based on wh
 ### Operation Types
 
 - **Built-in operations**: Provided by Logicflow (concat, add, map, etc.)
+- **Remeda operations**: Functional utility operations from the [Remeda](https://remedajs.com/docs) library (toUpperCase, filter, sortBy, etc.)
 - **User-defined operations**: Operations you create become available as chainable functions
 
 When you create an operation (file) and give it a name, it appears in the operations list and can be chained like any built-in operation.
+
+### Triggers
+
+An operation can be marked as a **trigger**, which exposes it as an HTTP endpoint when deployed. Triggered operations automatically receive an `HttpRequest` instance as their input, containing the request's method, headers, body, query parameters, and path.
+
+To create a trigger, click the "+" button in the Operations sidebar tab and select "Trigger" instead of "Operation". Trigger operations are indicated by a globe icon in the sidebar.
 
 ### Chaining Operations
 
@@ -64,3 +71,9 @@ You cannot use data type names (string, number, boolean, etc.) as variable names
 ### Context
 
 Logicflow maintains a context that tracks all available variables and their current values. This context ensures operations have access to the data they need and enables real-time execution.
+
+## Conditionals
+
+Conditional logic is created using the `thenElse` operation on boolean data. This produces a condition type that evaluates the boolean and executes only the matching branch. The `and` and `or` operations also support conditional execution with lazy evaluation.
+
+When combined with type guard operations like `isTypeOf` or `isString`, Logicflow automatically narrows the type in each branch—so in the true branch after `isString`, the data is known to be a string. See [Type Narrowing](#type-narrowing) for details.

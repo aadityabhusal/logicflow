@@ -223,7 +223,7 @@ export function updateStatements({
     if (changedStatement && !currentIndexFound) return currentStatement;
     return updateStatement(
       statementToProcess,
-      context.getContext(statementToProcess.name ?? statementToProcess.id)
+      context.getContext(statementToProcess.id)
     );
   });
 }
@@ -259,7 +259,11 @@ export function updateFiles(
       return [...prevFiles, changedFile];
     }
     const _context = createContext(context, {
-      variables: createFileVariables(updatedFiles, fileToProcess.id),
+      variables: createFileVariables(
+        updatedFiles,
+        fileToProcess.id,
+        context.variables
+      ),
     });
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {

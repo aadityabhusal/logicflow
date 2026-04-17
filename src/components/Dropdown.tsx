@@ -113,18 +113,6 @@ const DropdownComponent = ({
 
   const [isHovered, setHovered] = useState(false);
   const [search, setSearch] = useState("");
-  const combobox = useCombobox({
-    loop: true,
-    onDropdownClose: () => {
-      handleSearch(options?.withSearch ? "" : value || "");
-      combobox.resetSelectedOption();
-      setNavigation({ navigation: { id, disable: false } });
-    },
-    onDropdownOpen: () => {
-      if (options?.withSearch) combobox.focusSearchInput();
-      setNavigation({ navigation: { id, disable: true } });
-    },
-  });
 
   const dropdownOptions = useMemo(() => {
     return items?.reduce(
@@ -139,6 +127,21 @@ const DropdownComponent = ({
       [] as [string, IDropdownItem[]][]
     );
   }, [items, search, value]);
+
+  const hasOptions = !!dropdownOptions?.flatMap(([, i]) => i).length;
+
+  const combobox = useCombobox({
+    loop: true,
+    onDropdownClose: () => {
+      handleSearch(options?.withSearch ? "" : value || "");
+      combobox.resetSelectedOption();
+      setNavigation({ navigation: { id, disable: false } });
+    },
+    onDropdownOpen: () => {
+      if (options?.withSearch) combobox.focusSearchInput();
+      setNavigation({ navigation: { id, disable: hasOptions } });
+    },
+  });
 
   function handleSearch(val: string) {
     if (!combobox.dropdownOpened) combobox.openDropdown();
@@ -202,6 +205,12 @@ const DropdownComponent = ({
   useEffect(() => {
     if (combobox.dropdownOpened) combobox.selectActiveOption();
   }, [combobox.dropdownOpened]);
+
+  useEffect(() => {
+    if (combobox.dropdownOpened && isFocused) {
+      setNavigation({ navigation: { id, disable: hasOptions } });
+    }
+  }, [hasOptions]);
 
   useEffect(() => {
     if (!result) return;
@@ -309,7 +318,7 @@ const DropdownComponent = ({
           }}
         >
           <Combobox.EventsTarget
-            withKeyboardNavigation={combobox.dropdownOpened}
+            withKeyboardNavigation={combobox.dropdownOpened && hasOptions}
           >
             {target({
               ...(isInputTarget

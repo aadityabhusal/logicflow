@@ -173,6 +173,33 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
       { type: { kind: "string" } },
     ] as OperationType["parameters"],
   },
+  Request: {
+    name: "Request",
+    Constructor: Request,
+    constructorArgs: [
+      { type: { kind: "string" }, name: "url" },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        name: "options",
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
+    prepareArgs(args) {
+      const [url, options, ...rest] = args;
+      if (
+        options !== null &&
+        typeof options === "object" &&
+        "body" in (options as Record<string, unknown>)
+      ) {
+        const opts = { ...(options as Record<string, unknown>) };
+        if (opts.body !== null && typeof opts.body === "object") {
+          opts.body = JSON.stringify(opts.body);
+        }
+        return [url, opts, ...rest];
+      }
+      return args;
+    },
+  },
   Response: {
     name: "Response",
     Constructor: Response,
@@ -297,3 +324,28 @@ export const RESERVED_KEYWORDS = [
   "eval",
   "arg", // pipe callback first arg
 ];
+
+export const PLATFORMS = {
+  vercel: {
+    label: "Vercel",
+    token: {
+      label: "Vercel API token",
+      url: "https://vercel.com/account/tokens",
+    },
+    projectId: {
+      label: "Project ID (Optional)",
+      url: "https://vercel.com/dashboard",
+    },
+  },
+  supabase: {
+    label: "Supabase",
+    token: {
+      label: "Supabase access token",
+      url: "https://supabase.com/dashboard/account/tokens",
+    },
+    projectId: {
+      label: "Project reference",
+      url: "https://supabase.com/dashboard",
+    },
+  },
+} as const;

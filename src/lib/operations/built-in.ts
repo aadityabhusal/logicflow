@@ -287,14 +287,19 @@ const specialOperations: OperationListItem[] = [
       { type: isDataOfType(data, "operation") ? data.type : { kind: "never" } },
       ...(isDataOfType(data, "operation") ? data.type.parameters : []),
     ],
+    expectedType: (data) => {
+      if (isDataOfType(data, "operation")) return data.type.result;
+      return { kind: "unknown" };
+    },
     handler: (context, data, ...params) => {
+      const operationData = data as IData<OperationType>;
       const operation = getRawValueFromData(data, context) as (
         ..._: unknown[]
       ) => unknown;
 
-      const restParamsIndex = (
-        data as IData<OperationType>
-      ).type.parameters.findIndex((p) => p.isRest);
+      const restParamsIndex = operationData.type.parameters.findIndex(
+        (p) => p.isRest
+      );
 
       if (restParamsIndex !== -1) {
         const restParams = createData({
@@ -308,6 +313,14 @@ const specialOperations: OperationListItem[] = [
       const result = operation(
         ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
       );
+
+      if (operationData.value.isAsync) {
+        return createDataFromRawValue(
+          result instanceof Promise ? result : Promise.resolve(result),
+          { ...context, expectedType: operationData.type.result }
+        );
+      }
+
       return (result instanceof Promise ? result : createThenable(result)).then(
         (r) => createDataFromRawValue(r, context)
       );
@@ -321,7 +334,11 @@ type InstanceValue<T extends keyof typeof InstanceTypes> = InstanceType<
 function createInstanceOperation<T extends keyof typeof InstanceTypes>(
   className: T,
   name: string,
-  method: (instance: InstanceValue<T>, context: Context) => Partial<IData>,
+  method: (
+    instance: InstanceValue<T>,
+    context: Context,
+    ...extraArgs: unknown[]
+  ) => unknown,
   parameters: OperationListItem["parameters"] = []
 ): OperationListItem {
   return {
@@ -330,94 +347,70 @@ function createInstanceOperation<T extends keyof typeof InstanceTypes>(
       { type: { kind: "instance", className, constructorArgs: [] } },
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
-    handler: (context, data) => {
+    handler: (context, data, ...extraArgs) => {
       const instance = getRawValueFromData(data, context) as InstanceValue<T>;
       if (!instance) {
         return createRuntimeError(`${className} instance not found`);
       }
-      // TODO: use this like when this function works with a persistent instance
-      // context.setInstance(data.value.instanceId, instance);
-      return createData(method(instance, context));
+      const resolvedExtra = extraArgs.map((arg) =>
+        getRawValueFromData(arg, context)
+      );
+      return createDataFromRawValue(
+        method(instance, context, ...resolvedExtra),
+        context
+      );
     },
   };
 }
 
 const dateOperations: OperationListItem[] = [
-  createInstanceOperation("Date", "getFullYear", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getFullYear(),
-  })),
-  createInstanceOperation("Date", "getMonth", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getMonth(),
-  })),
-  createInstanceOperation("Date", "getDate", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getDate(),
-  })),
-  createInstanceOperation("Date", "getTime", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getTime(),
-  })),
-  createInstanceOperation("Date", "getHours", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getHours(),
-  })),
-  createInstanceOperation("Date", "getMinutes", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getMinutes(),
-  })),
-  createInstanceOperation("Date", "getSeconds", (instance) => ({
-    type: { kind: "number" },
-    value: instance.getSeconds(),
-  })),
-  createInstanceOperation("Date", "toISOString", (instance) => ({
-    type: { kind: "string" },
-    value: instance.toISOString(),
-  })),
-  createInstanceOperation("Date", "toDateString", (instance) => ({
-    type: { kind: "string" },
-    value: instance.toDateString(),
-  })),
+  createInstanceOperation("Date", "getFullYear", (instance) =>
+    instance.getFullYear()
+  ),
+  createInstanceOperation("Date", "getMonth", (instance) =>
+    instance.getMonth()
+  ),
+  createInstanceOperation("Date", "getDate", (instance) => instance.getDate()),
+  createInstanceOperation("Date", "getTime", (instance) => instance.getTime()),
+  createInstanceOperation("Date", "getHours", (instance) =>
+    instance.getHours()
+  ),
+  createInstanceOperation("Date", "getMinutes", (instance) =>
+    instance.getMinutes()
+  ),
+  createInstanceOperation("Date", "getSeconds", (instance) =>
+    instance.getSeconds()
+  ),
+  createInstanceOperation("Date", "toISOString", (instance) =>
+    instance.toISOString()
+  ),
+  createInstanceOperation("Date", "toDateString", (instance) =>
+    instance.toDateString()
+  ),
 ];
 
 const urlOperations: OperationListItem[] = [
-  createInstanceOperation("URL", "getHref", (instance) => ({
-    type: { kind: "string" },
-    value: instance.href,
-  })),
-  createInstanceOperation("URL", "getOrigin", (instance) => ({
-    type: { kind: "string" },
-    value: instance.origin,
-  })),
-  createInstanceOperation("URL", "getProtocol", (instance) => ({
-    type: { kind: "string" },
-    value: instance.protocol,
-  })),
-  createInstanceOperation("URL", "getHostname", (instance) => ({
-    type: { kind: "string" },
-    value: instance.hostname,
-  })),
-  createInstanceOperation("URL", "getPort", (instance) => ({
-    type: { kind: "string" },
-    value: instance.port,
-  })),
-  createInstanceOperation("URL", "getPathname", (instance) => ({
-    type: { kind: "string" },
-    value: instance.pathname,
-  })),
-  createInstanceOperation("URL", "getSearch", (instance) => ({
-    type: { kind: "string" },
-    value: instance.search,
-  })),
-  createInstanceOperation("URL", "getHash", (instance) => ({
-    type: { kind: "string" },
-    value: instance.hash,
-  })),
-  createInstanceOperation("URL", "toString", (instance) => ({
-    type: { kind: "string" },
-    value: instance.toString(),
-  })),
+  createInstanceOperation("URL", "getHref", (instance) => instance.href),
+  createInstanceOperation("URL", "getOrigin", (instance) => instance.origin),
+  createInstanceOperation(
+    "URL",
+    "getProtocol",
+    (instance) => instance.protocol
+  ),
+  createInstanceOperation(
+    "URL",
+    "getHostname",
+    (instance) => instance.hostname
+  ),
+  createInstanceOperation("URL", "getPort", (instance) => instance.port),
+  createInstanceOperation(
+    "URL",
+    "getPathname",
+    (instance) => instance.pathname
+  ),
+  createInstanceOperation("URL", "getSearch", (instance) => instance.search),
+  createInstanceOperation("URL", "getHash", (instance) => instance.hash),
+  createInstanceOperation("URL", "toString", (instance) => instance.toString()),
 ];
 
 function getResolveCallbackType(data: IData): OperationType {
@@ -552,9 +545,63 @@ const responseOperations: OperationListItem[] = [
     handler: (context, data) => {
       const instance = getRawValueFromData(data, context) as Response;
       if (!instance) return createRuntimeError("Response instance not found");
-      return createData({
-        type: { kind: "number" },
-        value: instance.status,
+      return createDataFromRawValue(instance.status, context);
+    },
+  },
+];
+
+const requestOperations: OperationListItem[] = [
+  createInstanceOperation("Request", "getUrl", (instance) => instance.url),
+  createInstanceOperation(
+    "Request",
+    "getMethod",
+    (instance) => instance.method
+  ),
+  createInstanceOperation(
+    "Request",
+    "getHeader",
+    (instance, _context, headerName) =>
+      instance.headers.get(headerName as string) || "",
+    [{ type: { kind: "string" }, name: "headerName" }]
+  ),
+  createInstanceOperation(
+    "Request",
+    "getQuery",
+    (instance, _context, paramName) =>
+      new URL(instance.url).searchParams.get(paramName as string) || "",
+    [{ type: { kind: "string" }, name: "paramName" }]
+  ),
+  createInstanceOperation(
+    "Request",
+    "getPath",
+    (instance) => new URL(instance.url).pathname
+  ),
+  {
+    name: "json",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Request", constructorArgs: [] },
+      },
+    ],
+    handler: (context, data) => {
+      const instance = getRawValueFromData(data, context) as Request;
+      if (!instance) return createRuntimeError("Request instance not found");
+      return createDataFromRawValue(instance.clone().json(), context);
+    },
+  },
+  {
+    name: "text",
+    parameters: [
+      {
+        type: { kind: "instance", className: "Request", constructorArgs: [] },
+      },
+    ],
+    handler: (context, data) => {
+      const instance = getRawValueFromData(data, context) as Request;
+      if (!instance) return createRuntimeError("Request instance not found");
+      return createDataFromRawValue(instance.clone().text(), {
+        ...context,
+        expectedType: { kind: "string" },
       });
     },
   },
@@ -573,4 +620,5 @@ export const builtInOperations: OperationListItem[] = [
   ...responseOperations,
   ...wretchOperations,
   ...remedaOperations,
+  ...requestOperations,
 ];

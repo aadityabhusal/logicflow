@@ -16,7 +16,7 @@ import { useClipboard, useTimeout } from "@mantine/hooks";
 import { createFileFromOperation } from "@/lib/utils";
 import { memo, useState } from "react";
 import { IData, OperationType, Project } from "@/lib/types";
-import { OperationValueSchema } from "@/lib/schemas";
+import { ClipboardSchema } from "@/lib/schemas";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { updateFiles } from "@/lib/update";
 import { Button } from "@mantine/core";
@@ -77,7 +77,12 @@ function HeaderComponent({
           onClick={() => {
             if (!currentOperation) return;
             const { name: _, ...value } = currentOperation.value;
-            clipboard.copy(JSON.stringify(value));
+            const source = currentProject.files.find(
+              (f) => f.id === currentOperation.id
+            );
+            const trigger =
+              source?.type === "operation" ? source.trigger : undefined;
+            clipboard.copy(JSON.stringify({ ...value, trigger }));
           }}
           disabled={!currentOperation}
           className={!currentOperation ? "cursor-not-allowed" : ""}
@@ -90,20 +95,36 @@ function HeaderComponent({
             try {
               if (!currentOperation || !currentProject) return;
               const copied = await navigator.clipboard.readText();
-              const parsed = OperationValueSchema.safeParse(JSON.parse(copied));
+              const parsed = ClipboardSchema.safeParse(JSON.parse(copied));
               if (parsed.error) throw new Error(parsed.error.message);
+              const { trigger, parameters, ...content } = parsed.data;
+              const currentFile = currentProject.files.find(
+                (f) => f.id === currentOperation.id
+              );
+              const isTargetTrigger =
+                currentFile?.type === "operation" && !!currentFile.trigger;
+              const isSameType = !!trigger === isTargetTrigger;
               updateProject(currentProject.id, {
                 files: updateFiles(
                   currentProject.files,
                   fileHistoryActions.pushState,
                   context,
-                  createFileFromOperation({
-                    ...currentOperation,
-                    value: {
-                      ...currentOperation.value,
-                      ...parsed.data,
-                    } as typeof currentOperation.value,
-                  })
+                  {
+                    ...createFileFromOperation({
+                      ...currentOperation,
+                      value: {
+                        ...currentOperation.value,
+                        ...(isSameType ? { ...content, parameters } : content),
+                      } as typeof currentOperation.value,
+                    }),
+                    ...{
+                      trigger: isTargetTrigger
+                        ? isSameType
+                          ? trigger
+                          : currentFile?.trigger
+                        : undefined,
+                    },
+                  }
                 ),
               });
               setIsOperationPasted(true);

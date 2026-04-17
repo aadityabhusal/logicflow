@@ -5,6 +5,7 @@ import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { inferTypeFromValue, isDataOfType } from "@/lib/utils";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
+import { getEntityLayout } from "@/lib/layout";
 
 interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
@@ -17,7 +18,7 @@ const ArrayInputComponent = (
   { data, handleData, context, basePath, ...props }: ArrayInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const isMultiline = data.value.length > 3;
+  const isMultiline = getEntityLayout(data) === "multiline";
 
   const itemPaths = useMemo(() => {
     const arr = Array.from({ length: data.value.length });

@@ -1,4 +1,9 @@
-import { FaCrosshairs, FaLink, FaLock, FaUnlock } from "react-icons/fa6";
+import {
+  FaArrowUpRightFromSquare,
+  FaCrosshairs,
+  FaLock,
+  FaUnlock,
+} from "react-icons/fa6";
 import { TbKeyboardOff } from "react-icons/tb";
 import { IconButton } from "./IconButton";
 import {
@@ -7,19 +12,20 @@ import {
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { Tooltip } from "@mantine/core";
+import { Button, Tooltip } from "@mantine/core";
 import { useMemo, useState, useEffect } from "react";
 import { getTypeSignature, isPendingContext } from "@/lib/utils";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { useMediaQuery } from "@mantine/hooks";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
-import { Highlight, themes } from "prism-react-renderer";
+import { CodeHighlight } from "./CodeHighlight";
 import {
   formatCode,
   generateData,
   createCodeGenContext,
 } from "@/lib/format-code";
+import { Link } from "react-router";
 
 export function DetailsPanel() {
   const operationId = useProjectStore((s) => s.currentFileId);
@@ -89,7 +95,7 @@ export function DetailsPanel() {
 
   if (!result) {
     return (
-      <div className="flex flex-col h-full bg-editor">
+      <div className="flex flex-col h-full">
         <div className="p-1 border-b">Details</div>
         <div className="p-2 text-gray-500">
           Select a data or an operation call
@@ -99,9 +105,9 @@ export function DetailsPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between p-1 border-b gap-3">
-        <div className="mr-auto">Details</div>
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between p-1 border-b gap-3 bg-dropdown-default">
+        <p className="font-bold">Details</p>
         {smallScreen ? (
           <IconButton
             icon={TbKeyboardOff}
@@ -148,7 +154,7 @@ export function DetailsPanel() {
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="border-b p-1 gap-1">
-          <div className="text-gray-400 mb-1.5">Type</div>
+          <div className="text-gray-300 mb-1.5">Type</div>
           <Tooltip label={typeSignature}>
             <div className="overflow-x-auto dropdown-scrollbar whitespace-nowrap">
               {typeSignature}
@@ -157,53 +163,31 @@ export function DetailsPanel() {
         </div>
         {skipExecution && (
           <div className="p-1 border-b gap-1">
-            <div className="text-gray-400 mb-1.5">Skipped</div>
+            <div className="text-gray-300 mb-1.5">Skipped</div>
             <div className="text-sm">{skipExecution.reason}</div>
           </div>
         )}
         {docsUrl && docsConfig && (
-          <div className="p-1 border-b gap-1">
-            <div className="text-gray-400 mb-1.5">Documentation</div>
-            <a
-              href={docsUrl}
+          <div className="p-1 border-b gap-1 flex flex-col">
+            <div className="text-gray-300 mb-1.5">Documentation</div>
+            <Button
+              component={Link}
+              to={docsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:underline flex gap-1 items-center"
+              className="outline-none w-fit"
+              rightSection={<FaArrowUpRightFromSquare />}
             >
-              <FaLink className="shrink-0" />
-              <span>
-                {docsConfig.displayName}:{operation?.value.name}
-              </span>
-            </a>
+              {docsConfig.displayName}:{operation?.value.name}
+            </Button>
           </div>
         )}
         {formattedValue ? (
           <div className="flex-1 min-h-0 flex flex-col">
-            <div className="text-gray-400 mb-1.5 p-1">Result</div>
+            <div className="text-gray-300 mb-1.5 p-1">Result</div>
             <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
               <ErrorBoundary displayError={true}>
-                <Highlight
-                  theme={themes.vsDark}
-                  code={formattedValue}
-                  language="javascript"
-                >
-                  {({ className, style, tokens, getTokenProps }) => (
-                    <pre
-                      className={className}
-                      style={{ ...style, margin: 0, padding: 0 }}
-                    >
-                      {tokens.map((line, i) => (
-                        <div key={i} className="table-row leading-6">
-                          <span className="table-cell">
-                            {line.map((token, key) => (
-                              <span key={key} {...getTokenProps({ token })} />
-                            ))}
-                          </span>
-                        </div>
-                      ))}
-                    </pre>
-                  )}
-                </Highlight>
+                <CodeHighlight code={formattedValue} showLineNumbers={false} />
               </ErrorBoundary>
             </div>
           </div>

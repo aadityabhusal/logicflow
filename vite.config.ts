@@ -10,8 +10,27 @@ interface VitestConfigExport extends UserConfig {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  test: { globals: true, environment: "jsdom" },
-  server: { port: 3000, open: true },
+  test: {
+    globals: true,
+    environment: "jsdom",
+    coverage: { provider: "v8", include: ["src/lib/**/*.ts"] },
+  },
+  server: {
+    port: 3000,
+    open: true,
+    proxy: {
+      "/api/vercel": {
+        target: "https://api.vercel.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/vercel/, ""),
+      },
+      "/api/supabase": {
+        target: "https://api.supabase.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/supabase/, ""),
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./src"),

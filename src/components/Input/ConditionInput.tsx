@@ -8,6 +8,7 @@ import {
 import { Statement } from "../Statement";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
+import { getEntityLayout } from "@/lib/layout";
 
 interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
@@ -58,12 +59,15 @@ const ConditionInputComponent = (
     [handleUpdate]
   );
 
+  const isMultiline = getEntityLayout(data) === "multiline";
+
   return (
     <div
       {...props}
       ref={ref}
       className={[
         "flex items-start gap-1 [&>span]:text-method",
+        isMultiline ? "flex-col" : "flex-row",
         props?.className,
       ].join(" ")}
     >
