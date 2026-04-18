@@ -23,7 +23,7 @@ export async function deployToSupabase(
   }
 
   if (envVars?.length) {
-    onProgress?.({ stage: "uploading", message: "Setting secrets..." });
+    onProgress?.({ stage: "uploading", message: "Setting secrets" });
     await setSupabaseSecrets(projectId, token, envVars);
   }
 
@@ -39,7 +39,7 @@ export async function deployToSupabase(
     .map((f) => f.path.match(/^supabase\/functions\/([^/]+)\/index\.js$/)?.[1])
     .filter(Boolean) as string[];
 
-  onProgress?.({ stage: "uploading", message: "Deploying functions..." });
+  onProgress?.({ stage: "uploading", message: "Deploying functions" });
 
   const results = await Promise.allSettled(
     fnNames.map((fnName) => deployFunction(projectId, fnName, files, token))

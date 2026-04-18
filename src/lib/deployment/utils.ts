@@ -23,7 +23,12 @@ export function createPlatformFetch(platformPath: string) {
 export async function parseError(response: Response): Promise<string> {
   try {
     const body = await response.json();
-    return body.message || body.error || body.msg || `HTTP ${response.status}`;
+    const message =
+      body.message ||
+      (typeof body.error === "string" ? body.error : body.error?.message) ||
+      body.msg ||
+      `HTTP ${response.status}`;
+    return String(message);
   } catch {
     return `HTTP ${response.status}: ${response.statusText}`;
   }

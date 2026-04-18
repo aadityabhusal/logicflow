@@ -31,7 +31,7 @@ export async function deployToPlatform(
     };
   }
 
-  onProgress?.({ stage: "generating", message: "Generating project files..." });
+  onProgress?.({ stage: "generating", message: "Generating project files" });
 
   const { files, errors } = await generateDeployableProject(
     project,
@@ -52,7 +52,7 @@ export async function deployToPlatform(
       return deployToVercel(
         files,
         target.credentials!.token,
-        { projectName, projectId: target.projectId, triggerNames, envVars },
+        { projectName, triggerNames, envVars },
         onProgress
       );
     case "supabase":

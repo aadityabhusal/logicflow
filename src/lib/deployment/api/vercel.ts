@@ -22,29 +22,92 @@ type VercelDeploymentResponse = {
   inspectorUrl?: string;
 };
 
+async function findVercelProjectByName(
+  projectName: string,
+  token: string
+): Promise<{ id: string; name: string } | null> {
+  try {
+    const res = await vercelFetch(
+      `/v9/projects?name=${encodeURIComponent(projectName)}`,
+      token
+    );
+    if (!res.ok) return null;
+    const body = await res.json();
+    const match = body.projects?.find(
+      (p: { name: string }) => p.name === projectName
+    );
+    return match ? { id: match.id, name: match.name } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureVercelProject(
+  projectName: string,
+  token: string
+): Promise<{ id: string; name: string } | null> {
+  const existing = await findVercelProjectByName(projectName, token);
+  if (existing) return existing;
+
+  try {
+    const response = await vercelFetch("/v9/projects", token, {
+      method: "POST",
+      body: JSON.stringify({ name: projectName }),
+    });
+    if (!response.ok) {
+      console.error(
+        "Failed to create Vercel project:",
+        await parseError(response)
+      );
+      return null;
+    }
+    const data = await response.json();
+    return { id: data.id, name: data.name };
+  } catch (error) {
+    console.error("Failed to create Vercel project:", error);
+    return null;
+  }
+}
+
 export async function deployToVercel(
   files: DeploymentFile[],
   token: string,
   options: {
     projectName: string;
-    projectId?: string;
     triggerNames: string[];
     envVars?: { key: string; value: string }[];
   },
   onProgress?: (progress: DeploymentProgress) => void
 ): Promise<DeploymentResult> {
-  onProgress?.({ stage: "uploading", message: "Uploading files to Vercel..." });
+  onProgress?.({ stage: "generating", message: "Creating Vercel project" });
+  const vercelProject = await ensureVercelProject(options.projectName, token);
+  if (!vercelProject) {
+    return { success: false, error: "Failed to create Vercel project" };
+  }
+
+  if (options.envVars?.length) {
+    onProgress?.({ stage: "uploading", message: "Setting env variables" });
+    await setVercelEnvVars(vercelProject.id, token, options.envVars);
+  }
+
+  onProgress?.({ stage: "uploading", message: "Uploading files to Vercel" });
 
   const body = {
-    name: options.projectName,
+    name: vercelProject.name,
     files: files.map((f) => ({
       file: f.path,
       data: f.content,
       encoding: "utf-8",
     })),
-    projectSettings: { installCommand: "npm install" },
+    projectSettings: {
+      installCommand: "npm install",
+      buildCommand: null,
+      outputDirectory: null,
+      rootDirectory: null,
+      framework: null,
+    },
     target: "production",
-    ...(options.projectId ? { project: options.projectId } : {}),
+    project: vercelProject.id,
   };
 
   let response: Response;
@@ -64,25 +127,32 @@ export async function deployToVercel(
     return { success: false, error: await parseError(response) };
   }
 
-  const deployment: VercelDeploymentResponse = await response.json();
-
-  if (options.envVars?.length && deployment.projectId) {
-    onProgress?.({ stage: "uploading", message: "Setting env variables..." });
-    await setVercelEnvVars(deployment.projectId, token, options.envVars);
+  let deployment: VercelDeploymentResponse;
+  try {
+    deployment = await response.json();
+  } catch {
+    return { success: false, error: "Invalid response from Vercel" };
   }
 
-  onProgress?.({ stage: "building", message: "Building..." });
+  onProgress?.({ stage: "building", message: "Building" });
 
   const result = await pollVercelDeployment(deployment.id, token, onProgress);
+
+  const orgSlug = deployment.inspectorUrl
+    ? new URL(deployment.inspectorUrl).pathname.split("/")[1]
+    : undefined;
+  const dashboardUrl =
+    orgSlug && vercelProject.name
+      ? `https://vercel.com/${orgSlug}/${vercelProject.name}`
+      : deployment.inspectorUrl;
 
   return {
     ...result,
     id: deployment.id,
-    projectId: deployment.projectId,
     triggerUrls: result.url
       ? options.triggerNames.map((n) => `${result.url}/api/${n}`)
       : undefined,
-    dashboardUrl: deployment.inspectorUrl,
+    dashboardUrl,
   };
 }
 
@@ -120,7 +190,7 @@ async function pollVercelDeployment(
         return { success: false, error: errorMsg, state: "error" };
       }
 
-      onProgress?.({ stage: "building", message: "Building..." });
+      onProgress?.({ stage: "building", message: "Building" });
     } catch {
       continue;
     }

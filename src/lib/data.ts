@@ -332,10 +332,6 @@ export const PLATFORMS = {
       label: "Vercel API token",
       url: "https://vercel.com/account/tokens",
     },
-    projectId: {
-      label: "Project ID (Optional)",
-      url: "https://vercel.com/dashboard",
-    },
   },
   supabase: {
     label: "Supabase",
@@ -348,4 +344,4 @@ export const PLATFORMS = {
       url: "https://supabase.com/dashboard",
     },
   },
-} as const;
+};

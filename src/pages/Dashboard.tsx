@@ -18,9 +18,12 @@ import {
   createFileVariables,
   createStatement,
   createVariableName,
+  resolveConstructorArgs,
 } from "@/lib/utils";
 import { createOperationCall } from "@/lib/execution/execution";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { ProjectFile, DataType } from "@/lib/types";
+import { InstanceTypes } from "@/lib/data";
 
 dayjs.extend(relativeTime);
 
@@ -66,7 +69,7 @@ export default function Dashboard() {
           : {}),
       },
     });
-    const greetOperationFile = createFileFromOperation(
+    const greetOpFile = createFileFromOperation(
       createData({
         type: {
           kind: "operation",
@@ -86,41 +89,66 @@ export default function Dashboard() {
       })
     );
 
-    const nameData = createData({ value: "Your name" });
-    const mainOperationFile = createFileFromOperation(
-      createData({
-        type: { kind: "operation", parameters: [], result: { kind: "string" } },
-        value: {
-          name: "main",
-          parameters: [],
-          statements: [
-            createStatement({
-              data: nameData,
-              operations: [
-                await createOperationCall({
-                  data: nameData,
-                  name: "greet",
-                  parameters: [nameParam],
-                  context: {
-                    ...context,
-                    variables: createFileVariables([greetOperationFile]),
-                  },
-                }),
-              ],
-            }),
-          ],
-        },
-      })
-    );
+    const requestParamType: DataType = {
+      kind: "instance",
+      className: "Request",
+      constructorArgs: resolveConstructorArgs(
+        InstanceTypes.Request.constructorArgs
+      ),
+    };
+
+    const requestData = createData({ type: requestParamType });
+    const reqUrl = "https://example.com?name=User";
+    requestData.value.constructorArgs[0].data = createData({ value: reqUrl });
+    context.setInstance(requestData.value.instanceId, {
+      instance: new Request(reqUrl),
+      type: requestParamType,
+    });
+    const reqStmt = createStatement({ name: "request", data: requestData });
+
+    const getQueryOp = await createOperationCall({
+      data: requestData,
+      name: "getQuery",
+      parameters: [createStatement({ data: createData({ value: "name" }) })],
+      context,
+    });
+
+    const greetOp = await createOperationCall({
+      data: createData({ value: "User" }),
+      name: "greet",
+      context: { ...context, variables: createFileVariables([greetOpFile]) },
+    });
+
+    const mainStatement = createStatement({
+      data: createData({ value: { name: "request", id: reqStmt.id } }),
+      operations: [getQueryOp, greetOp],
+    });
+    const mainOperationData = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ name: "request", type: requestParamType }],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "main",
+        parameters: [reqStmt],
+        statements: [mainStatement],
+      },
+    });
+
+    const mainTriggerFile = {
+      ...createFileFromOperation(mainOperationData),
+      trigger: { type: "http", methods: ["GET"] as const },
+    } as ProjectFile;
 
     const created = createProject(
       createVariableName({
         prefix: "New Project ",
         prev: Object.values(projects).map((p) => p.name),
       }),
-      [mainOperationFile, greetOperationFile]
+      [mainTriggerFile, greetOpFile]
     );
-    navigate(`/project/${created.id}?file=${mainOperationFile.name}`);
+    navigate(`/project/${created.id}?file=${mainTriggerFile.name}`);
   };
 
   return (

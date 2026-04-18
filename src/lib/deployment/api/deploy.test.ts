@@ -138,7 +138,6 @@ describe("deployToPlatform", () => {
     const target: DeploymentTarget = {
       platform: "vercel",
       credentials: { token: "vercel-token" },
-      projectId: "proj-123",
       deployments: [],
     };
     await deployToPlatform(baseProject, ctx, target);
@@ -147,7 +146,6 @@ describe("deployToPlatform", () => {
       "vercel-token",
       {
         projectName: "test-project",
-        projectId: "proj-123",
         triggerNames: ["getUser"],
         envVars: [],
       },
@@ -230,17 +228,6 @@ describe("deployToPlatform", () => {
     });
     const callArgs = (deployToVercel as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callArgs[2].projectName).toBe("my-cool-app");
-  });
-
-  it("passes projectId for Vercel targets", async () => {
-    await deployToPlatform(baseProject, ctx, {
-      platform: "vercel",
-      credentials: { token: "t" },
-      projectId: "proj-456",
-      deployments: [],
-    });
-    const callArgs = (deployToVercel as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[2].projectId).toBe("proj-456");
   });
 
   it("passes projectId for Supabase targets", async () => {

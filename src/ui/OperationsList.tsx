@@ -76,13 +76,13 @@ export function OperationsList() {
           </Menu.Target>
           <Menu.Dropdown>
             <Menu.Item
-              rightSection={<FaCode size={10} />}
+              rightSection={<FaCode />}
               onClick={() => handleAdd(false)}
             >
               Operation
             </Menu.Item>
             <Menu.Item
-              rightSection={<FaGlobe size={10} />}
+              rightSection={<FaGlobe />}
               onClick={() => handleAdd(true)}
             >
               Trigger
@@ -166,10 +166,9 @@ export function OperationsList() {
                 }}
               />
             ) : (
-              <span className="truncate mr-auto flex items-center gap-1">
-                {item.type === "operation" && item.trigger && (
-                  <FaGlobe size={10} className="text-blue-400" />
-                )}
+              <span className="truncate mr-auto flex items-center gap-2">
+                {item.type === "operation" &&
+                  (item.trigger ? <FaGlobe /> : <FaCode />)}
                 {item.name}
               </span>
             )}

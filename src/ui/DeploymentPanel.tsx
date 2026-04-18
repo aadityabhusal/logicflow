@@ -92,9 +92,7 @@ function DeploymentPanelComponent() {
 
     const target = deployment.platforms.find((t) => t.platform === platform);
     if (!target?.credentials?.token) {
-      notifications.show({
-        message: `Please add your ${PLATFORMS[platform].label} API token first`,
-      });
+      notifications.show({ message: `Please add your API token first` });
       return;
     }
 
@@ -122,7 +120,7 @@ function DeploymentPanelComponent() {
       }
     );
 
-    if (result.success && result.projectId) {
+    if (result.success) {
       const record: DeploymentRecord = {
         id: result.id || "",
         url: result.url || "",
@@ -139,8 +137,7 @@ function DeploymentPanelComponent() {
             if (t.platform !== platform) return t;
             return {
               ...target,
-              ...(result.projectId ? { projectId: result.projectId } : {}),
-              deployments: [...(record ? [record] : []), ...target.deployments],
+              deployments: [record, ...target.deployments],
             };
           }),
         },
@@ -242,6 +239,7 @@ function DeploymentPanelComponent() {
             const latestDeploy = target.deployments?.[0];
             const deployState = deploymentStates[target.platform];
             const isExpanded = expanded.has(target.platform);
+            const platform = PLATFORMS[target.platform];
             return (
               <div
                 key={target.platform}
@@ -296,36 +294,37 @@ function DeploymentPanelComponent() {
                             }}
                           />
                         </div>
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className="text-sm">
-                              {PLATFORMS[target.platform].projectId.label}
-                            </span>
-                            <a
-                              href={PLATFORMS[target.platform].projectId.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <FaArrowUpRightFromSquare size={9} />
-                            </a>
+                        {!("projectId" in platform) ? null : (
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className="text-sm">
+                                {platform.projectId.label}
+                              </span>
+                              <a
+                                href={platform.projectId.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <FaArrowUpRightFromSquare size={9} />
+                              </a>
+                            </div>
+                            <input
+                              type="text"
+                              className="focus:outline outline-white border w-full p-0.5 text-sm"
+                              placeholder={platform.projectId.label}
+                              value={target.projectId || ""}
+                              onChange={(e) => {
+                                handleUpdateDeployment({
+                                  platforms: deployment.platforms.map((t) => {
+                                    if (t.platform !== target.platform)
+                                      return t;
+                                    return { ...t, projectId: e.target.value };
+                                  }),
+                                });
+                              }}
+                            />
                           </div>
-                          <input
-                            type="text"
-                            className="focus:outline outline-white border w-full p-0.5 text-sm"
-                            placeholder={
-                              PLATFORMS[target.platform].projectId.label
-                            }
-                            value={target.projectId || ""}
-                            onChange={(e) => {
-                              handleUpdateDeployment({
-                                platforms: deployment.platforms.map((t) => {
-                                  if (t.platform !== target.platform) return t;
-                                  return { ...t, projectId: e.target.value };
-                                }),
-                              });
-                            }}
-                          />
-                        </div>
+                        )}
                       </div>
                     </Popover.Dropdown>
                   </Popover>
@@ -425,10 +424,9 @@ function DeploymentPanelComponent() {
                           )
                         }
                         onClick={() => handleDeploy(target.platform)}
-                        disabled={!target.credentials?.token}
                         loading={deployState?.isDeploying}
                       >
-                        {deployState?.progress
+                        {deployState?.isDeploying && deployState?.progress
                           ? deployState?.progress.message ||
                             capitalize(deployState?.progress.stage)
                           : "Deploy"}
