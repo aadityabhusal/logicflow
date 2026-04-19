@@ -13,9 +13,8 @@ import {
 } from "@/lib/store";
 import { IconButton } from "./IconButton";
 import { useClipboard, useTimeout } from "@mantine/hooks";
-import { createFileFromOperation } from "@/lib/utils";
+import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { memo, useState } from "react";
-import { IData, OperationType, Project } from "@/lib/types";
 import { ClipboardSchema } from "@/lib/schemas";
 import { BaseInput } from "@/components/Input/BaseInput";
 import { updateFiles } from "@/lib/update";
@@ -23,19 +22,16 @@ import { Button } from "@mantine/core";
 import { Link } from "react-router";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 
-function HeaderComponent({
-  currentProject,
-  currentOperation,
-}: {
-  currentOperation?: IData<OperationType>;
-  currentProject: Project;
-}) {
-  const context = useExecutionResultsStore((s) => s.rootContext);
+function HeaderComponent() {
+  const currentProjectId = useProjectStore((s) => s.getCurrentProject()?.id);
+  const currentProjectName = useProjectStore(
+    (s) => s.getCurrentProject()?.name
+  );
+  const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const updateProject = useProjectStore((s) => s.updateProject);
-  const currentFileId = useProjectStore((s) => s.currentFileId);
   const canUndo = fileHistoryActions.canUndo(currentFileId);
   const canRedo = fileHistoryActions.canRedo(currentFileId);
   const clipboard = useClipboard({ timeout: 500 });
@@ -54,14 +50,14 @@ function HeaderComponent({
           Dashboard
         </Button>
       </div>
-      {currentProject && (
+      {currentProjectId && (
         <BaseInput
           className="focus:outline hover:outline outline-white"
-          defaultValue={currentProject.name}
+          defaultValue={currentProjectName}
           onFocus={() => setNavigation({ navigation: undefined })}
           onBlur={(e) =>
             e.target.value &&
-            updateProject(currentProject.id, { name: e.target.value })
+            updateProject(currentProjectId, { name: e.target.value })
           }
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
@@ -75,17 +71,19 @@ function HeaderComponent({
           icon={clipboard.copied ? FaCheck : FaRegCopy}
           size={16}
           onClick={() => {
-            if (!currentOperation) return;
-            const { name: _, ...value } = currentOperation.value;
-            const source = currentProject.files.find(
-              (f) => f.id === currentOperation.id
+            const operation = createOperationFromFile(
+              useProjectStore.getState().getCurrentFile()
             );
+            const project = useProjectStore.getState().getCurrentProject();
+            if (!operation || !project) return;
+            const { name: _, ...value } = operation.value;
+            const source = project.files.find((f) => f.id === operation.id);
             const trigger =
               source?.type === "operation" ? source.trigger : undefined;
             clipboard.copy(JSON.stringify({ ...value, trigger }));
           }}
-          disabled={!currentOperation}
-          className={!currentOperation ? "cursor-not-allowed" : ""}
+          disabled={!currentFileId}
+          className={!currentFileId ? "cursor-not-allowed" : ""}
         />
         <IconButton
           title={isOperationPasted ? "Pasted!" : "Paste"}
@@ -93,29 +91,33 @@ function HeaderComponent({
           size={16}
           onClick={async () => {
             try {
-              if (!currentOperation || !currentProject) return;
+              const operation = createOperationFromFile(
+                useProjectStore.getState().getCurrentFile()
+              );
+              const project = useProjectStore.getState().getCurrentProject();
+              if (!operation || !project) return;
               const copied = await navigator.clipboard.readText();
               const parsed = ClipboardSchema.safeParse(JSON.parse(copied));
               if (parsed.error) throw new Error(parsed.error.message);
               const { trigger, parameters, ...content } = parsed.data;
-              const currentFile = currentProject.files.find(
-                (f) => f.id === currentOperation.id
+              const currentFile = project.files.find(
+                (f) => f.id === operation.id
               );
               const isTargetTrigger =
                 currentFile?.type === "operation" && !!currentFile.trigger;
               const isSameType = !!trigger === isTargetTrigger;
-              updateProject(currentProject.id, {
+              updateProject(project.id, {
                 files: updateFiles(
-                  currentProject.files,
+                  project.files,
                   fileHistoryActions.pushState,
-                  context,
+                  useExecutionResultsStore.getState().rootContext,
                   {
                     ...createFileFromOperation({
-                      ...currentOperation,
+                      ...operation,
                       value: {
-                        ...currentOperation.value,
+                        ...operation.value,
                         ...(isSameType ? { ...content, parameters } : content),
-                      } as typeof currentOperation.value,
+                      } as typeof operation.value,
                     }),
                     ...{
                       trigger: isTargetTrigger
@@ -134,8 +136,8 @@ function HeaderComponent({
               pasteAnimation.clear();
             }
           }}
-          disabled={!currentOperation}
-          className={!currentOperation ? "cursor-not-allowed" : ""}
+          disabled={!currentFileId}
+          className={!currentFileId ? "cursor-not-allowed" : ""}
         />
         <IconButton
           title="Undo"

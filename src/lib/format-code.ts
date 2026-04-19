@@ -31,15 +31,17 @@ type CodeGenContext = Context & {
   showResult?: boolean;
   getOperation: (name: string) => OperationListItem | undefined;
   importedOperations: Set<string>;
+  currentOperationName?: string;
 };
 
 export function createCodeGenContext(
   context: Context,
-  options?: { showResult?: boolean }
+  options?: { showResult?: boolean; currentOperationName?: string }
 ): CodeGenContext {
   return {
     ...context,
     showResult: options?.showResult,
+    currentOperationName: options?.currentOperationName,
     importedOperations: new Set(),
     getOperation: (name: string) =>
       builtInOperations.find((op) => op.name === name),
@@ -63,7 +65,11 @@ export function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "reference")) {
     if (data.type.isEnv) return `process.env.${data.value.name}`;
     const name = data.value.name;
-    if (name && context.variables.has(name)) {
+    if (
+      name &&
+      name !== context.currentOperationName &&
+      context.variables.has(name)
+    ) {
       context.importedOperations.add(name);
     }
     return name;
@@ -118,7 +124,11 @@ function generateOperationCall(
     }
     case "userDefined": {
       const name = operation.value.name;
-      if (name && context.variables.has(name)) {
+      if (
+        name &&
+        name !== context.currentOperationName &&
+        context.variables.has(name)
+      ) {
         context.importedOperations.add(name);
       }
       return `, ${paramStr ? `(arg) => ${name}${paramStr}` : name}`;
@@ -182,11 +192,14 @@ export function generateOperation(
   operation: IData<OperationType>,
   context: Context
 ): string {
-  const codeGenContext = createCodeGenContext(context);
+  const operationName = operation.value.name ?? "op";
+  const codeGenContext = createCodeGenContext(context, {
+    currentOperationName: operationName,
+  });
   const callback = generateCallback(operation, codeGenContext);
   const userImports = Array.from(codeGenContext.importedOperations)
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
   const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${userImports}\n`;
-  return `${imports}\nexport default ${callback};`;
+  return `${imports}\nconst ${operationName} = ${callback};\nexport default ${operationName};`;
 }

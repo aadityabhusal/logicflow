@@ -19,10 +19,7 @@ import { builtInOperations } from "../operations/built-in";
 
 function createRootContextVariables() {
   const project = useProjectStore.getState().getCurrentProject();
-  const variables = createFileVariables(
-    project?.files,
-    useProjectStore.getState().currentFileId
-  );
+  const variables = createFileVariables(project?.files);
   if (project?.deployment) {
     for (const envVar of project.deployment.envVariables) {
       variables.set(envVar.key, {
@@ -69,6 +66,7 @@ export const useExecutionResultsStore =
       rootContext: {
         scopeId: "_root_",
         variables: createRootContextVariables(),
+        maxCallDepth: 7500,
         ...getTriggerExpectedType(),
         getResult: (id) => get().getResult(id),
         getInstance: (id) => get().getInstance(id),

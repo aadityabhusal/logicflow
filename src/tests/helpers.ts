@@ -36,6 +36,8 @@ export function createTestContext(overrides?: Partial<Context>): Context {
     scopeId: "_root_",
     variables: new Map(),
     isSync: true,
+    callDepth: 0,
+    maxCallDepth: 7500,
     getResult: (id: string) => results.get(id),
     getInstance: (id: string) => instances.get(id),
     getContext: (id: string) => contexts.get(id) ?? base,

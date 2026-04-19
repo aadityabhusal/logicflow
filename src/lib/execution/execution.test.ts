@@ -8,7 +8,12 @@ import {
   setOperationResults,
   createOperationCall,
 } from "@/lib/execution/execution";
-import { createData, createStatement, isDataOfType } from "@/lib/utils";
+import {
+  createData,
+  createStatement,
+  isDataOfType,
+  updateContextWithNarrowedTypes,
+} from "@/lib/utils";
 import { builtInOperations } from "@/lib/operations/built-in";
 import { OperationListItem } from "@/lib/execution/types";
 import {
@@ -27,6 +32,7 @@ import {
   booleanStatement,
   testUndefined,
 } from "@/tests/helpers";
+import { IData } from "../types";
 
 describe("getFilteredOperations", () => {
   it("returns operations compatible with string data", () => {
@@ -1045,5 +1051,256 @@ describe("call operation with async operations", () => {
       expect(expectedType.className).toBe("Promise");
       expect(expectedType.result?.kind).toBe("string");
     }
+  });
+});
+
+describe("recursion support", () => {
+  it("supports user-defined operation that calls another user-defined operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+
+    const innerOp: OperationListItem = {
+      name: "double",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [
+        createStatement({
+          data: testNumber(0),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [
+                  { type: { kind: "number" } },
+                  { type: { kind: "number" } },
+                ],
+                result: { kind: "number" },
+              },
+              value: {
+                name: "add",
+                parameters: [numberStatement(5)],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("double", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        innerOp.statements!,
+        "double"
+      ),
+    });
+
+    const data = testNumber(10);
+    const result = await executeOperation(innerOp, data, [], ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(5);
+  });
+
+  it("returns runtime error when maxCallDepth is exceeded", async () => {
+    const ctx = createTestContext({ isSync: false, maxCallDepth: 1 });
+
+    const infiniteOp: OperationListItem = {
+      name: "infinite",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [
+        createStatement({
+          data: testReference("n", "ref1"),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "number" },
+              },
+              value: { name: "infinite", parameters: [], statements: [] },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("infinite", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        infiniteOp.statements!,
+        "infinite"
+      ),
+    });
+
+    const data = testNumber(1);
+    const result = await executeOperation(infiniteOp, data, [], ctx);
+    expect(result.type.kind).toBe("error");
+    if (isDataOfType(result, "error")) {
+      expect(result.type.errorType).toBe("runtime_error");
+      expect(result.value.reason).toContain("Maximum recursion depth");
+    }
+  });
+
+  it("returns runtime error when maxCallDepth is exceeded (sync)", () => {
+    const ctx = createTestContext({ maxCallDepth: 1 });
+
+    const infiniteOp: OperationListItem = {
+      name: "infiniteSync",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [
+        createStatement({
+          data: testReference("n", "ref1"),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "number" },
+              },
+              value: { name: "infiniteSync", parameters: [], statements: [] },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("infiniteSync", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        infiniteOp.statements!,
+        "infiniteSync"
+      ),
+    });
+
+    const data = testNumber(1);
+    const result = executeOperationSync(infiniteOp, data, [], ctx);
+    expect(result.type.kind).toBe("error");
+    if (isDataOfType(result, "error")) {
+      expect(result.type.errorType).toBe("runtime_error");
+      expect(result.value.reason).toContain("Maximum recursion depth");
+    }
+  });
+
+  it("allows recursion up to maxCallDepth without error", async () => {
+    const ctx = createTestContext({ isSync: false, maxCallDepth: 3 });
+
+    const echoOp: OperationListItem = {
+      name: "echo",
+      parameters: [{ type: { kind: "string" }, name: "s" }],
+      statements: [createStatement({ data: testString("done") })],
+    };
+
+    ctx.variables.set("echo", {
+      data: testOperation(
+        [stringStatement("s", "s")],
+        echoOp.statements!,
+        "echo"
+      ),
+    });
+
+    const data = testString("hello");
+    const result = await executeOperation(echoOp, data, [], ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("done");
+  });
+
+  it("does not limit depth when maxCallDepth is 0 (unlimited)", async () => {
+    const ctx = createTestContext({ isSync: false, maxCallDepth: 0 });
+
+    const simpleOp: OperationListItem = {
+      name: "simple",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [createStatement({ data: testNumber(42) })],
+    };
+
+    ctx.variables.set("simple", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        simpleOp.statements!,
+        "simple"
+      ),
+    });
+
+    const data = testNumber(1);
+    const result = await executeOperation(simpleOp, data, [], ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(42);
+  });
+
+  it("increments callDepth in nested user-defined operations", async () => {
+    const ctx = createTestContext({ isSync: false, maxCallDepth: 2 });
+
+    const innerOp: OperationListItem = {
+      name: "inner",
+      parameters: [{ type: { kind: "number" }, name: "x" }],
+      statements: [createStatement({ data: testNumber(99) })],
+    };
+
+    const outerOp: OperationListItem = {
+      name: "outer",
+      parameters: [{ type: { kind: "number" }, name: "x" }],
+      statements: [
+        createStatement({
+          data: testNumber(1),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "number" },
+              },
+              value: { name: "inner", parameters: [], statements: [] },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("inner", {
+      data: testOperation(
+        [numberStatement(0, "x")],
+        innerOp.statements!,
+        "inner"
+      ),
+    });
+    ctx.variables.set("outer", {
+      data: testOperation(
+        [numberStatement(0, "x")],
+        outerOp.statements!,
+        "outer"
+      ),
+    });
+
+    const data = testNumber(1);
+    const result = await executeOperation(outerOp, data, [], ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(99);
+  });
+});
+
+describe("type narrowing bug fixes", () => {
+  it("does not remove context variable when thenElse branch receives no narrowing", () => {
+    const original = new Map([["x", { data: testNumber(10) }]]);
+    const narrowedTypes = new Map<string, { data: IData }>();
+    const ctx = createTestContext({
+      variables: original,
+      narrowedTypes,
+    });
+
+    const trueBranchCtx = updateContextWithNarrowedTypes(
+      ctx,
+      testBoolean(true),
+      "thenElse",
+      0
+    );
+    expect(trueBranchCtx.variables.get("x")).toBeDefined();
+    expect(trueBranchCtx.variables.get("x")?.data.type.kind).toBe("number");
+
+    const falseBranchCtx = updateContextWithNarrowedTypes(
+      ctx,
+      testBoolean(true),
+      "thenElse",
+      1
+    );
+    expect(falseBranchCtx.variables.get("x")).toBeDefined();
+    expect(falseBranchCtx.variables.get("x")?.data.type.kind).toBe("number");
   });
 });

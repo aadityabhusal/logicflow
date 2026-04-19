@@ -363,14 +363,11 @@ export function createContextVariable(
 
 export function createFileVariables(
   files: ProjectFile[] = [],
-  currentOperationId?: string,
   base?: Context["variables"]
 ): Context["variables"] {
   return files.reduce((acc, operationFile) => {
     const operation = createOperationFromFile(operationFile);
-    if (!operation || operationFile.id === currentOperationId) {
-      return acc;
-    }
+    if (!operation) return acc;
     acc.set(operationFile.name, {
       data: { ...operation, id: operationFile.id },
     });

@@ -131,7 +131,7 @@ describe("generateData", () => {
     const ctx = createCodeGenContext(createTestContext());
     const op = testOperation(
       [stringStatement("", "x")],
-      [stringStatement("result")]
+      [stringStatement("result")],
     );
     const result = generateData(op, ctx);
     expect(result).toContain("x");
@@ -184,7 +184,7 @@ describe("generateOperation", () => {
     const op = testOperation(
       [stringStatement("", "input")],
       [stringStatement("output")],
-      "myOp"
+      "myOp",
     );
     const result = generateOperation(op, ctx);
     expect(result).toContain("import");
@@ -323,7 +323,7 @@ describe("generateData additional coverage", () => {
     const ctx = createCodeGenContext(createTestContext());
     const dict = testDictionary(
       [{ key: "name", value: stringStatement("test") }],
-      { kind: "string" }
+      { kind: "string" },
     );
     const result = generateData(dict, ctx);
     expect(result).toContain("name");
@@ -335,7 +335,7 @@ describe("generateData additional coverage", () => {
     const cond = testCondition(
       booleanStatement(true),
       stringStatement("yes"),
-      stringStatement("no")
+      stringStatement("no"),
     );
     const result = generateData(cond, ctx);
     expect(result).toContain("condition");
@@ -382,5 +382,89 @@ describe("generateData additional coverage", () => {
     const data = createData({ type: { kind: "never" } });
     const result = generateData(data, ctx);
     expect(result).toBe("undefined");
+  });
+});
+
+describe("recursive operation code generation", () => {
+  it("generates named binding for operations", () => {
+    const ctx = createTestContext();
+    const op = testOperation(
+      [stringStatement("", "input")],
+      [stringStatement("output")],
+      "myOp",
+    );
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("const myOp = ");
+    expect(result).toContain("export default myOp");
+  });
+
+  it("does not self-import when operation references itself", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("factorial", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        [numberStatement(0)],
+        "factorial",
+      ),
+    });
+
+    const recursiveRef = testReference("factorial", "ref1");
+    const stmt = createStatement({ data: recursiveRef });
+    const op = testOperation([numberStatement(0, "n")], [stmt], "factorial");
+
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("const factorial =");
+    expect(result).toContain("export default factorial");
+    expect(result).not.toContain("import factorial from");
+  });
+
+  it("still imports other user-defined operations", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("helper", {
+      data: testOperation([], [], "helper"),
+    });
+
+    const helperRef = testReference("helper", "ref1");
+    const stmt = createStatement({ data: helperRef });
+    const op = testOperation([], [stmt], "myOp");
+
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import helper from './helper.js'");
+    expect(result).toContain("const myOp =");
+    expect(result).toContain("export default myOp");
+  });
+
+  it("references self by name in operation call without self-import", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("factorial", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        [numberStatement(0)],
+        "factorial",
+      ),
+    });
+
+    const selfCallOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "number" } }],
+        result: { kind: "number" },
+      },
+      value: { name: "factorial", parameters: [], statements: [] },
+    });
+    const innerStmt = createStatement({
+      data: createData({ type: { kind: "number" }, value: 5 }),
+      operations: [selfCallOp],
+    });
+    const op = testOperation(
+      [numberStatement(0, "n")],
+      [innerStmt],
+      "factorial",
+    );
+
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("const factorial =");
+    expect(result).toContain("factorial");
+    expect(result).not.toContain("import factorial from");
   });
 });

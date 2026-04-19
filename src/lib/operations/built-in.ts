@@ -158,6 +158,7 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
     parameters: [{ type: { kind: "unknown" }, isRest: true }],
   },
   { name: "toString", parameters: [{ type: { kind: "unknown" } }] },
+  { name: "toNumber", parameters: [{ type: { kind: "string" } }] },
   {
     name: "fetch",
     parameters: [

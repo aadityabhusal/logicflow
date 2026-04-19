@@ -559,12 +559,22 @@ function executeOperationCore(
       }
     }
 
+    const maxCallDepth = context.maxCallDepth ?? 0;
+    const nextCallDepth = (context.callDepth ?? 0) + 1;
+    if (maxCallDepth > 0 && nextCallDepth > maxCallDepth) {
+      return createData({
+        type: { kind: "error", errorType: "runtime_error" },
+        value: { reason: `Maximum recursion depth (${maxCallDepth}) exceeded` },
+      });
+    }
+
     if (!("statements" in operation) || operation.statements.length <= 0) {
       return createData();
     }
     const newContext = createContext(context, {
       scopeId: operation.id,
       isIsolated: true,
+      callDepth: nextCallDepth,
     });
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
@@ -734,12 +744,12 @@ function applyTypeNarrowing(
     narrowedTypes = getInverseTypes(context.variables, narrowedTypes, context);
   }
 
-  if (referenceName) {
+  if (referenceName && narrowedType !== undefined) {
     const variable = context.variables.get(referenceName);
     if (variable) {
       narrowedTypes.set(referenceName, {
         ...variable,
-        data: { ...variable.data, type: narrowedType ?? { kind: "never" } },
+        data: { ...variable.data, type: narrowedType },
       });
     }
   }

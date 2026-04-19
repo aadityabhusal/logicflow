@@ -107,7 +107,7 @@ export function DetailsPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex justify-between p-1 border-b gap-3 bg-dropdown-default">
-        <p className="font-bold">Details</p>
+        <p className="font-bold mr-auto">Details</p>
         {smallScreen ? (
           <IconButton
             icon={TbKeyboardOff}

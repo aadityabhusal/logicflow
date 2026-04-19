@@ -193,6 +193,8 @@ export const toDictionary = <T>(obj: Record<string, T>) => ({ ...obj });
 
 // ===== Unknown Operations =====
 
+export const toNumber = (value: string): number => Number(value);
+
 export const toString = (value: unknown) => {
   if (
     value !== null &&

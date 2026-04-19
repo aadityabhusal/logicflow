@@ -41,7 +41,7 @@ import {
   getConditionResult,
   resolveConstructorArgs,
 } from "@/lib/utils";
-import { DataType, UnionType, OperationType } from "@/lib/types";
+import { DataType, UnionType, OperationType, IData } from "@/lib/types";
 import { OperationListItem } from "@/lib/execution/types";
 import {
   createTestContext,
@@ -2491,6 +2491,61 @@ describe("updateContextWithNarrowedTypes", () => {
     );
     expect(result.variables.get("x")?.data.type.kind).toBe("number");
   });
+
+  it("preserves all variables when thenElse has no prior narrowing", () => {
+    const original = new Map([["x", { data: testNumber(10) }]]);
+    const narrowedTypes = new Map<string, { data: IData }>();
+    const ctx = createTestContext({
+      variables: original,
+      narrowedTypes,
+    });
+
+    const trueResult = updateContextWithNarrowedTypes(
+      ctx,
+      testBoolean(true),
+      "thenElse",
+      0
+    );
+    expect(trueResult.variables.get("x")).toBeDefined();
+    expect(trueResult.variables.get("x")?.data.type.kind).toBe("number");
+
+    const falseResult = updateContextWithNarrowedTypes(
+      ctx,
+      testBoolean(true),
+      "thenElse",
+      1
+    );
+    expect(falseResult.variables.get("x")).toBeDefined();
+    expect(falseResult.variables.get("x")?.data.type.kind).toBe("number");
+  });
+
+  it("does not remove variable from true branch when narrowed type was never due to missing narrowType", () => {
+    const original = new Map([["x", { data: testNumber(10) }]]);
+    const narrowedWithNever = new Map([
+      ["x", { data: createData({ type: { kind: "never" } }) }],
+    ]);
+    const ctx = createTestContext({
+      variables: original,
+      narrowedTypes: narrowedWithNever,
+    });
+
+    const trueResult = updateContextWithNarrowedTypes(
+      ctx,
+      testBoolean(true),
+      "thenElse",
+      0
+    );
+    expect(trueResult.variables.has("x")).toBe(false);
+
+    const falseResult = updateContextWithNarrowedTypes(
+      ctx,
+      testBoolean(true),
+      "thenElse",
+      1
+    );
+    expect(falseResult.variables.has("x")).toBe(true);
+    expect(falseResult.variables.get("x")?.data.type.kind).toBe("number");
+  });
 });
 
 describe("getOperationResultType", () => {
@@ -2720,23 +2775,15 @@ describe("createFileVariables", () => {
     expect(result.size).toBe(0);
   });
 
-  it("excludes the current operation file", () => {
-    const file1 = createProjectFile({ type: "operation", name: "op1" });
-    const file2 = createProjectFile({ type: "operation", name: "op2" });
-    const result = createFileVariables([file1, file2], file1.id);
-    expect(result.has("op1")).toBe(false);
-    expect(result.has("op2")).toBe(true);
-  });
-
   it("merges with base variables", () => {
     const base = new Map([["existing", { data: testString("base") }]]);
     const file1 = createProjectFile({ type: "operation", name: "myOp" });
-    const result = createFileVariables([file1], undefined, base);
+    const result = createFileVariables([file1], base);
     expect(result.has("existing")).toBe(true);
     expect(result.has("myOp")).toBe(true);
   });
 
-  it("includes all operation files when no currentOperationId", () => {
+  it("includes all operation files", () => {
     const file1 = createProjectFile({ type: "operation", name: "op1" });
     const file2 = createProjectFile({ type: "operation", name: "op2" });
     const result = createFileVariables([file1, file2]);

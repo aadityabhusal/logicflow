@@ -34,6 +34,8 @@ export type Context = {
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   isSync?: boolean;
   isIsolated?: boolean;
+  callDepth?: number;
+  maxCallDepth?: number;
   getResult: (id: string) => ExecutionResult | undefined;
   getInstance: (
     id: string

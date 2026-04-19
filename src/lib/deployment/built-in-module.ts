@@ -178,6 +178,8 @@ export const toDictionary = (obj) => ({ ...obj });
 
 // ===== Unknown Operations =====
 
+export const toNumber = (value) => Number(value);
+
 export const toString = (value) => {
   if (
     value !== null &&
