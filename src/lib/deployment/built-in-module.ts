@@ -83,22 +83,22 @@ export function greaterThanOrEqual(...args) {
 
 export const not = (value) => !value;
 
-function _and(left, right) {
-  return left && right;
+function _and(left, rightCallback) {
+  return left && rightCallback();
 }
 export function and(...args) {
   return purry(_and, args);
 }
 
-function _or(left, right) {
-  return left || right;
+function _or(left, rightCallback) {
+  return left || rightCallback();
 }
 export function or(...args) {
   return purry(_or, args);
 }
 
-export const thenElse = (trueVal, falseVal) => (condition) =>
-  condition ? trueVal : falseVal;
+export const thenElse = (trueCallback, falseCallback) => (condition) =>
+  condition ? trueCallback() : falseCallback();
 
 // ===== Tuple Operations =====
 

@@ -96,7 +96,9 @@ export function DetailsPanel() {
   if (!result) {
     return (
       <div className="flex flex-col h-full">
-        <div className="p-1 border-b">Details</div>
+        <div className="p-1 border-b font-bold bg-dropdown-default">
+          Details
+        </div>
         <div className="p-2 text-gray-500">
           Select a data or an operation call
         </div>

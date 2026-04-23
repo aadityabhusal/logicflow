@@ -1222,13 +1222,7 @@ function processDataType(type: DataType): DataType {
       return {
         ...type,
         parameters: type.parameters.map((param) => {
-          const processedType = processDataType(param.type);
-          return {
-            ...param,
-            type: param.isOptional
-              ? resolveUnionType([processedType, { kind: "undefined" }])
-              : processedType,
-          };
+          return { ...param, type: processDataType(param.type) };
         }),
         result: processDataType(type.result),
       };
@@ -1254,13 +1248,7 @@ function processDataType(type: DataType): DataType {
       return {
         ...type,
         constructorArgs: type.constructorArgs.map((arg) => {
-          const processedType = processDataType(arg.type);
-          return {
-            ...arg,
-            type: arg.isOptional
-              ? resolveUnionType([processedType, { kind: "undefined" }])
-              : processedType,
-          };
+          return { ...arg, type: processDataType(arg.type) };
         }),
       };
     default:
@@ -1284,14 +1272,7 @@ export function resolveParameters(
       param.type.kind === "reference"
         ? resolveReferenceType(param.type, context)
         : param.type;
-    const processedType = processDataType(resolvedType);
-    if (param.isOptional) {
-      return {
-        ...param,
-        type: resolveUnionType([processedType, { kind: "undefined" }]),
-      };
-    }
-    return { ...param, type: processedType };
+    return { ...param, type: processDataType(resolvedType) };
   });
 }
 
@@ -1407,9 +1388,12 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
   ) {
     return data.value;
   } else if (isDataOfType(data, "error")) {
-    return new Error(
-      `${ErrorTypesData[data.type.errorType].name}: ${data.value.reason}`
+    const prefix = `${ErrorTypesData[data.type.errorType].name}: `;
+    const reason = data.value.reason;
+    const hasPrefix = Object.values(ErrorTypesData).some((t) =>
+      reason.startsWith(`${t.name}: `)
     );
+    return new Error(hasPrefix ? reason : `${prefix}${reason}`);
   } else if (isDataOfType(data, "instance")) {
     return context.getInstance(data.value.instanceId)?.instance;
   } else if (isDataOfType(data, "operation")) {

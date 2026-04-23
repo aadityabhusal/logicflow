@@ -50,7 +50,7 @@ export const DataTypes: {
     type: {
       kind: "operation",
       parameters: [],
-      result: { kind: "undefined" },
+      result: { kind: "unknown" },
     },
   },
   condition: {

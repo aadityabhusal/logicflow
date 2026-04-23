@@ -1,8 +1,7 @@
-import { IData, OperationType, IStatement, DataType } from "@/lib/types";
+import { IData, DataType } from "@/lib/types";
 import {
   getRawValueFromData,
   createDataFromRawValue,
-  resolveReference,
   isObject,
 } from "@/lib/utils";
 import { createRuntimeError } from "@/lib/operations/built-in";
@@ -272,7 +271,6 @@ const chainPromiseOperations: OperationListItem[] = [
   ),
 ];
 
-// Re-implement error handlers with lazyHandler
 const errorMethods = [
   "error",
   "badRequest",
@@ -302,11 +300,7 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
         },
       },
     ],
-    lazyHandler: (
-      context: Context,
-      chainData: IData,
-      _callback: IStatement
-    ) => {
+    handler: (context: Context, chainData: IData, callback: IData) => {
       const instance = getRawValueFromData(
         chainData,
         context
@@ -314,10 +308,6 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
       if (!instance)
         return createRuntimeError("WretchResponseChain instance not found");
 
-      const callback = resolveReference(
-        _callback.data,
-        context
-      ) as IData<OperationType>;
       const newChain = (instance[methodName] as (_: unknown) => unknown)(
         getRawValueFromData(callback, context)
       );

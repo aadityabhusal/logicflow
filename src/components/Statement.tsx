@@ -217,7 +217,7 @@ const StatementComponent = ({
                 }
                 onClick={() => {
                   if (disableNameToggle) return;
-                  const rest = createData({
+                  const data = createData({
                     value: [createStatement({ data: statement.data })],
                   });
                   handleStatement(
@@ -227,11 +227,7 @@ const StatementComponent = ({
                         ? isRest
                           ? { isOptional: undefined, isRest: undefined }
                           : isOptional
-                            ? {
-                                isOptional: undefined,
-                                isRest: true,
-                                data: rest,
-                              }
+                            ? { isOptional: undefined, isRest: true, data }
                             : { isOptional: true, isRest: undefined }
                         : {
                             name: hasName

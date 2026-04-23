@@ -9,7 +9,7 @@ import {
   resolveUnionType,
   unwrapThenable,
 } from "../utils";
-import { OBJECT_TYPES } from "../data";
+import { DataTypes, OBJECT_TYPES } from "../data";
 import { Context, OperationListItem } from "../execution/types";
 
 export function getArrayCallbackParams(
@@ -991,11 +991,7 @@ export const remedaOperationList: (Omit<
   {
     name: "isFunction",
     parameters: (data) => [getUnionParam(data)],
-    narrowType: {
-      kind: "operation",
-      parameters: [],
-      result: { kind: "unknown" },
-    },
+    narrowType: DataTypes.operation.type,
   },
   {
     name: "isPlainObject",

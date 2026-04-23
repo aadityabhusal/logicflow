@@ -87,6 +87,9 @@ const router = createBrowserRouter([
       await waitForHydration();
       useProjectStore.getState().setCurrentProjectId(params.id!);
       useProjectStore.getState().setCurrentFileId(fileName ?? undefined);
+      const { useExecutionResultsStore } =
+        await import("./lib/execution/store");
+      useExecutionResultsStore.getState().removeAll();
       useNavigationStore.getState().setNavigation({ result: undefined });
       return null;
     },

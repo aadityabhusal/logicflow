@@ -2191,7 +2191,7 @@ describe("resolveParameters", () => {
     expect(params[1].type.kind).toBe("string");
   });
 
-  it("wraps optional parameters in union with undefined", () => {
+  it("does not wrap optional parameters in union with undefined", () => {
     const ctx = createTestContext();
     const data = testString("hello");
     const opItem: OperationListItem = {
@@ -2203,13 +2203,8 @@ describe("resolveParameters", () => {
       handler: () => createData(),
     };
     const params = resolveParameters(opItem, data, ctx);
-    expect(params[1].type.kind).toBe("union");
-    if (params[1].type.kind === "union") {
-      expect(params[1].type.types.some((t) => t.kind === "undefined")).toBe(
-        true
-      );
-      expect(params[1].type.types.some((t) => t.kind === "number")).toBe(true);
-    }
+    expect(params[1].type.kind).toBe("number");
+    expect(params[1].isOptional).toBe(true);
   });
 
   it("resolves reference types from context variables", () => {

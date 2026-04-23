@@ -23,6 +23,7 @@ import {
   updateContextWithNarrowedTypes,
   getContextExpectedTypes,
   getCacheKey,
+  getTypeSignature,
 } from "@/lib/utils";
 import { OperationListItem, Context, Thenable } from "./types";
 import {
@@ -545,9 +546,9 @@ function executeOperationCore(
       return createData({
         type: { kind: "error", errorType: "type_error" },
         value: {
-          reason: `Parameter #${errorParamIndex + 1} should be of type '${
-            resolvedParams[errorParamIndex + 1].type.kind
-          }'`,
+          reason: `Parameter #${errorParamIndex + 1} should be of type: \`${getTypeSignature(
+            resolvedParams[errorParamIndex + 1].type
+          )}\` but is of type: \`${getTypeSignature(parameters[errorParamIndex].type)}\``,
         },
       });
     }

@@ -86,24 +86,28 @@ export function greaterThanOrEqual(...args: readonly unknown[]) {
 
 export const not = (value: boolean) => !value;
 
-function _and(left: boolean, right: boolean): boolean {
-  return left && right;
+function _and(left: boolean, rightCallback: () => unknown): boolean {
+  return left && !!rightCallback();
 }
 export function and(...args: readonly unknown[]) {
   return purry(_and, args);
 }
 
-function _or(left: boolean, right: boolean): boolean {
-  return left || right;
+function _or(left: boolean, rightCallback: () => unknown): boolean {
+  return left || !!rightCallback();
 }
 export function or(...args: readonly unknown[]) {
   return purry(_or, args);
 }
 
-export const thenElse =
-  <T, F>(trueVal: T, falseVal: F) =>
+export const _thenElse =
+  <T, F>(trueCallback: () => T, falseCallback: () => F) =>
   (condition: boolean) =>
-    condition ? trueVal : falseVal;
+    condition ? trueCallback() : falseCallback();
+
+export function thenElse(...args: readonly unknown[]) {
+  return purry(_thenElse, args);
+}
 
 // ===== Tuple Operations =====
 

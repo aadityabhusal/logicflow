@@ -101,9 +101,7 @@ function SidebarTabsComponent() {
                   ].join(" "),
                   tabSection: smallScreen ? "p-2" : "p-3",
                 }}
-              >
-                {smallScreen ? tab.label : ""}
-              </Tabs.Tab>
+              />
             </Tooltip>
           ))}
         </Tabs.List>

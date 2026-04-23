@@ -13,9 +13,10 @@ import {
   createOperationFile,
 } from "@/tests/helpers";
 
-vi.mock("@/lib/utils", () => ({
-  createOperationFromFile: vi.fn(),
-}));
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/utils")>();
+  return { ...actual, createOperationFromFile: vi.fn() };
+});
 
 vi.mock("@/lib/format-code", () => ({
   generateOperation: vi.fn(),

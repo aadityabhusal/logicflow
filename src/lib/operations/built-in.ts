@@ -1,19 +1,17 @@
 import { IData, OperationType, UnionType } from "../types";
-import { InstanceTypes } from "../data";
+import { DataTypes, InstanceTypes } from "../data";
 import {
   createData,
   getUnionActiveType,
   isDataOfType,
   isTypeCompatible,
-  updateContextWithNarrowedTypes,
   getRawValueFromData,
   createDataFromRawValue,
   createThenable,
   unwrapThenable,
-  getStatementResult,
   createStatement,
-  resolveUnionType,
   resolveConstructorArgs,
+  updateContextWithNarrowedTypes,
 } from "../utils";
 import { wretchOperations } from "./wretch";
 import {
@@ -183,43 +181,43 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
 const lazyOperations: OperationListItem[] = [
   {
     name: "and",
-    parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: (context, data, trueStatement) => {
+    parameters: [
+      { type: { kind: "boolean" } },
+      { type: DataTypes.operation.type },
+    ],
+    lazyHandler: (context, data, cb) => {
       if (!getRawValueFromData(data, context)) {
         return createDataFromRawValue(false, context);
       }
-      const execute = context.isSync
-        ? context.executeStatementSync
-        : context.executeStatement;
-
-      const result = execute(
-        trueStatement,
-        updateContextWithNarrowedTypes(context, data)
-      );
-
+      const result = (
+        getRawValueFromData(
+          cb.data,
+          updateContextWithNarrowedTypes(context, data)
+        ) as () => unknown
+      )();
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (r) => createDataFromRawValue(getRawValueFromData(r, context), context)
+        (r) => createDataFromRawValue(r, context)
       );
     },
   },
   {
     name: "or",
-    parameters: [{ type: { kind: "boolean" } }, { type: { kind: "unknown" } }],
-    lazyHandler: (context, data, falseStatement) => {
+    parameters: [
+      { type: { kind: "boolean" } },
+      { type: DataTypes.operation.type },
+    ],
+    lazyHandler: (context, data, cb) => {
       if (getRawValueFromData(data, context)) {
         return createDataFromRawValue(true, context);
       }
-      const execute = context.isSync
-        ? context.executeStatementSync
-        : context.executeStatement;
-
-      const result = execute(
-        falseStatement,
-        updateContextWithNarrowedTypes(context, data)
-      );
-
+      const result = (
+        getRawValueFromData(
+          cb.data,
+          updateContextWithNarrowedTypes(context, data)
+        ) as () => unknown
+      )();
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (r) => createDataFromRawValue(getRawValueFromData(r, context), context)
+        (r) => createDataFromRawValue(r, context)
       );
     },
   },
@@ -227,37 +225,21 @@ const lazyOperations: OperationListItem[] = [
     name: "thenElse",
     parameters: [
       { type: { kind: "boolean" } },
-      { type: { kind: "unknown" } },
-      { type: { kind: "unknown" }, isOptional: true },
+      { type: DataTypes.operation.type },
+      { type: DataTypes.operation.type, isOptional: true },
     ],
-    lazyHandler: (context, data, trueBranch, falseBranch?) => {
+    lazyHandler: (context, data, trueCb, falseCb?) => {
       const value = getRawValueFromData(data, context);
-      const execute = context.isSync
-        ? context.executeStatementSync
-        : context.executeStatement;
-
+      const _context = value
+        ? updateContextWithNarrowedTypes(context, data, "thenElse", 0)
+        : updateContextWithNarrowedTypes(context, data, "thenElse", 1);
       const result = value
-        ? execute(
-            trueBranch,
-            updateContextWithNarrowedTypes(context, data, "thenElse", 0)
-          )
-        : falseBranch
-          ? execute(
-              falseBranch,
-              updateContextWithNarrowedTypes(context, data, "thenElse", 1)
-            )
-          : createDataFromRawValue(undefined, context);
-
+        ? (getRawValueFromData(trueCb.data, _context) as () => unknown)()
+        : falseCb
+          ? (getRawValueFromData(falseCb.data, _context) as () => unknown)()
+          : undefined;
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (res) =>
-          createDataFromRawValue(getRawValueFromData(res, context), {
-            ...context,
-            expectedType: resolveUnionType(
-              value
-                ? [res.type, getStatementResult(trueBranch, context).type]
-                : [getStatementResult(trueBranch, context).type, res.type]
-            ),
-          })
+        (res) => createDataFromRawValue(res, context)
       );
     },
   },

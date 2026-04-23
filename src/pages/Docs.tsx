@@ -107,7 +107,7 @@ export default function Docs() {
           >
             {isSidebarOpen ? <FaXmark size={20} /> : <FaBars size={20} />}
           </Button>
-          <h2 className="text-2xl">Logicflow Docs</h2>
+          <h2 className="text-xl md:text-2xl">Logicflow Docs</h2>
         </div>
         <Button
           component={Link}

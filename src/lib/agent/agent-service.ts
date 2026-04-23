@@ -8,6 +8,7 @@ import { IData, IStatement, OperationType, DataType } from "../types";
 import { createData } from "../utils";
 import { nanoid } from "nanoid";
 import { AgentChange, AgentResponseSchema } from "../schemas";
+import { DataTypes } from "../data";
 
 function getProviderModel(modelId: string, apiKey: string) {
   const [provider, ...modelParts] = modelId.split("/");
@@ -278,7 +279,9 @@ function convertStatementRecordToEntries(stmt: IStatement): IStatement {
   return {
     ...stmt,
     operations: stmt.operations?.map(convertOperationRecordToEntries) ?? [],
-    data: stmt.data ? convertDataRecordToEntries(stmt.data) : createDefaultData(),
+    data: stmt.data
+      ? convertDataRecordToEntries(stmt.data)
+      : createDefaultData(),
   };
 }
 
@@ -286,7 +289,9 @@ function convertDataRecordToEntries(data: IData): IData {
   if (!data.type) return data;
 
   if (data.type.kind === "object" || data.type.kind === "dictionary") {
-    const value = data.value as { entries: Array<{ key: string; value: IStatement }> };
+    const value = data.value as {
+      entries: Array<{ key: string; value: IStatement }>;
+    };
     const entries = value.entries ?? [];
     return {
       ...data,
@@ -313,7 +318,8 @@ function convertOperationRecordToEntries(
     value: {
       ...op.value,
       parameters: op.value.parameters.map(convertStatementRecordToEntries),
-      statements: op.value.statements?.map(convertStatementRecordToEntries) ?? [],
+      statements:
+        op.value.statements?.map(convertStatementRecordToEntries) ?? [],
     },
   };
 }
@@ -335,11 +341,13 @@ function createOperationCallFromEntity(
 
   return {
     id: nanoid(),
-    type: { kind: "operation", parameters: [], result: { kind: "unknown" } },
+    type: DataTypes.operation.type,
     value: {
       name: opValue?.name ?? entity.name ?? "",
-      parameters: opValue?.parameters?.map(convertStatementRecordToEntries) ?? [],
-      statements: opValue?.statements?.map(convertStatementRecordToEntries) ?? [],
+      parameters:
+        opValue?.parameters?.map(convertStatementRecordToEntries) ?? [],
+      statements:
+        opValue?.statements?.map(convertStatementRecordToEntries) ?? [],
     },
   };
 }

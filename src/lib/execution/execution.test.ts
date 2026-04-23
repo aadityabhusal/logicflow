@@ -32,7 +32,7 @@ import {
   booleanStatement,
   testUndefined,
 } from "@/tests/helpers";
-import { IData } from "../types";
+import { IData, IStatement, OperationType } from "../types";
 
 describe("getFilteredOperations", () => {
   it("returns operations compatible with string data", () => {
@@ -1302,5 +1302,219 @@ describe("type narrowing bug fixes", () => {
     );
     expect(falseBranchCtx.variables.get("x")).toBeDefined();
     expect(falseBranchCtx.variables.get("x")?.data.type.kind).toBe("number");
+  });
+});
+
+describe("lazy operations context variable access", () => {
+  function findBuiltIn(name: string): OperationListItem {
+    const op = builtInOperations.find((o) => o.name === name);
+    if (!op) throw new Error(`Operation "${name}" not found`);
+    return op;
+  }
+
+  function operationBranch(
+    statements: IStatement[],
+    parameters?: OperationType["parameters"],
+    name?: string
+  ): IStatement {
+    const opType: OperationType = {
+      kind: "operation",
+      parameters: parameters ?? [],
+      result:
+        statements.length > 0
+          ? statements[statements.length - 1].data.type
+          : { kind: "undefined" },
+    };
+    return createStatement({
+      data: createData({
+        type: opType,
+        value: { parameters: [], statements, name },
+      }),
+    });
+  }
+
+  describe("thenElse", () => {
+    it("accesses outer context variable in true branch", () => {
+      const ctx = createTestContext();
+      ctx.variables.set("x", { data: testNumber(10) });
+
+      const branch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("thenElse");
+      const data = testBoolean(true);
+      const result = executeOperationSync(op, data, [branch], ctx);
+      expect(result.type.kind).toBe("number");
+      expect(result.value).toBe(10);
+    });
+
+    it("accesses outer context variable in false branch", () => {
+      const ctx = createTestContext();
+      ctx.variables.set("x", { data: testNumber(20) });
+
+      const trueBranch = operationBranch([
+        createStatement({ data: testString("yes") }),
+      ]);
+      const falseBranch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("thenElse");
+      const data = testBoolean(false);
+      const result = executeOperationSync(
+        op,
+        data,
+        [trueBranch, falseBranch],
+        ctx
+      );
+      expect(result.type.kind).toBe("number");
+      expect(result.value).toBe(20);
+    });
+
+    it("accesses outer context variable in both branches", () => {
+      const ctx = createTestContext();
+      ctx.variables.set("x", { data: testNumber(10) });
+
+      const trueBranch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const falseBranch = operationBranch([
+        createStatement({ data: testReference("x", "ref2") }),
+      ]);
+      const op = findBuiltIn("thenElse");
+      const result1 = executeOperationSync(
+        op,
+        testBoolean(true),
+        [trueBranch, falseBranch],
+        ctx
+      );
+      expect(result1.value).toBe(10);
+
+      const result2 = executeOperationSync(
+        op,
+        testBoolean(false),
+        [trueBranch, falseBranch],
+        ctx
+      );
+      expect(result2.value).toBe(10);
+    });
+
+    it("returns undefined when false branch is omitted and condition is false", () => {
+      const ctx = createTestContext();
+      const trueBranch = operationBranch([
+        createStatement({ data: testString("yes") }),
+      ]);
+      const op = findBuiltIn("thenElse");
+      const result = executeOperationSync(
+        op,
+        testBoolean(false),
+        [trueBranch],
+        ctx
+      );
+      expect(isDataOfType(result, "undefined")).toBe(true);
+    });
+
+    it("accesses outer context variable asynchronously in true branch", async () => {
+      const ctx = createTestContext({ isSync: false });
+      ctx.variables.set("x", { data: testNumber(42) });
+
+      const branch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("thenElse");
+      const result = await executeOperation(
+        op,
+        testBoolean(true),
+        [branch],
+        ctx
+      );
+      expect(result.type.kind).toBe("number");
+      expect(result.value).toBe(42);
+    });
+  });
+
+  describe("and", () => {
+    it("accesses outer context variable in branch when condition is true", () => {
+      const ctx = createTestContext();
+      ctx.variables.set("x", { data: testNumber(5) });
+
+      const branch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("and");
+      const data = testBoolean(true);
+      const result = executeOperationSync(op, data, [branch], ctx);
+      expect(result.value).toBe(5);
+    });
+
+    it("short-circuits when condition is false", () => {
+      const ctx = createTestContext();
+      const branch = operationBranch([
+        createStatement({ data: testString("should not reach") }),
+      ]);
+      const op = findBuiltIn("and");
+      const data = testBoolean(false);
+      const result = executeOperationSync(op, data, [branch], ctx);
+      expect(result.value).toBe(false);
+    });
+
+    it("accesses outer context variable asynchronously in branch", async () => {
+      const ctx = createTestContext({ isSync: false });
+      ctx.variables.set("x", { data: testNumber(7) });
+
+      const branch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("and");
+      const result = await executeOperation(
+        op,
+        testBoolean(true),
+        [branch],
+        ctx
+      );
+      expect(result.value).toBe(7);
+    });
+  });
+
+  describe("or", () => {
+    it("accesses outer context variable in branch when condition is false", () => {
+      const ctx = createTestContext();
+      ctx.variables.set("x", { data: testNumber(3) });
+
+      const branch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("or");
+      const data = testBoolean(false);
+      const result = executeOperationSync(op, data, [branch], ctx);
+      expect(result.value).toBe(3);
+    });
+
+    it("short-circuits when condition is true", () => {
+      const ctx = createTestContext();
+      const branch = operationBranch([
+        createStatement({ data: testString("should not reach") }),
+      ]);
+      const op = findBuiltIn("or");
+      const data = testBoolean(true);
+      const result = executeOperationSync(op, data, [branch], ctx);
+      expect(result.value).toBe(true);
+    });
+
+    it("accesses outer context variable asynchronously in branch", async () => {
+      const ctx = createTestContext({ isSync: false });
+      ctx.variables.set("x", { data: testNumber(9) });
+
+      const branch = operationBranch([
+        createStatement({ data: testReference("x", "ref1") }),
+      ]);
+      const op = findBuiltIn("or");
+      const result = await executeOperation(
+        op,
+        testBoolean(false),
+        [branch],
+        ctx
+      );
+      expect(result.value).toBe(9);
+    });
   });
 });

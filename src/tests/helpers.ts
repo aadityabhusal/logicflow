@@ -17,6 +17,12 @@ import {
 } from "@/lib/types";
 import { Context } from "@/lib/execution/types";
 import { createData, createStatement, createDefaultValue } from "@/lib/utils";
+import {
+  executeOperation,
+  executeOperationSync,
+  executeStatement,
+  executeStatementSync,
+} from "@/lib/execution/execution";
 
 export function createTestContext(overrides?: Partial<Context>): Context {
   const results = new Map<
@@ -56,10 +62,10 @@ export function createTestContext(overrides?: Partial<Context>): Context {
         type: DataType;
       }
     ) => instances.set(id, data),
-    executeStatement: () => Promise.resolve(createData()),
-    executeStatementSync: () => createData(),
-    executeOperation: () => Promise.resolve(createData()),
-    executeOperationSync: () => createData(),
+    executeStatement,
+    executeStatementSync,
+    executeOperation,
+    executeOperationSync,
   };
 
   return { ...base, ...overrides };
