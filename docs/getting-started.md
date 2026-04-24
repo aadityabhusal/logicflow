@@ -59,5 +59,5 @@ Every statement executes immediately as you build. Click any statement to see it
 - Use different data types (numbers, booleans, arrays) and their operations
 - Try creating larger programs with complex logic
 - Create additional operation files from the sidebar to organize your code
-- Create a **trigger** operation to expose it as an HTTP endpoint (click the "+" button in the Operations sidebar tab and select "Trigger")
+- Create a **trigger** operation to expose it as an HTTP endpoint (click the "+" button in the Operations sidebar tab and select "Trigger"). See [Deployment](#deployment) for how to configure and deploy triggers.
 - View the generated code for your operation in the Code panel

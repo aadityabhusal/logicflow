@@ -40,6 +40,8 @@ An operation can be marked as a **trigger**, which exposes it as an HTTP endpoin
 
 To create a trigger, click the "+" button in the Operations sidebar tab and select "Trigger" instead of "Operation". Trigger operations are indicated by a globe icon in the sidebar.
 
+Triggers can be configured with a custom path, allowed HTTP methods, and CORS settings. See [Deployment](#deployment) for details on configuring triggers and deploying to platforms.
+
 ### Chaining Operations
 
 The power of Logicflow comes from chaining operations together. Each operation receives the result of the previous operation as its first parameter.

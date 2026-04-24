@@ -7,7 +7,7 @@ The sidebar provides access to different tools through tabs:
 - **Operations** — Lists all operation files in your project. Add, rename, and delete operations.
 - **Details** — Shows type information and execution results for the selected data or operation call.
 - **Code** — Displays the generated TypeScript/JavaScript code for the current operation. See [Code Generation](#code-generation).
-- **Deploy** — Configure deployment settings for your project.
+- **Deploy** — Configure deployment settings for your project. Add platforms (Vercel or Supabase), manage API tokens and environment variables, and deploy trigger operations as live HTTP endpoints. See [Deployment](#deployment) for details.
 
 Click a tab to open it. Click the same tab again to close it and collapse the sidebar. You can also use keyboard shortcuts: **Ctrl+Shift+1** for Operations, **Ctrl+Shift+@** for Details, **Ctrl+Shift+3** for Code.
 
