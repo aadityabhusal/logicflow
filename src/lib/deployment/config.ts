@@ -11,6 +11,7 @@ import { generatePlatformHandlers } from "./entrypoint-wrapper";
 import { generatePlatformConfig } from "./platform-config";
 import { generateBuiltInModule } from "./built-in-module";
 import { prefixNpmImports } from "./utils";
+import { PACKAGE_REGISTRY } from "../data";
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
   return project.files.filter((f) => f.type === "operation" && f.trigger);
@@ -75,7 +76,7 @@ export async function generateDeployableProject(
     files = prefixNpmImports(files);
   } else {
     try {
-      const npmDeps = resolveNpmDependencies(project, operationFiles);
+      const npmDeps = resolveNpmDependencies(project, files);
       const packageJson = generatePackageJson(
         { ...project, deployment },
         npmDeps
@@ -98,32 +99,33 @@ export async function generateDeployableProject(
 
 type Dependency = { name: string; version: string };
 
-export function resolveNpmDependencies(
-  project: Project,
-  operationFiles: ProjectFile[]
-): Dependency[] {
-  const dependencies = project.dependencies?.npm;
-  const npmDependencies: Dependency[] = [
-    {
-      name: "remeda",
-      version:
-        dependencies?.find((d) => d.name === "remeda")?.version || "latest",
-    },
-  ];
-
-  for (const file of operationFiles) {
-    if (file.type !== "operation") continue;
-
-    if (file.content.value.source?.name === "wretch") {
-      if (!npmDependencies.some((d) => d.name === "wretch")) {
-        npmDependencies.push({
-          name: "wretch",
-          version:
-            dependencies?.find((d) => d.name === "wretch")?.version || "latest",
-        });
-      }
+function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
+  const packages = new Set<string>();
+  const allContents = files.map((f) => f.content).join("\n");
+  for (const pkg of Object.keys(PACKAGE_REGISTRY)) {
+    if (allContents.includes(PACKAGE_REGISTRY[pkg].importStatement)) {
+      packages.add(pkg);
     }
   }
+  if (allContents.includes("from 'remeda'")) packages.add("remeda");
+  return packages;
+}
+
+export function resolveNpmDependencies(
+  project: Project,
+  generatedFiles: DeploymentFile[]
+): Dependency[] {
+  const dependencies = project.dependencies?.npm;
+  const packageNames = extractNpmPackageNames(generatedFiles);
+  const npmDependencies: Dependency[] = [];
+
+  for (const name of packageNames) {
+    npmDependencies.push({
+      name,
+      version: dependencies?.find((d) => d.name === name)?.version || "latest",
+    });
+  }
+
   return npmDependencies;
 }
 

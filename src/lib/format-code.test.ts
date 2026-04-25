@@ -23,6 +23,7 @@ import {
   testCondition,
   booleanStatement,
 } from "@/tests/helpers";
+import { nanoid } from "nanoid";
 
 describe("generateData", () => {
   it("generates string literal", () => {
@@ -131,7 +132,7 @@ describe("generateData", () => {
     const ctx = createCodeGenContext(createTestContext());
     const op = testOperation(
       [stringStatement("", "x")],
-      [stringStatement("result")],
+      [stringStatement("result")]
     );
     const result = generateData(op, ctx);
     expect(result).toContain("x");
@@ -184,7 +185,7 @@ describe("generateOperation", () => {
     const op = testOperation(
       [stringStatement("", "input")],
       [stringStatement("output")],
-      "myOp",
+      "myOp"
     );
     const result = generateOperation(op, ctx);
     expect(result).toContain("import");
@@ -296,6 +297,223 @@ describe("generateOperation", () => {
   });
 });
 
+describe("wretch code generation", () => {
+  it("generates wretch factory call for Wretch instances", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const data = createData({
+      value: {
+        className: "Wretch",
+        instanceId: nanoid(),
+        constructorArgs: [stringStatement("https://api.example.com")],
+      },
+    });
+    const result = generateData(data, ctx);
+    expect(result).toBe('wretch("https://api.example.com")');
+    expect(ctx.usedPackages.has("wretch")).toBe(true);
+  });
+
+  it("generates instance method call for wretch source operations", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const urlOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Wretch",
+              constructorArgs: [],
+            },
+          },
+          { type: { kind: "string" } },
+        ],
+        result: {
+          kind: "instance",
+          className: "Wretch",
+          constructorArgs: [],
+        },
+      },
+      value: {
+        name: "url",
+        parameters: [stringStatement("/users")],
+        statements: [],
+        source: { name: "wretch" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({
+        value: {
+          className: "Wretch",
+          instanceId: nanoid(),
+          constructorArgs: [stringStatement("https://api.example.com")],
+        },
+      }),
+      operations: [urlOp],
+    });
+    const op = testOperation([], [stmt], "wretchTest");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import wretch from 'wretch'");
+    expect(result).toContain(
+      'R.pipe(wretch("https://api.example.com"), (arg) => arg.url("/users"))'
+    );
+  });
+
+  it("generates instance method call for wretchResponseChain source operations", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const jsonOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "WretchResponseChain",
+              constructorArgs: [],
+            },
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+      value: {
+        name: "json",
+        parameters: [],
+        statements: [],
+        source: { name: "wretchResponseChain" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("ignored"),
+      operations: [jsonOp],
+    });
+    const op = testOperation([], [stmt], "chainTest");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import wretch from 'wretch'");
+    expect(result).toContain('R.pipe("ignored", (arg) => arg.json())');
+  });
+
+  it("includes wretch import when wretch instance is used", () => {
+    const ctx = createTestContext();
+    const data = createData({
+      value: {
+        className: "Wretch",
+        instanceId: nanoid(),
+        constructorArgs: [stringStatement("https://api.example.com")],
+      },
+    });
+    const stmt = createStatement({ data });
+    const op = testOperation([], [stmt], "usesWretch");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import wretch from 'wretch'");
+  });
+
+  it("omits wretch import when no wretch usage", () => {
+    const ctx = createTestContext();
+    const stmt = createStatement({ data: testString("hello") });
+    const op = testOperation([], [stmt], "noWretch");
+    const result = generateOperation(op, ctx);
+    expect(result).not.toContain("import wretch");
+  });
+
+  it("generates complete wretch pipeline with proper method chaining", () => {
+    const ctx = createCodeGenContext(createTestContext());
+
+    const urlOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Wretch",
+              constructorArgs: [],
+            },
+          },
+          { type: { kind: "string" } },
+        ],
+        result: {
+          kind: "instance",
+          className: "Wretch",
+          constructorArgs: [],
+        },
+      },
+      value: {
+        name: "url",
+        parameters: [stringStatement("/users")],
+        statements: [],
+        source: { name: "wretch" },
+      },
+    });
+
+    const getOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Wretch",
+              constructorArgs: [],
+            },
+          },
+        ],
+        result: {
+          kind: "instance",
+          className: "WretchResponseChain",
+          constructorArgs: [],
+        },
+      },
+      value: {
+        name: "get",
+        parameters: [],
+        statements: [],
+        source: { name: "wretch" },
+      },
+    });
+
+    const jsonOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "WretchResponseChain",
+              constructorArgs: [],
+            },
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+      value: {
+        name: "json",
+        parameters: [],
+        statements: [],
+        source: { name: "wretchResponseChain" },
+      },
+    });
+
+    const wretchInstance = createData({
+      value: {
+        className: "Wretch",
+        instanceId: nanoid(),
+        constructorArgs: [stringStatement("https://api.example.com")],
+      },
+    });
+
+    const stmt = createStatement({
+      data: wretchInstance,
+      operations: [urlOp, getOp, jsonOp],
+    });
+
+    const op = testOperation([], [stmt], "fetchUsers");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import wretch from 'wretch'");
+    expect(result).toContain(
+      'R.pipe(wretch("https://api.example.com"), (arg) => arg.url("/users"), (arg) => arg.get(), (arg) => arg.json())'
+    );
+  });
+});
+
 describe("generateData additional coverage", () => {
   it("generates negative number literal", () => {
     const ctx = createCodeGenContext(createTestContext());
@@ -323,7 +541,7 @@ describe("generateData additional coverage", () => {
     const ctx = createCodeGenContext(createTestContext());
     const dict = testDictionary(
       [{ key: "name", value: stringStatement("test") }],
-      { kind: "string" },
+      { kind: "string" }
     );
     const result = generateData(dict, ctx);
     expect(result).toContain("name");
@@ -335,7 +553,7 @@ describe("generateData additional coverage", () => {
     const cond = testCondition(
       booleanStatement(true),
       stringStatement("yes"),
-      stringStatement("no"),
+      stringStatement("no")
     );
     const result = generateData(cond, ctx);
     expect(result).toContain("condition");
@@ -391,7 +609,7 @@ describe("recursive operation code generation", () => {
     const op = testOperation(
       [stringStatement("", "input")],
       [stringStatement("output")],
-      "myOp",
+      "myOp"
     );
     const result = generateOperation(op, ctx);
     expect(result).toContain("const myOp = ");
@@ -404,7 +622,7 @@ describe("recursive operation code generation", () => {
       data: testOperation(
         [numberStatement(0, "n")],
         [numberStatement(0)],
-        "factorial",
+        "factorial"
       ),
     });
 
@@ -440,7 +658,7 @@ describe("recursive operation code generation", () => {
       data: testOperation(
         [numberStatement(0, "n")],
         [numberStatement(0)],
-        "factorial",
+        "factorial"
       ),
     });
 
@@ -459,7 +677,7 @@ describe("recursive operation code generation", () => {
     const op = testOperation(
       [numberStatement(0, "n")],
       [innerStmt],
-      "factorial",
+      "factorial"
     );
 
     const result = generateOperation(op, ctx);

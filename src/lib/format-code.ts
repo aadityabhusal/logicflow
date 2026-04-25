@@ -9,7 +9,7 @@ import {
   getTypeSignature,
 } from "./utils";
 import { builtInOperations } from "./operations/built-in";
-import { InstanceTypes } from "./data";
+import { InstanceTypes, PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./data";
 import type { Options } from "prettier";
 
 export async function formatCode(code: string, options?: Options) {
@@ -25,12 +25,18 @@ export async function formatCode(code: string, options?: Options) {
   });
 }
 
-type OperationSource = "instance" | "remeda" | "builtin" | "userDefined";
+type OperationSource =
+  | "instance"
+  | "remeda"
+  | "external"
+  | "builtin"
+  | "userDefined";
 
 type CodeGenContext = Context & {
   showResult?: boolean;
   getOperation: (name: string) => OperationListItem | undefined;
   importedOperations: Set<string>;
+  usedPackages: Set<string>;
   currentOperationName?: string;
 };
 
@@ -43,6 +49,7 @@ export function createCodeGenContext(
     showResult: options?.showResult,
     currentOperationName: options?.currentOperationName,
     importedOperations: new Set(),
+    usedPackages: new Set(),
     getOperation: (name: string) =>
       builtInOperations.find((op) => op.name === name),
   };
@@ -59,7 +66,15 @@ export function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "error")) {
     return `new Error("${data.value.reason}")`;
   } else if (isDataOfType(data, "instance")) {
-    return `new ${data.value.className}(${data.value.constructorArgs.map((arg) => generateStatement(arg, context, true)).join(", ")})`;
+    const instanceConfig = InstanceTypes[data.value.className];
+    const constructorArgs = data.value.constructorArgs
+      .map((arg) => generateStatement(arg, context, true))
+      .join(", ");
+    if (instanceConfig?.importInfo) {
+      context.usedPackages.add(instanceConfig.importInfo.packageName);
+      return `${instanceConfig.importInfo.packageName}(${constructorArgs})`;
+    }
+    return `new ${data.value.className}(${constructorArgs})`;
   } else if (isDataOfType(data, "operation")) {
     return generateCallback(data, { ...context, showResult: undefined });
   } else if (isDataOfType(data, "reference")) {
@@ -88,8 +103,21 @@ function getOperationSource(
 ): OperationSource {
   const opName = operation.value.name;
   if (!opName) return "userDefined";
+
+  const valueSourceName = operation.value.source?.name;
+  if (valueSourceName === "remeda") return "remeda";
+  if (valueSourceName && valueSourceName in SOURCE_PACKAGE_MAP) {
+    context.usedPackages.add(SOURCE_PACKAGE_MAP[valueSourceName]);
+    return "external";
+  }
+
   const opItem = context.getOperation(opName);
   if (opItem?.source?.name === "remeda") return "remeda";
+  const itemSourceName = opItem?.source?.name;
+  if (itemSourceName && itemSourceName in SOURCE_PACKAGE_MAP) {
+    context.usedPackages.add(SOURCE_PACKAGE_MAP[itemSourceName]);
+    return "external";
+  }
   const firstParamType = operation.type.parameters[0]?.type;
   if (firstParamType?.kind === "instance") {
     const Constructor = InstanceTypes[firstParamType.className]?.Constructor;
@@ -116,6 +144,7 @@ function generateOperationCall(
 
   switch (source) {
     case "instance":
+    case "external":
       return `, (arg) => arg.${operation.value.name}(${params})`;
     case "remeda":
     case "builtin": {
@@ -200,6 +229,10 @@ export function generateOperation(
   const userImports = Array.from(codeGenContext.importedOperations)
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
-  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${userImports}\n`;
+  const packageImports = Array.from(codeGenContext.usedPackages)
+    .filter((pkg) => pkg in PACKAGE_REGISTRY)
+    .map((pkg) => PACKAGE_REGISTRY[pkg].importStatement)
+    .join(";\n");
+  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports ? packageImports + ";\n" : ""}${userImports}\n`;
   return `${imports}\nconst ${operationName} = ${callback};\nexport default ${operationName};`;
 }

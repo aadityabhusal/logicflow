@@ -1,4 +1,4 @@
-import { IData, OperationType, UnionType } from "../types";
+import { IData, OperationType, UnionType, DataType } from "../types";
 import { DataTypes, InstanceTypes } from "../data";
 import {
   createData,
@@ -605,3 +605,48 @@ export const builtInOperations: OperationListItem[] = [
   ...remedaOperations,
   ...requestOperations,
 ];
+
+function getTypeKeys(type: DataType): string[] {
+  if (type.kind === "union") return type.types.flatMap(getTypeKeys);
+  return [type.kind === "instance" ? `instance:${type.className}` : type.kind];
+}
+
+function getFirstParamKind(op: OperationListItem): string[] {
+  if (typeof op.parameters !== "function") {
+    const firstType = op.parameters[0]?.type;
+    return firstType ? [...getTypeKeys(firstType)] : ["unknown"];
+  }
+  for (const val of Object.values(DataTypes)) {
+    const firstType = op.parameters(createData({ type: val.type }))[0]?.type;
+    if (firstType && firstType.kind !== "never") {
+      return [...getTypeKeys(firstType)];
+    }
+  }
+  return ["unknown"];
+}
+
+const builtInOperationsByKind = new Map<string, OperationListItem[]>();
+for (const op of builtInOperations) {
+  for (const key of getFirstParamKind(op)) {
+    const list = builtInOperationsByKind.get(key);
+    if (list) list.push(op);
+    else builtInOperationsByKind.set(key, [op]);
+  }
+}
+
+export function getOperationsForDataType(data: IData): OperationListItem[] {
+  const keys = [...getTypeKeys(data.type), "unknown"];
+
+  const seen = new Set<string>();
+  const result: OperationListItem[] = [];
+  for (const key of keys) {
+    const ops = builtInOperationsByKind.get(key);
+    if (!ops) continue;
+    for (const op of ops) {
+      if (seen.has(op.name)) continue;
+      seen.add(op.name);
+      result.push(op);
+    }
+  }
+  return result;
+}

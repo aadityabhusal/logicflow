@@ -29,22 +29,22 @@ export const DataTypes: {
     type: { kind: "boolean" },
   },
   array: {
-    type: { kind: "array", elementType: { kind: "undefined" } },
+    type: { kind: "array", elementType: { kind: "unknown" } },
   },
   tuple: {
-    type: { kind: "tuple", elements: [{ kind: "undefined" }] },
+    type: { kind: "tuple", elements: [{ kind: "unknown" }] },
   },
   object: {
     type: {
       kind: "object",
-      properties: [{ key: "key", value: { kind: "undefined" } }],
+      properties: [{ key: "key", value: { kind: "unknown" } }],
     },
   },
   dictionary: {
-    type: { kind: "dictionary", elementType: { kind: "undefined" } },
+    type: { kind: "dictionary", elementType: { kind: "unknown" } },
   },
   union: {
-    type: { kind: "union", types: [{ kind: "undefined" }] },
+    type: { kind: "union", types: [{ kind: "unknown" }] },
   },
   operation: {
     type: {
@@ -56,7 +56,7 @@ export const DataTypes: {
   condition: {
     type: {
       kind: "condition",
-      result: { kind: "union", types: [{ kind: "undefined" }] },
+      result: { kind: "union", types: [{ kind: "unknown" }] },
     },
     hideFromDropdown: true,
   },
@@ -90,7 +90,7 @@ function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
               parameters: resolveType ?? [
                 { name: "value", type: { kind: "unknown" } },
               ],
-              result: { kind: "undefined" },
+              result: { kind: "unknown" },
             },
           },
           {
@@ -98,7 +98,7 @@ function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
             type: {
               kind: "operation",
               parameters: [{ name: "reason", type: { kind: "unknown" } }],
-              result: { kind: "undefined" },
+              result: { kind: "unknown" },
             },
             isOptional: true,
           },
@@ -113,6 +113,15 @@ function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   ] as OperationType["parameters"];
 }
 
+export const PACKAGE_REGISTRY: Record<string, { importStatement: string }> = {
+  wretch: { importStatement: "import wretch from 'wretch'" },
+};
+
+export const SOURCE_PACKAGE_MAP: Record<string, string> = {
+  wretch: "wretch",
+  wretchResponseChain: "wretch",
+};
+
 export type InstanceTypeConfig<
   K extends string = string,
   C extends ConstructorType = ConstructorType,
@@ -124,6 +133,7 @@ export type InstanceTypeConfig<
     | ((data?: OperationType["parameters"]) => OperationType["parameters"]);
   readonly hideFromDropdown?: boolean;
   readonly prepareArgs?: (args: unknown[]) => unknown[];
+  readonly importInfo?: { packageName: string };
 };
 
 export const customInstances = new WeakMap<object, ConstructorType>();
@@ -228,6 +238,7 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
         isOptional: true,
       },
     ] as OperationType["parameters"],
+    importInfo: { packageName: "wretch" },
   },
   WretchResponseChain: {
     name: "WretchResponseChain",

@@ -107,9 +107,15 @@ describe("getTriggeredOperations", () => {
 });
 
 describe("resolveNpmDependencies", () => {
-  it("always includes remeda with latest version by default", () => {
+  it("extracts remeda from generated files", () => {
     const project = createTestProject();
-    const result = resolveNpmDependencies(project, []);
+    const files = [
+      {
+        path: "src/operations/myOp.js",
+        content: "import * as R from 'remeda';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
     expect(result).toEqual([{ name: "remeda", version: "latest" }]);
   });
 
@@ -119,15 +125,27 @@ describe("resolveNpmDependencies", () => {
         npm: [{ name: "remeda", version: "2.0.0", exports: [] }],
       },
     });
-    const result = resolveNpmDependencies(project, []);
+    const files = [
+      {
+        path: "src/operations/myOp.js",
+        content: "import * as R from 'remeda';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
     expect(result).toEqual([{ name: "remeda", version: "2.0.0" }]);
   });
 
-  it("includes wretch when an operation file has wretch source", () => {
+  it("includes wretch when generated files import wretch", () => {
     const project = createTestProject();
-    const files = [createOperationFile("api", { name: "wretch" })];
+    const files = [
+      {
+        path: "src/operations/api.js",
+        content: "import wretch from 'wretch';\nimport * as R from 'remeda';",
+      },
+    ];
     const result = resolveNpmDependencies(project, files);
     const names = result.map((d) => d.name);
+    expect(names).toContain("remeda");
     expect(names).toContain("wretch");
     expect(result.find((d) => d.name === "wretch")!.version).toBe("latest");
   });
@@ -141,42 +159,56 @@ describe("resolveNpmDependencies", () => {
         ],
       },
     });
-    const files = [createOperationFile("api", { name: "wretch" })];
-    const result = resolveNpmDependencies(project, files);
-    expect(result.find((d) => d.name === "wretch")!.version).toBe("1.5.0");
-  });
-
-  it("does not duplicate wretch if multiple operations use it", () => {
-    const project = createTestProject();
     const files = [
-      createOperationFile("api1", { name: "wretch" }),
-      createOperationFile("api2", { name: "wretch" }),
+      {
+        path: "src/operations/api.js",
+        content: "import wretch from 'wretch';\nimport * as R from 'remeda';",
+      },
     ];
     const result = resolveNpmDependencies(project, files);
-    const wretchCount = result.filter((d) => d.name === "wretch").length;
-    expect(wretchCount).toBe(1);
+    expect(result.find((d) => d.name === "wretch")!.version).toBe("1.5.0");
+    expect(result.find((d) => d.name === "remeda")!.version).toBe("2.0.0");
   });
 
-  it("returns only remeda when no wretch sources", () => {
+  it("returns empty array when no known packages found", () => {
     const project = createTestProject();
-    const files = [createOperationFile("op1"), createOperationFile("op2")];
+    const files = [
+      { path: "src/built-in.js", content: "export const foo = 1;" },
+    ];
     const result = resolveNpmDependencies(project, files);
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("remeda");
+    expect(result).toEqual([]);
   });
 
-  it("skips non-operation files", () => {
+  it("does not duplicate packages", () => {
     const project = createTestProject();
-    const nonOpFile: ProjectFile = {
-      id: "g1",
-      name: "globals",
-      type: "globals",
-      createdAt: Date.now(),
-      content: {},
-    };
-    const result = resolveNpmDependencies(project, [nonOpFile]);
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("remeda");
+    const files = [
+      {
+        path: "src/operations/op1.js",
+        content: "import * as R from 'remeda';",
+      },
+      {
+        path: "src/operations/op2.js",
+        content: "import * as R from 'remeda';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
+    const remedaCount = result.filter((d) => d.name === "remeda").length;
+    expect(remedaCount).toBe(1);
+  });
+
+  it("ignores relative imports", () => {
+    const project = createTestProject();
+    const files = [
+      {
+        path: "src/operations/myOp.js",
+        content:
+          "import * as _ from '../built-in.js';\nimport * as R from 'remeda';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
+    const names = result.map((d) => d.name);
+    expect(names).toContain("remeda");
+    expect(names).not.toContain("built-in.js");
   });
 });
 

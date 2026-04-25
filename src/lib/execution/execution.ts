@@ -27,7 +27,7 @@ import {
 } from "@/lib/utils";
 import { OperationListItem, Context, Thenable } from "./types";
 import {
-  builtInOperations,
+  getOperationsForDataType,
   createRuntimeError,
 } from "@/lib/operations/built-in";
 
@@ -104,9 +104,9 @@ export function getFilteredOperations<T extends boolean = false>(
   grouped?: T
 ): FilteredOperationsReturn<T> {
   const data = resolveReference(_data, context);
-  const builtInOps = builtInOperations.filter((operation) => {
-    return dataSupportsOperation(data, operation, context);
-  });
+  const builtInOps = getOperationsForDataType(data).filter((operation) =>
+    dataSupportsOperation(data, operation, context)
+  );
 
   const userDefinedOps = context.variables
     .entries()
@@ -336,8 +336,8 @@ function executeStatementCore(
   );
   opCallContext.setContext(operation.id, opCallContext);
 
+  const params = foundOp && resolveParameters(foundOp, data, opCallContext);
   operation.value.parameters.forEach((param, index) => {
-    const params = foundOp && resolveParameters(foundOp, data, opCallContext);
     opCallContext.setContext(
       param.id,
       getChildContext(
