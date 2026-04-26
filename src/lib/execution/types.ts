@@ -36,6 +36,7 @@ export type Context = {
   isIsolated?: boolean;
   callDepth?: number;
   maxCallDepth?: number;
+  abortSignal?: AbortSignal;
   getResult: (id: string) => ExecutionResult | undefined;
   getInstance: (
     id: string

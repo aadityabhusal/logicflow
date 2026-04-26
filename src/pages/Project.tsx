@@ -14,7 +14,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
+import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
@@ -81,12 +81,19 @@ export default function Project() {
     }
   }, [deferredOperation, setNavigation, rootContext]);
 
-  const [debouncedOperation] = useDebouncedValue(currentOperation, 500);
   useEffect(() => {
-    if (debouncedOperation) {
-      setOperationResults(debouncedOperation, rootContext);
-    }
-  }, [debouncedOperation, rootContext, setNavigation]);
+    if (!deferredOperation) return;
+    const controller = new AbortController();
+
+    setOperationResults(deferredOperation, {
+      ...rootContext,
+      abortSignal: controller.signal,
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [deferredOperation, rootContext]);
 
   useEffect(() => {
     useExecutionResultsStore.getState().removeAll();

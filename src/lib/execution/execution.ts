@@ -31,6 +31,14 @@ import {
   createRuntimeError,
 } from "@/lib/operations/built-in";
 
+const YIELD_CALL_DEPTH = 50;
+
+async function yieldToBrowser(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new Error("Execution aborted");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (signal?.aborted) throw new Error("Execution aborted");
+}
+
 function getChildContext(
   context: Context,
   options?: {
@@ -282,34 +290,51 @@ export function setOperationResults(
 ): Thenable<void> {
   const { parameters, statements } = operation.value;
   const context = createContext(_context, { scopeId: operation.id });
+  const allStatements = [...parameters, ...statements];
   const _execute = context.isSync ? executeStatementSync : executeStatement;
 
-  return [...parameters, ...statements].reduce(
-    (chain, stmt, index) => {
-      return chain.then(() => {
-        const result = _execute(
-          stmt,
-          index < parameters.length
-            ? getChildContext(_context, { index, enforceExpectedType: true })
-            : context
+  function processStatement(statement: IStatement, index: number) {
+    const result = _execute(
+      statement,
+      index < parameters.length
+        ? getChildContext(_context, { index, enforceExpectedType: true })
+        : context
+    );
+    return (result instanceof Promise ? result : createThenable(result)).then(
+      (resolved) => {
+        const variable = createContextVariable(
+          statement,
+          context,
+          resolved,
+          operation.type.parameters
         );
-        return (
-          result instanceof Promise ? result : createThenable(result)
-        ).then((result) => {
-          const variable = createContextVariable(
-            stmt,
-            context,
-            result,
-            operation.type.parameters
-          );
-          if (variable && stmt.name) {
-            context.variables.set(stmt.name, variable);
-          }
-        });
-      });
-    },
-    createThenable(undefined) as Thenable<void>
-  );
+        if (variable && statement.name) {
+          context.variables.set(statement.name, variable);
+        }
+      }
+    );
+  }
+
+  if (context.isSync) {
+    return allStatements.reduce(
+      (chain, stmt, i) => chain.then(() => processStatement(stmt, i)),
+      createThenable<void>(undefined)
+    );
+  }
+
+  return (async () => {
+    for (const [i, stmt] of allStatements.entries()) {
+      if (context.abortSignal?.aborted) return;
+      if (context.abortSignal && i > 0 && i % YIELD_CALL_DEPTH === 0) {
+        try {
+          await yieldToBrowser(context.abortSignal);
+        } catch {
+          return;
+        }
+      }
+      await processStatement(stmt, i);
+    }
+  })();
 }
 
 function executeStatementCore(
@@ -379,6 +404,16 @@ export async function executeStatement(
   context: Context
 ): Promise<IData> {
   context.setContext(statement.id, context);
+
+  const callDepth = context.callDepth ?? 0;
+  if (!context.isSync && callDepth > 0 && callDepth % YIELD_CALL_DEPTH === 0) {
+    try {
+      await yieldToBrowser(context.abortSignal);
+    } catch {
+      return createData();
+    }
+  }
+
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const value = currentData.value;
