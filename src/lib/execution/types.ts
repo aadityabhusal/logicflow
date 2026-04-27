@@ -37,6 +37,7 @@ export type Context = {
   callDepth?: number;
   maxCallDepth?: number;
   abortSignal?: AbortSignal;
+  yieldCounter?: { calls: number };
   getResult: (id: string) => ExecutionResult | undefined;
   getInstance: (
     id: string

@@ -356,3 +356,5 @@ export const PLATFORMS = {
     },
   },
 };
+
+export const MAX_CALL_DEPTH = 7500;

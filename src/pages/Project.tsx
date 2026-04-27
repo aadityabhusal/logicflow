@@ -18,6 +18,7 @@ import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
+import { Context, ExecutionResult } from "@/lib/execution/types";
 import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -83,14 +84,30 @@ export default function Project() {
 
   useEffect(() => {
     if (!deferredOperation) return;
-    const controller = new AbortController();
 
-    setOperationResults(deferredOperation, {
+    let cancelled = false;
+    const controller = new AbortController();
+    const results = new Map<string, ExecutionResult>();
+    const contexts = new Map<string, Context>();
+    const localContext: Context = {
       ...rootContext,
       abortSignal: controller.signal,
+      getResult: (id) => results.get(id) ?? rootContext.getResult(id),
+      setResult: (id, result) => results.set(id, result),
+      getContext: (id) => contexts.get(id) ?? rootContext.getContext(id),
+      setContext: (id, context) => {
+        if (context.isIsolated && contexts.has(id)) return;
+        contexts.set(id, context);
+      },
+    };
+
+    setOperationResults(deferredOperation, localContext).then(() => {
+      if (cancelled) return;
+      useExecutionResultsStore.setState(() => ({ results, contexts }));
     });
 
     return () => {
+      cancelled = true;
       controller.abort();
     };
   }, [deferredOperation, rootContext]);

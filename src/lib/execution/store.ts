@@ -66,7 +66,7 @@ export const useExecutionResultsStore =
       rootContext: {
         scopeId: "_root_",
         variables: createRootContextVariables(),
-        maxCallDepth: 7500,
+        yieldCounter: { calls: 0 },
         ...getTriggerExpectedType(),
         getResult: (id) => get().getResult(id),
         getInstance: (id) => get().getInstance(id),
@@ -131,6 +131,7 @@ export const useExecutionResultsStore =
           }
           const newRootContext = {
             ...state.rootContext,
+            yieldCounter: { calls: 0 },
             variables: createRootContextVariables(),
             ...getTriggerExpectedType(),
           };

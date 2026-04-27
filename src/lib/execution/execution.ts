@@ -30,8 +30,10 @@ import {
   getOperationsForDataType,
   createRuntimeError,
 } from "@/lib/operations/built-in";
+import { MAX_CALL_DEPTH } from "../data";
 
-const YIELD_CALL_DEPTH = 50;
+const YIELD_EVERY_N_CALLS = 250;
+const YIELD_EVERY_N_STATEMENTS = 250;
 
 async function yieldToBrowser(signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw new Error("Execution aborted");
@@ -325,7 +327,7 @@ export function setOperationResults(
   return (async () => {
     for (const [i, stmt] of allStatements.entries()) {
       if (context.abortSignal?.aborted) return;
-      if (context.abortSignal && i > 0 && i % YIELD_CALL_DEPTH === 0) {
+      if (context.abortSignal && i > 0 && i % YIELD_EVERY_N_STATEMENTS === 0) {
         try {
           await yieldToBrowser(context.abortSignal);
         } catch {
@@ -405,12 +407,15 @@ export async function executeStatement(
 ): Promise<IData> {
   context.setContext(statement.id, context);
 
-  const callDepth = context.callDepth ?? 0;
-  if (!context.isSync && callDepth > 0 && callDepth % YIELD_CALL_DEPTH === 0) {
-    try {
-      await yieldToBrowser(context.abortSignal);
-    } catch {
-      return createData();
+  if (!context.isSync && context.callDepth) {
+    if (!context.yieldCounter) context.yieldCounter = { calls: 0 };
+    context.yieldCounter.calls++;
+    if (context.yieldCounter.calls % YIELD_EVERY_N_CALLS === 0) {
+      try {
+        await yieldToBrowser(context.abortSignal);
+      } catch {
+        return createData();
+      }
     }
   }
 
@@ -595,8 +600,8 @@ function executeOperationCore(
       }
     }
 
-    const maxCallDepth = context.maxCallDepth ?? 0;
     const nextCallDepth = (context.callDepth ?? 0) + 1;
+    const maxCallDepth = context.maxCallDepth ?? MAX_CALL_DEPTH;
     if (maxCallDepth > 0 && nextCallDepth > maxCallDepth) {
       return createData({
         type: { kind: "error", errorType: "runtime_error" },
