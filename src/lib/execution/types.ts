@@ -38,6 +38,8 @@ export type Context = {
   maxCallDepth?: number;
   abortSignal?: AbortSignal;
   yieldCounter?: { calls: number };
+  operationCache?: Map<string, IData>;
+  _memoCacheKey?: string;
   getResult: (id: string) => ExecutionResult | undefined;
   getInstance: (
     id: string

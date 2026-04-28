@@ -634,6 +634,13 @@ for (const op of builtInOperations) {
   }
 }
 
+export const builtInOperationsByName = new Map<string, OperationListItem[]>();
+for (const op of builtInOperations) {
+  const list = builtInOperationsByName.get(op.name);
+  if (list) list.push(op);
+  else builtInOperationsByName.set(op.name, [op]);
+}
+
 export function getOperationsForDataType(data: IData): OperationListItem[] {
   const keys = [...getTypeKeys(data.type), "unknown"];
 

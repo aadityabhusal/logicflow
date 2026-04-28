@@ -91,8 +91,10 @@ export default function Project() {
     const controller = new AbortController();
     const results = new Map<string, ExecutionResult>();
     const contexts = new Map<string, Context>();
+    const instances = new Map<string, ReturnType<Context["getInstance"]>>();
     const localContext: Context = {
       ...rootContext,
+      operationCache: new Map<string, IData>(),
       abortSignal: controller.signal,
       getResult: (id) => results.get(id) ?? rootContext.getResult(id),
       setResult: (id, result) => results.set(id, result),
@@ -101,11 +103,13 @@ export default function Project() {
         if (context.isIsolated && contexts.has(id)) return;
         contexts.set(id, context);
       },
+      getInstance: (id) => instances.get(id) ?? rootContext.getInstance(id),
+      setInstance: (id, instance) => instances.set(id, instance),
     };
 
     setOperationResults(deferredOperation, localContext).then(() => {
       if (cancelled) return;
-      useExecutionResultsStore.setState(() => ({ results, contexts }));
+      useExecutionResultsStore.setState({ results, contexts, instances });
     });
 
     return () => {

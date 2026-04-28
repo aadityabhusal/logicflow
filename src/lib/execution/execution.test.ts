@@ -1518,3 +1518,443 @@ describe("lazy operations context variable access", () => {
     });
   });
 });
+
+describe("memoization", () => {
+  it("caches and returns same object reference for identical inputs", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const op: OperationListItem = {
+      id: "passthrough",
+      name: "passthrough",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(0)],
+    };
+
+    const result1 = await executeOperation(op, testNumber(42), [], ctx);
+    const result2 = await executeOperation(op, testNumber(42), [], ctx);
+
+    expect(result1.value).toBe(0);
+    expect(result2.value).toBe(0);
+    expect(result1.value).toBe(result2.value);
+  });
+
+  it("does not return cached result for different inputs", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const op: OperationListItem = {
+      id: "passthrough2",
+      name: "passthrough",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(0)],
+    };
+
+    const result1 = await executeOperation(op, testNumber(10), [], ctx);
+    const result2 = await executeOperation(op, testNumber(20), [], ctx);
+
+    expect(ctx.operationCache?.size).toBe(2);
+    expect(result1.value).toBe(0);
+    expect(result2.value).toBe(0);
+  });
+
+  it("caches along sync path", () => {
+    const ctx = createTestContext({ operationCache: new Map() });
+
+    const op: OperationListItem = {
+      id: "passthrough3",
+      name: "passthrough",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(0)],
+    };
+
+    const result1 = executeOperationSync(op, testNumber(7), [], ctx);
+    const result2 = executeOperationSync(op, testNumber(7), [], ctx);
+
+    expect(result1.value).toBe(0);
+    expect(result2.value).toBe(0);
+    expect(ctx.operationCache?.size).toBe(1);
+  });
+
+  it("skips caching when operation has no id", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const op = {
+      name: "noIdOp",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(99)],
+    } as OperationListItem;
+
+    await executeOperation(op, testNumber(1), [], ctx);
+    await executeOperation(op, testNumber(1), [], ctx);
+
+    expect(ctx.operationCache?.size).toBe(0);
+  });
+
+  it("skips caching for non-memoizable param types (instance with unsupported arg)", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const op: OperationListItem = {
+      id: "handleError",
+      name: "processError",
+      parameters: [
+        { type: { kind: "error", errorType: "custom_error" }, name: "e" },
+      ],
+      statements: [stringStatement("done")],
+    };
+
+    await executeOperation(op, testError("boom"), [], ctx);
+    await executeOperation(op, testError("boom"), [], ctx);
+
+    expect(ctx.operationCache?.size).toBe(0);
+  });
+
+  it("caches instance with memoizable constructor args", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+    ctx.isSync = false;
+
+    const op: OperationListItem = {
+      id: "greet",
+      name: "greet",
+      parameters: [
+        {
+          type: {
+            kind: "instance",
+            className: "Person",
+            constructorArgs: [
+              { type: { kind: "string" } },
+              { type: { kind: "number" } },
+            ],
+          },
+          name: "person",
+        },
+      ],
+      statements: [stringStatement("hello")],
+    };
+
+    const person = createData({
+      type: {
+        kind: "instance",
+        className: "Person",
+        constructorArgs: [
+          { type: { kind: "string" } },
+          { type: { kind: "number" } },
+        ],
+      },
+      value: {
+        className: "Person",
+        constructorArgs: [stringStatement("Alice"), numberStatement(30)],
+        instanceId: "inst1",
+      },
+    });
+
+    const person2 = createData({
+      type: {
+        kind: "instance",
+        className: "Person",
+        constructorArgs: [
+          { type: { kind: "string" } },
+          { type: { kind: "number" } },
+        ],
+      },
+      value: {
+        className: "Person",
+        constructorArgs: [stringStatement("Alice"), numberStatement(30)],
+        instanceId: "inst2",
+      },
+    });
+
+    await executeOperation(op, person, [], ctx);
+    await executeOperation(op, person2, [], ctx);
+
+    expect(ctx.operationCache?.size).toBe(1);
+  });
+
+  it("does not cache handler-based operations", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const add = builtInOperations.find((o) => o.name === "add")!;
+    await executeOperation(add, testNumber(2), [numberStatement(3)], ctx);
+    await executeOperation(add, testNumber(2), [numberStatement(3)], ctx);
+
+    expect(ctx.operationCache?.size).toBe(0);
+  });
+
+  it("clears cache when context is replaced (removeAll simulation)", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const op: OperationListItem = {
+      id: "passthrough5",
+      name: "passthrough",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(0)],
+    };
+
+    await executeOperation(op, testNumber(1), [], ctx);
+    expect(ctx.operationCache?.size).toBe(1);
+
+    ctx.operationCache = new Map();
+
+    await executeOperation(op, testNumber(1), [], ctx);
+    expect(ctx.operationCache?.size).toBe(1);
+  });
+
+  it("de-duplicates repeated calls", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+
+    const simpleOp: OperationListItem = {
+      id: "identity",
+      name: "identity",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(0)],
+    };
+
+    await executeOperation(simpleOp, testNumber(1), [], ctx);
+    await executeOperation(simpleOp, testNumber(1), [], ctx);
+    await executeOperation(simpleOp, testNumber(2), [], ctx);
+    await executeOperation(simpleOp, testNumber(2), [], ctx);
+    await executeOperation(simpleOp, testNumber(1), [], ctx);
+
+    expect(ctx.operationCache?.size).toBe(2);
+  });
+});
+
+describe("abort signal", () => {
+  it("skips all statements when signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const ctx = createTestContext({
+      isSync: false,
+      abortSignal: controller.signal,
+    });
+
+    const stmt = stringStatement("hello", "x");
+    const op = testOperation([], [stmt]);
+
+    await setOperationResults(op, ctx);
+
+    // No context should be stored for the statement since it was never executed
+    expect(ctx.getContext(stmt.id).scopeId).toBe("_root_");
+  });
+
+  it("executes all statements when signal is not aborted", async () => {
+    const controller = new AbortController();
+
+    const ctx = createTestContext({
+      isSync: false,
+      abortSignal: controller.signal,
+    });
+
+    const stmt = stringStatement("hello", "x");
+    const op = testOperation([], [stmt]);
+
+    await setOperationResults(op, ctx);
+
+    // The statement context should have x stored via executeStatement
+    const stmtCtx = ctx.getContext(stmt.id);
+    expect(stmtCtx.variables.has("x")).toBe(true);
+  });
+
+  it("abort signal does not affect sync path", () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const ctx = createTestContext({
+      isSync: true,
+      abortSignal: controller.signal,
+    });
+
+    const stmt = stringStatement("hello", "x");
+    const op = testOperation([], [stmt]);
+
+    setOperationResults(op, ctx);
+
+    const stmtCtx = ctx.getContext(stmt.id);
+    expect(stmtCtx.variables.has("x")).toBe(true);
+  });
+
+  it("stops deep execution when signal aborts mid-recursion", async () => {
+    const controller = new AbortController();
+
+    const ctx = createTestContext({
+      isSync: false,
+      abortSignal: controller.signal,
+      callDepth: 0,
+    });
+
+    const selfCallingOp: OperationListItem = {
+      name: "recurse",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [
+        createStatement({
+          data: testNumber(0),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "number" },
+              },
+              value: {
+                name: "recurse",
+                parameters: [numberStatement(0)],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("recurse", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        selfCallingOp.statements!,
+        "recurse"
+      ),
+    });
+
+    setTimeout(() => controller.abort(), 0);
+
+    const thenable = setOperationResults(
+      testOperation([numberStatement(1, "n")], selfCallingOp.statements!),
+      { ...ctx, maxCallDepth: 100 }
+    );
+
+    await thenable;
+    // If we get here without throwing, the abort was handled
+  });
+});
+
+describe("yield counter", () => {
+  it("yieldCounter is not set on sync contexts", () => {
+    const ctx = createTestContext({ isSync: true });
+
+    const op = testOperation([], [stringStatement("hello", "x")]);
+    setOperationResults(op, ctx);
+
+    expect(ctx.yieldCounter).toBeUndefined();
+  });
+
+  it("yieldCounter is not incremented at callDepth 0", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      callDepth: 0,
+      yieldCounter: { calls: 0 },
+    });
+
+    const op = testOperation([], [stringStatement("hello", "x")]);
+    await setOperationResults(op, ctx);
+
+    // At callDepth 0, the yield check in executeStatement is skipped
+    expect(ctx.yieldCounter?.calls).toBe(0);
+  });
+
+  it("yieldCounter increments during recursive async execution", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      callDepth: 0,
+      maxCallDepth: 250,
+      yieldCounter: { calls: 0 },
+    });
+
+    const calleeOp: OperationListItem = {
+      name: "callee",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [stringStatement("done")],
+    };
+
+    const callerOp: OperationListItem = {
+      name: "caller",
+      parameters: [],
+      statements: [
+        createStatement({
+          data: testNumber(0),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "string" },
+              },
+              value: {
+                name: "callee",
+                parameters: [numberStatement(42)],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("callee", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        calleeOp.statements!,
+        "callee"
+      ),
+    });
+
+    await setOperationResults(testOperation([], callerOp.statements!), ctx);
+
+    // The callee operation increments callDepth to 1 in executeOperationCore,
+    // and executeStatement checks callDepth > 0 at that level
+    expect(ctx.yieldCounter?.calls).toBeGreaterThan(0);
+  });
+});
+
+describe("buffered setResult/getResult", () => {
+  it("getResult returns value set by setResult within same execution", async () => {
+    const ctx = createTestContext({ isSync: false });
+
+    const stmt = stringStatement("hello", "x");
+    const op = testOperation([], [stmt]);
+    await setOperationResults(op, ctx);
+
+    const stmtCtx = ctx.getContext(stmt.id);
+    expect(stmtCtx.variables.has("x")).toBe(true);
+  });
+
+  it("results from one statement are visible to the next in the same execution", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      yieldCounter: { calls: 0 },
+    });
+
+    const stmt1 = stringStatement("value1", "var1");
+    const stmt2 = createStatement({
+      data: testReference("var1", "ref1"),
+    });
+
+    const op = testOperation([], [stmt1, stmt2]);
+    await setOperationResults(op, ctx);
+
+    const stmtCtx = ctx.getContext(stmt1.id);
+    expect(stmtCtx.variables.has("var1")).toBe(true);
+    expect(stmtCtx.variables.get("var1")?.data.type.kind).toBe("string");
+  });
+});

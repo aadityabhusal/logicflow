@@ -24,16 +24,17 @@ import {
   getContextExpectedTypes,
   getCacheKey,
   getTypeSignature,
+  getRawValueFromData,
 } from "@/lib/utils";
 import { OperationListItem, Context, Thenable } from "./types";
 import {
   getOperationsForDataType,
   createRuntimeError,
+  builtInOperationsByName,
 } from "@/lib/operations/built-in";
 import { MAX_CALL_DEPTH } from "../data";
 
-const YIELD_EVERY_N_CALLS = 250;
-const YIELD_EVERY_N_STATEMENTS = 250;
+const YIELD_INTERVAL = 15;
 
 async function yieldToBrowser(signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw new Error("Execution aborted");
@@ -140,6 +141,69 @@ export function getFilteredOperations<T extends boolean = false>(
         ["User-defined", userDefinedOps],
       ] as FilteredOperationsReturn<T>)
     : (builtInOps.concat(userDefinedOps) as FilteredOperationsReturn<T>);
+}
+
+function findOperationByName(
+  data: IData,
+  context: Context,
+  opName?: string
+): OperationListItem | undefined {
+  if (!opName) return undefined;
+  const candidates = builtInOperationsByName.get(opName);
+  if (candidates) {
+    if (candidates.length === 1) return candidates[0];
+    const resolved = resolveReference(data, context);
+    return candidates.find((op) =>
+      dataSupportsOperation(resolved, op, context)
+    );
+  }
+  return getFilteredOperations(data, context).find((op) => op.name === opName);
+}
+
+function getMemoKey(
+  operation: OperationListItem,
+  inputs: IData[],
+  context: Context
+): string | undefined {
+  if (!context.operationCache || !operation.id) return;
+  if (!inputs.every((p) => isMemoizableDataType(p.type))) return;
+
+  const serialize = (data: IData): unknown => {
+    if (isDataOfType(data, "instance")) {
+      return {
+        [data.value.className]: data.value.constructorArgs.map((arg) =>
+          getRawValueFromData(getStatementResult(arg, context), context)
+        ),
+      };
+    }
+    return getRawValueFromData(data, context);
+  };
+
+  return operation.id + ":" + JSON.stringify(inputs.map(serialize));
+}
+
+function isMemoizableDataType(type: DataType): boolean {
+  switch (type.kind) {
+    case "union":
+      return type.types.every(isMemoizableDataType);
+    case "array":
+    case "dictionary":
+      return isMemoizableDataType(type.elementType);
+    case "tuple":
+      return type.elements.every(isMemoizableDataType);
+    case "object":
+      return type.properties.every((p) => isMemoizableDataType(p.value));
+    case "instance":
+      return type.constructorArgs.every((a) => isMemoizableDataType(a.type));
+    case "number":
+    case "string":
+    case "boolean":
+    case "undefined":
+    case "unknown":
+      return true;
+    default:
+      return false;
+  }
 }
 
 export async function createOperationCall({
@@ -327,7 +391,7 @@ export function setOperationResults(
   return (async () => {
     for (const [i, stmt] of allStatements.entries()) {
       if (context.abortSignal?.aborted) return;
-      if (context.abortSignal && i > 0 && i % YIELD_EVERY_N_STATEMENTS === 0) {
+      if (context.abortSignal && i > 0 && i % YIELD_INTERVAL === 0) {
         try {
           await yieldToBrowser(context.abortSignal);
         } catch {
@@ -358,9 +422,7 @@ function executeStatementCore(
     narrowedTypes: _narrowedTypes,
     skipExecution: getSkipExecution({ context, data, operationName: opName }),
   };
-  const foundOp = getFilteredOperations(data, opCallContext).find(
-    (op) => op.name === opName
-  );
+  const foundOp = findOperationByName(data, context, opName);
   opCallContext.setContext(operation.id, opCallContext);
 
   const params = foundOp && resolveParameters(foundOp, data, opCallContext);
@@ -410,7 +472,7 @@ export async function executeStatement(
   if (!context.isSync && context.callDepth) {
     if (!context.yieldCounter) context.yieldCounter = { calls: 0 };
     context.yieldCounter.calls++;
-    if (context.yieldCounter.calls % YIELD_EVERY_N_CALLS === 0) {
+    if (context.yieldCounter.calls % YIELD_INTERVAL === 0) {
       try {
         await yieldToBrowser(context.abortSignal);
       } catch {
@@ -612,6 +674,11 @@ function executeOperationCore(
     if (!("statements" in operation) || operation.statements.length <= 0) {
       return createData();
     }
+
+    const memoCacheKey = getMemoKey(operation, [data, ...parameters], context);
+    const hit = memoCacheKey && context.operationCache?.get(memoCacheKey);
+    if (hit) return hit;
+
     const newContext = createContext(context, {
       scopeId: operation.id,
       isIsolated: true,
@@ -635,6 +702,7 @@ function executeOperationCore(
         if (variable) newContext.variables.set(_param.name, variable);
       }
     });
+    if (memoCacheKey) newContext._memoCacheKey = memoCacheKey;
     return newContext;
   });
 }
@@ -655,6 +723,11 @@ export async function executeOperation(
       result.variables.set(statement.name, variable);
     }
   }
+
+  const cacheKey = result._memoCacheKey;
+  delete result._memoCacheKey;
+  if (cacheKey) result.operationCache?.set(cacheKey, lastResult);
+
   return lastResult;
 }
 
@@ -674,6 +747,11 @@ export function executeOperationSync(
       result.variables.set(statement.name, variable);
     }
   }
+
+  const cacheKey = result._memoCacheKey;
+  delete result._memoCacheKey;
+  if (cacheKey) result.operationCache?.set(cacheKey, lastResult);
+
   return lastResult;
 }
 
@@ -732,9 +810,7 @@ function applyTypeNarrowing(
     referenceName = data.value.name;
     const reference = context.variables.get(referenceName);
     if (reference) {
-      const foundOp = getFilteredOperations(data, context).find(
-        (op) => op.name === operation.value.name
-      );
+      const foundOp = findOperationByName(data, context, operation.value.name);
 
       if (foundOp?.narrowType) {
         const params = operation.value.parameters.map((p) =>
