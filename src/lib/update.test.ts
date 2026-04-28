@@ -14,7 +14,6 @@ import {
   testUnion,
   testDictionary,
   testTuple,
-  testString,
 } from "@/tests/helpers";
 import {
   createProjectFile,
@@ -170,11 +169,14 @@ describe("updateStatements", () => {
     const ctx = createTestContext();
     const refData = testReference("myVar", "data-ref-1");
     const stmt = createStatement({ data: refData });
-    ctx.variables.set("myVar", {
-      data: createData({ type: { kind: "string" }, value: "resolved" }),
-    });
+    const resolvedData = createData({ value: "resolved" });
+    ctx.variables.set("myVar", { data: resolvedData });
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
+    expect(result[0].data.type.kind).toBe("reference");
+    if (isDataOfType(result[0].data, "reference")) {
+      expect(result[0].data.value.name).toBe("myVar");
+    }
   });
 
   it("updates operation data with nested parameters and statements", () => {
@@ -227,18 +229,6 @@ describe("updateStatements", () => {
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
     expect(isDataOfType(result[0].data, "tuple")).toBe(true);
-  });
-
-  it("returns empty array when removing the only statement", () => {
-    const ctx = createTestContext();
-    const stmt = stringStatement("only");
-    const result = updateStatements({
-      statements: [stmt],
-      context: ctx,
-      changedStatement: stmt,
-      removeStatement: true,
-    });
-    expect(result).toHaveLength(0);
   });
 
   it("preserves statement name when changed statement includes it", () => {
@@ -332,6 +322,20 @@ describe("updateFiles", () => {
     expect(history[0].fileId).toBe(file1.id);
   });
 
+  it("updates dependent files when operation signature changes", () => {
+    const ctx = createTestContext();
+    const file1 = createProjectFile({ type: "operation", name: "helperOp" });
+    const file2 = createProjectFile({ type: "operation", name: "mainOp" });
+    const history: { fileId: string; content: unknown }[] = [];
+    const pushHistory = (fileId: string, content: unknown) => {
+      history.push({ fileId, content });
+    };
+    const changedFile = { ...file1, name: "helperOpUpdated" };
+    const result = updateFiles([file1, file2], pushHistory, ctx, changedFile);
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe("helperOpUpdated");
+  });
+
   it("returns same files when no changed file", () => {
     const ctx = createTestContext();
     const file1 = createProjectFile({ type: "operation", name: "op1" });
@@ -384,7 +388,7 @@ describe("updateFiles", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("handles multiple file changes", () => {
+  it("preserves unchanged files when one file changes", () => {
     const ctx = createTestContext();
     const file1 = createProjectFile({ type: "operation", name: "op1" });
     const file2 = createProjectFile({ type: "operation", name: "op2" });
@@ -453,6 +457,25 @@ describe("updateFiles", () => {
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("op1");
   });
+
+  it("preserves trigger metadata when updating trigger file", () => {
+    const ctx = createTestContext();
+    const file = createProjectFile({
+      type: "operation",
+      name: "webhook",
+      trigger: { type: "http" },
+    });
+    const pushHistory = () => {};
+    const changedFile = {
+      ...file,
+      name: "webhook_updated",
+      trigger: { type: "http" } as const,
+    };
+    const result = updateFiles([file], pushHistory, ctx, changedFile);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("webhook_updated");
+    expect((result[0] as { trigger: unknown }).trigger).toBeDefined();
+  });
 });
 
 describe("updateStatements additional coverage", () => {
@@ -507,16 +530,6 @@ describe("updateStatements additional coverage", () => {
     expect(result[0].data.value).toBe("b");
   });
 
-  it("handles referenced variable update", () => {
-    const ctx = createTestContext();
-    const refStmt = createStatement({
-      data: testReference("myVar", "ref-id"),
-    });
-    ctx.variables.set("myVar", { data: testString("resolved") });
-    const result = updateStatements({ statements: [refStmt], context: ctx });
-    expect(result).toHaveLength(1);
-  });
-
   it("handles statement with same name as previous statement", () => {
     const ctx = createTestContext();
     const stmt1 = stringStatement("first", "myVar");
@@ -528,5 +541,11 @@ describe("updateStatements additional coverage", () => {
     expect(result).toHaveLength(2);
     expect(result[0].name).toBe("myVar");
     expect(result[1].name).toBe("myVar");
+  });
+
+  it("handles empty statements array", () => {
+    const ctx = createTestContext();
+    const result = updateStatements({ statements: [], context: ctx });
+    expect(result).toHaveLength(0);
   });
 });

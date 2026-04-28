@@ -85,8 +85,7 @@ describe("generateData", () => {
   it("generates error as new Error", () => {
     const ctx = createCodeGenContext(createTestContext());
     const result = generateData(testError("oops"), ctx);
-    expect(result).toContain("new Error");
-    expect(result).toContain("oops");
+    expect(result).toBe('new Error("oops")');
   });
 
   it("generates reference as variable name", () => {
@@ -112,6 +111,28 @@ describe("generateData", () => {
     });
     const result = generateData(data, ctx);
     expect(result).toContain("new Date");
+  });
+
+  it("generates instance with constructor arguments", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const data = createData({
+      type: {
+        kind: "instance",
+        className: "URL",
+        constructorArgs: [
+          { name: "url", type: { kind: "string" } },
+          { name: "base", type: { kind: "string" }, isOptional: true },
+        ],
+      },
+      value: {
+        className: "URL",
+        instanceId: "id1",
+        constructorArgs: [stringStatement("https://example.com")],
+      },
+    });
+    const result = generateData(data, ctx);
+    expect(result).toContain("new URL");
+    expect(result).toContain('"https://example.com"');
   });
 
   it("generates union data as active type", () => {
@@ -528,13 +549,13 @@ describe("generateData additional coverage", () => {
   it("generates string with special characters", () => {
     const ctx = createCodeGenContext(createTestContext());
     const result = generateData(testString('he"llo'), ctx);
-    expect(result).toContain("he");
+    expect(result).toBe('"he\\"llo"');
   });
 
   it("generates string with newline", () => {
     const ctx = createCodeGenContext(createTestContext());
     const result = generateData(testString("hello\nworld"), ctx);
-    expect(result).toContain("hello");
+    expect(result).toBe('"hello\\nworld"');
   });
 
   it("generates dictionary data", () => {
@@ -548,7 +569,14 @@ describe("generateData additional coverage", () => {
     expect(result).toContain("test");
   });
 
-  it("generates condition data as JSON", () => {
+  it("generates empty dictionary as {}", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const dict = testDictionary([], { kind: "string" });
+    const result = generateData(dict, ctx);
+    expect(result).toBe("{}");
+  });
+
+  it("generates condition data as JSON with condition structure", () => {
     const ctx = createCodeGenContext(createTestContext());
     const cond = testCondition(
       booleanStatement(true),
@@ -557,6 +585,8 @@ describe("generateData additional coverage", () => {
     );
     const result = generateData(cond, ctx);
     expect(result).toContain("condition");
+    expect(result).toContain("true");
+    expect(result).toContain("false");
   });
 
   it("generates empty object", () => {
@@ -684,5 +714,40 @@ describe("recursive operation code generation", () => {
     expect(result).toContain("const factorial =");
     expect(result).toContain("factorial");
     expect(result).not.toContain("import factorial from");
+  });
+
+  it("generates operation with multiple parameters", () => {
+    const ctx = createTestContext();
+    const stmt = stringStatement("combined");
+    const op = testOperation(
+      [stringStatement("a", "first"), numberStatement(0, "second")],
+      [stmt],
+      "concat"
+    );
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("(first, second)");
+  });
+
+  it("generates internal callback with ...args for stored instance without type", () => {
+    const ctx = createTestContext();
+    const opData = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "greet",
+        parameters: [],
+        statements: [],
+        instanceId: "inst123",
+      },
+    });
+    ctx.setInstance("inst123", {
+      type: { kind: "string" },
+      instance: () => "hello",
+    });
+    const result = generateData(opData, createCodeGenContext(ctx));
+    expect(result).toContain("...args");
   });
 });

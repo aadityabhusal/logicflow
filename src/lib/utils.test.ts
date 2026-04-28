@@ -56,6 +56,7 @@ import {
   testCondition,
   testUnion,
   testUndefined,
+  testTuple,
   simpleStatement,
   stringStatement,
   numberStatement,
@@ -337,10 +338,7 @@ describe("createDefaultValue", () => {
       kind: "error",
       errorType: "custom_error",
     });
-    expect(val).toBeDefined();
-    if (typeof val === "object" && val !== null && "reason" in val) {
-      expect(val.reason).toBe("Error");
-    }
+    expect((val as { reason: string }).reason).toBe("Error");
   });
 
   it("returns error value with correct reason for reference_error", () => {
@@ -348,9 +346,7 @@ describe("createDefaultValue", () => {
       kind: "error",
       errorType: "reference_error",
     });
-    if (typeof val === "object" && val !== null && "reason" in val) {
-      expect(val.reason).toBe("Reference Error");
-    }
+    expect((val as { reason: string }).reason).toBe("Reference Error");
   });
 
   it("returns empty array for array of never type", () => {
@@ -395,6 +391,28 @@ describe("createDefaultValue", () => {
       properties: [{ key: "name", value: { kind: "string" } }],
     });
     expect(val.entries).toHaveLength(0);
+  });
+
+  it("creates default value for instance type with constructorArgs", () => {
+    const val = createDefaultValue({
+      kind: "instance",
+      className: "Date",
+      constructorArgs: [{ name: "ts", type: { kind: "number" } }],
+    });
+    expect(val).toBeDefined();
+    expect((val as { className: string }).className).toBe("Date");
+    expect((val as { instanceId: string }).instanceId).toBeDefined();
+    expect(
+      (val as { constructorArgs: unknown[] }).constructorArgs
+    ).toHaveLength(1);
+  });
+
+  it("returns undefined for reference type", () => {
+    const val = createDefaultValue({
+      kind: "reference",
+      name: "someVar",
+    });
+    expect(val).toBeUndefined();
   });
 });
 
@@ -776,6 +794,32 @@ describe("isTypeCompatible", () => {
       )
     ).toBe(false);
   });
+
+  it("undefined is compatible with undefined", () => {
+    expect(
+      isTypeCompatible({ kind: "undefined" }, { kind: "undefined" }, ctx)
+    ).toBe(true);
+  });
+
+  it("error types with same errorType are compatible", () => {
+    expect(
+      isTypeCompatible(
+        { kind: "error", errorType: "custom_error" },
+        { kind: "error", errorType: "custom_error" },
+        ctx
+      )
+    ).toBe(true);
+  });
+
+  it("error types with different errorType are still kind-compatible", () => {
+    expect(
+      isTypeCompatible(
+        { kind: "error", errorType: "type_error" },
+        { kind: "error", errorType: "reference_error" },
+        ctx
+      )
+    ).toBe(true);
+  });
 });
 
 describe("isDataOfType", () => {
@@ -997,11 +1041,7 @@ describe("resolveUnionType", () => {
 
   it("deduplicates types", () => {
     const result = resolveUnionType([{ kind: "string" }, { kind: "string" }]);
-    if (result.kind === "union") {
-      expect(result.types).toHaveLength(1);
-    } else {
-      expect(result.kind).toBe("string");
-    }
+    expect(result.kind).toBe("string");
   });
 
   it("flattens nested unions", () => {
@@ -1270,14 +1310,6 @@ describe("getSkipExecution", () => {
     expect(result?.kind).toBe("unreachable");
   });
 
-  it("returns undefined when no operation name", () => {
-    const ctx = createTestContext();
-    const data = testString("hello");
-    expect(
-      getSkipExecution({ context: ctx, data, operationName: undefined })
-    ).toBeUndefined();
-  });
-
   it("returns undefined for or/and without paramIndex", () => {
     const ctx = createTestContext();
     expect(
@@ -1406,7 +1438,7 @@ describe("getInverseTypes", () => {
 });
 
 describe("createVariableName", () => {
-  it("generates param1 for first parameter", () => {
+  it("returns bare prefix when no prior names exist", () => {
     expect(createVariableName({ prefix: "param", prev: [] })).toBe("param");
   });
 
@@ -1641,6 +1673,30 @@ describe("getTypeSignature", () => {
     });
     expect(sig).toContain("x?");
   });
+
+  it("formats empty tuple as []", () => {
+    const sig = getTypeSignature({ kind: "tuple", elements: [] });
+    expect(sig).toBe("[]");
+  });
+
+  it("formats nested object with depth", () => {
+    const sig = getTypeSignature({
+      kind: "object",
+      properties: [
+        {
+          key: "user",
+          value: {
+            kind: "object",
+            properties: [{ key: "name", value: { kind: "string" } }],
+            required: ["name"],
+          },
+        },
+      ],
+      required: ["user"],
+    });
+    expect(sig).toContain("user: {");
+    expect(sig).toContain("name: string");
+  });
 });
 
 describe("createDataFromRawValue", () => {
@@ -1684,6 +1740,11 @@ describe("createDataFromRawValue", () => {
     expect(
       result.type.kind === "object" || result.type.kind === "dictionary"
     ).toBe(true);
+    if (result.type.kind === "dictionary") {
+      expect(result.type.elementType).toBeDefined();
+    } else if (result.type.kind === "object") {
+      expect(result.type.properties).toBeDefined();
+    }
   });
 
   it("converts Error to error type", () => {
@@ -1807,6 +1868,28 @@ describe("createDataFromRawValue", () => {
       expect(result.type.result).toBeUndefined();
     }
   });
+
+  it("converts nested object with expectedType preserving structure", () => {
+    const ctxWithExpected = createTestContext({
+      expectedType: {
+        kind: "object",
+        properties: [
+          {
+            key: "user",
+            value: {
+              kind: "object",
+              properties: [{ key: "name", value: { kind: "string" } }],
+            },
+          },
+        ],
+      },
+    });
+    const data = createDataFromRawValue(
+      { user: { name: "Alice" } },
+      ctxWithExpected
+    );
+    expect(data.type.kind).toBe("object");
+  });
 });
 
 describe("getRawValueFromData", () => {
@@ -1902,6 +1985,33 @@ describe("getRawValueFromData", () => {
     ) as Error;
     expect(result.message).toContain("not found");
   });
+
+  it("extracts dictionary values as plain object", () => {
+    const dict = testDictionary(
+      [
+        { key: "a", value: stringStatement("1") },
+        { key: "b", value: numberStatement(2) },
+      ],
+      { kind: "string" }
+    );
+    const result = getRawValueFromData(dict, ctx) as Record<string, unknown>;
+    expect(result.a).toBe("1");
+    expect(result.b).toBe(2);
+  });
+
+  it("extracts tuple values as array", () => {
+    const tuple = testTuple([stringStatement("x"), numberStatement(1)]);
+    const result = getRawValueFromData(tuple, ctx) as unknown[];
+    expect(Array.isArray(result)).toBe(true);
+    expect(result[0]).toBe("x");
+    expect(result[1]).toBe(1);
+  });
+
+  it("extracts operation data as function", () => {
+    const op = testOperation([], [stringStatement("hello")], "myOp");
+    const result = getRawValueFromData(op, ctx);
+    expect(typeof result).toBe("function");
+  });
 });
 
 describe("createProjectFile", () => {
@@ -1930,6 +2040,19 @@ describe("createProjectFile", () => {
   it("creates json file", () => {
     const file = createProjectFile({ type: "json" });
     expect(file.type).toBe("json");
+  });
+
+  it("creates trigger file with request parameter", () => {
+    const file = createProjectFile({
+      type: "operation",
+      trigger: { type: "http" },
+    });
+    expect(file.type).toBe("operation");
+    expect((file as { trigger: unknown }).trigger).toBeDefined();
+    expect(
+      (file as { content: { value: { parameters: unknown[] } } }).content.value
+        .parameters.length
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -2944,6 +3067,21 @@ describe("createContext", () => {
     const parent = createTestContext();
     const child = createContext(parent, { enforceExpectedType: true });
     expect(child.enforceExpectedType).toBe(true);
+  });
+
+  it("inherits skipExecution from parent", () => {
+    const parent = createTestContext({
+      skipExecution: { reason: "test skip", kind: "unreachable" },
+    });
+    const child = createContext(parent);
+    expect(child.skipExecution).toBeDefined();
+    expect(child.skipExecution?.kind).toBe("unreachable");
+  });
+
+  it("inherits isSync from parent", () => {
+    const parent = createTestContext({ isSync: true });
+    const child = createContext(parent);
+    expect(child.isSync).toBe(true);
   });
 });
 

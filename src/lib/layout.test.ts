@@ -6,6 +6,9 @@ import {
   isSimpleData,
   isComplexData,
   isSimpleStatement,
+  getEntityLayout,
+  getStatementLayout,
+  getOperationCallLayout,
   THRESHOLD,
   SEPARATOR_WIDTH,
   MAX_STRING_DISPLAY_LENGTH,
@@ -21,6 +24,7 @@ import {
   testOperation,
   testError,
   testReference,
+  testTuple,
   stringStatement,
   numberStatement,
   booleanStatement,
@@ -58,6 +62,13 @@ describe("isSimpleData", () => {
         }).type
       )
     ).toBe(false));
+  it("returns false for union", () =>
+    expect(
+      isSimpleData({
+        kind: "union",
+        types: [{ kind: "string" }, { kind: "number" }],
+      })
+    ).toBe(false));
 });
 
 describe("isComplexData", () => {
@@ -65,6 +76,28 @@ describe("isComplexData", () => {
     expect(isComplexData(testArray([]))).toBe(true));
   it("returns false for string", () =>
     expect(isComplexData(testString("x"))).toBe(false));
+  it("returns true for dictionary", () =>
+    expect(isComplexData(testDictionary([], { kind: "string" }))).toBe(true));
+  it("returns true for condition", () =>
+    expect(
+      isComplexData(
+        testCondition(
+          booleanStatement(true),
+          stringStatement("a"),
+          stringStatement("b")
+        )
+      )
+    ).toBe(true));
+  it("returns true for operation", () =>
+    expect(isComplexData(testOperation())).toBe(true));
+  it("returns true for instance", () =>
+    expect(
+      isComplexData(
+        createData({
+          type: { kind: "instance", className: "Date", constructorArgs: [] },
+        })
+      )
+    ).toBe(true));
 });
 
 describe("constants", () => {
@@ -329,6 +362,18 @@ describe("getEntityWidth — instances", () => {
     });
     expect(getEntityWidth(instance)).toBe(1 + 1 + 1 + SEPARATOR_WIDTH);
   });
+
+  it("calculates width for operation data", () => {
+    const op = testOperation([stringStatement("")], [stringStatement("")]);
+    const width = getEntityWidth(op);
+    expect(width).toBeGreaterThan(1);
+  });
+
+  it("calculates width for tuple data", () => {
+    const tuple = testTuple([stringStatement("a")]);
+    const width = getEntityWidth(tuple);
+    expect(width).toBeGreaterThan(1);
+  });
 });
 
 describe("getOperationCallWidth", () => {
@@ -479,4 +524,105 @@ describe("isSimpleStatement", () => {
         createStatement({ data: testArray([stringStatement("a")]) })
       )
     ).toBe(false));
+  it("long string with no ops = false", () =>
+    expect(isSimpleStatement(stringStatement("a".repeat(70)))).toBe(false));
+  it("simple number with no ops = true", () =>
+    expect(isSimpleStatement(numberStatement(42))).toBe(true));
+});
+
+describe("getEntityLayout", () => {
+  it("returns inline for simple data", () => {
+    expect(getEntityLayout(testString("hello"))).toBe("inline");
+  });
+
+  it("returns inline for complex data under threshold", () => {
+    expect(getEntityLayout(testArray([]))).toBe("inline");
+  });
+
+  it("returns multiline for complex data exceeding threshold", () => {
+    const bigArray = testArray(
+      Array.from({ length: 20 }, () => numberStatement(1))
+    );
+    expect(getEntityLayout(bigArray)).toBe("multiline");
+  });
+});
+
+describe("getStatementLayout", () => {
+  it("returns inline for short statement", () => {
+    expect(getStatementLayout(stringStatement("hi"))).toBe("inline");
+  });
+
+  it("returns multiline for statement exceeding threshold", () => {
+    const items = Array.from({ length: 20 }, () => numberStatement(1));
+    const bigStmt = createStatement({ data: testArray(items) });
+    expect(getStatementLayout(bigStmt)).toBe("multiline");
+  });
+
+  it("returns multiline for complex data plus operations", () => {
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "number" },
+      },
+      value: { name: "length", parameters: [], statements: [] },
+    });
+    const bigArray = testArray(
+      Array.from({ length: 10 }, () => numberStatement(1))
+    );
+    const stmt = createStatement({ data: bigArray, operations: [op] });
+    expect(getStatementLayout(stmt)).toBe("multiline");
+  });
+
+  it("returns inline for statement with single short operation", () => {
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "string" },
+      },
+      value: { name: "log", parameters: [], statements: [] },
+    });
+    const stmt = createStatement({
+      data: testString("hi"),
+      operations: [op],
+    });
+    expect(getStatementLayout(stmt)).toBe("inline");
+  });
+});
+
+describe("getOperationCallLayout", () => {
+  it("returns inline for no params", () => {
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "number" },
+      },
+      value: { name: "length", parameters: [], statements: [] },
+    });
+    expect(getOperationCallLayout(op)).toBe("inline");
+  });
+
+  it("returns multiline for many params exceeding threshold", () => {
+    const params = Array.from({ length: 20 }, () => numberStatement(1));
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: params.map(() => ({ type: { kind: "number" } })),
+        result: { kind: "number" },
+      },
+      value: { name: "sum", parameters: params, statements: [] },
+    });
+    expect(getOperationCallLayout(op)).toBe("multiline");
+  });
+});
+
+describe("getEntityWidth — union", () => {
+  it("returns 1 for union type", () => {
+    const data = createData({
+      type: { kind: "union", types: [{ kind: "string" }, { kind: "number" }] },
+    });
+    expect(getEntityWidth(data)).toBe(1);
+  });
 });

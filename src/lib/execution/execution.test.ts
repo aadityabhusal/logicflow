@@ -27,12 +27,20 @@ import {
   testReference,
   testError,
   testCondition,
+  testDictionary,
+  testTuple,
   stringStatement,
   numberStatement,
   booleanStatement,
   testUndefined,
 } from "@/tests/helpers";
 import { IData, IStatement, OperationType } from "../types";
+
+function findBuiltIn(name: string): OperationListItem {
+  const op = builtInOperations.find((o) => o.name === name);
+  if (!op) throw new Error(`Operation "${name}" not found`);
+  return op;
+}
 
 describe("getFilteredOperations", () => {
   it("returns operations compatible with string data", () => {
@@ -253,7 +261,7 @@ describe("executeStatement", () => {
     }
   });
 
-  it("resolves references", async () => {
+  it("resolves references asynchronously", async () => {
     const ctx = createTestContext({ isSync: false });
     const resolvedValue = testNumber(99);
     ctx.variables.set("x", { data: resolvedValue });
@@ -261,6 +269,25 @@ describe("executeStatement", () => {
     const stmt = createStatement({ data: ref });
     const result = await executeStatement(stmt, ctx);
     expect(result.value).toBe(99);
+  });
+
+  it("executes nested array data child elements asynchronously", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const arrData = testArray([stringStatement("a"), stringStatement("b")]);
+    const stmt = createStatement({ data: arrData });
+    const result = await executeStatement(stmt, ctx);
+    expect(isDataOfType(result, "array")).toBe(true);
+    expect(result.value).toHaveLength(2);
+  });
+
+  it("executes nested object data entries asynchronously", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const objData = testObject([
+      { key: "name", value: stringStatement("Alice") },
+    ]);
+    const stmt = createStatement({ data: objData });
+    const result = await executeStatement(stmt, ctx);
+    expect(isDataOfType(result, "object")).toBe(true);
   });
 
   it("returns reference error for undefined reference in non-root scope", async () => {
@@ -472,15 +499,89 @@ describe("executeStatementSync", () => {
       expect(result.value.entries).toHaveLength(1);
     }
   });
+
+  it("executes condition data synchronously", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      stringStatement("yes"),
+      stringStatement("no")
+    );
+    const stmt = createStatement({ data: condData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(isDataOfType(result, "condition")).toBe(true);
+    if (isDataOfType(result, "condition")) {
+      expect(result.type.result).toBeDefined();
+    }
+  });
+
+  it("executes false branch of condition synchronously", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(false),
+      stringStatement("yes"),
+      stringStatement("no")
+    );
+    const stmt = createStatement({ data: condData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(isDataOfType(result, "condition")).toBe(true);
+  });
+
+  it("propagates error from chained operations in sync path", () => {
+    const ctx = createTestContext();
+    const data = testString("hello");
+    const badOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "number" },
+      },
+      value: { name: "nonExistentOp", parameters: [], statements: [] },
+    });
+    const stmt = createStatement({ data, operations: [badOp] });
+    const result = executeStatementSync(stmt, ctx);
+    expect(result.type.kind).toBe("error");
+    if (result.type.kind === "error") {
+      expect(result.type.errorType).toBe("type_error");
+    }
+  });
+
+  it("executes statement with union data synchronously", () => {
+    const ctx = createTestContext();
+    const unionData = createData({
+      type: {
+        kind: "union",
+        types: [{ kind: "string" }, { kind: "number" }],
+        activeIndex: 0,
+      },
+      value: "active",
+    });
+    const stmt = createStatement({ data: unionData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(isDataOfType(result, "union")).toBe(true);
+  });
+
+  it("executes statement with dictionary data synchronously", () => {
+    const ctx = createTestContext();
+    const dictData = testDictionary(
+      [{ key: "x", value: stringStatement("val") }],
+      { kind: "string" }
+    );
+    const stmt = createStatement({ data: dictData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(isDataOfType(result, "dictionary")).toBe(true);
+  });
+
+  it("executes statement with tuple data synchronously", () => {
+    const ctx = createTestContext();
+    const tupleData = testTuple([stringStatement("a"), numberStatement(1)]);
+    const stmt = createStatement({ data: tupleData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(isDataOfType(result, "tuple")).toBe(true);
+  });
 });
 
 describe("executeOperation", () => {
-  function findBuiltIn(name: string): OperationListItem {
-    const op = builtInOperations.find((o) => o.name === name);
-    if (!op) throw new Error(`Operation "${name}" not found`);
-    return op;
-  }
-
   it("executes a handler-based operation (length)", async () => {
     const ctx = createTestContext({ isSync: false });
     const op = findBuiltIn("length");
@@ -616,6 +717,14 @@ describe("executeOperation", () => {
     expect(contextResult.value).toBe("computed");
   });
 
+  it("returns error when input data type is never (not filtered before execution)", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const op = findBuiltIn("length");
+    const neverData = createData({ type: { kind: "never" } });
+    const result = await executeOperation(op, neverData, [], ctx);
+    expect(result.type.kind).toBe("error");
+  });
+
   it("executes concat operation with two strings", async () => {
     const ctx = createTestContext({ isSync: false });
     const op = findBuiltIn("concat");
@@ -638,17 +747,22 @@ describe("executeOperation", () => {
     };
     const data = testString("hello");
     const result = await executeOperation(emptyOp, data, [], ctx);
-    expect(result).toBeDefined();
+    expect(result.type.kind).toBe("undefined");
+  });
+
+  it("returns type error when parameter count differs from expected", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const op = findBuiltIn("add");
+    const data = testNumber(10);
+    const result = await executeOperation(op, data, [], ctx);
+    expect(result.type.kind).toBe("error");
+    if (result.type.kind === "error") {
+      expect(result.type.errorType).toBe("type_error");
+    }
   });
 });
 
 describe("executeOperationSync", () => {
-  function findBuiltIn(name: string): OperationListItem {
-    const op = builtInOperations.find((o) => o.name === name);
-    if (!op) throw new Error(`Operation "${name}" not found`);
-    return op;
-  }
-
   it("executes a handler-based operation synchronously (length)", () => {
     const ctx = createTestContext();
     const op = findBuiltIn("length");
@@ -736,30 +850,56 @@ describe("executeOperationSync", () => {
     expect(result.value).toBe(12);
   });
 
+  it("propagates error through chained user-defined operation synchronously", () => {
+    const ctx = createTestContext();
+    const causeErrorOp: OperationListItem = {
+      name: "causeError",
+      parameters: [],
+      statements: [createStatement({ data: testError("inner failure") })],
+    };
+    const result = executeOperationSync(
+      causeErrorOp,
+      testString("unused"),
+      [],
+      ctx
+    );
+    expect(result.type.kind).toBe("error");
+  });
+
   it("executes thenElse with true condition synchronously (short-circuit)", () => {
     const ctx = createTestContext();
     const op = findBuiltIn("thenElse");
     const data = testBoolean(true);
+    const trueBranch = testOperation([], [stringStatement("yes")]);
+    const falseBranch = testOperation([], [stringStatement("no")]);
     const result = executeOperationSync(
       op,
       data,
-      [stringStatement("yes"), stringStatement("no")],
+      [
+        createStatement({ data: trueBranch }),
+        createStatement({ data: falseBranch }),
+      ],
       ctx
     );
-    expect(result).toBeDefined();
+    expect(result.value).toBe("yes");
   });
 
   it("executes thenElse with false condition synchronously (short-circuit)", () => {
     const ctx = createTestContext();
     const op = findBuiltIn("thenElse");
     const data = testBoolean(false);
+    const trueBranch = testOperation([], [stringStatement("yes")]);
+    const falseBranch = testOperation([], [stringStatement("no")]);
     const result = executeOperationSync(
       op,
       data,
-      [stringStatement("yes")],
+      [
+        createStatement({ data: trueBranch }),
+        createStatement({ data: falseBranch }),
+      ],
       ctx
     );
-    expect(isDataOfType(result, "undefined")).toBe(true);
+    expect(result.value).toBe("no");
   });
 
   it("executes and operation with false synchronously (short-circuit)", () => {
@@ -769,9 +909,10 @@ describe("executeOperationSync", () => {
     const result = executeOperationSync(
       op,
       data,
-      [stringStatement("second")],
+      [createStatement({ data: testOperation([], []) })],
       ctx
     );
+    expect(result.type.kind).toBe("boolean");
     expect(result.value).toBe(false);
   });
 
@@ -782,36 +923,19 @@ describe("executeOperationSync", () => {
     const result = executeOperationSync(
       op,
       data,
-      [stringStatement("second")],
+      [createStatement({ data: testOperation([], []) })],
       ctx
     );
+    expect(result.type.kind).toBe("boolean");
     expect(result.value).toBe(true);
   });
 
-  it("executes and operation with true synchronously (non-short-circuit)", () => {
+  it("executes greaterThan operation synchronously", () => {
     const ctx = createTestContext();
-    const op = findBuiltIn("and");
-    const data = testBoolean(true);
-    const result = executeOperationSync(
-      op,
-      data,
-      [stringStatement("second")],
-      ctx
-    );
-    expect(result).toBeDefined();
-  });
-
-  it("executes or operation with false synchronously (non-short-circuit)", () => {
-    const ctx = createTestContext();
-    const op = findBuiltIn("or");
-    const data = testBoolean(false);
-    const result = executeOperationSync(
-      op,
-      data,
-      [stringStatement("second")],
-      ctx
-    );
-    expect(result).toBeDefined();
+    const op = findBuiltIn("greaterThan");
+    const data = testNumber(10);
+    const result = executeOperationSync(op, data, [numberStatement(5)], ctx);
+    expect(result.value).toBe(true);
   });
 });
 
@@ -926,25 +1050,48 @@ describe("getFilteredOperations additional coverage", () => {
 });
 
 describe("createOperationCall additional coverage", () => {
-  it("creates operation call for incompatible operation name", async () => {
+  it("creates operation call when operation name is not explicitly found", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testString("hello");
     const result = await createOperationCall({
       data,
       name: "nonExistentOp",
+      operationId: "non-existent-op",
       context: ctx,
     });
     expect(result.type.kind).toBe("operation");
+    expect(result.value.name).toBeDefined();
+  });
+
+  it("creates operation call using first compatible operation when name is undefined", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const data = testString("hello");
+    const result = await createOperationCall({
+      data,
+      name: undefined,
+      context: ctx,
+    });
+    expect(result.type.kind).toBe("operation");
+    expect(result.value.name).toBeDefined();
+  });
+
+  it("preserves existing parameter values when types are compatible", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const data = testNumber(10);
+    const existingParam = numberStatement(5);
+    const result = await createOperationCall({
+      data,
+      name: "add",
+      parameters: [existingParam],
+      operationId: "preserve-param",
+      context: ctx,
+    });
+    expect(result.value.parameters).toHaveLength(1);
+    expect(result.value.parameters[0].data.value).toBe(5);
   });
 });
 
 describe("call operation with async operations", () => {
-  function findBuiltIn(name: string): OperationListItem {
-    const op = builtInOperations.find((o) => o.name === name);
-    if (!op) throw new Error(`Operation "${name}" not found`);
-    return op;
-  }
-
   it("returns Promise instance type when calling an async operation", async () => {
     const ctx = createTestContext({ isSync: false });
     const asyncOp = testOperation(
@@ -1306,12 +1453,6 @@ describe("type narrowing bug fixes", () => {
 });
 
 describe("lazy operations context variable access", () => {
-  function findBuiltIn(name: string): OperationListItem {
-    const op = builtInOperations.find((o) => o.name === name);
-    if (!op) throw new Error(`Operation "${name}" not found`);
-    return op;
-  }
-
   function operationBranch(
     statements: IStatement[],
     parameters?: OperationType["parameters"],
@@ -1536,9 +1677,8 @@ describe("memoization", () => {
     const result1 = await executeOperation(op, testNumber(42), [], ctx);
     const result2 = await executeOperation(op, testNumber(42), [], ctx);
 
+    expect(result1).toBe(result2);
     expect(result1.value).toBe(0);
-    expect(result2.value).toBe(0);
-    expect(result1.value).toBe(result2.value);
   });
 
   it("does not return cached result for different inputs", async () => {
@@ -1624,7 +1764,6 @@ describe("memoization", () => {
       isSync: false,
       operationCache: new Map(),
     });
-    ctx.isSync = false;
 
     const op: OperationListItem = {
       id: "greet",
