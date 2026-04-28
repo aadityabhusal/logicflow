@@ -7,6 +7,7 @@ import {
   FaFileCode,
   FaCode,
   FaRocket,
+  FaGear,
 } from "react-icons/fa6";
 import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
@@ -25,6 +26,9 @@ const CodePanel = lazy(() =>
 const Deployment = lazy(() =>
   import("./DeploymentPanel").then((m) => ({ default: m.Deployment }))
 );
+const SettingsPanel = lazy(() =>
+  import("./SettingsPanel").then((m) => ({ default: m.SettingsPanel }))
+);
 const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
   ? lazy(() => import("./AgentPanel").then((m) => ({ default: m.AgentPanel })))
   : null;
@@ -37,6 +41,7 @@ const TABS = [
     : []),
   { value: "code", label: "Code", Icon: FaCode },
   { value: "deployment", label: "Deploy", Icon: FaRocket },
+  { value: "settings", label: "Settings", Icon: FaGear },
 ];
 function SidebarTabsComponent() {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
@@ -132,6 +137,11 @@ function SidebarTabsComponent() {
             <Tabs.Panel value="deployment" className="h-full w-full">
               <Suspense fallback={<LoadingFallback />}>
                 <Deployment />
+              </Suspense>
+            </Tabs.Panel>
+            <Tabs.Panel value="settings" className="h-full w-full">
+              <Suspense fallback={<LoadingFallback />}>
+                <SettingsPanel />
               </Suspense>
             </Tabs.Panel>
           </div>

@@ -12,7 +12,7 @@ const BooleanInputComponent = (
   ref: React.ForwardedRef<HTMLInputElement>
 ) => {
   return (
-    <div className="relative w-9 h-5">
+    <div className="relative w-9 h-5 shrink-0">
       <input
         {...props}
         ref={ref}

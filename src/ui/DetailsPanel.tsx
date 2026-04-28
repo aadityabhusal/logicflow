@@ -4,7 +4,6 @@ import {
   FaLock,
   FaUnlock,
 } from "react-icons/fa6";
-import { TbKeyboardOff } from "react-icons/tb";
 import { IconButton } from "./IconButton";
 import {
   useNavigationStore,
@@ -15,8 +14,6 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Button, Tooltip } from "@mantine/core";
 import { useMemo, useState, useEffect } from "react";
 import { getTypeSignature, isPendingContext } from "@/lib/utils";
-import { MAX_SCREEN_WIDTH } from "@/lib/data";
-import { useMediaQuery } from "@mantine/hooks";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
 import { CodeHighlight } from "./CodeHighlight";
@@ -34,8 +31,6 @@ export function DetailsPanel() {
     s.skipExecution?.kind !== "error" ? s.skipExecution : undefined
   );
   const navigationId = useNavigationStore((s) => s.navigation?.id);
-  const disableKeyboard = useUiConfigStore((s) => s.disableKeyboard);
-  const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const operation = useNavigationStore((s) => s.operation);
@@ -55,12 +50,19 @@ export function DetailsPanel() {
     s.getContext(panelLockedId ?? navigationId ?? "_root_")
   );
 
+  const isResultPending =
+    navigationId && navigationId === operation?.id
+      ? !useExecutionResultsStore.getState().results.has(navigationId)
+      : result?.type.kind === "reference" && isPendingContext(context);
+
+  const pendingLabel = useUiConfigStore((s) =>
+    s.executionEnabled ? "Pending" : "Execution paused"
+  );
+
   const typeSignature = useMemo(() => {
-    if (result?.type.kind === "reference" && isPendingContext(context)) {
-      return "Pending";
-    }
+    if (isResultPending) return pendingLabel;
     return getTypeSignature(result?.type ?? { kind: "undefined" });
-  }, [result?.type, context]);
+  }, [result?.type, isResultPending, pendingLabel]);
 
   const docsUrl = useMemo(
     () => getDocsUrl(operation?.value.source, operation?.value.name),
@@ -74,11 +76,11 @@ export function DetailsPanel() {
 
   useEffect(() => {
     if (!result) {
-      setFormattedValue("");
+      setFormattedValue(isResultPending ? pendingLabel : "");
       return;
     }
-    if (result.type.kind === "reference" && isPendingContext(context)) {
-      setFormattedValue("Pending");
+    if (isResultPending) {
+      setFormattedValue(pendingLabel);
       return;
     }
     const codeString = generateData(
@@ -91,9 +93,9 @@ export function DetailsPanel() {
         setFormattedValue(formatted.replace(/^export\s+default\s+/, "").trim())
       )
       .catch(() => setFormattedValue(codeString));
-  }, [result, context]);
+  }, [result, context, isResultPending, pendingLabel]);
 
-  if (!result) {
+  if (!result && !isResultPending) {
     return (
       <div className="flex flex-col h-full">
         <div className="p-1 border-b font-bold bg-dropdown-default">
@@ -110,20 +112,6 @@ export function DetailsPanel() {
     <div className="flex flex-col h-full">
       <div className="flex justify-between p-1 border-b gap-3 bg-dropdown-default">
         <p className="font-bold mr-auto">Details</p>
-        {smallScreen ? (
-          <IconButton
-            icon={TbKeyboardOff}
-            title="Disable keyboard"
-            size={16}
-            className={disableKeyboard ? "text-reserved" : ""}
-            onClick={() => {
-              setUiConfig((p) => ({
-                ...p,
-                disableKeyboard: !p.disableKeyboard,
-              }));
-            }}
-          />
-        ) : null}
         {panelLockedId ? (
           <IconButton
             icon={FaCrosshairs}

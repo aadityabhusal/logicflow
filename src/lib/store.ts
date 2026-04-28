@@ -343,6 +343,7 @@ type UiConfigStore = {
     lockedIds?: { [operationId: string]: string };
   };
   disableKeyboard?: boolean;
+  executionEnabled: boolean;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;
@@ -356,6 +357,7 @@ export const useUiConfigStore = createWithEqualityFn(
         height: 150,
         lockedIds: {},
       },
+      executionEnabled: true,
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),

@@ -213,7 +213,6 @@ const DropdownComponent = ({
   }, [hasOptions]);
 
   useEffect(() => {
-    if (!result) return;
     if (detailsPanelLockedId ? detailsPanelLockedId === id : isFocused) {
       setNavigation({
         result,

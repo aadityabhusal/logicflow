@@ -3,6 +3,7 @@ import {
   useProjectStore,
   useNavigationStore,
   fileHistoryActions,
+  useUiConfigStore,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { SidebarTabs } from "@/ui/SidebarTabs";
@@ -37,6 +38,7 @@ export default function Project() {
     );
   }, [currentProject?.files, currentFileId]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
+  const executionEnabled = useUiConfigStore((s) => s.executionEnabled);
   const rootPath = useMemo(() => [], []);
   useHotkeys(useCustomHotkeys(), []);
   const operationRef = useClickOutside(() => {
@@ -83,7 +85,7 @@ export default function Project() {
   }, [deferredOperation, setNavigation, rootContext]);
 
   useEffect(() => {
-    if (!deferredOperation) return;
+    if (!deferredOperation || !executionEnabled) return;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -110,7 +112,7 @@ export default function Project() {
       cancelled = true;
       controller.abort();
     };
-  }, [deferredOperation, rootContext]);
+  }, [deferredOperation, rootContext, executionEnabled]);
 
   useEffect(() => {
     useExecutionResultsStore.getState().removeAll();
