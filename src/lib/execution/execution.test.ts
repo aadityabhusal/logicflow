@@ -1421,6 +1421,160 @@ describe("recursion support", () => {
     expect(result.type.kind).toBe("number");
     expect(result.value).toBe(99);
   });
+
+  it("short-circuits chain when operation returns fatal error (async)", async () => {
+    const ctx = createTestContext({ isSync: false, maxCallDepth: 1 });
+
+    const recursiveOp: OperationListItem = {
+      name: "recurseChainAsync",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [
+        createStatement({
+          data: testReference("n", "ref1"),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "number" },
+              },
+              value: {
+                name: "recurseChainAsync",
+                parameters: [],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("recurseChainAsync", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        recursiveOp.statements!,
+        "recurseChainAsync"
+      ),
+    });
+
+    const stmt = createStatement({
+      data: testNumber(0),
+      operations: [
+        createData({
+          type: {
+            kind: "operation",
+            parameters: [{ type: { kind: "number" } }],
+            result: { kind: "number" },
+          },
+          value: {
+            name: "recurseChainAsync",
+            parameters: [],
+            statements: [],
+          },
+        }),
+        createData({
+          type: {
+            kind: "operation",
+            parameters: [
+              { type: { kind: "number" } },
+              { type: { kind: "number" } },
+            ],
+            result: { kind: "number" },
+          },
+          value: {
+            name: "add",
+            parameters: [numberStatement(3)],
+            statements: [],
+          },
+        }),
+      ],
+    });
+
+    const result = await executeStatement(stmt, ctx);
+
+    expect(result.type.kind).toBe("error");
+    if (isDataOfType(result, "error")) {
+      expect(result.type.errorType).toBe("runtime_error");
+      expect(result.value.reason).toContain("Maximum recursion depth");
+    }
+  });
+
+  it("short-circuits chain when operation returns fatal error (sync)", () => {
+    const ctx = createTestContext({ maxCallDepth: 1 });
+
+    const recursiveOp: OperationListItem = {
+      name: "recurseChainSync",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [
+        createStatement({
+          data: testReference("n", "ref1"),
+          operations: [
+            createData({
+              type: {
+                kind: "operation",
+                parameters: [{ type: { kind: "number" } }],
+                result: { kind: "number" },
+              },
+              value: {
+                name: "recurseChainSync",
+                parameters: [],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+      ],
+    };
+
+    ctx.variables.set("recurseChainSync", {
+      data: testOperation(
+        [numberStatement(0, "n")],
+        recursiveOp.statements!,
+        "recurseChainSync"
+      ),
+    });
+
+    const stmt = createStatement({
+      data: testNumber(0),
+      operations: [
+        createData({
+          type: {
+            kind: "operation",
+            parameters: [{ type: { kind: "number" } }],
+            result: { kind: "number" },
+          },
+          value: {
+            name: "recurseChainSync",
+            parameters: [],
+            statements: [],
+          },
+        }),
+        createData({
+          type: {
+            kind: "operation",
+            parameters: [
+              { type: { kind: "number" } },
+              { type: { kind: "number" } },
+            ],
+            result: { kind: "number" },
+          },
+          value: {
+            name: "add",
+            parameters: [numberStatement(3)],
+            statements: [],
+          },
+        }),
+      ],
+    });
+
+    const result = executeStatementSync(stmt, ctx);
+
+    expect(result.type.kind).toBe("error");
+    if (isDataOfType(result, "error")) {
+      expect(result.type.errorType).toBe("runtime_error");
+      expect(result.value.reason).toContain("Maximum recursion depth");
+    }
+  });
 });
 
 describe("type narrowing bug fixes", () => {

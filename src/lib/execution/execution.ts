@@ -510,6 +510,7 @@ export async function executeStatement(
       const cacheKey = getCacheKey(context, operation.id);
       context.setResult(cacheKey, { data: result, shouldCacheResult });
       resultData = result;
+      if (isFatalError(resultData)) return resultData;
       continue;
     }
     const parameters = operation.value.parameters;
@@ -524,6 +525,7 @@ export async function executeStatement(
       data: opResult,
       shouldCacheResult,
     });
+    if (isFatalError(resultData)) return resultData;
   }
   const finalResult = resolveReference(resultData, context);
   return finalResult;
@@ -565,6 +567,7 @@ export function executeStatementSync(
       const cacheKey = getCacheKey(context, operation.id);
       context.setResult(cacheKey, { data: result, shouldCacheResult });
       resultData = result;
+      if (isFatalError(resultData)) return resultData;
       continue;
     }
     const parameters = operation.value.parameters;
@@ -579,6 +582,7 @@ export function executeStatementSync(
       data: opResult,
       shouldCacheResult,
     });
+    if (isFatalError(resultData)) return resultData;
   }
   const finalResult = resolveReference(resultData, context);
   return finalResult;

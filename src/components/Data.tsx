@@ -224,7 +224,10 @@ const DataComponent = ({
                   : _val
                     ? { type: "string", value: _val }
                     : { type: "undefined", value: undefined };
-            onChange?.(_val);
+
+            if (!_val.startsWith("[") && !_val.startsWith("{")) {
+              onChange?.(_val);
+            }
             handleChange({
               ...data,
               type: DataTypes[transform.type as DataType["kind"]].type,

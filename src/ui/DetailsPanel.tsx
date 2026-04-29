@@ -55,14 +55,10 @@ export function DetailsPanel() {
       ? !useExecutionResultsStore.getState().results.has(navigationId)
       : result?.type.kind === "reference" && isPendingContext(context);
 
-  const pendingLabel = useUiConfigStore((s) =>
-    s.executionEnabled ? "Pending" : "Execution paused"
-  );
-
   const typeSignature = useMemo(() => {
-    if (isResultPending) return pendingLabel;
+    if (isResultPending) return "Pending";
     return getTypeSignature(result?.type ?? { kind: "undefined" });
-  }, [result?.type, isResultPending, pendingLabel]);
+  }, [result?.type, isResultPending]);
 
   const docsUrl = useMemo(
     () => getDocsUrl(operation?.value.source, operation?.value.name),
@@ -76,11 +72,11 @@ export function DetailsPanel() {
 
   useEffect(() => {
     if (!result) {
-      setFormattedValue(isResultPending ? pendingLabel : "");
+      setFormattedValue(isResultPending ? "Pending" : "");
       return;
     }
     if (isResultPending) {
-      setFormattedValue(pendingLabel);
+      setFormattedValue("Pending");
       return;
     }
     const codeString = generateData(
@@ -93,7 +89,7 @@ export function DetailsPanel() {
         setFormattedValue(formatted.replace(/^export\s+default\s+/, "").trim())
       )
       .catch(() => setFormattedValue(codeString));
-  }, [result, context, isResultPending, pendingLabel]);
+  }, [result, context, isResultPending]);
 
   if (!result && !isResultPending) {
     return (

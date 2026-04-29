@@ -3,7 +3,6 @@ import {
   useProjectStore,
   useNavigationStore,
   fileHistoryActions,
-  useUiConfigStore,
 } from "@/lib/store";
 import { Header } from "@/ui/Header";
 import { SidebarTabs } from "@/ui/SidebarTabs";
@@ -24,7 +23,10 @@ import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { setOperationResults } from "@/lib/execution/execution";
-import { useExecutionResultsStore } from "@/lib/execution/store";
+import {
+  useExecutionResultsStore,
+  createExecutionVariables,
+} from "@/lib/execution/store";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -38,7 +40,6 @@ export default function Project() {
     );
   }, [currentProject?.files, currentFileId]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
-  const executionEnabled = useUiConfigStore((s) => s.executionEnabled);
   const rootPath = useMemo(() => [], []);
   useHotkeys(useCustomHotkeys(), []);
   const operationRef = useClickOutside(() => {
@@ -85,7 +86,7 @@ export default function Project() {
   }, [deferredOperation, setNavigation, rootContext]);
 
   useEffect(() => {
-    if (!deferredOperation || !executionEnabled) return;
+    if (!deferredOperation) return;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -94,6 +95,7 @@ export default function Project() {
     const instances = new Map<string, ReturnType<Context["getInstance"]>>();
     const localContext: Context = {
       ...rootContext,
+      variables: createExecutionVariables(),
       operationCache: new Map<string, IData>(),
       abortSignal: controller.signal,
       getResult: (id) => results.get(id) ?? rootContext.getResult(id),
@@ -107,16 +109,23 @@ export default function Project() {
       setInstance: (id, instance) => instances.set(id, instance),
     };
 
+    useExecutionResultsStore.getState().setIsExecuting(true);
     setOperationResults(deferredOperation, localContext).then(() => {
       if (cancelled) return;
-      useExecutionResultsStore.setState({ results, contexts, instances });
+      useExecutionResultsStore.setState({
+        results,
+        contexts,
+        instances,
+        isExecuting: false,
+      });
     });
 
     return () => {
       cancelled = true;
       controller.abort();
+      useExecutionResultsStore.getState().setIsExecuting(false);
     };
-  }, [deferredOperation, rootContext, executionEnabled]);
+  }, [deferredOperation, rootContext]);
 
   useEffect(() => {
     useExecutionResultsStore.getState().removeAll();

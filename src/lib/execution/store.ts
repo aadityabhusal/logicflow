@@ -17,7 +17,7 @@ import {
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
 import { builtInOperations } from "../operations/built-in";
 
-function createRootContextVariables() {
+export function createExecutionVariables() {
   const project = useProjectStore.getState().getCurrentProject();
   const variables = createFileVariables(project?.files);
   if (project?.deployment) {
@@ -50,12 +50,14 @@ interface ExecutionResultsState {
   contexts: Map<string, Context>;
   results: Map<string, ExecutionResult>;
   instances: Map<string, ReturnType<Context["getInstance"]>>;
+  isExecuting: boolean;
   getContext: Context["getContext"];
   setContext: Context["setContext"];
   setResult: Context["setResult"];
   getResult: Context["getResult"];
   getInstance: Context["getInstance"];
   setInstance: Context["setInstance"];
+  setIsExecuting: (value: boolean) => void;
   removeResult: (entityId: string) => void;
   removeAll: () => void;
 }
@@ -65,7 +67,7 @@ export const useExecutionResultsStore =
     (set, get) => ({
       rootContext: {
         scopeId: "_root_",
-        variables: createRootContextVariables(),
+        variables: createExecutionVariables(),
         yieldCounter: { calls: 0 },
         operationCache: new Map<string, IData>(),
         ...getTriggerExpectedType(),
@@ -83,6 +85,8 @@ export const useExecutionResultsStore =
       contexts: new Map(),
       results: new Map(),
       instances: new Map(),
+      isExecuting: false,
+      setIsExecuting: (value) => set({ isExecuting: value }),
       setResult: (entityId, result) => {
         set((state) => {
           const newResults = new Map(state.results);
@@ -134,7 +138,7 @@ export const useExecutionResultsStore =
             ...state.rootContext,
             yieldCounter: { calls: 0 },
             operationCache: new Map<string, IData>(),
-            variables: createRootContextVariables(),
+            variables: createExecutionVariables(),
             ...getTriggerExpectedType(),
           };
           return {

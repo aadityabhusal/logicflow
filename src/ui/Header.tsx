@@ -5,30 +5,23 @@ import {
   FaRegPaste,
   FaCheck,
   FaChevronLeft,
+  FaHouse,
+  FaSpinner,
 } from "react-icons/fa6";
-import {
-  fileHistoryActions,
-  useProjectStore,
-  useNavigationStore,
-} from "@/lib/store";
+import { fileHistoryActions, useProjectStore } from "@/lib/store";
 import { IconButton } from "./IconButton";
-import { useClipboard, useTimeout } from "@mantine/hooks";
+import { useClipboard, useMediaQuery, useTimeout } from "@mantine/hooks";
 import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { memo, useState } from "react";
 import { ClipboardSchema } from "@/lib/schemas";
-import { BaseInput } from "@/components/Input/BaseInput";
 import { updateFiles } from "@/lib/update";
-import { Button } from "@mantine/core";
+import { Button, Tooltip } from "@mantine/core";
 import { Link } from "react-router";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
 function HeaderComponent() {
-  const currentProjectId = useProjectStore((s) => s.getCurrentProject()?.id);
-  const currentProjectName = useProjectStore(
-    (s) => s.getCurrentProject()?.name
-  );
   const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
-  const setNavigation = useNavigationStore((s) => s.setNavigation);
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const updateProject = useProjectStore((s) => s.updateProject);
@@ -37,6 +30,8 @@ function HeaderComponent() {
   const clipboard = useClipboard({ timeout: 500 });
   const [isOperationPasted, setIsOperationPasted] = useState(false);
   const pasteAnimation = useTimeout(() => setIsOperationPasted(false), 500);
+  const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
+  const isExecuting = useExecutionResultsStore((s) => s.isExecuting);
 
   return (
     <div className="border-b p-2 flex items-center justify-between gap-4">
@@ -47,25 +42,17 @@ function HeaderComponent() {
           className="outline-none p-0.5!"
           leftSection={<FaChevronLeft />}
         >
-          Dashboard
+          {!smallScreen ? "Dashboard" : <FaHouse />}
         </Button>
       </div>
-      {currentProjectId && (
-        <BaseInput
-          className="focus:outline hover:outline outline-white"
-          defaultValue={currentProjectName}
-          onFocus={() => setNavigation({ navigation: undefined })}
-          onBlur={(e) =>
-            e.target.value &&
-            updateProject(currentProjectId, { name: e.target.value })
-          }
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-          options={{ forceEnableKeyboard: true }}
-        />
-      )}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        {isExecuting && (
+          <Tooltip label="Executing Operation">
+            <div>
+              <FaSpinner className="animate-spin text-green-400" />
+            </div>
+          </Tooltip>
+        )}
         <IconButton
           title={clipboard.copied ? "Copied!" : "Copy"}
           icon={clipboard.copied ? FaCheck : FaRegCopy}
