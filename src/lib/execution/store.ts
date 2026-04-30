@@ -1,11 +1,12 @@
 import { createWithEqualityFn } from "zustand/traditional";
 import { Context, ExecutionResult, ReservedNames } from "./types";
 import { shallow } from "zustand/shallow";
-import { IData, InstanceDataType } from "../types";
+import { IData, InstanceDataType, EntityPath } from "../types";
 import {
   createFileVariables,
   createData,
   createOperationFromFile,
+  resolveAncestorIds,
 } from "../utils";
 import { useProjectStore } from "../store";
 import {
@@ -52,6 +53,7 @@ interface ExecutionResultsState {
   instances: Map<string, ReturnType<Context["getInstance"]>>;
   isExecuting: boolean;
   getContext: Context["getContext"];
+  getContextOrAncestor: (entityId: string, path: EntityPath) => Context;
   setContext: Context["setContext"];
   setResult: Context["setResult"];
   getResult: Context["getResult"];
@@ -110,6 +112,19 @@ export const useExecutionResultsStore =
       },
       getContext: (entityId) => {
         return get().contexts.get(entityId) ?? get().rootContext;
+      },
+      getContextOrAncestor: (entityId, path) => {
+        const registered = get().contexts.get(entityId);
+        if (registered) return registered;
+        const file = useProjectStore.getState().getCurrentFile();
+        const rootValue =
+          file?.type === "operation" ? file.content.value : undefined;
+        if (!rootValue) return get().rootContext;
+        for (const id of resolveAncestorIds(path, rootValue)) {
+          const ctx = get().contexts.get(id);
+          if (ctx) return ctx;
+        }
+        return get().rootContext;
       },
       setContext: (entityId, context) => {
         const contexts = get().contexts;

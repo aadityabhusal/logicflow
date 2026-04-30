@@ -13,6 +13,7 @@ import {
   createStatement,
   isDataOfType,
   updateContextWithNarrowedTypes,
+  operationToListItem,
 } from "@/lib/utils";
 import { builtInOperations } from "@/lib/operations/built-in";
 import { OperationListItem } from "@/lib/execution/types";
@@ -2250,4 +2251,223 @@ describe("buffered setResult/getResult", () => {
     expect(stmtCtx.variables.has("var1")).toBe(true);
     expect(stmtCtx.variables.get("var1")?.data.type.kind).toBe("string");
   });
+});
+
+describe("fib_op recursion", () => {
+  const fibValues = [0, 1, 1, 2, 3, 5, 8, 13];
+
+  for (let n = 0; n < 8; n++) {
+    it(`computes fib(${n}) = ${fibValues[n]}`, async () => {
+      const ctx = createTestContext({ isSync: false });
+
+      const trueBranch = testOperation(
+        [],
+        [createStatement({ data: testReference("n", "n-ref-true") })],
+      );
+
+      const falseBranch = testOperation(
+        [],
+        [
+          createStatement({ data: testReference("n", "n-ref-false") }),
+          createStatement({
+            data: testReference("fib", "fib-ref"),
+            operations: [
+              testOperation(
+                [createStatement({
+                  data: testReference("n", "n-ref-call1"),
+                  operations: [
+                    testOperation(
+                      [createStatement({ data: testNumber(1) })],
+                      [],
+                      "subtract"
+                    ),
+                  ],
+                })],
+                [],
+                "call"
+              ),
+              testOperation(
+                [createStatement({
+                  data: testReference("fib", "fib-ref-add"),
+                  operations: [
+                    testOperation(
+                      [createStatement({
+                        data: testReference("n", "n-ref-call2"),
+                        operations: [
+                          testOperation(
+                            [createStatement({ data: testNumber(2) })],
+                            [],
+                            "subtract"
+                          ),
+                        ],
+                      })],
+                      [],
+                      "call"
+                    ),
+                  ],
+                })],
+                [],
+                "add"
+              ),
+            ],
+          }),
+        ],
+      );
+
+      const bodyStmt = createStatement({
+        data: testReference("n", "n-ref-body"),
+        operations: [
+          testOperation(
+            [createStatement({ data: testNumber(1) })],
+            [],
+            "lessThanOrEqual"
+          ),
+          testOperation(
+            [
+              createStatement({ data: trueBranch }),
+              createStatement({ data: falseBranch }),
+            ],
+            [],
+            "thenElse"
+          ),
+        ],
+      });
+
+      const fibOpIData = createData({
+        type: {
+          kind: "operation",
+          parameters: [{ name: "n", type: { kind: "number" } }],
+          result: { kind: "number" },
+        },
+        value: {
+          parameters: [numberStatement(0, "n")],
+          statements: [bodyStmt],
+          name: "fib",
+        },
+      });
+
+      ctx.variables.set("fib", { data: fibOpIData });
+
+      const fibOpItem = operationToListItem(fibOpIData, "fib");
+
+      const result = await executeOperation(
+        fibOpItem,
+        testNumber(n),
+        [],
+        ctx
+      );
+
+      expect(result.type.kind).toBe("number");
+      expect(result.value).toBe(fibValues[n]);
+    });
+  }
+
+  for (let n = 0; n < 8; n++) {
+    it(`computes fib(${n}) = ${fibValues[n]} with memoization`, async () => {
+      const ctx = createTestContext({
+        isSync: false,
+        operationCache: new Map(),
+      });
+
+      const trueBranch = testOperation(
+        [],
+        [createStatement({ data: testReference("n", "n-ref-true-m") })],
+      );
+
+      const falseBranch = testOperation(
+        [],
+        [
+          createStatement({ data: testReference("n", "n-ref-false-m") }),
+          createStatement({
+            data: testReference("fib", "fib-ref-m"),
+            operations: [
+              testOperation(
+                [createStatement({
+                  data: testReference("n", "n-ref-call1-m"),
+                  operations: [
+                    testOperation(
+                      [createStatement({ data: testNumber(1) })],
+                      [],
+                      "subtract"
+                    ),
+                  ],
+                })],
+                [],
+                "call"
+              ),
+              testOperation(
+                [createStatement({
+                  data: testReference("fib", "fib-ref-add-m"),
+                  operations: [
+                    testOperation(
+                      [createStatement({
+                        data: testReference("n", "n-ref-call2-m"),
+                        operations: [
+                          testOperation(
+                            [createStatement({ data: testNumber(2) })],
+                            [],
+                            "subtract"
+                          ),
+                        ],
+                      })],
+                      [],
+                      "call"
+                    ),
+                  ],
+                })],
+                [],
+                "add"
+              ),
+            ],
+          }),
+        ],
+      );
+
+      const bodyStmt = createStatement({
+        data: testReference("n", "n-ref-body-m"),
+        operations: [
+          testOperation(
+            [createStatement({ data: testNumber(1) })],
+            [],
+            "lessThanOrEqual"
+          ),
+          testOperation(
+            [
+              createStatement({ data: trueBranch }),
+              createStatement({ data: falseBranch }),
+            ],
+            [],
+            "thenElse"
+          ),
+        ],
+      });
+
+      const fibOpIData = createData({
+        type: {
+          kind: "operation",
+          parameters: [{ name: "n", type: { kind: "number" } }],
+          result: { kind: "number" },
+        },
+        value: {
+          parameters: [numberStatement(0, "n")],
+          statements: [bodyStmt],
+          name: "fib",
+        },
+      });
+
+      ctx.variables.set("fib", { data: fibOpIData });
+
+      const fibOpItem = operationToListItem(fibOpIData, "fib");
+
+      const result = await executeOperation(
+        fibOpItem,
+        testNumber(n),
+        [],
+        ctx
+      );
+
+      expect(result.type.kind).toBe("number");
+      expect(result.value).toBe(fibValues[n]);
+    });
+  }
 });

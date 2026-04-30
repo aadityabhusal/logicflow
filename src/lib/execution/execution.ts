@@ -151,7 +151,6 @@ function findOperationByName(
   if (!opName) return undefined;
   const candidates = builtInOperationsByName.get(opName);
   if (candidates) {
-    if (candidates.length === 1) return candidates[0];
     const resolved = resolveReference(data, context);
     return candidates.find((op) =>
       dataSupportsOperation(resolved, op, context)
@@ -679,7 +678,10 @@ function executeOperationCore(
       return createData();
     }
 
-    const memoCacheKey = getMemoKey(operation, [data, ...parameters], context);
+    const memoCacheKey =
+      resolvedParams.length > 0
+        ? getMemoKey(operation, [data, ...parameters], context)
+        : undefined;
     const hit = memoCacheKey && context.operationCache?.get(memoCacheKey);
     if (hit) return hit;
 

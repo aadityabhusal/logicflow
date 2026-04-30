@@ -13,7 +13,7 @@ import {
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Button, Tooltip } from "@mantine/core";
 import { useMemo, useState, useEffect } from "react";
-import { getTypeSignature, isPendingContext } from "@/lib/utils";
+import { getTypeSignature, isPendingContext, getCacheKey } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
 import { CodeHighlight } from "./CodeHighlight";
@@ -37,9 +37,12 @@ export function DetailsPanel() {
 
   const panelLockedId = useUiConfigStore((s) => {
     const lockedId = operationId && s.sidebar?.lockedIds?.[operationId];
+    if (!lockedId) return undefined;
+    const ctx = useExecutionResultsStore.getState().getContext(lockedId);
     if (
-      !lockedId ||
-      !useExecutionResultsStore.getState().results.has(lockedId)
+      !useExecutionResultsStore
+        .getState()
+        .results.has(getCacheKey(ctx, lockedId))
     ) {
       return undefined;
     }
@@ -52,7 +55,9 @@ export function DetailsPanel() {
 
   const isResultPending =
     navigationId && navigationId === operation?.id
-      ? !useExecutionResultsStore.getState().results.has(navigationId)
+      ? !useExecutionResultsStore
+          .getState()
+          .results.has(getCacheKey(context, navigationId))
       : result?.type.kind === "reference" && isPendingContext(context);
 
   const typeSignature = useMemo(() => {
@@ -120,7 +125,9 @@ export function DetailsPanel() {
         ) : null}
         {useExecutionResultsStore
           .getState()
-          .results.has(panelLockedId ?? navigationId!) && (
+          .results.has(
+            getCacheKey(context, panelLockedId ?? navigationId!)
+          ) && (
           <IconButton
             icon={panelLockedId ? FaLock : FaUnlock}
             title={panelLockedId ? "Unlock" : "Lock"}

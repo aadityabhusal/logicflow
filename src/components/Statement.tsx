@@ -66,7 +66,9 @@ const StatementComponent = ({
   path: EntityPath;
   reservedNames?: ReservedNames;
 }) => {
-  const context = useExecutionResultsStore((s) => s.getContext(statement.id));
+  const context = useExecutionResultsStore((s) =>
+    s.getContextOrAncestor(statement.id, path)
+  );
 
   const handleDataChange = useCallback(
     (data: IData, remove?: boolean) => {

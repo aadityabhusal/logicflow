@@ -22,6 +22,8 @@ import {
   TupleType,
   MapValue,
   InstanceDataType,
+  EntityPath,
+  ReferenceType,
 } from "./types";
 import { Context, OperationListItem, Thenable } from "./execution/types";
 
@@ -296,6 +298,86 @@ export function createFileFromOperation(operation: IData<OperationType>) {
   } as ProjectFile;
 }
 
+export function walkStatements(
+  statements: IStatement[],
+  visitors: {
+    onStatement?: (stmt: IStatement) => void;
+    onData?: (data: IData) => void;
+    onReference?: (data: IData<ReferenceType>) => void;
+    onArray?: (data: IData<ArrayType | TupleType>) => void;
+    onObject?: (data: IData<ObjectType | DictionaryType>) => void;
+    onOperation?: (data: IData<OperationType>) => void;
+    onCondition?: (data: IData<ConditionType>) => void;
+  },
+  options?: { includeNestedOperations?: boolean }
+): void {
+  const walkData = (data: IData) => {
+    visitors.onData?.(data);
+
+    if (isDataOfType(data, "reference")) {
+      visitors.onReference?.(data);
+    } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
+      visitors.onArray?.(data);
+      for (const item of data.value) walkStatement(item);
+    } else if (
+      isDataOfType(data, "object") ||
+      isDataOfType(data, "dictionary")
+    ) {
+      visitors.onObject?.(data);
+      for (const entry of data.value.entries) walkStatement(entry.value);
+    } else if (isDataOfType(data, "operation")) {
+      visitors.onOperation?.(data);
+      if (options?.includeNestedOperations) {
+        for (const param of data.value.parameters) walkStatement(param);
+        for (const stmt of data.value.statements) walkStatement(stmt);
+      }
+    } else if (isDataOfType(data, "condition")) {
+      visitors.onCondition?.(data);
+      walkStatement(data.value.condition);
+      walkStatement(data.value.true);
+      walkStatement(data.value.false);
+    }
+  };
+
+  const walkStatement = (stmt: IStatement) => {
+    visitors.onStatement?.(stmt);
+    walkData(stmt.data);
+    for (const op of stmt.operations) {
+      for (const param of op.value.parameters) {
+        walkStatement(param);
+      }
+    }
+  };
+
+  for (const stmt of statements) {
+    walkStatement(stmt);
+  }
+}
+
+export function getFreeVariableNames(
+  operation: IData<OperationType>,
+  context: Context
+): Set<string> {
+  const freeVars = new Set<string>();
+
+  walkStatements(operation.value.statements, {
+    onReference: (data) => {
+      const name = data.value.name;
+      if (typeof name !== "string" || freeVars.has(name)) return;
+      const variable = context.variables.get(name);
+      if (
+        variable &&
+        !variable.isEnv &&
+        !isDataOfType(variable.data, "operation")
+      ) {
+        freeVars.add(name);
+      }
+    },
+  });
+
+  return freeVars;
+}
+
 export function createContext(
   parentContext: Context,
   overrides?: Partial<Context>
@@ -332,6 +414,21 @@ export function getContextExpectedTypes({
           enforceExpectedType: _enforceExpectedType,
         }),
   };
+}
+
+export function resolveAncestorIds(
+  path: EntityPath,
+  rootValue: Record<string, unknown> | unknown[]
+): string[] {
+  let current: unknown = rootValue;
+  const ids: string[] = [];
+  for (const segment of path) {
+    current = (current as Record<string, unknown>)?.[segment];
+    if (isObject(current, ["id"]) && typeof current.id === "string") {
+      ids.push(current.id);
+    }
+  }
+  return ids.reverse();
 }
 
 export function createContextVariable(
