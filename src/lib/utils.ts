@@ -1132,14 +1132,19 @@ export function inferTypeFromValue<T extends DataType>(
     Array.isArray(value.parameters) &&
     Array.isArray(value.statements)
   ) {
+    const params = value.parameters.map((param) => ({
+      name: param.name,
+      type: param.data.type,
+      isOptional: param.isOptional,
+      isRest: param.isRest,
+    }));
+
     return {
       kind: "operation",
-      parameters: value.parameters.map((param) => ({
-        name: param.name,
-        type: param.data.type,
-        isOptional: param.isOptional,
-        isRest: param.isRest,
-      })),
+      parameters:
+        context.expectedType?.kind === "operation"
+          ? context.expectedType.parameters.map((p, i) => params[i] ?? p)
+          : params,
       result: getOperationResultType(
         value as DataValue<OperationType>,
         context

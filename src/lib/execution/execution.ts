@@ -330,7 +330,10 @@ function executeDataValue(
     const args = data.value.constructorArgs.map((arg, index) => {
       return _execute(
         arg,
-        getChildContext(context, { index, expectedType: data.type })
+        getChildContext(context, {
+          index,
+          expectedType: data.type.constructorArgs[index]?.type,
+        })
       );
     });
     return [
