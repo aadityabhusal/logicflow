@@ -111,10 +111,7 @@ const OperationComponent = (
         parameters: updatedParameters,
         statements: updatedStatementsList,
       };
-      const newType = inferTypeFromValue<OperationType>(newValue, {
-        ...context,
-        expectedType: context.expectedType ?? prevOp.type,
-      });
+      const newType = inferTypeFromValue<OperationType>(newValue, context);
       const hasTypeChanged = !isEqual(newType, prevOp.type);
       const hasNameChanged =
         statements.find((s) => s.id === statement.id)?.name !== statement.name;

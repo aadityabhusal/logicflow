@@ -476,9 +476,7 @@ export function createParamData(
   item: OperationType["parameters"][number]
 ): IStatement["data"] {
   if (item.type.kind !== "operation") {
-    return createData({
-      type: item.type.kind === "unknown" ? { kind: "undefined" } : item.type,
-    });
+    return createData({ type: item.type });
   }
 
   const parameters = item.type.parameters
@@ -1091,7 +1089,13 @@ export function inferTypeFromValue<T extends DataType>(
   value: DataValue<T> | undefined,
   context: Context
 ): T {
-  if (value === undefined) return { kind: "undefined" } as T;
+  if (value === undefined) {
+    return (
+      context.expectedType?.kind === "unknown"
+        ? context.expectedType
+        : { kind: "undefined" }
+    ) as T;
+  }
   if (typeof value === "string") return { kind: "string" } as T;
   if (typeof value === "number") return { kind: "number" } as T;
   if (typeof value === "boolean") return { kind: "boolean" } as T;

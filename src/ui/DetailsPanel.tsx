@@ -1,7 +1,9 @@
 import {
   FaArrowUpRightFromSquare,
+  FaCheck,
   FaCrosshairs,
   FaLock,
+  FaRegCopy,
   FaUnlock,
 } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
@@ -12,6 +14,7 @@ import {
 } from "../lib/store";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Button, Tooltip } from "@mantine/core";
+import { useClipboard } from "@mantine/hooks";
 import { useMemo, useState, useEffect } from "react";
 import { getTypeSignature, isPendingContext, getCacheKey } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
@@ -74,6 +77,7 @@ export function DetailsPanel() {
     : undefined;
 
   const [formattedValue, setFormattedValue] = useState("");
+  const clipboard = useClipboard({ timeout: 500 });
 
   useEffect(() => {
     if (!result) {
@@ -177,7 +181,15 @@ export function DetailsPanel() {
         )}
         {formattedValue ? (
           <div className="flex-1 min-h-0 flex flex-col">
-            <div className="text-gray-300 mb-1.5 p-1">Result</div>
+            <div className="flex items-center justify-between mb-1.5 p-1">
+              <div className="text-gray-300">Result</div>
+              <IconButton
+                icon={clipboard.copied ? FaCheck : FaRegCopy}
+                title={clipboard.copied ? "Copied!" : "Copy result"}
+                size={14}
+                onClick={() => clipboard.copy(formattedValue)}
+              />
+            </div>
             <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
               <ErrorBoundary displayError={true}>
                 <CodeHighlight code={formattedValue} showLineNumbers={false} />

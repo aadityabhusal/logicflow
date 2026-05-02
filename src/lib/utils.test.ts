@@ -1084,6 +1084,13 @@ describe("inferTypeFromValue", () => {
     expect(inferTypeFromValue(undefined, ctx).kind).toBe("undefined");
   });
 
+  it("preserves unknown when expectedType is unknown", () => {
+    const ctxWithUnknown = createTestContext({
+      expectedType: { kind: "unknown" },
+    });
+    expect(inferTypeFromValue(undefined, ctxWithUnknown).kind).toBe("unknown");
+  });
+
   it("infers string", () => {
     expect(inferTypeFromValue("hello", ctx).kind).toBe("string");
   });
@@ -2812,9 +2819,9 @@ describe("createParamData", () => {
     expect(result.type.kind).toBe("number");
   });
 
-  it("creates undefined data for unknown parameter type", () => {
+  it("preserves unknown parameter type", () => {
     const result = createParamData({ type: { kind: "unknown" } });
-    expect(result.type.kind).toBe("undefined");
+    expect(result.type.kind).toBe("unknown");
   });
 
   it("creates data for array parameter type", () => {
