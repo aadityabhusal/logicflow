@@ -10,11 +10,7 @@ import {
 } from "@/lib/types";
 import { Context } from "@/lib/execution/types";
 import { ParseStatement } from "./ParseStatement";
-import {
-  getConditionResult,
-  inferTypeFromValue,
-  isDataOfType,
-} from "@/lib/utils";
+import { createData, inferTypeFromValue, isDataOfType } from "@/lib/utils";
 
 export function ParseData({
   data,
@@ -52,8 +48,8 @@ export function ParseData({
   }
   if (isDataOfType(data, "condition")) {
     return (
-      <ParseData
-        data={getConditionResult(data.value, context)}
+      <ParseCondition
+        data={data}
         showData={showData}
         nest={nest}
         context={context}
@@ -157,7 +153,7 @@ function ParseArray({
   );
 }
 
-function _ParseCondition({
+function ParseCondition({
   data,
   showData,
   nest = 0,
@@ -168,28 +164,91 @@ function _ParseCondition({
   nest?: number;
   context: Context;
 }) {
+  const condVal = data.value;
+  const tabs = "  ".repeat(nest);
+
+  if (condVal.trueBranch.length <= 1 && condVal.falseBranch.length <= 1) {
+    return (
+      <span className="gap-1">
+        <ParseStatement
+          statement={condVal.condition}
+          showData={showData}
+          nest={nest}
+          context={context}
+        />
+        <span>{" ? "}</span>
+        <ParseStatement
+          statement={
+            condVal.trueBranch.length > 0
+              ? condVal.trueBranch[0]
+              : { id: "", data: createData(), operations: [] }
+          }
+          showData={showData}
+          nest={nest}
+          context={context}
+        />
+        <span>{" : "}</span>
+        <ParseStatement
+          statement={
+            condVal.falseBranch.length > 0
+              ? condVal.falseBranch[0]
+              : { id: "", data: createData(), operations: [] }
+          }
+          showData={showData}
+          nest={nest}
+          context={context}
+        />
+      </span>
+    );
+  }
+
   return (
-    <span className="gap-1">
-      <ParseStatement
-        statement={data.value.condition}
-        showData={showData}
-        nest={nest}
-        context={context}
-      />
-      <span>{"?"}</span>
-      <ParseStatement
-        statement={data.value.true}
-        showData={showData}
-        nest={nest}
-        context={context}
-      />
-      <span>{":"}</span>
-      <ParseStatement
-        statement={data.value.false}
-        showData={showData}
-        nest={nest}
-        context={context}
-      />
-    </span>
+    <div>
+      <span>
+        <span className="text-reserved">if</span>
+        {" ("}
+        <ParseStatement
+          statement={condVal.condition}
+          showData={showData}
+          nest={nest}
+          context={context}
+        />
+        {") {\n"}
+      </span>
+      {condVal.trueBranch.map((stmt) => (
+        <span key={stmt.id}>
+          {tabs}
+          {"  "}
+          <ParseStatement
+            statement={stmt}
+            showData={showData}
+            nest={nest + 1}
+            context={context}
+          />
+          {";\n"}
+        </span>
+      ))}
+      <span>
+        {tabs}
+        {"} else {\n"}
+      </span>
+      {condVal.falseBranch.map((stmt) => (
+        <span key={stmt.id}>
+          {tabs}
+          {"  "}
+          <ParseStatement
+            statement={stmt}
+            showData={showData}
+            nest={nest + 1}
+            context={context}
+          />
+          {";\n"}
+        </span>
+      ))}
+      <span>
+        {tabs}
+        {"}"}
+      </span>
+    </div>
   );
 }

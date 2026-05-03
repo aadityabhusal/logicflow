@@ -237,6 +237,7 @@ function getStatementEntities(
     entities.push({ id: `${statement.id}_name`, depth, ...parent });
   }
   if (allowVariable) {
+    entities.push({ id: `${statement.id}_return`, depth, ...parent });
     entities.push({ id: `${statement.id}_add`, depth, ...parent });
     entities.push({ id: `${statement.id}_equals`, depth, ...parent });
   }
@@ -275,12 +276,40 @@ function getStatementEntities(
   } else if (isDataOfType(statement.data, "operation")) {
     entities.push(...getOperationEntities(statement.data, context, depth + 1));
   } else if (isDataOfType(statement.data, "condition")) {
-    (["condition", "true", "false"] as const).forEach((item) => {
-      const branch = (statement.data.value as DataValue<ConditionType>)[item];
+    const condVal = statement.data.value as DataValue<ConditionType>;
+    entities.push(
+      ...getStatementEntities(
+        condVal.condition,
+        depth + 1,
+        parent,
+        context,
+        allowVariable
+      )
+    );
+    for (const stmt of condVal.trueBranch) {
       entities.push(
-        ...getStatementEntities(branch, depth + 1, parent, context)
+        ...getStatementEntities(stmt, depth + 1, parent, context, allowVariable)
       );
-    });
+    }
+    if (allowVariable) {
+      entities.push({
+        id: `${dataId}_trueBranch_add`,
+        depth: depth + 1,
+        ...parent,
+      });
+    }
+    for (const stmt of condVal.falseBranch) {
+      entities.push(
+        ...getStatementEntities(stmt, depth + 1, parent, context, allowVariable)
+      );
+    }
+    if (allowVariable) {
+      entities.push({
+        id: `${dataId}_falseBranch_add`,
+        depth: depth + 1,
+        ...parent,
+      });
+    }
   } else if (isDataOfType(statement.data, "instance")) {
     statement.data.value.constructorArgs.forEach((arg) => {
       entities.push(...getStatementEntities(arg, depth + 1, parent, context));

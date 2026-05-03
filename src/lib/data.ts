@@ -58,7 +58,6 @@ export const DataTypes: {
       kind: "condition",
       result: { kind: "union", types: [{ kind: "unknown" }] },
     },
-    hideFromDropdown: true,
   },
   reference: {
     type: { kind: "reference", name: "" },

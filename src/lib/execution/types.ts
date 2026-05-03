@@ -40,6 +40,7 @@ export type Context = {
   yieldCounter?: { calls: number };
   operationCache?: Map<string, IData>;
   _memoCacheKey?: string;
+  controlFlowState?: { returned?: IData };
   getResult: (id: string) => ExecutionResult | undefined;
   getInstance: (
     id: string

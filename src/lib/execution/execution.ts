@@ -1,5 +1,11 @@
 import { nanoid } from "nanoid";
-import { IData, IStatement, OperationType, DataType } from "@/lib/types";
+import {
+  IData,
+  IStatement,
+  OperationType,
+  DataType,
+  ConditionType,
+} from "@/lib/types";
 import {
   createData,
   createStatement,
@@ -311,21 +317,6 @@ function executeDataValue(
       { ...data, type: activeType },
       getChildContext(context, { expectedType: activeType })
     );
-  } else if (isDataOfType(data, "condition")) {
-    return [
-      _execute(data.value.condition, context),
-      _execute(data.value.true, getChildContext(context)),
-      _execute(
-        data.value.false,
-        getChildContext(context, {
-          narrowedTypes: getInverseTypes(
-            context.variables,
-            context.narrowedTypes ?? new Map(),
-            context
-          ),
-        })
-      ),
-    ];
   } else if (isDataOfType(data, "instance")) {
     const args = data.value.constructorArgs.map((arg, index) => {
       return _execute(
@@ -357,7 +348,10 @@ export function setOperationResults(
   _context: Context
 ): Thenable<void> {
   const { parameters, statements } = operation.value;
-  const context = createContext(_context, { scopeId: operation.id });
+  const context = createContext(_context, {
+    scopeId: operation.id,
+    controlFlowState: {},
+  });
   const allStatements = [...parameters, ...statements];
   const _execute = context.isSync ? executeStatementSync : executeStatement;
 
@@ -370,6 +364,7 @@ export function setOperationResults(
     );
     return (result instanceof Promise ? result : createThenable(result)).then(
       (resolved) => {
+        if (context.controlFlowState?.returned) return;
         const variable = createContextVariable(
           statement,
           context,
@@ -409,7 +404,8 @@ function executeStatementCore(
   context: Context,
   narrowed: Required<Context>["narrowedTypes"],
   data: IData,
-  operation: IData<OperationType>
+  operation: IData<OperationType>,
+  sourceData?: IData
 ): {
   _narrowedTypes: Required<Context>["narrowedTypes"];
   shouldCacheResult?: boolean;
@@ -418,7 +414,12 @@ function executeStatementCore(
   | { foundOp: OperationListItem; opCallContext: Context; result?: never }
 ) {
   const opName = operation.value.name;
-  const _narrowedTypes = applyTypeNarrowing(context, narrowed, data, operation);
+  const _narrowedTypes = applyTypeNarrowing(
+    context,
+    narrowed,
+    sourceData ?? data,
+    operation
+  );
   const opCallContext = {
     ...context,
     narrowedTypes: _narrowedTypes,
@@ -465,10 +466,68 @@ function executeStatementCore(
   return { _narrowedTypes, opCallContext, foundOp, shouldCacheResult };
 }
 
+function setStatementsSkipContext(statements: IStatement[], context: Context) {
+  for (const statement of statements)
+    context.setContext(statement.id, {
+      ...context,
+      skipExecution: { reason: "Unreachable branch", kind: "unreachable" },
+    });
+}
+
+function executeStatements(statements: IStatement[], context: Context): IData {
+  let lastResult: IData = createData();
+  for (const stmt of statements) {
+    lastResult = executeStatementSync(stmt, context);
+    if (isFatalError(lastResult)) return lastResult;
+    if (!context.controlFlowState?.returned) {
+      const variable = createContextVariable(stmt, context, lastResult);
+      if (variable && stmt.name) context.variables.set(stmt.name, variable);
+    }
+  }
+  return context.controlFlowState?.returned ?? lastResult;
+}
+
+async function executeStatementsAsync(
+  statements: IStatement[],
+  context: Context
+): Promise<IData> {
+  let lastResult: IData = createData();
+  for (const stmt of statements) {
+    lastResult = await executeStatement(stmt, context);
+    if (isFatalError(lastResult)) return lastResult;
+    if (!context.controlFlowState?.returned) {
+      const variable = createContextVariable(stmt, context, lastResult);
+      if (variable && stmt.name) context.variables.set(stmt.name, variable);
+    }
+  }
+  return context.controlFlowState?.returned ?? lastResult;
+}
+
+function resolveConditionBranch(
+  data: IData<ConditionType>,
+  conditionResult: IData,
+  ctx: Context
+) {
+  const { trueBranch, falseBranch } = data.value;
+  const branch = conditionResult.value ? trueBranch : falseBranch;
+  const skipped = conditionResult.value ? falseBranch : trueBranch;
+  setStatementsSkipContext(skipped, ctx);
+  const isBlock = trueBranch.length > 1 || falseBranch.length > 1;
+  const scopeId = data.id + (conditionResult.value ? "_true" : "_false");
+  return { branch, context: isBlock ? createContext(ctx, { scopeId }) : ctx };
+}
+
 export async function executeStatement(
   statement: IStatement,
   context: Context
 ): Promise<IData> {
+  if (context.controlFlowState?.returned) {
+    context.setContext(statement.id, {
+      ...context,
+      skipExecution: { reason: "Returned above", kind: "unreachable" },
+    });
+    return context.controlFlowState.returned;
+  }
   context.setContext(statement.id, context);
 
   if (!context.isSync && context.callDepth) {
@@ -485,27 +544,43 @@ export async function executeStatement(
 
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
-    const value = currentData.value;
-    const result = await executeStatement(value.condition, context);
-    if (isFatalError(result)) return result;
-    const data = result.value ? value.true : value.false;
-    currentData = await executeStatement(data, context);
+    const condRes = await executeStatement(
+      currentData.value.condition,
+      context
+    );
+    if (isFatalError(condRes)) return condRes;
+    if (context.controlFlowState?.returned)
+      return context.controlFlowState.returned;
+    const resolved = resolveConditionBranch(currentData, condRes, context);
+    currentData = await executeStatementsAsync(
+      resolved.branch,
+      resolved.context
+    );
   }
   if (isFatalError(currentData)) return currentData;
+  if (context.controlFlowState?.returned)
+    return context.controlFlowState.returned;
 
   await Promise.allSettled(executeDataValue(statement.data, context));
 
   let narrowedTypes = new Map();
-  let resultData = statement.data;
+  let resultData = currentData;
 
-  for (const operation of statement.operations) {
+  for (let i = 0; i < statement.operations.length; i++) {
+    const operation = statement.operations[i];
     const {
       _narrowedTypes,
       foundOp,
       result,
       opCallContext,
       shouldCacheResult,
-    } = executeStatementCore(context, narrowedTypes, resultData, operation);
+    } = executeStatementCore(
+      context,
+      narrowedTypes,
+      resultData,
+      operation,
+      i === 0 ? statement.data : undefined
+    );
     narrowedTypes = _narrowedTypes;
 
     if (result !== undefined) {
@@ -530,6 +605,9 @@ export async function executeStatement(
     if (isFatalError(resultData)) return resultData;
   }
   const finalResult = resolveReference(resultData, context);
+  if (statement.controlFlow === "return" && context.controlFlowState) {
+    context.controlFlowState.returned = finalResult;
+  }
   return finalResult;
 }
 
@@ -537,32 +615,49 @@ export function executeStatementSync(
   statement: IStatement,
   context: Context
 ): IData {
+  if (context.controlFlowState?.returned) {
+    context.setContext(statement.id, {
+      ...context,
+      skipExecution: { reason: "Returned above", kind: "unreachable" },
+    });
+    return context.controlFlowState.returned;
+  }
   context.setContext(statement.id, context);
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
-    const value = currentData.value;
-    const result = executeStatementSync(value.condition, context);
-    if (isFatalError(result)) return result;
-    const data = result.value ? value.true : value.false;
-    currentData = executeStatementSync(data, context);
+    const condRes = executeStatementSync(currentData.value.condition, context);
+    if (isFatalError(condRes)) return condRes;
+    if (context.controlFlowState?.returned)
+      return context.controlFlowState.returned;
+    const resolved = resolveConditionBranch(currentData, condRes, context);
+    currentData = executeStatements(resolved.branch, resolved.context);
   }
   if (isFatalError(currentData)) return currentData;
+  if (context.controlFlowState?.returned)
+    return context.controlFlowState.returned;
 
   executeDataValue(statement.data, context).forEach((e) => {
     unwrapThenable(e);
   });
 
   let narrowedTypes = new Map();
-  let resultData = statement.data;
+  let resultData = currentData;
 
-  for (const operation of statement.operations) {
+  for (let i = 0; i < statement.operations.length; i++) {
+    const operation = statement.operations[i];
     const {
       _narrowedTypes,
       foundOp,
       result,
       opCallContext,
       shouldCacheResult,
-    } = executeStatementCore(context, narrowedTypes, resultData, operation);
+    } = executeStatementCore(
+      context,
+      narrowedTypes,
+      resultData,
+      operation,
+      i === 0 ? statement.data : undefined
+    );
     narrowedTypes = _narrowedTypes;
 
     if (result !== undefined) {
@@ -587,6 +682,9 @@ export function executeStatementSync(
     if (isFatalError(resultData)) return resultData;
   }
   const finalResult = resolveReference(resultData, context);
+  if (statement.controlFlow === "return" && context.controlFlowState) {
+    context.controlFlowState.returned = finalResult;
+  }
   return finalResult;
 }
 
@@ -692,6 +790,7 @@ function executeOperationCore(
       scopeId: operation.id,
       isIsolated: true,
       callDepth: nextCallDepth,
+      controlFlowState: {},
     });
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
@@ -722,16 +821,8 @@ export async function executeOperation(
   const [operation] = args;
   const result = await executeOperationCore(...args);
   if ("type" in result) return result;
-
-  let lastResult: IData = createData();
-  if (!("statements" in operation)) return lastResult;
-  for (const statement of operation.statements) {
-    lastResult = await executeStatement(statement, result);
-    const variable = createContextVariable(statement, result, lastResult);
-    if (variable && statement.name) {
-      result.variables.set(statement.name, variable);
-    }
-  }
+  if (!("statements" in operation)) return createData();
+  const lastResult = await executeStatementsAsync(operation.statements, result);
 
   const cacheKey = result._memoCacheKey;
   delete result._memoCacheKey;
@@ -746,16 +837,8 @@ export function executeOperationSync(
   const [operation] = args;
   const result = unwrapThenable(executeOperationCore(...args));
   if (result && "type" in result) return result;
-
-  let lastResult: IData = createData();
-  if (!("statements" in operation)) return lastResult;
-  for (const statement of operation.statements) {
-    lastResult = executeStatementSync(statement, result);
-    const variable = createContextVariable(statement, result, lastResult);
-    if (variable && statement.name) {
-      result.variables.set(statement.name, variable);
-    }
-  }
+  if (!("statements" in operation)) return createData();
+  const lastResult = executeStatements(operation.statements, result);
 
   const cacheKey = result._memoCacheKey;
   delete result._memoCacheKey;

@@ -83,8 +83,8 @@ describe("isComplexData", () => {
       isComplexData(
         testCondition(
           booleanStatement(true),
-          stringStatement("a"),
-          stringStatement("b")
+          [stringStatement("a")],
+          [stringStatement("b")]
         )
       )
     ).toBe(true));
@@ -295,8 +295,8 @@ describe("getEntityWidth — conditions", () => {
       getEntityWidth(
         testCondition(
           booleanStatement(true),
-          stringStatement("y"),
-          stringStatement("n")
+          [stringStatement("y")],
+          [stringStatement("n")]
         )
       )
     ).toBe(1 + 1 + 1 + 1 + 1);
@@ -310,8 +310,8 @@ describe("getEntityWidth — conditions", () => {
     const objWidth = getEntityWidth(obj);
     const cond = testCondition(
       booleanStatement(true),
-      createStatement({ data: obj }),
-      stringStatement("n")
+      [createStatement({ data: obj })],
+      [stringStatement("n")]
     );
     expect(getEntityWidth(cond)).toBe(1 + 1 + objWidth + 1 + 1);
   });

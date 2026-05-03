@@ -162,8 +162,8 @@ describe("createData", () => {
     });
     expect(data.type.kind).toBe("condition");
     expect(data.value.condition).toBeDefined();
-    expect(data.value.true).toBeDefined();
-    expect(data.value.false).toBeDefined();
+    expect(data.value.trueBranch).toBeDefined();
+    expect(data.value.falseBranch).toBeDefined();
   });
 
   it("creates reference data", () => {
@@ -329,8 +329,8 @@ describe("createDefaultValue", () => {
       result: { kind: "undefined" },
     });
     expect(val.condition).toBeDefined();
-    expect(val.true).toBeDefined();
-    expect(val.false).toBeDefined();
+    expect(val.trueBranch).toBeDefined();
+    expect(val.falseBranch).toBeDefined();
   });
 
   it("returns error value for error type", () => {
@@ -865,7 +865,7 @@ describe("isDataOfType", () => {
 
   it("narrows condition data", () => {
     const cond = booleanStatement(true);
-    const data = testCondition(cond, cond, cond);
+    const data = testCondition(cond, [cond], [cond]);
     expect(isDataOfType(data, "condition")).toBe(true);
   });
 
@@ -1157,11 +1157,11 @@ describe("inferTypeFromValue", () => {
     expect(result.kind).toBe("object");
   });
 
-  it("infers condition from value with condition, true, false properties", () => {
+  it("infers condition from value with condition, trueBranch, falseBranch properties", () => {
     const val = {
       condition: booleanStatement(true),
-      true: stringStatement("yes"),
-      false: stringStatement("no"),
+      trueBranch: [stringStatement("yes")],
+      falseBranch: [stringStatement("no")],
     };
     const result = inferTypeFromValue(val, ctx);
     expect(result.kind).toBe("condition");
@@ -1764,11 +1764,29 @@ describe("createDataFromRawValue", () => {
     const fn = (a: unknown) => a;
     const result = createDataFromRawValue(fn, ctx);
     expect(result.type.kind).toBe("operation");
+    if (isDataOfType(result, "operation")) {
+      expect(result.value.instanceId).toBeDefined();
+      expect(getRawValueFromData(result, ctx)).toBe(fn);
+    }
   });
 
   it("converts empty array to array type", () => {
     const result = createDataFromRawValue([], ctx);
     expect(result.type.kind).toBe("array");
+  });
+
+  it("preserves expected array element type for empty arrays", () => {
+    const result = createDataFromRawValue(
+      [],
+      createTestContext({
+        expectedType: { kind: "array", elementType: { kind: "number" } },
+      })
+    );
+
+    expect(result.type).toEqual({
+      kind: "array",
+      elementType: { kind: "number" },
+    });
   });
 
   it("converts nested array to array of arrays", () => {
@@ -1968,8 +1986,8 @@ describe("getRawValueFromData", () => {
   it("extracts condition value as evaluated branch", () => {
     const cond = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getRawValueFromData(cond, ctx);
     expect(result).toBe("yes");
@@ -1978,8 +1996,8 @@ describe("getRawValueFromData", () => {
   it("extracts condition value as false branch when condition is false", () => {
     const cond = testCondition(
       booleanStatement(false),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getRawValueFromData(cond, ctx);
     expect(result).toBe("no");
@@ -2208,8 +2226,8 @@ describe("getStatementResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const stmt = createStatement({ data: condData });
     const result = getStatementResult(stmt, ctx);
@@ -3218,8 +3236,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe("yes");
@@ -3230,8 +3248,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(false),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe("no");
@@ -3242,8 +3260,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
-      numberStatement(42),
-      numberStatement(0)
+      [numberStatement(42)],
+      [numberStatement(0)]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe(42);
@@ -3253,8 +3271,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(false),
-      numberStatement(1),
-      numberStatement(0)
+      [numberStatement(1)],
+      [numberStatement(0)]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe(0);
@@ -3264,8 +3282,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       numberStatement(0),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe("no");
@@ -3275,8 +3293,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       stringStatement(""),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe("no");
@@ -3286,8 +3304,8 @@ describe("getConditionResult", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       numberStatement(1),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = getConditionResult(condData.value, ctx);
     expect(result.value).toBe("yes");

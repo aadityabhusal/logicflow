@@ -71,18 +71,19 @@ export function getEntityWidth(data: IData): number {
   }
 
   if (kind === "condition") {
-    const branches = data.value as {
+    const value = data.value as {
       condition: IStatement;
-      true: IStatement;
-      false: IStatement;
+      trueBranch: IStatement[];
+      falseBranch: IStatement[];
     };
-    return (
-      getStatementWidth(branches.condition) +
-      1 +
-      getStatementWidth(branches.true) +
-      1 +
-      getStatementWidth(branches.false)
-    );
+    if (value.trueBranch.length > 1 || value.falseBranch.length > 1) return THRESHOLD;
+    const trueWidth =
+      value.trueBranch.length > 0 ? getStatementWidth(value.trueBranch[0]) : 1;
+    const falseWidth =
+      value.falseBranch.length > 0
+        ? getStatementWidth(value.falseBranch[0])
+        : 1;
+    return getStatementWidth(value.condition) + 1 + trueWidth + 1 + falseWidth;
   }
 
   if (kind === "instance") {

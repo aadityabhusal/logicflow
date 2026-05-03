@@ -140,17 +140,17 @@ function updateDataValue({
                     context,
                     variableNames
                   );
-                  const _true = updateStatement(
-                    data.value.true,
+                  const trueBranch = updateStatements({
+                    statements: data.value.trueBranch,
                     context,
-                    variableNames
-                  );
-                  const _false = updateStatement(
-                    data.value.false,
+                    variableNames,
+                  });
+                  const falseBranch = updateStatements({
+                    statements: data.value.falseBranch,
                     context,
-                    variableNames
-                  );
-                  return { condition, true: _true, false: _false };
+                    variableNames,
+                  });
+                  return { condition, trueBranch, falseBranch };
                 })()
               : isDataOfType(data, "instance")
                 ? {

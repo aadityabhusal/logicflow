@@ -68,6 +68,7 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     operations: props?.operations || [],
     isOptional: props?.isOptional,
     isRest: props?.isRest,
+    controlFlow: props?.controlFlow,
   };
 }
 
@@ -187,17 +188,10 @@ export function createDefaultValue<T extends DataType>(
     }
 
     case "condition": {
-      const createStatement = (): IStatement => ({
-        id: nanoid(),
-        operations: [],
-        data: createData(),
-      });
-
       return {
         condition: createStatement(),
-        true: createStatement(),
-        false: createStatement(),
-        result: createStatement().data,
+        trueBranch: [createStatement()],
+        falseBranch: [createStatement()],
       } as DataValue<T>;
     }
     case "error": {
@@ -334,8 +328,14 @@ export function walkStatements(
     } else if (isDataOfType(data, "condition")) {
       visitors.onCondition?.(data);
       walkStatement(data.value.condition);
-      walkStatement(data.value.true);
-      walkStatement(data.value.false);
+      for (const stmt of data.value.trueBranch) walkStatement(stmt);
+      for (const stmt of data.value.falseBranch) walkStatement(stmt);
+      if (options?.includeNestedOperations) {
+        for (const branch of [data.value.trueBranch, data.value.falseBranch])
+          for (const statement of branch)
+            for (const op of statement.operations)
+              for (const param of op.value.parameters) walkStatement(param);
+      }
     }
   };
 
@@ -391,6 +391,10 @@ export function createContext(
       overrides?.narrowedTypes ?? new Map(parentContext.narrowedTypes),
     expectedType: overrides?.expectedType ?? undefined,
     enforceExpectedType: overrides?.enforceExpectedType ?? undefined,
+    controlFlowState:
+      overrides && "controlFlowState" in overrides
+        ? overrides?.controlFlowState
+        : parentContext.controlFlowState,
   };
 }
 
@@ -579,7 +583,7 @@ export function createDataFromRawValue(
           ? { kind: "tuple", elements: _value.map((v) => v.data.type) }
           : {
               kind: "array",
-              elementType: resolveUnionType(_value.map((v) => v.data.type)),
+              elementType: getArrayElementType(_value, context),
             },
       value: _value,
     });
@@ -661,19 +665,15 @@ export function createDataFromRawValue(
             result: { kind: "unknown" },
           };
 
-    if (existingInstanceId) {
-      // This function was converted from an operation - retrieve stored type
-      const storedType = context.getInstance(existingInstanceId)?.type;
-      const type = storedType?.kind === "operation" ? storedType : fallbackType;
+    const storedType = existingInstanceId
+      ? context.getInstance(existingInstanceId)?.type
+      : undefined;
+    const type = storedType?.kind === "operation" ? storedType : fallbackType;
+    const instanceId = existingInstanceId ?? nanoid();
+    context.setInstance(instanceId, { instance: value, type });
 
-      const data = createData({ type });
-      return {
-        ...data,
-        value: { ...data.value, instanceId: existingInstanceId },
-      };
-    }
-    // New function - not from operation conversion
-    return createData({ type: fallbackType });
+    const data = createData({ type });
+    return { ...data, value: { ...data.value, instanceId } };
   }
   return createData({
     type: context.expectedType ?? { kind: "unknown" },
@@ -1012,15 +1012,52 @@ function getArrayElementType(
   return resolveUnionType(unionTypes);
 }
 
+export function getStatementsResultType(
+  statements: IStatement[],
+  context: Context
+): DataType {
+  const returnTypes: DataType[] = [];
+  let fallthroughType: DataType = { kind: "undefined" };
+
+  const collectReturns = (statements: IStatement[]) => {
+    for (const statement of statements) {
+      if (statement.controlFlow === "return")
+        returnTypes.push(getStatementResult(statement, context).type);
+    }
+  };
+
+  for (const stmt of statements) {
+    if (stmt.controlFlow === "return") {
+      returnTypes.push(getStatementResult(stmt, context).type);
+    } else if (isDataOfType(stmt.data, "condition")) {
+      const value = stmt.data.value;
+      if (value.trueBranch.length > 1 || value.falseBranch.length > 1) {
+        collectReturns(value.trueBranch);
+        collectReturns(value.falseBranch);
+      }
+    }
+    if (!stmt.controlFlow) {
+      fallthroughType = getStatementResult(stmt, context).type;
+    }
+  }
+
+  if (returnTypes.length > 0) {
+    return resolveUnionType(
+      statements.length > 0 ? [...returnTypes, fallthroughType] : returnTypes
+    );
+  }
+
+  return statements.length > 0
+    ? getStatementResult(statements[statements.length - 1], context).type
+    : { kind: "undefined" };
+}
+
 export function getOperationResultType(
   value: DataValue<OperationType>,
   context: Context
 ): DataType {
-  let resultType: DataType = { kind: "undefined" };
-  if (value.statements.length > 0) {
-    const lastStatement = value.statements[value.statements.length - 1];
-    resultType = getStatementResult(lastStatement, context).type;
-  }
+  const resultType = getStatementsResultType(value.statements, context);
+
   if (value.isAsync) {
     return {
       kind: "instance",
@@ -1155,18 +1192,21 @@ export function inferTypeFromValue<T extends DataType>(
       ),
     } as T;
   }
-  if (isObject(value, ["condition", "true", "false"])) {
-    const trueType = getStatementResult(value.true as IStatement, context).type;
-    const falseType = getStatementResult(
-      value.false as IStatement,
-      context
-    ).type;
-    const unionType = resolveUnionType(
-      isTypeCompatible(trueType, falseType, context)
-        ? [trueType]
-        : [trueType, falseType]
-    );
-    return { kind: "condition", result: unionType } as T;
+  if (
+    isObject(value, ["condition", "trueBranch", "falseBranch"]) &&
+    Array.isArray(value.trueBranch) &&
+    Array.isArray(value.falseBranch)
+  ) {
+    const trueType = getStatementsResultType(value.trueBranch, context);
+    const falseType = getStatementsResultType(value.falseBranch, context);
+    return {
+      kind: "condition",
+      result: resolveUnionType(
+        isTypeCompatible(trueType, falseType, context)
+          ? [trueType]
+          : [trueType, falseType]
+      ),
+    } as T;
   }
   if (isObject(value, ["name"]) && typeof value.name === "string") {
     const variable = context.variables.get(value.name);
@@ -1440,10 +1480,11 @@ export function getConditionResult(
   context: Context
 ): IData {
   const conditionResult = getStatementResult(condition.condition, context);
-  return getStatementResult(
-    conditionResult.value ? condition.true : condition.false,
-    context
-  );
+  const branch = conditionResult.value
+    ? condition.trueBranch
+    : condition.falseBranch;
+  if (branch.length === 0) return createData();
+  return getStatementResult(branch[branch.length - 1], context);
 }
 
 export function getSkipExecution({

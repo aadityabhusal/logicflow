@@ -216,10 +216,12 @@ export function createOperationHandler<
 
     return createDataFromRawValue(result, {
       ..._context,
-      expectedType:
-        typeof expectedType === "function"
-          ? expectedType(args[0])
-          : expectedType,
+      ...(expectedType !== undefined && {
+        expectedType:
+          typeof expectedType === "function"
+            ? expectedType(args[0])
+            : expectedType,
+      }),
     });
   };
 }

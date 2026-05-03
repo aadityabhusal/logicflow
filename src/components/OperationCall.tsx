@@ -39,7 +39,9 @@ const OperationCallComponent = ({
   addOperationCall?: (data: IData, operationId?: string) => void;
   path: EntityPath;
 }) => {
-  const context = useExecutionResultsStore((s) => s.getContext(operation.id));
+  const context = useExecutionResultsStore((s) =>
+    s.getContextOrAncestor(operation.id, path)
+  );
 
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const filteredOperations = useMemo(

@@ -37,6 +37,7 @@ interface IProps {
   handleChange(item: IStatement["data"], remove?: boolean): void;
   context: Context;
   basePath: EntityPath;
+  isTopLevelStatement?: boolean;
 }
 
 const DataComponent = ({
@@ -46,6 +47,7 @@ const DataComponent = ({
   handleChange,
   context,
   basePath,
+  isTopLevelStatement,
 }: IProps) => {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const dropdownItems = useMemo(
@@ -176,6 +178,7 @@ const DataComponent = ({
           handleData={handleChange}
           context={context}
           basePath={nestedPath}
+          isTopLevelStatement={isTopLevelStatement}
           onClick={props.onClick}
         />
       ) : isDataOfType(data, "union") ? (
@@ -257,6 +260,7 @@ const DataComponent = ({
       handleOperationChange,
       nestedPath,
       setNavigation,
+      isTopLevelStatement,
     ]
   );
 

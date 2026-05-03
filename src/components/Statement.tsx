@@ -4,6 +4,7 @@ import {
   FaEquals,
   FaQuestion,
   FaEllipsis,
+  FaArrowTurnDown,
 } from "react-icons/fa6";
 import { IData, IStatement, OperationType } from "../lib/types";
 import {
@@ -70,6 +71,9 @@ const StatementComponent = ({
     s.getContextOrAncestor(statement.id, path)
   );
 
+  const isReturn = statement.controlFlow === "return";
+  const isTopLevelStatement = enableVariable && !isParameter;
+
   const handleDataChange = useCallback(
     (data: IData, remove?: boolean) => {
       const newStatement = {
@@ -88,6 +92,10 @@ const StatementComponent = ({
   const isEqualsFocused = useNavigationStore(
     (s) =>
       s.navigation?.id === `${statement.id}_equals` && !s.navigation?.disable
+  );
+  const isReturnFocused = useNavigationStore(
+    (s) =>
+      s.navigation?.id === `${statement.id}_return` && !s.navigation?.disable
   );
   const isNameFocused = useNavigationStore(
     (s) => s.navigation?.id === `${statement.id}_name` && !s.navigation?.disable
@@ -188,34 +196,45 @@ const StatementComponent = ({
               context.enforceExpectedType ? false : hoverOpened || isAddFocused
             }
             offset={4}
-            position="left"
+            position="top"
             withinPortal={false}
           >
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={isRest ? FaEllipsis : isOptional ? FaQuestion : FaEquals}
+                icon={
+                  isReturn
+                    ? FaArrowTurnDown
+                    : isRest
+                      ? FaEllipsis
+                      : isOptional
+                        ? FaQuestion
+                        : FaEquals
+                }
                 position="right"
                 className={[
                   "hover:outline hover:outline-border",
                   isOptional || isRest ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
                   disableNameToggle ? "text-disabled" : "",
+                  isReturn ? "transform rotate-90" : "",
                 ].join(" ")}
                 title={
-                  disableNameToggle
-                    ? isRest
-                      ? "Rest Parameter"
-                      : isOptional
-                        ? "Optional Parameter"
-                        : undefined
-                    : isParameter
+                  isReturn
+                    ? "Remove return"
+                    : disableNameToggle
                       ? isRest
-                        ? "Make required"
+                        ? "Rest Parameter"
                         : isOptional
-                          ? "Make rest"
-                          : "Make optional"
-                      : "Create variable"
+                          ? "Optional Parameter"
+                          : undefined
+                      : isParameter
+                        ? isRest
+                          ? "Make required"
+                          : isOptional
+                            ? "Make rest"
+                            : "Make optional"
+                        : "Create variable"
                 }
                 onClick={() => {
                   if (disableNameToggle) return;
@@ -225,20 +244,23 @@ const StatementComponent = ({
                   handleStatement(
                     {
                       ...statement,
-                      ...(isParameter
-                        ? isRest
-                          ? { isOptional: undefined, isRest: undefined }
-                          : isOptional
-                            ? { isOptional: undefined, isRest: true, data }
-                            : { isOptional: true, isRest: undefined }
-                        : {
-                            name: hasName
-                              ? undefined
-                              : createVariableName({
-                                  prefix: "var",
-                                  prev: reservedNames?.map((r) => r.name) ?? [],
-                                }),
-                          }),
+                      ...(isReturn
+                        ? { controlFlow: undefined }
+                        : isParameter
+                          ? isRest
+                            ? { isOptional: undefined, isRest: undefined }
+                            : isOptional
+                              ? { isOptional: undefined, isRest: true, data }
+                              : { isOptional: true, isRest: undefined }
+                          : {
+                              name: hasName
+                                ? undefined
+                                : createVariableName({
+                                    prefix: "var",
+                                    prev:
+                                      reservedNames?.map((r) => r.name) ?? [],
+                                  }),
+                            }),
                     },
                     false,
                     path
@@ -250,7 +272,26 @@ const StatementComponent = ({
                 {...hoverEvents}
               />
             </Popover.Target>
-            <Popover.Dropdown {...hoverEvents}>
+            <Popover.Dropdown
+              {...hoverEvents}
+              classNames={{ dropdown: "flex items-center gap-2 border" }}
+            >
+              {isTopLevelStatement && !isReturn ? (
+                <IconButton
+                  ref={(elem) => isReturnFocused && elem?.focus()}
+                  icon={FaArrowTurnDown}
+                  position="right"
+                  title={"Return here"}
+                  className="hover:outline hover:outline-border transform rotate-90"
+                  onClick={() => {
+                    handleStatement(
+                      { ...statement, controlFlow: "return", name: undefined },
+                      false,
+                      path
+                    );
+                  }}
+                />
+              ) : null}
               <AddStatement
                 id={statement.id}
                 onSelect={(newStatement) => {
@@ -281,6 +322,7 @@ const StatementComponent = ({
             data={statement.data}
             disableDelete={disableDelete}
             context={context}
+            isTopLevelStatement={isTopLevelStatement}
             addOperationCall={
               !isParameter &&
               !context.skipExecution &&

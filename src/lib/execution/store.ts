@@ -72,6 +72,7 @@ export const useExecutionResultsStore =
         variables: createExecutionVariables(),
         yieldCounter: { calls: 0 },
         operationCache: new Map<string, IData>(),
+        controlFlowState: {},
         ...getTriggerExpectedType(),
         getResult: (id) => get().getResult(id),
         getInstance: (id) => get().getInstance(id),
@@ -153,6 +154,7 @@ export const useExecutionResultsStore =
             ...state.rootContext,
             yieldCounter: { calls: 0 },
             operationCache: new Map<string, IData>(),
+            controlFlowState: {},
             variables: createExecutionVariables(),
             ...getTriggerExpectedType(),
           };

@@ -12,11 +12,14 @@ import {
   createData,
   createStatement,
   isDataOfType,
+  getRawValueFromData,
   updateContextWithNarrowedTypes,
   operationToListItem,
+  resolveConstructorArgs,
 } from "@/lib/utils";
+import { InstanceTypes } from "@/lib/data";
 import { builtInOperations } from "@/lib/operations/built-in";
-import { OperationListItem } from "@/lib/execution/types";
+import { OperationListItem, Context } from "@/lib/execution/types";
 import {
   createTestContext,
   testString,
@@ -35,7 +38,13 @@ import {
   booleanStatement,
   testUndefined,
 } from "@/tests/helpers";
-import { IData, IStatement, OperationType } from "../types";
+import {
+  ArrayType,
+  IData,
+  IStatement,
+  InstanceDataType,
+  OperationType,
+} from "../types";
 
 function findBuiltIn(name: string): OperationListItem {
   const op = builtInOperations.find((o) => o.name === name);
@@ -302,16 +311,17 @@ describe("executeStatement", () => {
     }
   });
 
-  it("returns condition data as-is when no operations", async () => {
+  it("evaluates condition and returns branch result when no operations", async () => {
     const ctx = createTestContext({ isSync: false });
     const condData = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const stmt = createStatement({ data: condData });
     const result = await executeStatement(stmt, ctx);
-    expect(isDataOfType(result, "condition")).toBe(true);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("yes");
   });
 
   it("executes operations in chain", async () => {
@@ -439,16 +449,17 @@ describe("executeStatementSync", () => {
     expect(result.type.kind).toBe("error");
   });
 
-  it("returns condition data as-is when no operations", () => {
+  it("evaluates condition and returns branch result (sync)", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const stmt = createStatement({ data: condData });
     const result = executeStatementSync(stmt, ctx);
-    expect(isDataOfType(result, "condition")).toBe(true);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("yes");
   });
 
   it("executes operations in chain synchronously", () => {
@@ -505,27 +516,26 @@ describe("executeStatementSync", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const stmt = createStatement({ data: condData });
     const result = executeStatementSync(stmt, ctx);
-    expect(isDataOfType(result, "condition")).toBe(true);
-    if (isDataOfType(result, "condition")) {
-      expect(result.type.result).toBeDefined();
-    }
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("yes");
   });
 
   it("executes false branch of condition synchronously", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(false),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const stmt = createStatement({ data: condData });
     const result = executeStatementSync(stmt, ctx);
-    expect(isDataOfType(result, "condition")).toBe(true);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("no");
   });
 
   it("propagates error from chained operations in sync path", () => {
@@ -737,6 +747,100 @@ describe("executeOperation", () => {
       ctx
     );
     expect(result.value).toBe("hello world");
+  });
+
+  it("passes empty slice results into call with the source array type", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const arrayOfNumbers: ArrayType = {
+      kind: "array",
+      elementType: { kind: "number" },
+    };
+
+    const paramStatement = createStatement({
+      id: "param",
+      name: "param",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(0)],
+      }),
+    });
+
+    const userOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ name: "param", type: arrayOfNumbers }],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [paramStatement],
+        statements: [
+          createStatement({
+            data: createData({
+              type: { kind: "reference", name: "param" },
+              value: { name: "param", id: paramStatement.id },
+            }),
+            operations: [
+              createData<OperationType>({
+                type: {
+                  kind: "operation",
+                  parameters: [
+                    { type: { kind: "array", elementType: { kind: "unknown" } } },
+                    { type: { kind: "array", elementType: { kind: "unknown" } } },
+                  ],
+                  result: arrayOfNumbers,
+                },
+                value: {
+                  name: "concat",
+                  parameters: [
+                    createStatement({
+                      data: createData({
+                        type: arrayOfNumbers,
+                        value: [numberStatement(100)],
+                      }),
+                    }),
+                  ],
+                  statements: [],
+                },
+              }),
+            ],
+          }),
+        ],
+      },
+    });
+
+    const result = await executeOperation(findBuiltIn("call"), userOp, [
+      createStatement({
+        data: createData({
+          type: arrayOfNumbers,
+          value: [numberStatement(12)],
+        }),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: { kind: "array", elementType: { kind: "unknown" } } },
+                { type: { kind: "number" }, isOptional: true },
+                { type: { kind: "number" }, isOptional: true },
+              ],
+              result: arrayOfNumbers,
+            },
+            value: {
+              name: "slice",
+              parameters: [numberStatement(1)],
+              statements: [],
+            },
+          }),
+        ],
+      }),
+    ], ctx);
+
+    expect(isDataOfType(result, "error")).toBe(false);
+    expect(result.type.kind).toBe("array");
+    if (result.type.kind === "array") {
+      expect(result.type.elementType.kind).toBe("number");
+    }
+    expect(getRawValueFromData(result, ctx)).toEqual([100]);
   });
 
   it("returns default data for operation with no handler or statements", async () => {
@@ -1199,6 +1303,117 @@ describe("call operation with async operations", () => {
       expect(expectedType.className).toBe("Promise");
       expect(expectedType.result?.kind).toBe("string");
     }
+  });
+});
+
+describe("manual Promise instances", () => {
+  it("resolves then/await chains for manually created Promise instances", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const promiseType: OperationType["result"] = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: resolveConstructorArgs(
+        InstanceTypes.Promise.constructorArgs,
+        { kind: "string" }
+      ),
+      result: { kind: "string" },
+    };
+    const promiseData = createData({ type: promiseType });
+
+    expect(isDataOfType(promiseData, "instance")).toBe(true);
+    if (!isDataOfType(promiseData, "instance")) return;
+
+    const executor = promiseData.value.constructorArgs[0]?.data;
+    expect(isDataOfType(executor, "operation")).toBe(true);
+    if (!isDataOfType(executor, "operation")) return;
+
+    executor.value.statements = [
+      createStatement({
+        data: testReference("resolve", executor.value.parameters[0].id),
+        operations: [
+          createData({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: executor.type.parameters[0].type },
+                { type: { kind: "string" } },
+              ],
+              result: { kind: "unknown" },
+            },
+            value: {
+              name: "call",
+              parameters: [stringStatement("hello")],
+              statements: [],
+            },
+          }),
+        ],
+      }),
+    ];
+
+    const callbackType: OperationType = {
+      kind: "operation",
+      parameters: [{ name: "value", type: { kind: "string" } }],
+      result: { kind: "string" },
+    };
+    const callback = createData({ type: callbackType });
+    callback.value.statements = [
+      createStatement({
+        data: testReference("value", callback.value.parameters[0].id),
+      }),
+    ];
+
+    const statement = createStatement({
+      data: promiseData,
+      operations: [
+        createData({
+          type: {
+            kind: "operation",
+            parameters: [{ type: promiseType }, { type: callbackType }],
+            result: {
+              kind: "instance",
+              className: "Promise",
+              constructorArgs: [],
+              result: { kind: "string" },
+            },
+          },
+          value: {
+            name: "then",
+            parameters: [createStatement({ data: callback })],
+            statements: [],
+          },
+        }),
+        createData({
+          type: {
+            kind: "operation",
+            parameters: [
+              {
+                type: {
+                  kind: "instance",
+                  className: "Promise",
+                  constructorArgs: [],
+                  result: { kind: "string" },
+                },
+              },
+            ],
+            result: { kind: "string" },
+          },
+          value: { name: "await", parameters: [], statements: [] },
+        }),
+      ],
+    });
+
+    const resultPromise = executeStatement(statement, ctx);
+    const timeoutPromise = new Promise<IData>((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error("Timed out waiting for manual Promise to resolve"));
+      }, 200);
+      resultPromise.finally(() => clearTimeout(timeoutId));
+    });
+
+    const result = await Promise.race([resultPromise, timeoutPromise]);
+
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("hello");
   });
 });
 
@@ -2262,7 +2477,7 @@ describe("fib_op recursion", () => {
 
       const trueBranch = testOperation(
         [],
-        [createStatement({ data: testReference("n", "n-ref-true") })],
+        [createStatement({ data: testReference("n", "n-ref-true") })]
       );
 
       const falseBranch = testOperation(
@@ -2273,45 +2488,51 @@ describe("fib_op recursion", () => {
             data: testReference("fib", "fib-ref"),
             operations: [
               testOperation(
-                [createStatement({
-                  data: testReference("n", "n-ref-call1"),
-                  operations: [
-                    testOperation(
-                      [createStatement({ data: testNumber(1) })],
-                      [],
-                      "subtract"
-                    ),
-                  ],
-                })],
+                [
+                  createStatement({
+                    data: testReference("n", "n-ref-call1"),
+                    operations: [
+                      testOperation(
+                        [createStatement({ data: testNumber(1) })],
+                        [],
+                        "subtract"
+                      ),
+                    ],
+                  }),
+                ],
                 [],
                 "call"
               ),
               testOperation(
-                [createStatement({
-                  data: testReference("fib", "fib-ref-add"),
-                  operations: [
-                    testOperation(
-                      [createStatement({
-                        data: testReference("n", "n-ref-call2"),
-                        operations: [
-                          testOperation(
-                            [createStatement({ data: testNumber(2) })],
-                            [],
-                            "subtract"
-                          ),
+                [
+                  createStatement({
+                    data: testReference("fib", "fib-ref-add"),
+                    operations: [
+                      testOperation(
+                        [
+                          createStatement({
+                            data: testReference("n", "n-ref-call2"),
+                            operations: [
+                              testOperation(
+                                [createStatement({ data: testNumber(2) })],
+                                [],
+                                "subtract"
+                              ),
+                            ],
+                          }),
                         ],
-                      })],
-                      [],
-                      "call"
-                    ),
-                  ],
-                })],
+                        [],
+                        "call"
+                      ),
+                    ],
+                  }),
+                ],
                 [],
                 "add"
               ),
             ],
           }),
-        ],
+        ]
       );
 
       const bodyStmt = createStatement({
@@ -2350,12 +2571,7 @@ describe("fib_op recursion", () => {
 
       const fibOpItem = operationToListItem(fibOpIData, "fib");
 
-      const result = await executeOperation(
-        fibOpItem,
-        testNumber(n),
-        [],
-        ctx
-      );
+      const result = await executeOperation(fibOpItem, testNumber(n), [], ctx);
 
       expect(result.type.kind).toBe("number");
       expect(result.value).toBe(fibValues[n]);
@@ -2371,7 +2587,7 @@ describe("fib_op recursion", () => {
 
       const trueBranch = testOperation(
         [],
-        [createStatement({ data: testReference("n", "n-ref-true-m") })],
+        [createStatement({ data: testReference("n", "n-ref-true-m") })]
       );
 
       const falseBranch = testOperation(
@@ -2382,45 +2598,51 @@ describe("fib_op recursion", () => {
             data: testReference("fib", "fib-ref-m"),
             operations: [
               testOperation(
-                [createStatement({
-                  data: testReference("n", "n-ref-call1-m"),
-                  operations: [
-                    testOperation(
-                      [createStatement({ data: testNumber(1) })],
-                      [],
-                      "subtract"
-                    ),
-                  ],
-                })],
+                [
+                  createStatement({
+                    data: testReference("n", "n-ref-call1-m"),
+                    operations: [
+                      testOperation(
+                        [createStatement({ data: testNumber(1) })],
+                        [],
+                        "subtract"
+                      ),
+                    ],
+                  }),
+                ],
                 [],
                 "call"
               ),
               testOperation(
-                [createStatement({
-                  data: testReference("fib", "fib-ref-add-m"),
-                  operations: [
-                    testOperation(
-                      [createStatement({
-                        data: testReference("n", "n-ref-call2-m"),
-                        operations: [
-                          testOperation(
-                            [createStatement({ data: testNumber(2) })],
-                            [],
-                            "subtract"
-                          ),
+                [
+                  createStatement({
+                    data: testReference("fib", "fib-ref-add-m"),
+                    operations: [
+                      testOperation(
+                        [
+                          createStatement({
+                            data: testReference("n", "n-ref-call2-m"),
+                            operations: [
+                              testOperation(
+                                [createStatement({ data: testNumber(2) })],
+                                [],
+                                "subtract"
+                              ),
+                            ],
+                          }),
                         ],
-                      })],
-                      [],
-                      "call"
-                    ),
-                  ],
-                })],
+                        [],
+                        "call"
+                      ),
+                    ],
+                  }),
+                ],
                 [],
                 "add"
               ),
             ],
           }),
-        ],
+        ]
       );
 
       const bodyStmt = createStatement({
@@ -2459,15 +2681,432 @@ describe("fib_op recursion", () => {
 
       const fibOpItem = operationToListItem(fibOpIData, "fib");
 
-      const result = await executeOperation(
-        fibOpItem,
-        testNumber(n),
-        [],
-        ctx
-      );
+      const result = await executeOperation(fibOpItem, testNumber(n), [], ctx);
 
       expect(result.type.kind).toBe("number");
       expect(result.value).toBe(fibValues[n]);
     });
   }
+});
+
+describe("statement-level return control flow", () => {
+  it("returns early from operation body", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const unreachable = stringStatement("unreachable");
+    const stmts = [
+      stringStatement("first", "a"),
+      createStatement({
+        data: testString("early"),
+        controlFlow: "return",
+      }),
+      unreachable,
+    ];
+    const op: OperationListItem = {
+      name: "retOp",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = await executeOperation(op, testUndefined(), [], ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("early");
+    expect(ctx.getContext(unreachable.id).skipExecution?.kind).toBe(
+      "unreachable"
+    );
+  });
+
+  it("returns early from operation body (sync)", () => {
+    const ctx = createTestContext();
+    const unreachable = stringStatement("unreachable");
+    const stmts = [
+      stringStatement("first", "a"),
+      createStatement({
+        data: testString("early"),
+        controlFlow: "return",
+      }),
+      unreachable,
+    ];
+    const op: OperationListItem = {
+      name: "retOpSync",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = executeOperationSync(op, testUndefined(), [], ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("early");
+    expect(ctx.getContext(unreachable.id).skipExecution?.kind).toBe(
+      "unreachable"
+    );
+  });
+
+  it("return statement with chained operations returns the final piped value", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const stmts = [
+      createStatement({
+        data: testString("hello"),
+        operations: [
+          createData({
+            type: {
+              kind: "operation",
+              parameters: [{ type: { kind: "string" } }],
+              result: { kind: "number" },
+            },
+            value: { name: "length", parameters: [], statements: [] },
+          }),
+        ],
+        controlFlow: "return",
+      }),
+    ];
+    const retOp: OperationListItem = {
+      name: "chainedReturn",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = await executeOperation(retOp, testUndefined(), [], ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(5);
+  });
+});
+
+describe("expression condition execution", () => {
+  it("executes true branch expression", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = await executeStatement(stmt, ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("yes");
+  });
+
+  it("executes false branch expression", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const condData = testCondition(
+      booleanStatement(false),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = await executeStatement(stmt, ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("no");
+  });
+
+  it("executes expression condition synchronously", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(false),
+      [numberStatement(42)],
+      [numberStatement(99)]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(99);
+  });
+});
+
+describe("block condition execution", () => {
+  it("executes multiple statements in true branch", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("a"), numberStatement(42)],
+      [stringStatement("b")]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = await executeStatement(stmt, ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(42);
+  });
+
+  it("executes multiple statements in false branch", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const condData = testCondition(
+      booleanStatement(false),
+      [stringStatement("a")],
+      [stringStatement("b"), numberStatement(99)]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = await executeStatement(stmt, ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(99);
+  });
+
+  it("branch-local variables are scoped inside branch only", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("val", "inner")],
+      [stringStatement("unused")]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = await executeStatement(stmt, ctx);
+    expect(result.value).toBe("val");
+  });
+
+  it("outer variables are visible inside branch", async () => {
+    const ctx = createTestContext({ isSync: false });
+    ctx.variables.set("x", { data: testNumber(42) });
+    const condData = testCondition(
+      booleanStatement(true),
+      [createStatement({ data: testReference("x", "ref1") })],
+      [stringStatement("unused")]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = await executeStatement(stmt, ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(42);
+  });
+
+  it("block condition executes synchronously", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [numberStatement(10), numberStatement(20)],
+      [numberStatement(0)]
+    );
+    const stmt = createStatement({ data: condData });
+    const result = executeStatementSync(stmt, ctx);
+    expect(result.value).toBe(20);
+  });
+});
+
+describe("return inside block condition", () => {
+  it("return in true branch exits enclosing operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const skippedInBranch = stringStatement("after-return");
+    const skippedAfterCondition = stringStatement("unreachable");
+    const stmts = [
+      stringStatement("first"),
+      createStatement({
+        data: testCondition(
+          booleanStatement(true),
+          [
+            createStatement({
+              data: testString("early"),
+              controlFlow: "return",
+            }),
+            skippedInBranch,
+          ],
+          [stringStatement("no")]
+        ),
+      }),
+      skippedAfterCondition,
+    ];
+    const op: OperationListItem = {
+      name: "blockRetOp",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = await executeOperation(op, testUndefined(), [], ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("early");
+    expect(ctx.getContext(skippedInBranch.id).skipExecution?.kind).toBe(
+      "unreachable"
+    );
+    expect(ctx.getContext(skippedAfterCondition.id).skipExecution?.kind).toBe(
+      "unreachable"
+    );
+  });
+
+  it("return in false branch exits enclosing operation (sync)", () => {
+    const ctx = createTestContext();
+    const stmts = [
+      stringStatement("first"),
+      createStatement({
+        data: testCondition(
+          booleanStatement(false),
+          [stringStatement("no")],
+          [
+            createStatement({
+              data: testString("falseRet"),
+              controlFlow: "return",
+            }),
+          ]
+        ),
+      }),
+      stringStatement("unreachable"),
+    ];
+    const op: OperationListItem = {
+      name: "blockFRetOp",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = executeOperationSync(op, testUndefined(), [], ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("falseRet");
+  });
+
+  it("skipped branch return does not affect execution", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const stmts = [
+      createStatement({
+        data: testCondition(
+          booleanStatement(true),
+          [numberStatement(42)],
+          [
+            createStatement({
+              data: testString("never"),
+              controlFlow: "return",
+            }),
+          ]
+        ),
+      }),
+      stringStatement("reached"),
+    ];
+    const op: OperationListItem = {
+      name: "skipRetOp",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = await executeOperation(op, testUndefined(), [], ctx);
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("reached");
+  });
+});
+
+describe("return stays local in callbacks", () => {
+  it("return inside and callback does not exit outer operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const body = testOperation(
+      [],
+      [createStatement({ data: testString("ret"), controlFlow: "return" })]
+    );
+    const stmts = [
+      createStatement({
+        data: testBoolean(true),
+        operations: [
+          createData({
+            id: "and-call",
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: { kind: "boolean" } },
+                {
+                  type: {
+                    kind: "operation",
+                    parameters: [],
+                    result: { kind: "string" },
+                  },
+                },
+              ],
+              result: { kind: "boolean" },
+            },
+            value: {
+              name: "and",
+              parameters: [createStatement({ data: body })],
+              statements: [],
+            },
+          }),
+        ],
+      }),
+      stringStatement("still-reached"),
+    ];
+    const op: OperationListItem = {
+      name: "callbackRetOp",
+      parameters: [],
+      statements: stmts,
+    };
+    const result = await executeOperation(op, testUndefined(), [], ctx);
+    expect(result.value).toBe("still-reached");
+  });
+});
+
+describe("cached instance preservation across re-executions", () => {
+  it("resolves await from cached Promise when instances are seeded from prior cache", async () => {
+    // Create a resolved Promise simulating fetch's return value
+    const response = new Response("ok");
+    const promise = Promise.resolve(response);
+
+    // Build instance data matching what a cached fetch would store
+    const instanceId = "cached-promise-id";
+    const instanceType: InstanceDataType = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+    };
+    const promiseData = createData({
+      type: instanceType,
+      value: {
+        className: "Promise",
+        instanceId,
+        constructorArgs: [],
+      },
+    });
+
+    // First context: stores the cached fetch result
+    const baseCtx = createTestContext({ isSync: false });
+    baseCtx.setResult(instanceId, {
+      data: promiseData,
+      shouldCacheResult: true,
+    });
+    baseCtx.setInstance(instanceId, {
+      instance: promise,
+      type: instanceType,
+    });
+
+    // Create a "fresh" outer context that seeds instances from the cached result
+    // (mimicking the Project.tsx fix)
+    const outerResults = new Map<
+      string,
+      { data?: IData; shouldCacheResult?: boolean }
+    >();
+    const outerInstances = new Map<
+      string,
+      NonNullable<ReturnType<Context["getInstance"]>>
+    >();
+
+    outerResults.set(instanceId, {
+      data: promiseData,
+      shouldCacheResult: true,
+    });
+    outerInstances.set(instanceId, {
+      instance: promise,
+      type: instanceType,
+    });
+
+    const outerCtx: Context = {
+      ...baseCtx,
+      getResult: (id) => outerResults.get(id) ?? baseCtx.getResult(id),
+      setResult: (id, result) => outerResults.set(id, result),
+      getInstance: (id) => outerInstances.get(id) ?? baseCtx.getInstance(id),
+      setInstance: (id, inst) => outerInstances.set(id, inst),
+    };
+
+    // Build await operation chained on the cached Promise data
+    const awaitOp = createData({
+      id: "await-op",
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Promise",
+              constructorArgs: [],
+            },
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+      value: { name: "await", parameters: [], statements: [] },
+    });
+
+    const stmt = createStatement({
+      data: promiseData,
+      operations: [awaitOp],
+    });
+
+    const result = await executeStatement(stmt, outerCtx);
+
+    // await should have resolved the Promise<Response> and created Response
+    // instance data
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("Response");
+    }
+  });
 });

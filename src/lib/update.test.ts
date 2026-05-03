@@ -145,14 +145,14 @@ describe("updateStatements", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const stmt = createStatement({ data: condData });
     const changedCond = testCondition(
       booleanStatement(false),
-      stringStatement("no"),
-      stringStatement("yes")
+      [stringStatement("no")],
+      [stringStatement("yes")]
     );
     const changed = createStatement({ data: changedCond });
     changed.id = stmt.id;

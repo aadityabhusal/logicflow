@@ -115,11 +115,11 @@ const ConditionValueSchema = z.object({
   get condition() {
     return IStatementSchema;
   },
-  get true() {
-    return IStatementSchema;
+  get trueBranch() {
+    return z.array(IStatementSchema);
   },
-  get false() {
-    return IStatementSchema;
+  get falseBranch() {
+    return z.array(IStatementSchema);
   },
 });
 
@@ -223,6 +223,7 @@ const IStatementSchema = z.object({
   name: z.string().optional(),
   isOptional: z.boolean().optional(),
   isRest: z.boolean().optional(),
+  controlFlow: z.enum(["return"]).optional(),
   get data() {
     return IDataSchema;
   },

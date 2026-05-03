@@ -103,8 +103,8 @@ type BaseDataValue<T extends DataType> = T extends UnknownType
                       : T extends ConditionType
                         ? {
                             condition: IStatement;
-                            true: IStatement;
-                            false: IStatement;
+                            trueBranch: IStatement[];
+                            falseBranch: IStatement[];
                           }
                         : T extends ReferenceType
                           ? { name: string; id: string }
@@ -137,6 +137,7 @@ export interface IStatement {
   name?: string;
   isOptional?: boolean;
   isRest?: boolean;
+  controlFlow?: "return";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

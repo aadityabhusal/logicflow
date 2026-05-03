@@ -43,6 +43,7 @@ export function createTestContext(overrides?: Partial<Context>): Context {
     variables: new Map(),
     isSync: true,
     callDepth: 0,
+    controlFlowState: {},
     getResult: (id: string) => results.get(id),
     getInstance: (id: string) => instances.get(id),
     getContext: (id: string) => contexts.get(id) ?? base,
@@ -157,12 +158,12 @@ export function testOperation(
 
 export function testCondition(
   condition: IStatement,
-  trueBranch: IStatement,
-  falseBranch: IStatement
+  trueBranch: IStatement[],
+  falseBranch: IStatement[]
 ): IData<ConditionType> {
   return createData({
     type: { kind: "condition", result: { kind: "unknown" } },
-    value: { condition, true: trueBranch, false: falseBranch },
+    value: { condition, trueBranch, falseBranch },
   });
 }
 

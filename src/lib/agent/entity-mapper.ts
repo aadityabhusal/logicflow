@@ -72,6 +72,16 @@ function statementToLLMFormat(
 }
 
 function serializeDataValue(data: IData, ctx: EntityMappingContext): unknown {
+  if (isDataOfType(data, "union")) {
+    const { types, activeIndex } = data.type;
+    if (activeIndex !== undefined && activeIndex < types.length) {
+      return serializeDataValue(
+        { ...data, type: types[activeIndex] } as IData,
+        ctx
+      );
+    }
+    return data.value;
+  }
   if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return data.value.map((s) => statementToLLMFormat(s, ctx, "S"));
   }
@@ -85,6 +95,17 @@ function serializeDataValue(data: IData, ctx: EntityMappingContext): unknown {
   }
   if (isDataOfType(data, "operation")) {
     return operationToLLMFormat(data, ctx).mappedOperation.value;
+  }
+  if (isDataOfType(data, "condition")) {
+    return {
+      condition: statementToLLMFormat(data.value.condition, ctx, "S"),
+      trueBranch: data.value.trueBranch.map((s) =>
+        statementToLLMFormat(s, ctx, "S")
+      ),
+      falseBranch: data.value.falseBranch.map((s) =>
+        statementToLLMFormat(s, ctx, "S")
+      ),
+    };
   }
   if (isDataOfType(data, "reference")) {
     return { name: data.value.name, id: mapId(data.value.id, "S", ctx) };

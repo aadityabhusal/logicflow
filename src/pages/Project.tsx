@@ -92,7 +92,7 @@ export default function Project() {
     const controller = new AbortController();
     const results = new Map<string, ExecutionResult>();
     const contexts = new Map<string, Context>();
-    const instances = new Map<string, ReturnType<Context["getInstance"]>>();
+    const instances = new Map(useExecutionResultsStore.getState().instances);
     const localContext: Context = {
       ...rootContext,
       variables: createExecutionVariables(),
@@ -110,7 +110,9 @@ export default function Project() {
     };
 
     useExecutionResultsStore.getState().setIsExecuting(true);
-    setOperationResults(deferredOperation, localContext).then(() => {
+    Promise.resolve(
+      setOperationResults(deferredOperation, localContext)
+    ).finally(() => {
       if (cancelled) return;
       useExecutionResultsStore.setState({
         results,
