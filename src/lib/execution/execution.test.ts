@@ -1306,6 +1306,321 @@ describe("call operation with async operations", () => {
   });
 });
 
+describe("call with empty slice preserves parameter types in recursion", () => {
+  const arrayOfNumbers: ArrayType = {
+    kind: "array",
+    elementType: { kind: "number" },
+  };
+
+  it("preserves array<number> when sliced param becomes empty in recursive call", async () => {
+    const ctx = createTestContext({ isSync: false });
+
+    const arrParam = createStatement({
+      id: "recur-arr-param",
+      name: "arr",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(99)],
+      }),
+    });
+
+    const otherParam = createStatement({
+      id: "recur-other-param",
+      name: "other",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(7)],
+      }),
+    });
+
+    const baseCase = testOperation(
+      [],
+      [createStatement({ data: testReference("arr", arrParam.id) })]
+    );
+
+    const recursiveCase = testOperation(
+      [],
+      [
+        createStatement({
+          data: testReference("recur_op", "recur-self-ref"),
+          operations: [
+            testOperation(
+              [
+                createStatement({
+                  data: testReference("arr", arrParam.id),
+                }),
+                createStatement({
+                  data: testReference("other", otherParam.id),
+                  operations: [
+                    testOperation([numberStatement(1)], [], "slice"),
+                  ],
+                }),
+              ],
+              [],
+              "call"
+            ),
+          ],
+        }),
+      ]
+    );
+
+    const bodyStmt = createStatement({
+      data: testReference("other", otherParam.id),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [
+              {
+                type: { kind: "array", elementType: { kind: "unknown" } },
+              },
+            ],
+            result: { kind: "number" },
+          },
+          value: { name: "length", parameters: [], statements: [] },
+        }),
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [
+              { type: { kind: "unknown" } },
+              { type: { kind: "unknown" } },
+            ],
+            result: { kind: "boolean" },
+          },
+          value: {
+            name: "isShallowEqual",
+            parameters: [numberStatement(0)],
+            statements: [],
+          },
+        }),
+        testOperation(
+          [
+            createStatement({ data: baseCase }),
+            createStatement({ data: recursiveCase }),
+          ],
+          [],
+          "thenElse"
+        ),
+      ],
+    });
+
+    const recurOpIData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          { name: "arr", type: arrayOfNumbers },
+          { name: "other", type: arrayOfNumbers },
+        ],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [arrParam, otherParam],
+        statements: [bodyStmt],
+        name: "recur_op",
+      },
+    });
+
+    ctx.variables.set("recur_op", { data: recurOpIData });
+
+    const recurOpItem = operationToListItem(recurOpIData, "recur_op");
+    const arrData = createData({
+      type: arrayOfNumbers,
+      value: [numberStatement(99)],
+    });
+    const otherStatement = createStatement({
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(7)],
+      }),
+    });
+
+    const result = await executeOperation(
+      recurOpItem,
+      arrData,
+      [otherStatement],
+      ctx
+    );
+
+    expect(isDataOfType(result, "error")).toBe(false);
+    expect(result.type.kind).toBe("array");
+    if (result.type.kind === "array") {
+      expect(result.type.elementType.kind).toBe("number");
+    }
+    expect(getRawValueFromData(result, ctx)).toEqual([99]);
+  });
+
+  it("preserves array<number> when sliced param is source data in recursive call", async () => {
+    const ctx = createTestContext({ isSync: false });
+
+    const arrParam = createStatement({
+      id: "recur2-arr-param",
+      name: "arr",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(99)],
+      }),
+    });
+
+    const otherParam = createStatement({
+      id: "recur2-other-param",
+      name: "other",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(7)],
+      }),
+    });
+
+    const baseCase = testOperation(
+      [],
+      [createStatement({ data: testReference("other", otherParam.id) })]
+    );
+
+    const recursiveCase = testOperation(
+      [],
+      [
+        createStatement({
+          data: testReference("recur_op2", "recur2-self-ref"),
+          operations: [
+            testOperation(
+              [
+                createStatement({
+                  data: testReference("arr", arrParam.id),
+                  operations: [
+                    testOperation([numberStatement(1)], [], "slice"),
+                  ],
+                }),
+                createStatement({
+                  data: testReference("other", otherParam.id),
+                }),
+              ],
+              [],
+              "call"
+            ),
+          ],
+        }),
+      ]
+    );
+
+    const bodyStmt = createStatement({
+      data: testReference("arr", arrParam.id),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [
+              {
+                type: { kind: "array", elementType: { kind: "unknown" } },
+              },
+            ],
+            result: { kind: "number" },
+          },
+          value: { name: "length", parameters: [], statements: [] },
+        }),
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [
+              { type: { kind: "unknown" } },
+              { type: { kind: "unknown" } },
+            ],
+            result: { kind: "boolean" },
+          },
+          value: {
+            name: "isShallowEqual",
+            parameters: [numberStatement(0)],
+            statements: [],
+          },
+        }),
+        testOperation(
+          [
+            createStatement({ data: baseCase }),
+            createStatement({ data: recursiveCase }),
+          ],
+          [],
+          "thenElse"
+        ),
+      ],
+    });
+
+    const recurOp2IData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          { name: "arr", type: arrayOfNumbers },
+          { name: "other", type: arrayOfNumbers },
+        ],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [arrParam, otherParam],
+        statements: [bodyStmt],
+        name: "recur_op2",
+      },
+    });
+
+    ctx.variables.set("recur_op2", { data: recurOp2IData });
+
+    const recurOp2Item = operationToListItem(recurOp2IData, "recur_op2");
+    const arrStatement = createStatement({
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(99)],
+      }),
+    });
+    const otherData = createData({
+      type: arrayOfNumbers,
+      value: [numberStatement(7)],
+    });
+
+    const result = await executeOperation(
+      recurOp2Item,
+      arrStatement.data,
+      [createStatement({ data: otherData })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "error")).toBe(false);
+    expect(result.type.kind).toBe("array");
+    if (result.type.kind === "array") {
+      expect(result.type.elementType.kind).toBe("number");
+    }
+    expect(getRawValueFromData(result, ctx)).toEqual([7]);
+  });
+});
+
+describe("slice data-last (pipe-style) usage", () => {
+  it("slice() with no args returns a function that clones the array", () => {
+    const fn = slice() as (arr: unknown[]) => unknown[];
+    expect(typeof fn).toBe("function");
+    expect(fn([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+
+  it("slice(start) with one arg returns a function that slices from start", () => {
+    const fn = slice(1) as (arr: unknown[]) => unknown[];
+    expect(typeof fn).toBe("function");
+    expect(fn([1, 2, 3])).toEqual([2, 3]);
+  });
+
+  it("slice(start, end) with two args returns a function that slices range", () => {
+    const fn = slice(1, 3) as (arr: unknown[]) => unknown[];
+    expect(typeof fn).toBe("function");
+    expect(fn([1, 2, 3, 4])).toEqual([2, 3]);
+  });
+
+  it("slice(arr) with array arg calls data-first mode", () => {
+    expect(slice([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+
+  it("slice(arr, start) with array and start calls data-first mode", () => {
+    expect(slice([1, 2, 3], 1)).toEqual([2, 3]);
+  });
+
+  it("slice(arr, start, end) with all three args calls data-first mode", () => {
+    expect(slice([1, 2, 3, 4], 1, 3)).toEqual([2, 3]);
+  });
+});
+
 describe("manual Promise instances", () => {
   it("resolves then/await chains for manually created Promise instances", async () => {
     const ctx = createTestContext({ isSync: false });

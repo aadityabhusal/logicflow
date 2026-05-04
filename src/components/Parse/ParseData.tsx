@@ -10,7 +10,12 @@ import {
 } from "@/lib/types";
 import { Context } from "@/lib/execution/types";
 import { ParseStatement } from "./ParseStatement";
-import { createData, inferTypeFromValue, isDataOfType } from "@/lib/utils";
+import {
+  createData,
+  inferTypeFromValue,
+  isBlockCondition,
+  isDataOfType,
+} from "@/lib/utils";
 
 export function ParseData({
   data,
@@ -167,7 +172,7 @@ function ParseCondition({
   const condVal = data.value;
   const tabs = "  ".repeat(nest);
 
-  if (condVal.trueBranch.length <= 1 && condVal.falseBranch.length <= 1) {
+  if (!isBlockCondition(condVal)) {
     return (
       <span className="gap-1">
         <ParseStatement
@@ -228,23 +233,27 @@ function ParseCondition({
           {";\n"}
         </span>
       ))}
-      <span>
-        {tabs}
-        {"} else {\n"}
-      </span>
-      {condVal.falseBranch.map((stmt) => (
-        <span key={stmt.id}>
-          {tabs}
-          {"  "}
-          <ParseStatement
-            statement={stmt}
-            showData={showData}
-            nest={nest + 1}
-            context={context}
-          />
-          {";\n"}
-        </span>
-      ))}
+      {condVal.falseBranch.length > 0 && (
+        <>
+          <span>
+            {tabs}
+            {"} else {\n"}
+          </span>
+          {condVal.falseBranch.map((stmt) => (
+            <span key={stmt.id}>
+              {tabs}
+              {"  "}
+              <ParseStatement
+                statement={stmt}
+                showData={showData}
+                nest={nest + 1}
+                context={context}
+              />
+              {";\n"}
+            </span>
+          ))}
+        </>
+      )}
       <span>
         {tabs}
         {"}"}

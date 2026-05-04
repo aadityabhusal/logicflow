@@ -6,13 +6,21 @@ import {
   FaEllipsis,
   FaArrowTurnDown,
 } from "react-icons/fa6";
-import { IData, IStatement, OperationType } from "../lib/types";
+import {
+  IData,
+  IStatement,
+  OperationType,
+  ConditionType,
+  DataValue,
+} from "../lib/types";
 import {
   getStatementResult,
   createVariableName,
   createStatement,
   createData,
   isValidIdentifier,
+  isDataOfType,
+  isBlockCondition,
 } from "../lib/utils";
 import {
   createOperationCall,
@@ -74,6 +82,17 @@ const StatementComponent = ({
   const isReturn = statement.controlFlow === "return";
   const isTopLevelStatement = enableVariable && !isParameter;
 
+  const normalizeStatement = useCallback((nextStatement: IStatement) => {
+    if (
+      nextStatement.name !== undefined &&
+      isDataOfType(nextStatement.data, "condition") &&
+      isBlockCondition(nextStatement.data.value)
+    ) {
+      return { ...nextStatement, name: undefined };
+    }
+    return nextStatement;
+  }, []);
+
   const handleDataChange = useCallback(
     (data: IData, remove?: boolean) => {
       const newStatement = {
@@ -83,12 +102,16 @@ const StatementComponent = ({
           ? { isRest: undefined }
           : {}),
       };
-      handleStatement(newStatement, remove, path);
+      handleStatement(normalizeStatement(newStatement), remove, path);
     },
-    [statement, handleStatement, path]
+    [handleStatement, normalizeStatement, statement, path]
   );
 
   const hasName = statement.name !== undefined;
+  const isConditionBlock =
+    isDataOfType(statement.data, "condition") &&
+    isBlockCondition(statement.data.value as DataValue<ConditionType>);
+
   const isEqualsFocused = useNavigationStore(
     (s) =>
       s.navigation?.id === `${statement.id}_equals` && !s.navigation?.disable
@@ -182,7 +205,11 @@ const StatementComponent = ({
                   });
                   return;
                 }
-                handleStatement({ ...statement, name }, false, path);
+                handleStatement(
+                  normalizeStatement({ ...statement, name }),
+                  false,
+                  path
+                );
               }}
               onFocus={() =>
                 setNavigation(() => ({
@@ -216,33 +243,35 @@ const StatementComponent = ({
                   "hover:outline hover:outline-border",
                   isOptional || isRest ? "" : "mt-1",
                   isEqualsFocused ? "outline outline-border" : "",
-                  disableNameToggle ? "text-disabled" : "",
+                  disableNameToggle || isConditionBlock ? "text-disabled" : "",
                   isReturn ? "transform rotate-90" : "",
                 ].join(" ")}
                 title={
                   isReturn
                     ? "Remove return"
-                    : disableNameToggle
-                      ? isRest
-                        ? "Rest Parameter"
-                        : isOptional
-                          ? "Optional Parameter"
-                          : undefined
-                      : isParameter
+                    : isConditionBlock
+                      ? "Cannot add condition block variable"
+                      : disableNameToggle
                         ? isRest
-                          ? "Make required"
+                          ? "Rest Parameter"
                           : isOptional
-                            ? "Make rest"
-                            : "Make optional"
-                        : "Create variable"
+                            ? "Optional Parameter"
+                            : undefined
+                        : isParameter
+                          ? isRest
+                            ? "Make required"
+                            : isOptional
+                              ? "Make rest"
+                              : "Make optional"
+                          : "Create variable"
                 }
                 onClick={() => {
-                  if (disableNameToggle) return;
+                  if (disableNameToggle || isConditionBlock) return;
                   const data = createData({
                     value: [createStatement({ data: statement.data })],
                   });
                   handleStatement(
-                    {
+                    normalizeStatement({
                       ...statement,
                       ...(isReturn
                         ? { controlFlow: undefined }
@@ -261,7 +290,7 @@ const StatementComponent = ({
                                       reservedNames?.map((r) => r.name) ?? [],
                                   }),
                             }),
-                    },
+                    }),
                     false,
                     path
                   );

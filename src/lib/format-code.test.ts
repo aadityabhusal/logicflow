@@ -241,11 +241,11 @@ describe("generateOperation", () => {
     expect(result).toContain("return 42");
   });
 
-  it("generates undefined return for empty statements", () => {
+  it("generates empty body for empty statements", () => {
     const ctx = createTestContext();
     const op = testOperation([], [], "emptyOp");
     const result = generateOperation(op, ctx);
-    expect(result).toContain("return undefined");
+    expect(result).toContain("() => {");
   });
 
   it("includes user-defined operation imports when referenced", () => {
@@ -576,17 +576,17 @@ describe("generateData additional coverage", () => {
     expect(result).toBe("{}");
   });
 
-  it("generates condition data as JSON with condition structure", () => {
+  it("generates condition data as ternary expression", () => {
     const ctx = createCodeGenContext(createTestContext());
     const cond = testCondition(
       booleanStatement(true),
-      stringStatement("yes"),
-      stringStatement("no")
+      [stringStatement("yes")],
+      [stringStatement("no")]
     );
     const result = generateData(cond, ctx);
-    expect(result).toContain("condition");
-    expect(result).toContain("true");
-    expect(result).toContain("false");
+    expect(result).toContain("?");
+    expect(result).toContain("yes");
+    expect(result).toContain("no");
   });
 
   it("generates empty object", () => {
@@ -749,5 +749,259 @@ describe("recursive operation code generation", () => {
     });
     const result = generateData(opData, createCodeGenContext(ctx));
     expect(result).toContain("...args");
+  });
+});
+
+describe("condition code generation", () => {
+  it("generates ternary for simple conditions", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "condOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("?");
+    expect(result).not.toContain("if (");
+  });
+
+  it("generates if/else block when branch has return", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [
+        createStatement({
+          data: stringStatement("yes").data,
+          controlFlow: "return",
+        }),
+      ],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "retCondOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).toContain("return");
+    expect(result).not.toContain("?");
+  });
+
+  it("generates if/else block for multi-statement branches", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("a"), numberStatement(1)],
+      [stringStatement("b")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "multiCondOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).not.toContain("?");
+  });
+
+  it("generates pipe chain in condition expression", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("n", { data: testNumber(5) });
+    const lessThanOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "number" } },
+          { type: { kind: "number" } },
+        ],
+        result: { kind: "boolean" },
+      },
+      value: {
+        name: "lessThan",
+        parameters: [numberStatement(2)],
+        statements: [],
+      },
+    });
+    const condData = testCondition(
+      createStatement({
+        data: testReference("n", "ref1"),
+        operations: [lessThanOp],
+      }),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "pipeCondOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("R.pipe");
+    expect(result).toContain("_.lessThan");
+    expect(result).toContain("?");
+  });
+
+  it("generates if/else block when false branch has return", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [
+        createStatement({
+          data: stringStatement("no").data,
+          controlFlow: "return",
+        }),
+      ]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "falseRetOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).toContain("return");
+  });
+
+  it("generates if/else when both branches have single statement with return", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [
+        createStatement({
+          data: stringStatement("yes").data,
+          controlFlow: "return",
+        }),
+      ],
+      [
+        createStatement({
+          data: stringStatement("no").data,
+          controlFlow: "return",
+        }),
+      ]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "bothRetOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).toContain("return");
+    expect(result).not.toContain("?");
+  });
+
+  it("generates ternary with undefined for empty branches", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(booleanStatement(true), [], []);
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "emptyCondOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("?");
+  });
+
+  it("generates if/else when branch statement has a variable name", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [numberStatement(42, "named")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "namedBranchOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).not.toContain("?");
+  });
+
+  it("omits else block when block condition has empty false branch", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [numberStatement(42, "named")],
+      []
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "emptyFalseBranchBlockOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).not.toContain("else {");
+    expect(result).not.toContain("?");
+  });
+
+  it("generates empty true block when true branch is empty in block condition", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [],
+      [numberStatement(42, "named")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "emptyTrueBlockOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).not.toContain("?");
+  });
+
+  it("generates ternary for empty both branches", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(booleanStatement(true), [], []);
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "emptyBothBranchesOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("?");
+    expect(result).not.toContain("if (");
+  });
+
+  it("wraps ternary with const when condition statement has a name", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({ name: "result", data: condData });
+    const op = testOperation([], [stmt], "namedCondOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("const result = ");
+    expect(result).toContain("?");
+  });
+
+  it("handles return with named ternary condition", () => {
+    const ctx = createTestContext();
+    const condData = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const stmt = createStatement({
+      name: "result",
+      data: condData,
+      controlFlow: "return",
+    });
+    const op = testOperation([], [stmt], "retNamedCondOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("return ");
+    expect(result).toContain("?");
+    expect(result).toMatch(/return\s+true\s*\?\s*"yes"\s*:\s*"no"/);
+  });
+
+  it("generates if/else for nested condition with return in deep branch", () => {
+    const ctx = createTestContext();
+    const innerCond = testCondition(
+      booleanStatement(true),
+      [
+        createStatement({
+          data: stringStatement("ret").data,
+          controlFlow: "return",
+        }),
+      ],
+      [stringStatement("no")]
+    );
+    const condData = testCondition(
+      booleanStatement(true),
+      [createStatement({ data: innerCond })],
+      [stringStatement("fallback")]
+    );
+    const stmt = createStatement({ data: condData });
+    const op = testOperation([], [stmt], "nestedRetOp");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("if (");
+    expect(result).toContain("else");
+    expect(result).not.toContain("?");
   });
 });

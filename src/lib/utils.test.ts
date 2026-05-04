@@ -39,6 +39,7 @@ import {
   operationToListItem,
   isPendingContext,
   getConditionResult,
+  isBlockCondition,
   resolveConstructorArgs,
 } from "@/lib/utils";
 import { DataType, UnionType, OperationType, IData } from "@/lib/types";
@@ -163,7 +164,7 @@ describe("createData", () => {
     expect(data.type.kind).toBe("condition");
     expect(data.value.condition).toBeDefined();
     expect(data.value.trueBranch).toBeDefined();
-    expect(data.value.falseBranch).toBeDefined();
+    expect(data.value.falseBranch).toEqual([]);
   });
 
   it("creates reference data", () => {
@@ -330,7 +331,7 @@ describe("createDefaultValue", () => {
     });
     expect(val.condition).toBeDefined();
     expect(val.trueBranch).toBeDefined();
-    expect(val.falseBranch).toBeDefined();
+    expect(val.falseBranch).toEqual([]);
   });
 
   it("returns error value for error type", () => {
@@ -3352,5 +3353,81 @@ describe("resolveConstructorArgs", () => {
     const fn = vi.fn().mockReturnValue([]);
     resolveConstructorArgs(fn);
     expect(fn).toHaveBeenCalledWith(undefined);
+  });
+});
+
+describe("isBlockCondition", () => {
+  it("returns false for single-statement branches with no return or name", () => {
+    const condVal = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    ).value;
+    expect(isBlockCondition(condVal)).toBe(false);
+  });
+
+  it("returns true for multi-statement branches", () => {
+    const condVal = testCondition(
+      booleanStatement(true),
+      [stringStatement("a"), stringStatement("b")],
+      [stringStatement("no")]
+    ).value;
+    expect(isBlockCondition(condVal)).toBe(true);
+  });
+
+  it("returns true when branch has return statement", () => {
+    const condVal = testCondition(
+      booleanStatement(true),
+      [
+        createStatement({
+          data: stringStatement("yes").data,
+          controlFlow: "return",
+        }),
+      ],
+      [stringStatement("no")]
+    ).value;
+    expect(isBlockCondition(condVal)).toBe(true);
+  });
+
+  it("returns true when branch has a variable name", () => {
+    const condVal = testCondition(
+      booleanStatement(true),
+      [numberStatement(42, "named")],
+      [stringStatement("no")]
+    ).value;
+    expect(isBlockCondition(condVal)).toBe(true);
+  });
+
+  it("returns true for nested condition with return deep", () => {
+    const innerCond = testCondition(
+      booleanStatement(true),
+      [
+        createStatement({
+          data: stringStatement("ret").data,
+          controlFlow: "return",
+        }),
+      ],
+      [stringStatement("no")]
+    );
+    const condVal = testCondition(
+      booleanStatement(true),
+      [createStatement({ data: innerCond })],
+      [stringStatement("fallback")]
+    ).value;
+    expect(isBlockCondition(condVal)).toBe(true);
+  });
+
+  it("returns false for nested condition that is not a block", () => {
+    const innerCond = testCondition(
+      booleanStatement(true),
+      [stringStatement("yes")],
+      [stringStatement("no")]
+    );
+    const condVal = testCondition(
+      booleanStatement(true),
+      [createStatement({ data: innerCond })],
+      [stringStatement("fallback")]
+    ).value;
+    expect(isBlockCondition(condVal)).toBe(false);
   });
 });

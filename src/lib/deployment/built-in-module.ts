@@ -134,11 +134,11 @@ export function lastIndexOf(...args) {
   return purry(_lastIndexOf, args);
 }
 
-function _slice(arr, start, end) {
-  return arr.slice(start, end);
-}
 export function slice(...args) {
-  return purry(_slice, args);
+  if (args.length > 0 && Array.isArray(args[0])) {
+    return args[0].slice(args[1], args[2]);
+  }
+  return (arr) => arr.slice(args[0], args[1]);
 }
 
 function _some(arr, predicate) {

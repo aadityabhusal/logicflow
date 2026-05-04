@@ -1,4 +1,10 @@
-import { IData, IStatement, OperationType } from "./types";
+import {
+  IData,
+  IStatement,
+  OperationType,
+  ConditionType,
+  DataValue,
+} from "./types";
 import { OperationListItem } from "./execution/types";
 import { Context } from "./execution/types";
 import {
@@ -7,6 +13,8 @@ import {
   inferTypeFromValue,
   getStatementResult,
   getTypeSignature,
+  isBlockCondition,
+  isObject,
 } from "./utils";
 import { builtInOperations } from "./operations/built-in";
 import { InstanceTypes, PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./data";
@@ -55,13 +63,21 @@ export function createCodeGenContext(
   };
 }
 
+const VARIABLE_REGEX = /^const\s+\w+\s*=\s*/;
+
 export function generateData(data: IData, context: CodeGenContext): string {
   if (isDataOfType(data, "unknown") || isDataOfType(data, "never")) {
     const inferredType = inferTypeFromValue(data.value, context);
     return generateData({ ...data, type: inferredType }, context);
-  } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
+  } else if (
+    (isDataOfType(data, "array") || isDataOfType(data, "tuple")) &&
+    Array.isArray(data.value)
+  ) {
     return `[${data.value.map((item) => generateStatement(item, context, true)).join(", ")}]`;
-  } else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
+  } else if (
+    (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) &&
+    isObject(data.value, ["entries"])
+  ) {
     return `{${data.value.entries.map((entry) => `${entry.key}: ${generateStatement(entry.value, context, true)}`).join(", ")}}`;
   } else if (isDataOfType(data, "error")) {
     return `new Error("${data.value.reason}")`;
@@ -77,6 +93,10 @@ export function generateData(data: IData, context: CodeGenContext): string {
     return `new ${data.value.className}(${constructorArgs})`;
   } else if (isDataOfType(data, "operation")) {
     return generateCallback(data, { ...context, showResult: undefined });
+  } else if (isDataOfType(data, "condition")) {
+    const condVal = data.value as DataValue<ConditionType>;
+    const condValExpr = generateConditionExpr(condVal, context);
+    return generateTernaryExpr(condValExpr, condVal, context);
   } else if (isDataOfType(data, "reference")) {
     if (data.type.isEnv) return `process.env.${data.value.name}`;
     const name = data.value.name;
@@ -89,7 +109,10 @@ export function generateData(data: IData, context: CodeGenContext): string {
     }
     return name;
   } else if (isDataOfType(data, "union")) {
-    const activeType = getUnionActiveType(data.type);
+    const activeType = getUnionActiveType(data.type, {
+      value: data.value,
+      context,
+    });
     return generateData({ ...data, type: activeType }, context);
   } else if (data.value === undefined) {
     return "undefined";
@@ -173,19 +196,79 @@ function generateStatement(
   if (context.showResult) {
     return generateData(getStatementResult(statement, context), context);
   }
+  if (isDataOfType(statement.data, "condition")) {
+    return generateConditionStatement(statement, context);
+  }
+
   const declaration = isParam ? "" : "const ";
   const name =
     statement.name !== undefined ? `${declaration}${statement.name} = ` : "";
   const data = generateData(statement.data, context);
-  if (statement.operations.length === 0) return `${name}${data}`;
-  const operations = statement.operations
-    .map((op) => generateOperationCall(op, context))
-    .join("");
+  const result =
+    statement.operations.length === 0
+      ? `${name}${data}`
+      : (() => {
+          const operations = statement.operations
+            .map((op) => generateOperationCall(op, context))
+            .join("");
+          const hasAwait = statement.operations.some(
+            (op) => op.value.name === "await"
+          );
+          const pipeFunc = hasAwait ? "await _.pipeAsync" : "R.pipe";
+          return `${name}${pipeFunc}(${data}${operations})`;
+        })();
 
-  const hasAwait = statement.operations.some((op) => op.value.name === "await");
-  const pipeFunc = hasAwait ? "await _.pipeAsync" : "R.pipe";
+  if (statement.controlFlow === "return") {
+    return `return ${result.startsWith("const ") ? result.replace(VARIABLE_REGEX, "") : result}`;
+  }
+  return result;
+}
 
-  return `${name}${pipeFunc}(${data}${operations})`;
+function generateConditionExpr(
+  condVal: DataValue<ConditionType>,
+  context: CodeGenContext
+): string {
+  const condStmt = { ...condVal.condition, controlFlow: undefined };
+  return generateStatement(condStmt, context, true);
+}
+
+function generateTernaryExpr(
+  condition: string,
+  condVal: DataValue<ConditionType>,
+  context: CodeGenContext
+): string {
+  const branchExpr = (branch: IStatement[]) => {
+    const branchStmt = { ...branch[0], controlFlow: undefined };
+    return branch.length > 0
+      ? generateStatement(branchStmt, context, true)
+      : "undefined";
+  };
+  return `${condition} ? ${branchExpr(condVal.trueBranch)} : ${branchExpr(condVal.falseBranch)}`;
+}
+
+function generateConditionStatement(stmt: IStatement, context: CodeGenContext) {
+  const conditionVal = stmt.data.value as DataValue<ConditionType>;
+  const { trueBranch, falseBranch } = conditionVal;
+  const condition = generateConditionExpr(conditionVal, context);
+
+  if (isBlockCondition(conditionVal)) {
+    const trueLines = trueBranch.map((s) => generateStatement(s, context));
+    const falseLines = falseBranch.map((s) => generateStatement(s, context));
+    return `if (${condition}) {\n${trueLines.join("\n")}\n}${
+      falseBranch.length > 0 ? ` else {\n${falseLines.join("\n")}\n}` : ""
+    }`;
+  }
+
+  const ternary = generateTernaryExpr(condition, conditionVal, context);
+  const result =
+    stmt.name !== undefined ? `const ${stmt.name} = ${ternary}` : ternary;
+
+  if (stmt.controlFlow === "return") {
+    return `return ${
+      result.startsWith("const ") ? result.replace(VARIABLE_REGEX, "") : result
+    }`;
+  }
+  return result;
 }
 
 function generateCallback(
@@ -208,12 +291,22 @@ function generateCallback(
   const statements = operation.value.statements.map((statement) =>
     generateStatement(statement, context)
   );
-  const removeConst = (value: string) =>
-    value.startsWith("const") ? value.replace(/^[^=]*=/, "") : value;
+
+  const bodyLines = statements.map((stmtCode, i) => {
+    const stmt = operation.value.statements[i];
+    if (stmt.controlFlow === "return") return stmtCode;
+    if (
+      i === statements.length - 1 &&
+      !stmtCode.startsWith("if") &&
+      !stmtCode.startsWith("return")
+    ) {
+      return `return ${stmtCode}`;
+    }
+    return stmtCode;
+  });
 
   return `${asyncKeyword}(${operation.value.parameters.map((p) => p.name).join(", ")}) => {
-    ${statements.slice(0, -1).join(";\n")}
-    return ${statements.length ? removeConst(statements[statements.length - 1]) : "undefined"};
+    ${bodyLines.join(";\n")}
   }`;
 }
 

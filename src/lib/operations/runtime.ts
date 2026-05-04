@@ -143,15 +143,11 @@ export function lastIndexOf(...args: readonly unknown[]) {
   return purry(_lastIndexOf, args);
 }
 
-function _slice<T>(
-  arr: T[],
-  start: number | undefined,
-  end: number | undefined
-): T[] {
-  return arr.slice(start, end);
-}
 export function slice(...args: readonly unknown[]) {
-  return purry(_slice, args);
+  if (args.length > 0 && Array.isArray(args[0])) {
+    return (args[0] as unknown[]).slice(args[1] as number, args[2] as number);
+  }
+  return (arr: unknown[]) => arr.slice(args[0] as number, args[1] as number);
 }
 
 function _some<T>(

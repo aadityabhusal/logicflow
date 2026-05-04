@@ -7,7 +7,8 @@ import {
 } from "@/lib/utils";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
-import { Context } from "@/lib/execution/types";
+import { Context, ReservedNames } from "@/lib/execution/types";
+import { getReservedNames } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
 
@@ -47,6 +48,11 @@ const ConditionInputComponent = (
   );
   const multiline = getEntityLayout(data) === "multiline";
 
+  const reservedNames = useMemo<ReservedNames>(
+    () => getReservedNames(context.variables),
+    [context.variables]
+  );
+
   const handleChange = useCallback(
     (overrides: Partial<typeof data.value>) => {
       const value = { ...data.value, ...overrides };
@@ -71,7 +77,6 @@ const ConditionInputComponent = (
     (branch: BranchName, index: number, stmt: IStatement, remove?: boolean) => {
       const arr = [...data.value[branch]];
       if (remove) {
-        if (arr.length <= 1) return;
         arr.splice(index, 1);
       } else {
         arr[index] = stmt;
@@ -123,7 +128,7 @@ const ConditionInputComponent = (
                     : undefined
                 }
                 disableNameToggle={!isTopLevelStatement}
-                disableDelete={statements.length <= 1}
+                reservedNames={reservedNames}
               />
               {i + 1 < statements.length && (
                 <span className="text-border">;</span>

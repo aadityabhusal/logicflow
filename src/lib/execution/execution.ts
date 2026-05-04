@@ -26,6 +26,7 @@ import {
   createThenable,
   unwrapThenable,
   getInverseTypes,
+  mergeNarrowedTypes,
   updateContextWithNarrowedTypes,
   getContextExpectedTypes,
   getCacheKey,
@@ -508,13 +509,33 @@ function resolveConditionBranch(
   conditionResult: IData,
   ctx: Context
 ) {
-  const { trueBranch, falseBranch } = data.value;
+  const { trueBranch, falseBranch, condition } = data.value;
   const branch = conditionResult.value ? trueBranch : falseBranch;
   const skipped = conditionResult.value ? falseBranch : trueBranch;
-  setStatementsSkipContext(skipped, ctx);
   const isBlock = trueBranch.length > 1 || falseBranch.length > 1;
   const scopeId = data.id + (conditionResult.value ? "_true" : "_false");
-  return { branch, context: isBlock ? createContext(ctx, { scopeId }) : ctx };
+  const branchCtx = isBlock ? createContext(ctx, { scopeId }) : ctx;
+
+  let narrowedTypes = new Map() as Context["variables"];
+  for (const op of condition.operations) {
+    narrowedTypes = applyTypeNarrowing(ctx, narrowedTypes, condition.data, op);
+  }
+
+  if (narrowedTypes.size > 0) {
+    const trueVariables = mergeNarrowedTypes(ctx.variables, narrowedTypes);
+    const falseVariables = getInverseTypes(ctx.variables, narrowedTypes, ctx);
+
+    setStatementsSkipContext(skipped, {
+      ...ctx,
+      variables: skipped === trueBranch ? trueVariables : falseVariables,
+    });
+    const branchVariables =
+      branch === trueBranch ? trueVariables : falseVariables;
+    return { branch, context: { ...branchCtx, variables: branchVariables } };
+  }
+
+  setStatementsSkipContext(skipped, ctx);
+  return { branch, context: branchCtx };
 }
 
 export async function executeStatement(

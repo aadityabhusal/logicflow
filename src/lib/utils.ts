@@ -190,8 +190,8 @@ export function createDefaultValue<T extends DataType>(
     case "condition": {
       return {
         condition: createStatement(),
-        trueBranch: [createStatement()],
-        falseBranch: [createStatement()],
+        trueBranch: [],
+        falseBranch: [],
       } as DataValue<T>;
     }
     case "error": {
@@ -915,7 +915,7 @@ export function getInverseTypes(
   }, new Map(originalTypes));
 }
 
-function mergeNarrowedTypes(
+export function mergeNarrowedTypes(
   originalTypes: Context["variables"],
   narrowedTypes: Context["variables"],
   operationName?: string
@@ -1031,7 +1031,7 @@ export function getStatementsResultType(
       returnTypes.push(getStatementResult(stmt, context).type);
     } else if (isDataOfType(stmt.data, "condition")) {
       const value = stmt.data.value;
-      if (value.trueBranch.length > 1 || value.falseBranch.length > 1) {
+      if (isBlockCondition(value)) {
         collectReturns(value.trueBranch);
         collectReturns(value.falseBranch);
       }
@@ -1084,7 +1084,10 @@ export function resolveReference(data: IData, context: Context): IData {
     }
     return resolveReference(variable.data, context);
   }
-  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
+  if (
+    (isDataOfType(data, "array") || isDataOfType(data, "tuple")) &&
+    Array.isArray(data.value)
+  ) {
     return createData({
       ...data,
       value: data.value.map((statement) => ({
@@ -1093,7 +1096,10 @@ export function resolveReference(data: IData, context: Context): IData {
       })),
     } as IData<ArrayType | TupleType>);
   }
-  if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
+  if (
+    (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) &&
+    isObject(data.value, ["entries"])
+  ) {
     const newEntries = data.value.entries.map(({ key, value }) => ({
       key,
       value: { ...value, data: resolveReference(value.data, context) },
@@ -1485,6 +1491,23 @@ export function getConditionResult(
     : condition.falseBranch;
   if (branch.length === 0) return createData();
   return getStatementResult(branch[branch.length - 1], context);
+}
+
+function anyBranchRequiresBlock(branch: IStatement[]) {
+  return branch.some(({ controlFlow, data, name }) => {
+    if (controlFlow === "return" || name !== undefined) return true;
+    if (isDataOfType(data, "condition")) return isBlockCondition(data.value);
+    return false;
+  });
+}
+
+export function isBlockCondition(condVal: DataValue<ConditionType>): boolean {
+  return (
+    condVal.trueBranch.length > 1 ||
+    condVal.falseBranch.length > 1 ||
+    anyBranchRequiresBlock(condVal.trueBranch) ||
+    anyBranchRequiresBlock(condVal.falseBranch)
+  );
 }
 
 export function getSkipExecution({

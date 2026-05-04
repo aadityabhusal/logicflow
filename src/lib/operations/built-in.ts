@@ -12,6 +12,7 @@ import {
   createStatement,
   resolveConstructorArgs,
   updateContextWithNarrowedTypes,
+  operationToListItem,
 } from "../utils";
 import { wretchOperations } from "./wretch";
 import {
@@ -276,9 +277,6 @@ const specialOperations: OperationListItem[] = [
     },
     handler: (context, data, ...params) => {
       const operationData = data as IData<OperationType>;
-      const operation = getRawValueFromData(data, context) as (
-        ..._: unknown[]
-      ) => unknown;
 
       const restParamsIndex = operationData.type.parameters.findIndex(
         (p) => p.isRest
@@ -292,6 +290,30 @@ const specialOperations: OperationListItem[] = [
         });
         params = params.slice(0, restParamsIndex).concat(restParams);
       }
+      // Execute user-defined sync ops directly to preserve typed IData params,
+      // avoiding the raw-value round-trip that loses element types on empty arrays.
+      const isUserDefinedSyncOp =
+        !operationData.value.instanceId &&
+        operationData.value.statements.length > 0 &&
+        !operationData.value.isAsync;
+
+      if (isUserDefinedSyncOp) {
+        const opListItem = operationToListItem(operationData);
+        const sourceData = params[0] || createData();
+        const opParams = params
+          .slice(1)
+          .map((p) => createStatement({ data: p }));
+
+        const args = [opListItem, sourceData, opParams, context] as const;
+        if (context.isSync) {
+          return context.executeOperationSync(...args);
+        }
+        return context.executeOperation(...args);
+      }
+
+      const operation = getRawValueFromData(data, context) as (
+        ..._: unknown[]
+      ) => unknown;
 
       const result = operation(
         ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
@@ -619,7 +641,8 @@ function getFirstParamKind(op: OperationListItem): string[] {
   for (const val of Object.values(DataTypes)) {
     const firstType = op.parameters(createData({ type: val.type }))[0]?.type;
     if (firstType && firstType.kind !== "never") {
-      return [...getTypeKeys(firstType)];
+      const keys = getTypeKeys(firstType);
+      if (keys.length > 0) return keys;
     }
   }
   return ["unknown"];
