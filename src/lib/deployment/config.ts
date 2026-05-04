@@ -37,7 +37,10 @@ export async function generateDeployableProject(
       continue;
     }
     const code = generateOperation(operation, context);
-    files.push({ path: `src/operations/${file.name}.js`, content: code });
+    files.push({
+      path: `src/operations/${file.name}.js`,
+      content: code,
+    });
   }
   files.push({ path: "src/built-in.js", content: generateBuiltInModule() });
 
@@ -108,6 +111,7 @@ function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
     }
   }
   if (allContents.includes("from 'remeda'")) packages.add("remeda");
+  if (allContents.includes('from "remeda"')) packages.add("remeda");
   return packages;
 }
 

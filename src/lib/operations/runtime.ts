@@ -100,7 +100,7 @@ export function or(...args: readonly unknown[]) {
   return purry(_or, args);
 }
 
-export const _thenElse =
+const _thenElse =
   <T, F>(trueCallback: () => T, falseCallback: () => F) =>
   (condition: boolean) =>
     condition ? trueCallback() : falseCallback();

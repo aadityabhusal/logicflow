@@ -25,14 +25,13 @@ function generateVercelHandlers(
   triggeredOps: ProjectFile[]
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
-    const operationName = op.name;
-    const handlerContent = `import ${operationName} from '../src/operations/${operationName}.js';
+    const handlerContent = `import ${op.name} from '../src/operations/${op.name}.js';
 
 export const config = { runtime: 'edge' };
 
 export default async function handler(request) {
   try {
-    const result = await ${operationName}(request);
+    const result = await ${op.name}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -47,7 +46,7 @@ export default async function handler(request) {
 }
 `;
 
-    return { filename: `api/${operationName}.js`, content: handlerContent };
+    return { filename: `api/${op.name}.js`, content: handlerContent };
   });
 }
 
@@ -55,12 +54,11 @@ function generateSupabaseHandlers(
   triggeredOps: ProjectFile[]
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
-    const operationName = op.name;
-    const handlerContent = `import ${operationName} from '../../../src/operations/${operationName}.js';
+    const handlerContent = `import ${op.name} from '../../../src/operations/${op.name}.js';
 
 Deno.serve(async (request) => {
   try {
-    const result = await ${operationName}(request);
+    const result = await ${op.name}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -76,7 +74,7 @@ Deno.serve(async (request) => {
 `;
 
     return {
-      filename: `supabase/functions/${operationName}/index.js`,
+      filename: `supabase/functions/${op.name}/index.js`,
       content: handlerContent,
     };
   });

@@ -60,6 +60,8 @@ function statementToLLMFormat(
     id: mapId(statement.id, prefix === "P" ? "P" : "S", ctx),
     name: statement.name,
     isOptional: statement.isOptional,
+    isRest: statement.isRest,
+    controlFlow: statement.controlFlow,
     data: {
       id: mapId(statement.data.id, "D", ctx),
       type: statement.data.type,

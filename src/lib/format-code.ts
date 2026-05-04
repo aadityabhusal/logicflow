@@ -14,6 +14,7 @@ import {
   getStatementResult,
   getTypeSignature,
   isBlockCondition,
+  isValidIdentifier,
   isObject,
 } from "./utils";
 import { builtInOperations } from "./operations/built-in";
@@ -63,7 +64,7 @@ export function createCodeGenContext(
   };
 }
 
-const VARIABLE_REGEX = /^const\s+\w+\s*=\s*/;
+const VARIABLE_REGEX = /^const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*/;
 
 export function generateData(data: IData, context: CodeGenContext): string {
   if (isDataOfType(data, "unknown") || isDataOfType(data, "never")) {
@@ -78,9 +79,9 @@ export function generateData(data: IData, context: CodeGenContext): string {
     (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) &&
     isObject(data.value, ["entries"])
   ) {
-    return `{${data.value.entries.map((entry) => `${entry.key}: ${generateStatement(entry.value, context, true)}`).join(", ")}}`;
+    return `{${data.value.entries.map((entry) => `${isValidIdentifier(entry.key) ? entry.key : JSON.stringify(entry.key)}: ${generateStatement(entry.value, context, true)}`).join(", ")}}`;
   } else if (isDataOfType(data, "error")) {
-    return `new Error("${data.value.reason}")`;
+    return `new Error(${JSON.stringify(data.value.reason)})`;
   } else if (isDataOfType(data, "instance")) {
     const instanceConfig = InstanceTypes[data.value.className];
     const constructorArgs = data.value.constructorArgs
@@ -98,12 +99,18 @@ export function generateData(data: IData, context: CodeGenContext): string {
     const condValExpr = generateConditionExpr(condVal, context);
     return generateTernaryExpr(condValExpr, condVal, context);
   } else if (isDataOfType(data, "reference")) {
-    if (data.type.isEnv) return `process.env.${data.value.name}`;
+    if (data.type.isEnv) {
+      return isValidIdentifier(data.value.name)
+        ? `process.env.${data.value.name}`
+        : `process.env[${JSON.stringify(data.value.name)}]`;
+    }
     const name = data.value.name;
+    const variable = context.variables.get(name);
     if (
       name &&
       name !== context.currentOperationName &&
-      context.variables.has(name)
+      variable &&
+      isDataOfType(variable.data, "operation")
     ) {
       context.importedOperations.add(name);
     }

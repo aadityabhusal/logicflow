@@ -231,6 +231,7 @@ export async function createOperationCall({
     (operation) => operation.name === name
   );
   const newOperation = operationByName || operations[0];
+  const _operationId = operationId ?? nanoid();
   const operationParameters = resolveParameters(newOperation, data, context);
   const newParameters = operationParameters
     .slice(1)
@@ -257,8 +258,6 @@ export async function createOperationCall({
       }
       return newParam;
     });
-
-  const _operationId = operationId ?? nanoid();
 
   const result = await executeOperation(
     newOperation,
@@ -513,7 +512,7 @@ function resolveConditionBranch(
   const branch = conditionResult.value ? trueBranch : falseBranch;
   const skipped = conditionResult.value ? falseBranch : trueBranch;
   const isBlock = trueBranch.length > 1 || falseBranch.length > 1;
-  const scopeId = data.id + (conditionResult.value ? "_true" : "_false");
+  const scopeId = `${ctx.scopeId}:${data.id}${conditionResult.value ? "_true" : "_false"}`;
   const branchCtx = isBlock ? createContext(ctx, { scopeId }) : ctx;
 
   let narrowedTypes = new Map() as Context["variables"];
@@ -753,31 +752,34 @@ function executeOperationCore(
       ? createThenable(executedParams as IData[])
       : Promise.all(executedParams)
   ).then((parameters) => {
-    const errorParamIndex = resolvedParams.slice(1).findIndex((p, i) => {
+    for (const [index, resolvedParam] of resolvedParams.slice(1).entries()) {
       const param =
-        p.isRest && "handler" in operation
+        resolvedParam.isRest && "handler" in operation
           ? createData({
               value: parameters
-                .slice(i)
+                .slice(index)
                 .map((data) => createStatement({ data })),
             })
-          : parameters[i];
-      const hasError = isFatalError(param);
-      const expectedType = p.isOptional
-        ? resolveUnionType([p.type, { kind: "undefined" }])
-        : p.type;
+          : parameters[index];
+      const expectedType = resolvedParam.isOptional
+        ? resolveUnionType([resolvedParam.type, { kind: "undefined" }])
+        : resolvedParam.type;
+      const hasFatalError = isFatalError(param);
       const typeMismatch = !isTypeCompatible(param.type, expectedType, context);
-      return hasError || typeMismatch;
-    });
-    if (errorParamIndex !== -1) {
-      return createData({
-        type: { kind: "error", errorType: "type_error" },
-        value: {
-          reason: `Parameter #${errorParamIndex + 1} should be of type: \`${getTypeSignature(
-            resolvedParams[errorParamIndex + 1].type
-          )}\` but is of type: \`${getTypeSignature(parameters[errorParamIndex].type)}\``,
-        },
-      });
+      if (hasFatalError || typeMismatch) {
+        if (hasFatalError && operation.name === "call") return param;
+        const incorrectType = isDataOfType(param, "error")
+          ? (getRawValueFromData(param, context) as Error).message
+          : getTypeSignature(param.type);
+        return createData({
+          type: { kind: "error", errorType: "type_error" },
+          value: {
+            reason: `Parameter #${index + 1} should be of type: \`${getTypeSignature(
+              resolvedParams[index + 1].type
+            )}\` but is of type: \`${incorrectType}\``,
+          },
+        });
+      }
     }
     if ("handler" in operation) {
       try {
@@ -808,7 +810,7 @@ function executeOperationCore(
     if (hit) return hit;
 
     const newContext = createContext(context, {
-      scopeId: operation.id,
+      scopeId: `${operation.id}:${nanoid()}`,
       isIsolated: true,
       callDepth: nextCallDepth,
       controlFlowState: {},

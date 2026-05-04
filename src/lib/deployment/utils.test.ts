@@ -7,18 +7,31 @@ import {
 } from "@/lib/deployment/utils";
 
 describe("formatRelativeTime", () => {
-  const now = Date.now();
   const MINUTE = 60_000;
   const HOUR = 3_600_000;
   const DAY = 86_400_000;
 
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-04T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const now = new Date("2026-05-04T12:00:00.000Z").getTime();
+
   it.each([
     [now - 30_000, "just now"],
     [now, "just now"],
+    [now - 59_999, "just now"],
     [now - MINUTE, "1m ago"],
     [now - 5 * MINUTE, "5m ago"],
+    [now - HOUR + 1_000, "59m ago"],
     [now - HOUR, "1h ago"],
     [now - 12 * HOUR, "12h ago"],
+    [now - DAY + MINUTE, "23h ago"],
     [now - DAY, "1d ago"],
     [now - 3 * DAY, "3d ago"],
     [now + 10_000, "just now"],
@@ -110,6 +123,27 @@ describe("prefixNpmImports", () => {
     const result = prefixNpmImports(files);
     expect(result[0].content).toBe("const x = 42;\nexport default x;");
   });
+
+  it("does not mutate input file objects", () => {
+    const files = [
+      { path: "src/ops.js", content: 'import { pipe } from "remeda";' },
+    ];
+    const result = prefixNpmImports(files);
+
+    expect(files[0].content).toBe('import { pipe } from "remeda";');
+    expect(result[0]).not.toBe(files[0]);
+  });
+
+  it("leaves side-effect and dynamic imports unchanged", () => {
+    const content = [
+      'import "remeda";',
+      'const mod = await import("wretch");',
+    ].join("\n");
+
+    expect(prefixNpmImports([{ path: "src/ops.js", content }])[0].content).toBe(
+      content
+    );
+  });
 });
 
 describe("parseError", () => {
@@ -180,7 +214,7 @@ describe("createPlatformFetch", () => {
     await fetchFn("/v1/resource", "token123");
 
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/test/v1/resource"),
+      "/api/test/v1/resource",
       expect.any(Object)
     );
   });

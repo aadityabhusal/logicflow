@@ -8,6 +8,7 @@ import {
   setOperationResults,
   createOperationCall,
 } from "@/lib/execution/execution";
+import { slice } from "@/lib/operations/runtime";
 import {
   createData,
   createStatement,
@@ -50,6 +51,18 @@ function findBuiltIn(name: string): OperationListItem {
   const op = builtInOperations.find((o) => o.name === name);
   if (!op) throw new Error(`Operation "${name}" not found`);
   return op;
+}
+
+function testBuiltInOperation(
+  name: string,
+  parameters: OperationType["parameters"],
+  result: OperationType["result"],
+  args: IStatement[] = []
+) {
+  const operation = testOperation(args, [], name);
+  operation.type.parameters = parameters;
+  operation.type.result = result;
+  return operation;
 }
 
 describe("getFilteredOperations", () => {
@@ -702,6 +715,61 @@ describe("executeOperation", () => {
     }
   });
 
+  it("includes the full inner error message for non-call parameter mismatches", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const op = findBuiltIn("add");
+    const data = testNumber(10);
+    const invalidLengthParam = createStatement({
+      data: testNumber(1),
+      operations: [
+        testBuiltInOperation("length", [{ type: { kind: "string" } }], {
+          kind: "number",
+        }),
+      ],
+    });
+
+    const result = await executeOperation(op, data, [invalidLengthParam], ctx);
+
+    expect(isDataOfType(result, "error")).toBe(true);
+    if (!isDataOfType(result, "error")) return;
+    expect(result.type.errorType).toBe("type_error");
+    expect(result.value.reason).toContain(
+      "Type Error: Cannot chain 'length' after 'number' type"
+    );
+    expect(result.value.reason).not.toContain("but is of type: `Type Error`");
+  });
+
+  it("propagates inner type errors through call parameters", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const callOp = findBuiltIn("call");
+    const callee = testOperation(
+      [createStatement({ name: "input", data: testNumber(0) })],
+      [numberStatement(0)]
+    );
+    const invalidLengthParam = createStatement({
+      data: testNumber(1),
+      operations: [
+        testBuiltInOperation("length", [{ type: { kind: "string" } }], {
+          kind: "number",
+        }),
+      ],
+    });
+
+    const result = await executeOperation(
+      callOp,
+      callee,
+      [invalidLengthParam],
+      ctx
+    );
+
+    expect(isDataOfType(result, "error")).toBe(true);
+    if (!isDataOfType(result, "error")) return;
+    expect(result.type.errorType).toBe("type_error");
+    expect(result.value.reason).toBe(
+      "Cannot chain 'length' after 'number' type"
+    );
+  });
+
   it("executes a user-defined operation with statements", async () => {
     const ctx = createTestContext({ isSync: false });
     const innerResult = stringStatement("from_user_op");
@@ -784,8 +852,12 @@ describe("executeOperation", () => {
                 type: {
                   kind: "operation",
                   parameters: [
-                    { type: { kind: "array", elementType: { kind: "unknown" } } },
-                    { type: { kind: "array", elementType: { kind: "unknown" } } },
+                    {
+                      type: { kind: "array", elementType: { kind: "unknown" } },
+                    },
+                    {
+                      type: { kind: "array", elementType: { kind: "unknown" } },
+                    },
                   ],
                   result: arrayOfNumbers,
                 },
@@ -808,32 +880,37 @@ describe("executeOperation", () => {
       },
     });
 
-    const result = await executeOperation(findBuiltIn("call"), userOp, [
-      createStatement({
-        data: createData({
-          type: arrayOfNumbers,
-          value: [numberStatement(12)],
-        }),
-        operations: [
-          createData<OperationType>({
-            type: {
-              kind: "operation",
-              parameters: [
-                { type: { kind: "array", elementType: { kind: "unknown" } } },
-                { type: { kind: "number" }, isOptional: true },
-                { type: { kind: "number" }, isOptional: true },
-              ],
-              result: arrayOfNumbers,
-            },
-            value: {
-              name: "slice",
-              parameters: [numberStatement(1)],
-              statements: [],
-            },
+    const result = await executeOperation(
+      findBuiltIn("call"),
+      userOp,
+      [
+        createStatement({
+          data: createData({
+            type: arrayOfNumbers,
+            value: [numberStatement(12)],
           }),
-        ],
-      }),
-    ], ctx);
+          operations: [
+            createData<OperationType>({
+              type: {
+                kind: "operation",
+                parameters: [
+                  { type: { kind: "array", elementType: { kind: "unknown" } } },
+                  { type: { kind: "number" }, isOptional: true },
+                  { type: { kind: "number" }, isOptional: true },
+                ],
+                result: arrayOfNumbers,
+              },
+              value: {
+                name: "slice",
+                parameters: [numberStatement(1)],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+      ],
+      ctx
+    );
 
     expect(isDataOfType(result, "error")).toBe(false);
     expect(result.type.kind).toBe("array");
@@ -1155,9 +1232,10 @@ describe("getFilteredOperations additional coverage", () => {
 });
 
 describe("createOperationCall additional coverage", () => {
-  it("creates operation call when operation name is not explicitly found", async () => {
+  it("falls back to the first compatible operation when requested name is invalid", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testString("hello");
+    const firstCompatible = getFilteredOperations(data, ctx)[0];
     const result = await createOperationCall({
       data,
       name: "nonExistentOp",
@@ -1165,7 +1243,7 @@ describe("createOperationCall additional coverage", () => {
       context: ctx,
     });
     expect(result.type.kind).toBe("operation");
-    expect(result.value.name).toBeDefined();
+    expect(result.value.name).toBe(firstCompatible.name);
   });
 
   it("creates operation call using first compatible operation when name is undefined", async () => {
@@ -1193,6 +1271,20 @@ describe("createOperationCall additional coverage", () => {
     });
     expect(result.value.parameters).toHaveLength(1);
     expect(result.value.parameters[0].data.value).toBe(5);
+  });
+
+  it("regenerates existing parameters when their result type is incompatible", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const result = await createOperationCall({
+      data: testNumber(10),
+      name: "add",
+      parameters: [stringStatement("bad")],
+      context: ctx,
+    });
+
+    expect(result.value.parameters).toHaveLength(1);
+    expect(result.value.parameters[0].data.type.kind).toBe("number");
+    expect(result.value.parameters[0].data.value).toBe(0);
   });
 });
 
@@ -1587,6 +1679,252 @@ describe("call with empty slice preserves parameter types in recursion", () => {
     }
     expect(getRawValueFromData(result, ctx)).toEqual([7]);
   });
+
+  it("keeps outer cached values isolated across recursive concat calls", async () => {
+    const ctx = createTestContext({ isSync: false });
+
+    const arrParam = createStatement({
+      id: "copy-arr-param",
+      name: "arr",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(1), numberStatement(2), numberStatement(3)],
+      }),
+    });
+
+    const baseCase = testOperation(
+      [],
+      [createStatement({ data: testReference("arr", arrParam.id) })]
+    );
+
+    const recursiveCase = testOperation(
+      [],
+      [
+        createStatement({
+          data: createData({
+            type: arrayOfNumbers,
+            value: [
+              createStatement({
+                data: testReference("arr", arrParam.id),
+                operations: [testOperation([numberStatement(0)], [], "at")],
+              }),
+            ],
+          }),
+          operations: [
+            testOperation(
+              [
+                createStatement({
+                  data: testReference("copy_op", "copy-self-ref"),
+                  operations: [
+                    testOperation(
+                      [
+                        createStatement({
+                          data: testReference("arr", arrParam.id),
+                          operations: [
+                            testOperation([numberStatement(1)], [], "slice"),
+                          ],
+                        }),
+                      ],
+                      [],
+                      "call"
+                    ),
+                  ],
+                }),
+              ],
+              [],
+              "concat"
+            ),
+          ],
+        }),
+      ]
+    );
+
+    const bodyStmt = createStatement({
+      data: testReference("arr", arrParam.id),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [
+              {
+                type: { kind: "array", elementType: { kind: "unknown" } },
+              },
+            ],
+            result: { kind: "number" },
+          },
+          value: { name: "length", parameters: [], statements: [] },
+        }),
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [
+              { type: { kind: "unknown" } },
+              { type: { kind: "unknown" } },
+            ],
+            result: { kind: "boolean" },
+          },
+          value: {
+            name: "isShallowEqual",
+            parameters: [numberStatement(0)],
+            statements: [],
+          },
+        }),
+        testOperation(
+          [
+            createStatement({ data: baseCase }),
+            createStatement({ data: recursiveCase }),
+          ],
+          [],
+          "thenElse"
+        ),
+      ],
+    });
+
+    const copyOpIData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ name: "arr", type: arrayOfNumbers }],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [arrParam],
+        statements: [bodyStmt],
+        name: "copy_op",
+      },
+    });
+
+    ctx.variables.set("copy_op", { data: copyOpIData });
+
+    const copyOpItem = operationToListItem(copyOpIData, "copy_op");
+    const arrData = createData({
+      type: arrayOfNumbers,
+      value: [numberStatement(1), numberStatement(2), numberStatement(3)],
+    });
+
+    const result = await executeOperation(copyOpItem, arrData, [], ctx);
+
+    expect(isDataOfType(result, "error")).toBe(false);
+    expect(getRawValueFromData(result, ctx)).toEqual([1, 2, 3]);
+  });
+
+  it("preserves the base error message across recursive call nesting", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const numberType = { kind: "number" } as const;
+
+    const nParam = createStatement({
+      id: "recur-error-n-param",
+      name: "n",
+      data: createData({ type: numberType, value: 2 }),
+    });
+
+    const baseCase = testOperation(
+      [],
+      [
+        createStatement({
+          data: testNumber(1),
+          operations: [
+            testBuiltInOperation(
+              "length",
+              [{ type: { kind: "string" } }],
+              numberType
+            ),
+          ],
+        }),
+      ]
+    );
+
+    const recursiveCase = testOperation(
+      [],
+      [
+        createStatement({
+          data: testReference("recur_error", "recur-error-self-ref"),
+          operations: [
+            testOperation(
+              [
+                createStatement({
+                  data: testReference(
+                    "recur_error",
+                    "recur-error-inner-self-ref"
+                  ),
+                  operations: [
+                    testOperation(
+                      [
+                        createStatement({
+                          data: testReference("n", nParam.id),
+                          operations: [
+                            testBuiltInOperation(
+                              "subtract",
+                              [{ type: numberType }, { type: numberType }],
+                              numberType,
+                              [numberStatement(1)]
+                            ),
+                          ],
+                        }),
+                      ],
+                      [],
+                      "call"
+                    ),
+                  ],
+                }),
+              ],
+              [],
+              "call"
+            ),
+          ],
+        }),
+      ]
+    );
+
+    const bodyStmt = createStatement({
+      data: testReference("n", nParam.id),
+      operations: [
+        testBuiltInOperation(
+          "lessThanOrEqual",
+          [{ type: numberType }, { type: numberType }],
+          { kind: "boolean" },
+          [numberStatement(0)]
+        ),
+        testOperation(
+          [
+            createStatement({ data: baseCase }),
+            createStatement({ data: recursiveCase }),
+          ],
+          [],
+          "thenElse"
+        ),
+      ],
+    });
+
+    const recurOpIData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ name: "n", type: numberType }],
+        result: numberType,
+      },
+      value: {
+        parameters: [nParam],
+        statements: [bodyStmt],
+        name: "recur_error",
+      },
+    });
+
+    ctx.variables.set("recur_error", { data: recurOpIData });
+
+    const result = await executeOperation(
+      operationToListItem(recurOpIData, "recur_error"),
+      testNumber(2),
+      [],
+      ctx
+    );
+
+    expect(isDataOfType(result, "error")).toBe(true);
+    if (!isDataOfType(result, "error")) return;
+    expect(result.type.errorType).toBe("type_error");
+    expect(result.value.reason).toBe(
+      "Type Error: Cannot chain 'length' after 'number' type"
+    );
+    expect(result.value.reason).not.toContain("Parameter #1 should be of type");
+  });
 });
 
 describe("slice data-last (pipe-style) usage", () => {
@@ -1775,6 +2113,127 @@ describe("recursion support", () => {
     const result = await executeOperation(innerOp, data, [], ctx);
     expect(result.type.kind).toBe("number");
     expect(result.value).toBe(5);
+  });
+
+  it("isolates block condition scopes across recursive invocations", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const arrayOfNumbers: ArrayType = {
+      kind: "array",
+      elementType: { kind: "number" },
+    };
+
+    const arrParam = createStatement({
+      id: "copy-block-arr-param",
+      name: "arr",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(1), numberStatement(2), numberStatement(3)],
+      }),
+    });
+
+    const recursiveResult = createStatement({
+      data: createData({
+        type: arrayOfNumbers,
+        value: [
+          createStatement({
+            data: testReference("arr", arrParam.id),
+            operations: [testOperation([numberStatement(0)], [], "at")],
+          }),
+        ],
+      }),
+      operations: [
+        testOperation(
+          [
+            createStatement({
+              data: testReference("copy_block", "copy-block-self-ref"),
+              operations: [
+                testOperation(
+                  [
+                    createStatement({
+                      data: testReference("arr", arrParam.id),
+                      operations: [
+                        testOperation([numberStatement(1)], [], "slice"),
+                      ],
+                    }),
+                  ],
+                  [],
+                  "call"
+                ),
+              ],
+            }),
+          ],
+          [],
+          "concat"
+        ),
+      ],
+    });
+
+    const bodyStmt = createStatement({
+      data: testCondition(
+        createStatement({
+          data: testReference("arr", arrParam.id),
+          operations: [
+            createData<OperationType>({
+              type: {
+                kind: "operation",
+                parameters: [
+                  {
+                    type: { kind: "array", elementType: { kind: "unknown" } },
+                  },
+                ],
+                result: { kind: "number" },
+              },
+              value: { name: "length", parameters: [], statements: [] },
+            }),
+            createData<OperationType>({
+              type: {
+                kind: "operation",
+                parameters: [
+                  { type: { kind: "unknown" } },
+                  { type: { kind: "unknown" } },
+                ],
+                result: { kind: "boolean" },
+              },
+              value: {
+                name: "isShallowEqual",
+                parameters: [numberStatement(0)],
+                statements: [],
+              },
+            }),
+          ],
+        }),
+        [createStatement({ data: testReference("arr", arrParam.id) })],
+        [stringStatement("entered-branch"), recursiveResult]
+      ),
+    });
+
+    const copyBlockIData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ name: "arr", type: arrayOfNumbers }],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [arrParam],
+        statements: [bodyStmt],
+        name: "copy_block",
+      },
+    });
+
+    ctx.variables.set("copy_block", { data: copyBlockIData });
+
+    const result = await executeOperation(
+      operationToListItem(copyBlockIData, "copy_block"),
+      createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(1), numberStatement(2), numberStatement(3)],
+      }),
+      [],
+      ctx
+    );
+
+    expect(isDataOfType(result, "error")).toBe(false);
+    expect(getRawValueFromData(result, ctx)).toEqual([1, 2, 3]);
   });
 
   it("returns runtime error when maxCallDepth is exceeded", async () => {

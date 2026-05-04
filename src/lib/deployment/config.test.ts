@@ -170,6 +170,18 @@ describe("resolveNpmDependencies", () => {
     expect(result.find((d) => d.name === "remeda")!.version).toBe("2.0.0");
   });
 
+  it.each([
+    ['import { purry } from "remeda";'],
+    ["import * as R from 'remeda';"],
+  ])("extracts remeda from generated import: %s", (content) => {
+    const project = createTestProject();
+    const result = resolveNpmDependencies(project, [
+      { path: "src/built-in.js", content },
+    ]);
+
+    expect(result).toEqual([{ name: "remeda", version: "latest" }]);
+  });
+
   it("returns empty array when no known packages found", () => {
     const project = createTestProject();
     const files = [
@@ -412,6 +424,24 @@ describe("generateDeployableProject", () => {
 
     const { files } = await generateDeployableProject(project, ctx);
     expect(files.some((f) => f.path === "package.json")).toBe(true);
+  });
+
+  it("includes remeda dependency when generated built-in module imports remeda", async () => {
+    const project = createTestProject({ files: [createOperationFile("op")] });
+    (formatCode as ReturnType<typeof vi.fn>).mockImplementation((c: string) =>
+      Promise.resolve(c)
+    );
+    (generateBuiltInModule as ReturnType<typeof vi.fn>).mockReturnValue(
+      'import { purry } from "remeda";'
+    );
+
+    const { files } = await generateDeployableProject(project, ctx);
+    const packageJson = files.find((f) => f.path === "package.json");
+
+    expect(packageJson).toBeDefined();
+    expect(JSON.parse(packageJson!.content).dependencies).toMatchObject({
+      remeda: "latest",
+    });
   });
 
   it("collects error when createOperationFromFile returns null", async () => {

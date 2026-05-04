@@ -328,7 +328,7 @@ describe("getEntityWidth — instances", () => {
     ).toBe(1);
   });
 
-  it("1 simple arg = 1 + 1 + 0*sep = 3", () => {
+  it("1 simple arg contributes base width plus argument width", () => {
     const instance = createData({
       type: {
         kind: "instance",
@@ -377,7 +377,7 @@ describe("getEntityWidth — instances", () => {
 });
 
 describe("getOperationCallWidth", () => {
-  it("no params = 1", () => {
+  it("no params uses operation-call base width", () => {
     const op = createData({
       type: {
         kind: "operation",
@@ -457,7 +457,7 @@ describe("getStatementWidth", () => {
     expect(getStatementWidth(stringStatement("a".repeat(50)))).toBe(6);
   });
 
-  it("simple data + 1 operation (no params) = 1 + 1 = 2", () => {
+  it("simple data plus one no-param operation includes operation-call base width", () => {
     const op = createData({
       type: {
         kind: "operation",
@@ -544,6 +544,18 @@ describe("getEntityLayout", () => {
       Array.from({ length: 20 }, () => numberStatement(1))
     );
     expect(getEntityLayout(bigArray)).toBe("multiline");
+  });
+
+  it("returns inline when complex data width is just below threshold", () => {
+    const items = Array.from({ length: 7 }, () => numberStatement(1));
+    expect(getEntityWidth(testArray(items))).toBe(14);
+    expect(getEntityLayout(testArray(items))).toBe("inline");
+  });
+
+  it("returns multiline when complex data width exceeds threshold", () => {
+    const items = Array.from({ length: 8 }, () => numberStatement(1));
+    expect(getEntityWidth(testArray(items))).toBe(16);
+    expect(getEntityLayout(testArray(items))).toBe("multiline");
   });
 });
 

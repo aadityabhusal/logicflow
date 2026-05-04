@@ -168,6 +168,26 @@ describe("generateData", () => {
     generateData(testReference("myImportedOp", "stmt1"), ctx);
     expect(ctx.importedOperations.has("myImportedOp")).toBe(true);
   });
+
+  it("does not import references to ordinary variables", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    ctx.variables.set("myValue", { data: testString("value") });
+
+    const result = generateData(testReference("myValue", "stmt1"), ctx);
+
+    expect(result).toBe("myValue");
+    expect(ctx.importedOperations.has("myValue")).toBe(false);
+  });
+
+  it("generates bracket access for env references that are not valid identifiers", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const ref = createData({
+      type: { kind: "reference", name: "API-KEY", isEnv: true },
+      value: { name: "API-KEY", id: "env1" },
+    });
+
+    expect(generateData(ref, ctx)).toBe('process.env["API-KEY"]');
+  });
 });
 
 describe("createCodeGenContext", () => {
@@ -556,6 +576,22 @@ describe("generateData additional coverage", () => {
     const ctx = createCodeGenContext(createTestContext());
     const result = generateData(testString("hello\nworld"), ctx);
     expect(result).toBe('"hello\\nworld"');
+  });
+
+  it("escapes error reasons using JSON string encoding", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const result = generateData(testError('bad "quote"\nnext'), ctx);
+    expect(result).toBe('new Error("bad \\"quote\\"\\nnext")');
+  });
+
+  it("quotes object keys that are not valid identifiers", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const obj = testObject([
+      { key: "first-name", value: stringStatement("Ada") },
+      { key: "last name", value: stringStatement("Lovelace") },
+    ]);
+    const result = generateData(obj, ctx);
+    expect(result).toBe('{"first-name": "Ada", "last name": "Lovelace"}');
   });
 
   it("generates dictionary data", () => {

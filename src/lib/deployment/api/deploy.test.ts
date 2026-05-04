@@ -71,6 +71,8 @@ describe("deployToPlatform", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("No HTTP trigger found");
+    expect(generateDeployableProject).not.toHaveBeenCalled();
+    expect(deployToVercel).not.toHaveBeenCalled();
   });
 
   it("returns error when API token is missing", async () => {
@@ -80,6 +82,8 @@ describe("deployToPlatform", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("API token is required");
+    expect(generateDeployableProject).not.toHaveBeenCalled();
+    expect(deployToVercel).not.toHaveBeenCalled();
   });
 
   it("returns error when token is empty string", async () => {
@@ -115,6 +119,23 @@ describe("deployToPlatform", () => {
     );
     expect(onProgress).toHaveBeenCalledWith(
       expect.objectContaining({ stage: "generating" })
+    );
+  });
+
+  it("generates deployable project for the selected target platform", async () => {
+    const target: DeploymentTarget = {
+      platform: "supabase",
+      credentials: { token: "supabase-token" },
+      projectId: "my-ref",
+      deployments: [],
+    };
+
+    await deployToPlatform(baseProject, ctx, target);
+
+    expect(generateDeployableProject).toHaveBeenCalledWith(
+      baseProject,
+      ctx,
+      "supabase"
     );
   });
 
@@ -181,6 +202,8 @@ describe("deployToPlatform", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unknown platform");
+    expect(deployToVercel).not.toHaveBeenCalled();
+    expect(deployToSupabase).not.toHaveBeenCalled();
   });
 
   it("passes envVars from project deployment config", async () => {
