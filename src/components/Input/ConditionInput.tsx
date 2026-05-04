@@ -11,6 +11,7 @@ import { Context, ReservedNames } from "@/lib/execution/types";
 import { getReservedNames } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
+import { useMobileLayout } from "@/hooks/useMobileLayout";
 
 interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
@@ -46,7 +47,8 @@ const ConditionInputComponent = (
     }),
     [basePath, data.value.trueBranch, data.value.falseBranch]
   );
-  const multiline = getEntityLayout(data) === "multiline";
+  const useMobileThreshold = useMobileLayout();
+  const multiline = getEntityLayout(data, useMobileThreshold) === "multiline";
 
   const reservedNames = useMemo<ReservedNames>(
     () => getReservedNames(context.variables),

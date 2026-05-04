@@ -7,6 +7,7 @@ import { EntityPath } from "@/lib/types";
 import { forwardRef, memo, useCallback, useMemo } from "react";
 import { inferTypeFromValue } from "@/lib/utils";
 import { getEntityLayout } from "@/lib/layout";
+import { useMobileLayout } from "@/hooks/useMobileLayout";
 
 interface InstanceInputProps {
   data: IData<InstanceDataType>;
@@ -52,7 +53,8 @@ const InstanceInputComponent = (
     [data, handleData, context]
   );
 
-  const isMultiline = getEntityLayout(data) === "multiline";
+  const useMobileThreshold = useMobileLayout();
+  const isMultiline = getEntityLayout(data, useMobileThreshold) === "multiline";
 
   return (
     <div

@@ -10,6 +10,7 @@ import {
   getStatementLayout,
   getOperationCallLayout,
   THRESHOLD,
+  MOBILE_THRESHOLD,
   SEPARATOR_WIDTH,
   MAX_STRING_DISPLAY_LENGTH,
 } from "@/lib/layout";
@@ -102,6 +103,7 @@ describe("isComplexData", () => {
 
 describe("constants", () => {
   it("THRESHOLD is 15", () => expect(THRESHOLD).toBe(15));
+  it("MOBILE_THRESHOLD is 8", () => expect(MOBILE_THRESHOLD).toBe(8));
   it("SEPARATOR_WIDTH is 1", () => expect(SEPARATOR_WIDTH).toBe(1));
   it("MAX_STRING_DISPLAY_LENGTH is 28", () =>
     expect(MAX_STRING_DISPLAY_LENGTH).toBe(28));
@@ -559,6 +561,19 @@ describe("getEntityLayout", () => {
   });
 });
 
+describe("getEntityLayout with mobile threshold", () => {
+  it("returns inline when complex data width is between mobile and desktop thresholds", () => {
+    const items = Array.from({ length: 4 }, () => numberStatement(1));
+    expect(getEntityWidth(testArray(items))).toBe(8);
+    expect(getEntityLayout(testArray(items))).toBe("inline");
+    expect(getEntityLayout(testArray(items), true)).toBe("multiline");
+  });
+
+  it("returns inline for simple data even with mobile threshold", () => {
+    expect(getEntityLayout(testString("hello"), true)).toBe("inline");
+  });
+});
+
 describe("getStatementLayout", () => {
   it("returns inline for short statement", () => {
     expect(getStatementLayout(stringStatement("hi"))).toBe("inline");
@@ -603,6 +618,16 @@ describe("getStatementLayout", () => {
   });
 });
 
+describe("getStatementLayout with mobile threshold", () => {
+  it("returns multiline when statement width is between mobile and desktop thresholds", () => {
+    const items = Array.from({ length: 4 }, () => numberStatement(1));
+    const stmt = createStatement({ data: testArray(items) });
+    expect(getStatementWidth(stmt)).toBe(8);
+    expect(getStatementLayout(stmt)).toBe("inline");
+    expect(getStatementLayout(stmt, true)).toBe("multiline");
+  });
+});
+
 describe("getOperationCallLayout", () => {
   it("returns inline for no params", () => {
     const op = createData({
@@ -627,6 +652,23 @@ describe("getOperationCallLayout", () => {
       value: { name: "sum", parameters: params, statements: [] },
     });
     expect(getOperationCallLayout(op)).toBe("multiline");
+  });
+});
+
+describe("getOperationCallLayout with mobile threshold", () => {
+  it("returns multiline when operation call width is between mobile and desktop thresholds", () => {
+    const params = Array.from({ length: 4 }, () => numberStatement(1));
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: params.map(() => ({ type: { kind: "number" } })),
+        result: { kind: "number" },
+      },
+      value: { name: "sum", parameters: params, statements: [] },
+    });
+    expect(getOperationCallWidth(op)).toBe(9);
+    expect(getOperationCallLayout(op)).toBe("inline");
+    expect(getOperationCallLayout(op, true)).toBe("multiline");
   });
 });
 

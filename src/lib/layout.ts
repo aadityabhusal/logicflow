@@ -3,6 +3,7 @@ import { DataType, IData, IStatement, OperationType } from "./types";
 export type LayoutMode = "inline" | "multiline";
 
 const THRESHOLD = 15;
+const MOBILE_THRESHOLD = 8;
 const SEPARATOR_WIDTH = 1;
 const MAX_STRING_DISPLAY_LENGTH = 28;
 
@@ -76,7 +77,8 @@ export function getEntityWidth(data: IData): number {
       trueBranch: IStatement[];
       falseBranch: IStatement[];
     };
-    if (value.trueBranch.length > 1 || value.falseBranch.length > 1) return THRESHOLD;
+    if (value.trueBranch.length > 1 || value.falseBranch.length > 1)
+      return THRESHOLD;
     const trueWidth =
       value.trueBranch.length > 0 ? getStatementWidth(value.trueBranch[0]) : 1;
     const falseWidth =
@@ -149,19 +151,28 @@ export function isSimpleStatement(statement: IStatement): boolean {
   return getStatementWidth(statement) <= 1;
 }
 
-export function getEntityLayout(data: IData): LayoutMode {
+export function getEntityLayout(data: IData, smallScreen?: boolean) {
   if (isSimpleData(data.type)) return "inline";
-  return getEntityWidth(data) >= THRESHOLD ? "multiline" : "inline";
+  const threshold = smallScreen ? MOBILE_THRESHOLD : THRESHOLD;
+  return getEntityWidth(data) >= threshold ? "multiline" : "inline";
 }
 
-export function getStatementLayout(statement: IStatement): LayoutMode {
-  return getStatementWidth(statement) >= THRESHOLD ? "multiline" : "inline";
+export function getStatementLayout(stmt: IStatement, smallScreen?: boolean) {
+  const threshold = smallScreen ? MOBILE_THRESHOLD : THRESHOLD;
+  return getStatementWidth(stmt) >= threshold ? "multiline" : "inline";
 }
 
 export function getOperationCallLayout(
-  operation: IData<OperationType>
-): LayoutMode {
-  return getOperationCallWidth(operation) >= THRESHOLD ? "multiline" : "inline";
+  operation: IData<OperationType>,
+  smallScreen?: boolean
+) {
+  const threshold = smallScreen ? MOBILE_THRESHOLD : THRESHOLD;
+  return getOperationCallWidth(operation) >= threshold ? "multiline" : "inline";
 }
 
-export { THRESHOLD, SEPARATOR_WIDTH, MAX_STRING_DISPLAY_LENGTH };
+export {
+  THRESHOLD,
+  MOBILE_THRESHOLD,
+  SEPARATOR_WIDTH,
+  MAX_STRING_DISPLAY_LENGTH,
+};

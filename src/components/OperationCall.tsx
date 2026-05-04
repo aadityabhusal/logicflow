@@ -22,6 +22,7 @@ import { IconButton } from "@/ui/IconButton";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { getOperationCallLayout } from "@/lib/layout";
+import { useMobileLayout } from "@/hooks/useMobileLayout";
 
 const OperationCallComponent = ({
   data,
@@ -170,7 +171,9 @@ const OperationCallComponent = ({
     []
   );
 
-  const isMultiline = getOperationCallLayout(operation) === "multiline";
+  const useMobileThreshold = useMobileLayout();
+  const isMultiline =
+    getOperationCallLayout(operation, useMobileThreshold) === "multiline";
 
   return (
     <Dropdown

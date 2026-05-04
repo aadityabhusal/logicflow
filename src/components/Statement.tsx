@@ -41,6 +41,7 @@ import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { ReservedNames } from "@/lib/execution/types";
 import { getStatementLayout } from "@/lib/layout";
+import { useMobileLayout } from "@/hooks/useMobileLayout";
 
 const StatementComponent = ({
   statement,
@@ -134,7 +135,9 @@ const StatementComponent = ({
     openDelay: 0,
     closeDelay: 150,
   });
-  const isMultiline = getStatementLayout(statement) === "multiline";
+  const useMobileThreshold = useMobileLayout();
+  const isMultiline =
+    getStatementLayout(statement, useMobileThreshold) === "multiline";
   const PipeArrow = isMultiline ? FaArrowTurnUp : FaArrowRightLong;
 
   const hoverEvents = useMemo(

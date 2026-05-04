@@ -6,6 +6,9 @@ import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
 export function SettingsPanel() {
   const disableKeyboard = useUiConfigStore((s) => s.disableKeyboard);
+  const disableMobileWrapping = useUiConfigStore(
+    (s) => s.disableMobileWrapping
+  );
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const currentProjectId = useProjectStore((s) => s.getCurrentProject()?.id);
@@ -34,11 +37,22 @@ export function SettingsPanel() {
         )}
         {smallScreen && (
           <label className="flex items-center justify-between gap-2 border-t pt-2">
-            <span className="text-sm">Disable keyboard navigation</span>
+            <span className="text-sm">Disable keyboard focus</span>
             <BooleanInput
               data={createData({ value: disableKeyboard ?? false })}
               handleData={(data) =>
                 setUiConfig({ disableKeyboard: data.value })
+              }
+            />
+          </label>
+        )}
+        {smallScreen && (
+          <label className="flex items-center justify-between gap-2 border-t pt-2">
+            <span className="text-sm">Disable code wrapping</span>
+            <BooleanInput
+              data={createData({ value: disableMobileWrapping ?? false })}
+              handleData={(data) =>
+                setUiConfig({ disableMobileWrapping: data.value })
               }
             />
           </label>

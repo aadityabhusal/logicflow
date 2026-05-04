@@ -98,6 +98,7 @@ const OperationComponent = (
         context,
         changedStatement: statement,
         removeStatement: remove,
+        options: { selfOperation: prevOp },
       });
 
       const _paramLen = prevOp.value.parameters.length;

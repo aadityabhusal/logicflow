@@ -304,6 +304,51 @@ describe("updateStatement - operation call updates", () => {
     expect(result[0].operations).toHaveLength(1);
     expect(result[0].operations[0].value.name).toBe("length");
   });
+
+  it("preserves recursive call arguments while editing against a stale saved signature", () => {
+    const ctx = createTestContext();
+    const savedOperation = testOperation(
+      [stringStatement("saved", "input")],
+      [],
+      "recur"
+    );
+    ctx.variables.set("recur", { data: savedOperation });
+
+    const editableStatement = stringStatement("before", "label");
+    const recursiveCallStatement = createStatement({
+      data: testReference("recur", savedOperation.id),
+      operations: [
+        testOperation(
+          [stringStatement("next"), numberStatement(99)],
+          [],
+          "call"
+        ),
+      ],
+    });
+    const draftOperation = testOperation(
+      [stringStatement("current", "input"), numberStatement(0, "extra")],
+      [editableStatement, recursiveCallStatement],
+      "recur"
+    );
+    draftOperation.id = savedOperation.id;
+    draftOperation.type.result = { kind: "undefined" };
+
+    const changedStatement = stringStatement("after", "label");
+    changedStatement.id = editableStatement.id;
+
+    const result = updateStatements({
+      statements: draftOperation.value.statements,
+      context: ctx,
+      changedStatement,
+      options: { selfOperation: draftOperation },
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[1].operations).toHaveLength(1);
+    expect(result[1].operations[0].value.name).toBe("call");
+    expect(result[1].operations[0].value.parameters).toHaveLength(2);
+    expect(result[1].operations[0].value.parameters[1].data.value).toBe(99);
+  });
 });
 
 describe("updateFiles", () => {

@@ -283,7 +283,7 @@ function getStatementEntities(
         depth + 1,
         parent,
         context,
-        allowVariable
+        false
       )
     );
     for (const stmt of condVal.trueBranch) {

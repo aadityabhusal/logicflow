@@ -26,10 +26,14 @@ import isEqual from "react-fast-compare";
 import { getFilteredOperations } from "./execution/execution";
 import { Context } from "./execution/types";
 
+type UpdateOptions = {
+  variableNames?: Map<string, string>;
+  selfOperation?: IData<OperationType>;
+};
 function updateOperationCalls(
   statement: IStatement,
   context: Context,
-  variableNames: Map<string, string>
+  { variableNames, selfOperation }: UpdateOptions
 ): IData<OperationType>[] {
   return statement.operations.reduce(
     (accOperations, operation, operationIndex) => {
@@ -44,16 +48,20 @@ function updateOperationCalls(
       const foundOperation = getFilteredOperations(data, _context).find(
         (op) => op.name === operation.value.name
       );
+      const sourceParameters =
+        operation.value.name === "call" &&
+        selfOperation &&
+        isDataOfType(data, "reference") &&
+        data.value.name === selfOperation.value.name
+          ? [{ type: selfOperation.type }, ...selfOperation.type.parameters]
+          : foundOperation
+            ? resolveParameters(foundOperation, data, _context)
+            : undefined;
 
       let updatedParameters = operation.value.parameters;
       let updatedTypeParameters = operation.type.parameters;
 
-      if (foundOperation) {
-        const sourceParameters = resolveParameters(
-          foundOperation,
-          data,
-          _context
-        );
+      if (sourceParameters) {
         updatedTypeParameters = sourceParameters;
 
         updatedParameters = sourceParameters
@@ -77,7 +85,7 @@ function updateOperationCalls(
                   isOptional: sourceParam.isOptional || sourceParam.isRest,
                 },
                 context.getContext(_param.id),
-                variableNames
+                { variableNames, selfOperation }
               )
             );
           })
@@ -101,26 +109,26 @@ function updateDataValue({
   data,
   context,
   reference,
-  variableNames,
+  options,
 }: {
   data: IData;
   context: Context;
   reference?: { name: string; data: IData<DataType> };
-  variableNames: Map<string, string>;
+  options: UpdateOptions;
 }): DataValue<DataType> {
   return reference
     ? { name: reference.name, id: reference.data.id }
     : isDataOfType(data, "array") || isDataOfType(data, "tuple")
-      ? updateStatements({ statements: data.value, context, variableNames })
+      ? updateStatements({ statements: data.value, context, options })
       : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
         ? {
             entries: data.value.entries.map(({ key, value }) => ({
               key,
-              value: updateStatement(value, context, variableNames),
+              value: updateStatement(value, context, options),
             })),
           }
         : isDataOfType(data, "operation")
-          ? (updateOperationValue(data, context, variableNames) ?? data.value)
+          ? (updateOperationValue(data, context, options) ?? data.value)
           : isDataOfType(data, "union")
             ? updateDataValue({
                 data: {
@@ -131,24 +139,24 @@ function updateDataValue({
                   }),
                 },
                 context,
-                variableNames,
+                options,
               })
             : isDataOfType(data, "condition")
               ? (() => {
                   const condition = updateStatement(
                     data.value.condition,
                     context,
-                    variableNames
+                    options
                   );
                   const trueBranch = updateStatements({
                     statements: data.value.trueBranch,
                     context,
-                    variableNames,
+                    options,
                   });
                   const falseBranch = updateStatements({
                     statements: data.value.falseBranch,
                     context,
-                    variableNames,
+                    options,
                   });
                   return { condition, trueBranch, falseBranch };
                 })()
@@ -158,7 +166,7 @@ function updateDataValue({
                     constructorArgs: updateStatements({
                       statements: data.value.constructorArgs,
                       context,
-                      variableNames,
+                      options,
                     }),
                   }
                 : data.value;
@@ -167,7 +175,7 @@ function updateDataValue({
 function updateStatement(
   currentStatement: IStatement,
   context: Context,
-  variableNames: Map<string, string>
+  options: UpdateOptions
 ): IStatement {
   const currentReference = isDataOfType(currentStatement.data, "reference")
     ? currentStatement.data.value
@@ -183,7 +191,8 @@ function updateStatement(
 
   const reference = foundReference
     ? {
-        name: variableNames.get(currentReference!.id) ?? foundReference[0],
+        name:
+          options.variableNames?.get(currentReference!.id) ?? foundReference[0],
         data: foundReference[1].data,
       }
     : foundByName
@@ -194,7 +203,7 @@ function updateStatement(
     data: currentStatement.data,
     context,
     reference,
-    variableNames,
+    options,
   });
   const currentType = currentStatement.data.type;
   const newType =
@@ -220,7 +229,7 @@ function updateStatement(
   };
   return {
     ...newStatement,
-    operations: updateOperationCalls(newStatement, context, variableNames),
+    operations: updateOperationCalls(newStatement, context, options),
   };
 }
 
@@ -229,15 +238,16 @@ export function updateStatements({
   context,
   changedStatement,
   removeStatement,
-  variableNames,
+  options,
 }: {
   statements: IStatement[];
   context: Context;
   changedStatement?: IStatement;
   removeStatement?: boolean;
-  variableNames?: Map<string, string>;
+  options?: UpdateOptions;
 }): IStatement[] {
-  const currentVariableNames = variableNames ?? new Map<string, string>();
+  const currentVariableNames =
+    options?.variableNames ?? new Map<string, string>();
   let currentIndexFound = false;
   return statements.flatMap((currentStatement) => {
     let statementToProcess = currentStatement;
@@ -251,7 +261,7 @@ export function updateStatements({
     const result = updateStatement(
       statementToProcess,
       context.getContext(statementToProcess.id),
-      currentVariableNames
+      { ...options, variableNames: currentVariableNames }
     );
     if (result.name) currentVariableNames.set(result.id, result.name);
     return result;
@@ -261,12 +271,12 @@ export function updateStatements({
 function updateOperationValue(
   operation: IData<OperationType>,
   context: Context,
-  variableNames: Map<string, string>
+  options: UpdateOptions
 ): DataValue<OperationType> {
   const updatedStatements = updateStatements({
     statements: [...operation.value.parameters, ...operation.value.statements],
     context,
-    variableNames,
+    options,
   });
   const parameterLength = operation.value.parameters.length;
   const parameters = updatedStatements.slice(0, parameterLength);
@@ -295,7 +305,9 @@ export function updateFiles(
     });
     const operation = createOperationFromFile(fileToProcess);
     if (operation) {
-      const value = updateOperationValue(operation, _context, new Map());
+      const value = updateOperationValue(operation, _context, {
+        variableNames: new Map(),
+      });
       if (!isEqual(value, operation.value)) {
         const operationFile = createFileFromOperation({
           ...operation,

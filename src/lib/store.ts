@@ -343,6 +343,7 @@ type UiConfigStore = {
     lockedIds?: { [operationId: string]: string };
   };
   disableKeyboard?: boolean;
+  disableMobileWrapping?: boolean;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;

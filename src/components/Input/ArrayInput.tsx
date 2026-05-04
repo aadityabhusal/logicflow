@@ -6,6 +6,7 @@ import { inferTypeFromValue, isDataOfType } from "@/lib/utils";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
+import { useMobileLayout } from "@/hooks/useMobileLayout";
 
 interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
@@ -18,7 +19,8 @@ const ArrayInputComponent = (
   { data, handleData, context, basePath, ...props }: ArrayInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const isMultiline = getEntityLayout(data) === "multiline";
+  const useMobileThreshold = useMobileLayout();
+  const isMultiline = getEntityLayout(data, useMobileThreshold) === "multiline";
 
   const itemPaths = useMemo(() => {
     const arr = Array.from({ length: data.value.length });
