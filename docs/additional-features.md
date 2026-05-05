@@ -9,33 +9,9 @@ The sidebar provides access to different tools through tabs:
 - **Code** — Displays the generated TypeScript/JavaScript code for the current operation. See [Code Generation](#code-generation).
 - **Deploy** — Configure deployment settings for your project. Add platforms (Vercel or Supabase), manage API tokens and environment variables, and deploy trigger operations as live HTTP endpoints. See [Deployment](#deployment) for details.
 
-Click a tab to open it. Click the same tab again to close it and collapse the sidebar. You can also use keyboard shortcuts: **Ctrl+Shift+1** for Operations, **Ctrl+Shift+@** for Details, **Ctrl+Shift+3** for Code.
+Click a tab to open it. Click the same tab again to close it and collapse the sidebar. See [Keyboard Shortcuts](#keyboard-shortcuts) for the full list.
 
 The Details panel can be locked to a specific item using the lock button, so it stays visible even when navigating elsewhere.
-
-## Keyboard Shortcuts
-
-Logicflow is designed for efficient keyboard-first navigation.
-
-### Arrow Key Navigation
-
-- **Left/Right**: Move the caret through data, operations and buttons
-- **Up/Down**: Move between statements
-- **Alt + Left/Right**: Jump between data and operations skipping their text
-- **Alt + Up/Down**: Jump to the parent i.e. focus from array item to parent array
-- **Cmd/Ctrl + Left/Right**: Jump to first/last element in current statement
-- **Cmd/Ctrl + Up/Down**: Jump to first/last statement of operation file.
-
-Navigation respects text input cursor position—arrow keys move within text until you reach boundaries.
-
-![Keyboard navigation flow](/docs-images/additional-features-01.gif)
-
-### Editing Shortcuts
-
-- **Cmd/Ctrl + Z**: Undo changes
-- **Cmd/Ctrl + Shift + Z** or **Cmd/Ctrl + Y**: Redo changes
-- **Enter**: Toggle boolean values or confirm input
-- **Escape**: Close Details panel
 
 ## Copy and Paste
 
@@ -149,6 +125,14 @@ The built-in `fetch` operation provides a direct interface to the browser's Fetc
 ### Triggered Operations
 
 Operations marked as triggers are exposed as HTTP endpoints when deployed. Triggered operations automatically receive an `HttpRequest` instance containing the incoming request's method, headers, body, query parameters, and path. Use the `HttpRequest` operations (`getMethod`, `getHeaders`, `getBody`, `getQuery`, `getPath`, `getHeader`) to access request data.
+
+## Recursion
+
+Operations can call themselves directly or indirectly through other operations. Each recursive call creates an **isolated context** — its own scope with independent variable bindings, ensuring that nested invocations don't interfere with each other.
+
+Logicflow tracks call depth on each invocation. If the depth exceeds the maximum allowed limit (**7500**), execution stops and returns a runtime error: `Maximum recursion depth (7500) exceeded`.
+
+For async operations, the engine yields to the browser periodically during recursive execution to keep the UI responsive.
 
 ## External Documentation Links
 

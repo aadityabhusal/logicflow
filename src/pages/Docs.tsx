@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Link, useLocation } from "react-router";
 import { FaHouse, FaBars, FaXmark } from "react-icons/fa6";
 import { Button } from "@mantine/core";
@@ -8,6 +9,7 @@ import gettingStarted from "@/../docs/getting-started.md?raw";
 import coreConcepts from "@/../docs/core-concepts.md?raw";
 import dataTypes from "@/../docs/data-types.md?raw";
 import additionalFeatures from "@/../docs/additional-features.md?raw";
+import keyboardShortcuts from "@/../docs/keyboard-shortcuts.md?raw";
 import codeGeneration from "@/../docs/code-generation.md?raw";
 import deployment from "@/../docs/deployment.md?raw";
 import { Fragment, ReactNode, useEffect, useState } from "react";
@@ -75,10 +77,24 @@ const docSections = [
     ),
   },
   {
+    id: "keyboard-shortcuts",
+    title: "Keyboard Shortcuts",
+    content: keyboardShortcuts,
+    subHeadings: extractHeadings(keyboardShortcuts).filter(
+      (h) => h.level === 2
+    ),
+  },
+  {
     id: "code-generation",
     title: "Code Generation",
     content: codeGeneration,
     subHeadings: extractHeadings(codeGeneration).filter((h) => h.level === 2),
+  },
+  {
+    id: "deployment",
+    title: "Deployment",
+    content: deployment,
+    subHeadings: extractHeadings(deployment).filter((h) => h.level === 2),
   },
   {
     id: "deployment",
@@ -161,6 +177,7 @@ export default function Docs() {
           {docSections.map(({ id, content }) => (
             <section key={id} className="prose prose-invert max-w-none mb-8">
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ node: _, ...props }) => (
                     <h1
@@ -247,6 +264,28 @@ export default function Docs() {
                         </figcaption>
                       ) : null}
                     </figure>
+                  ),
+                  table: ({ node: _, ...props }) => (
+                    <table
+                      className="w-full border-collapse mb-4 text-sm"
+                      {...props}
+                    />
+                  ),
+                  thead: ({ node: _, ...props }) => (
+                    <thead className="border-b border-border" {...props} />
+                  ),
+                  tbody: ({ node: _, ...props }) => <tbody {...props} />,
+                  tr: ({ node: _, ...props }) => (
+                    <tr
+                      className="border-b border-border even:bg-dropdown-hover"
+                      {...props}
+                    />
+                  ),
+                  th: ({ node: _, ...props }) => (
+                    <th className="text-left p-2" {...props} />
+                  ),
+                  td: ({ node: _, ...props }) => (
+                    <td className="p-2 align-top" {...props} />
                   ),
                 }}
               >
