@@ -166,26 +166,50 @@ function findOperationByName(
   return getFilteredOperations(data, context).find((op) => op.name === opName);
 }
 
+function serializeMemoInput(data: IData, context: Context): unknown {
+  if (isDataOfType(data, "instance")) {
+    return {
+      [data.value.className]: data.value.constructorArgs.map((arg) =>
+        getRawValueFromData(getStatementResult(arg, context), context)
+      ),
+    };
+  }
+  return getRawValueFromData(data, context);
+}
+
 function getMemoKey(
   operation: OperationListItem,
   inputs: IData[],
   context: Context
-): string | undefined {
+) {
   if (!context.operationCache || !operation.id) return;
   if (!inputs.every((p) => isMemoizableDataType(p.type))) return;
+  const serializedInputs = inputs.map((p) => serializeMemoInput(p, context));
+  return operation.id + ":" + JSON.stringify(serializedInputs);
+}
 
-  const serialize = (data: IData): unknown => {
-    if (isDataOfType(data, "instance")) {
-      return {
-        [data.value.className]: data.value.constructorArgs.map((arg) =>
-          getRawValueFromData(getStatementResult(arg, context), context)
-        ),
-      };
-    }
-    return getRawValueFromData(data, context);
-  };
+function getPersistentResultKey(
+  context: Context,
+  data: IData,
+  operation: IData<OperationType>
+) {
+  return `${getCacheKey(context, operation.id)}:${JSON.stringify([
+    serializeMemoInput(data, context),
+    operation.value.parameters,
+  ])}`;
+}
 
-  return operation.id + ":" + JSON.stringify(inputs.map(serialize));
+function setResult(
+  context: Context,
+  operation: IData<OperationType>,
+  data: IData,
+  persistentResultKey?: string,
+  shouldCacheResult?: boolean
+) {
+  if (persistentResultKey && shouldCacheResult) {
+    context.setResult(persistentResultKey, { data, shouldCacheResult });
+  }
+  context.setResult(getCacheKey(context, operation.id), { data });
 }
 
 function isMemoizableDataType(type: DataType): boolean {
@@ -409,6 +433,7 @@ function executeStatementCore(
 ): {
   _narrowedTypes: Required<Context>["narrowedTypes"];
   shouldCacheResult?: boolean;
+  persistentResultKey?: string;
 } & (
   | { result: IData; foundOp?: never; opCallContext?: never }
   | { foundOp: OperationListItem; opCallContext: Context; result?: never }
@@ -449,12 +474,16 @@ function executeStatementCore(
       }),
     };
   }
-  const existingResult = opCallContext.getResult(
-    getCacheKey(opCallContext, operation.id)
-  )?.data;
   const shouldCacheResult = foundOp.shouldCacheResult;
-  if (shouldCacheResult && existingResult) {
-    return { _narrowedTypes, result: existingResult, shouldCacheResult };
+  // We pass persistentResultKey as a parameter to share the key to the operation call that called a cached operation.
+  const persistentResultKey = shouldCacheResult
+    ? getPersistentResultKey(opCallContext, data, operation)
+    : undefined;
+  const result = persistentResultKey
+    ? opCallContext.getResult(persistentResultKey)?.data
+    : undefined;
+  if (result) {
+    return { _narrowedTypes, result, shouldCacheResult, persistentResultKey };
   }
   if (opCallContext.skipExecution) {
     return {
@@ -463,7 +492,13 @@ function executeStatementCore(
       result: createData({ type: operation.type.result }),
     };
   }
-  return { _narrowedTypes, opCallContext, foundOp, shouldCacheResult };
+  return {
+    _narrowedTypes,
+    opCallContext,
+    foundOp,
+    shouldCacheResult,
+    persistentResultKey,
+  };
 }
 
 function setStatementsSkipContext(statements: IStatement[], context: Context) {
@@ -594,6 +629,7 @@ export async function executeStatement(
       result,
       opCallContext,
       shouldCacheResult,
+      persistentResultKey,
     } = executeStatementCore(
       context,
       narrowedTypes,
@@ -604,8 +640,7 @@ export async function executeStatement(
     narrowedTypes = _narrowedTypes;
 
     if (result !== undefined) {
-      const cacheKey = getCacheKey(context, operation.id);
-      context.setResult(cacheKey, { data: result, shouldCacheResult });
+      setResult(context, operation, result);
       resultData = result;
       if (isFatalError(resultData)) return resultData;
       continue;
@@ -618,10 +653,13 @@ export async function executeStatement(
       opCallContext
     );
     resultData = opResult;
-    context.setResult(getCacheKey(context, operation.id), {
-      data: opResult,
-      shouldCacheResult,
-    });
+    setResult(
+      context,
+      operation,
+      opResult,
+      persistentResultKey,
+      shouldCacheResult
+    );
     if (isFatalError(resultData)) return resultData;
   }
   const finalResult = resolveReference(resultData, context);
@@ -671,6 +709,7 @@ export function executeStatementSync(
       result,
       opCallContext,
       shouldCacheResult,
+      persistentResultKey,
     } = executeStatementCore(
       context,
       narrowedTypes,
@@ -681,8 +720,7 @@ export function executeStatementSync(
     narrowedTypes = _narrowedTypes;
 
     if (result !== undefined) {
-      const cacheKey = getCacheKey(context, operation.id);
-      context.setResult(cacheKey, { data: result, shouldCacheResult });
+      setResult(context, operation, result);
       resultData = result;
       if (isFatalError(resultData)) return resultData;
       continue;
@@ -695,10 +733,13 @@ export function executeStatementSync(
       opCallContext
     );
     resultData = opResult;
-    context.setResult(getCacheKey(context, operation.id), {
-      data: opResult,
-      shouldCacheResult,
-    });
+    setResult(
+      context,
+      operation,
+      opResult,
+      persistentResultKey,
+      shouldCacheResult
+    );
     if (isFatalError(resultData)) return resultData;
   }
   const finalResult = resolveReference(resultData, context);

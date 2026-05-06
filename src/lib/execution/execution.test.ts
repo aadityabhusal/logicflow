@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   getFilteredOperations,
   executeStatement,
@@ -2995,9 +2995,12 @@ describe("memoization", () => {
     await executeOperation(op, testNumber(1), [], ctx);
     expect(ctx.operationCache?.size).toBe(1);
 
+    // Simulate removeAll: reset the cache on the context
     ctx.operationCache = new Map();
 
     await executeOperation(op, testNumber(1), [], ctx);
+    // After wiping the cache the result must be recomputed
+    // and stored in the in-flight operationCache.
     expect(ctx.operationCache?.size).toBe(1);
   });
 
@@ -3021,6 +3024,66 @@ describe("memoization", () => {
     await executeOperation(simpleOp, testNumber(1), [], ctx);
 
     expect(ctx.operationCache?.size).toBe(2);
+  });
+
+  it("persists call result in operationCache for reuse on subsequent executions", async () => {
+    const memo = new Map<string, IData>();
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: memo,
+    });
+
+    const op: OperationListItem = {
+      id: "persistent-call",
+      name: "persistent-call",
+      parameters: [{ type: { kind: "number" }, name: "n" }],
+      statements: [numberStatement(42)],
+    };
+    const paramStmts = [numberStatement(10)];
+
+    const result1 = await executeOperation(op, testNumber(10), paramStmts, ctx);
+
+    const entries = [...memo.entries()];
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    const [, cachedVal] = entries[0];
+    expect(cachedVal?.value).toBe(42);
+
+    // Second call with same inputs reuses the memoized result
+    const result2 = await executeOperation(op, testNumber(10), paramStmts, ctx);
+    expect(result2).toBe(result1);
+  });
+
+  it("keys shouldCacheResult by source data and parameters", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(() => Promise.resolve(new Response("ok")));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const ctx = createTestContext({ isSync: false });
+
+    try {
+      const fetchOp = testBuiltInOperation(
+        "fetch",
+        [{ type: { kind: "string" } }],
+        { kind: "instance", className: "Promise", constructorArgs: [] }
+      );
+      fetchOp.id = "cached-fetch-op";
+
+      await executeStatement(
+        createStatement({ data: testString("/a"), operations: [fetchOp] }),
+        ctx
+      );
+      await executeStatement(
+        createStatement({ data: testString("/a"), operations: [fetchOp] }),
+        ctx
+      );
+      await executeStatement(
+        createStatement({ data: testString("/b"), operations: [fetchOp] }),
+        ctx
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

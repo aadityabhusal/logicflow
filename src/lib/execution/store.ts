@@ -1,7 +1,7 @@
 import { createWithEqualityFn } from "zustand/traditional";
 import { Context, ExecutionResult, ReservedNames } from "./types";
 import { shallow } from "zustand/shallow";
-import { IData, InstanceDataType, EntityPath } from "../types";
+import { IData, EntityPath } from "../types";
 import {
   createFileVariables,
   createData,
@@ -138,31 +138,18 @@ export const useExecutionResultsStore =
       },
       removeAll: () =>
         set((state) => {
-          const newResults = new Map();
-          const newInstances = new Map();
-          for (const [key, value] of state.results) {
-            if (value.shouldCacheResult) {
-              newResults.set(key, value);
-              if (value.data?.type.kind === "instance") {
-                const instanceId = (value.data as IData<InstanceDataType>).value
-                  .instanceId;
-                newInstances.set(instanceId, state.instances.get(instanceId));
-              }
-            }
-          }
-          const newRootContext = {
-            ...state.rootContext,
-            yieldCounter: { calls: 0 },
-            operationCache: new Map<string, IData>(),
-            controlFlowState: {},
-            variables: createExecutionVariables(),
-            ...getTriggerExpectedType(),
-          };
           return {
             contexts: new Map(),
-            results: newResults,
-            instances: newInstances,
-            rootContext: newRootContext,
+            results: new Map(),
+            instances: new Map(),
+            rootContext: {
+              ...state.rootContext,
+              yieldCounter: { calls: 0 },
+              operationCache: new Map<string, IData>(),
+              controlFlowState: {},
+              variables: createExecutionVariables(),
+              ...getTriggerExpectedType(),
+            },
           };
         }),
       removeResult: (entityId) => {

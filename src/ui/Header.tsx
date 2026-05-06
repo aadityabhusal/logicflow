@@ -19,6 +19,7 @@ import { Button, Tooltip } from "@mantine/core";
 import { Link } from "react-router";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
+import { MdCached } from "react-icons/md";
 
 function HeaderComponent() {
   const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
@@ -53,6 +54,14 @@ function HeaderComponent() {
             </div>
           </Tooltip>
         )}
+        <IconButton
+          title="Clear cached results"
+          icon={MdCached}
+          size={20}
+          onClick={() => useExecutionResultsStore.getState().removeAll()}
+          disabled={!currentFileId}
+          className={!currentFileId ? "cursor-not-allowed" : ""}
+        />
         <IconButton
           title={clipboard.copied ? "Copied!" : "Copy"}
           icon={clipboard.copied ? FaCheck : FaRegCopy}

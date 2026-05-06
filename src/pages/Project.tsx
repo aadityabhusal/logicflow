@@ -18,7 +18,7 @@ import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
-import { Context, ExecutionResult } from "@/lib/execution/types";
+import { Context } from "@/lib/execution/types";
 import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -75,6 +75,7 @@ export default function Project() {
 
   const deferredOperation = useDeferredValue(currentOperation);
   useEffect(() => {
+    if (deferredOperation?.id !== currentOperation?.id) return;
     if (deferredOperation) {
       setNavigation({
         navigationEntities: getOperationEntities(
@@ -83,16 +84,24 @@ export default function Project() {
         ),
       });
     }
-  }, [deferredOperation, setNavigation, rootContext]);
+  }, [deferredOperation, currentOperation?.id, setNavigation, rootContext]);
+
+  useEffect(() => {
+    useExecutionResultsStore.getState().removeAll();
+  }, [currentFileId, currentProject?.deployment?.envVariables]);
 
   useEffect(() => {
     if (!deferredOperation) return;
+    if (deferredOperation?.id !== currentOperation?.id) return;
 
     let cancelled = false;
     const controller = new AbortController();
-    const results = new Map<string, ExecutionResult>();
+    const store = useExecutionResultsStore.getState();
+    const results = new Map(
+      [...store.results].filter(([, result]) => result.shouldCacheResult)
+    );
     const contexts = new Map<string, Context>();
-    const instances = new Map(useExecutionResultsStore.getState().instances);
+    const instances = new Map(store.instances);
     const localContext: Context = {
       ...rootContext,
       variables: createExecutionVariables(),
@@ -127,11 +136,7 @@ export default function Project() {
       controller.abort();
       useExecutionResultsStore.getState().setIsExecuting(false);
     };
-  }, [deferredOperation, rootContext]);
-
-  useEffect(() => {
-    useExecutionResultsStore.getState().removeAll();
-  }, [currentFileId, currentProject?.deployment?.envVariables]);
+  }, [deferredOperation, currentOperation?.id, rootContext]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

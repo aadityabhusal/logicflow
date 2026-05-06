@@ -299,7 +299,9 @@ const createCurrentProjectSlice: StateCreator<
         }
         (current as Record<string, unknown>)[path[path.length - 1]] =
           newStatement;
-        (file as ProjectFile & { type: "operation" }).updatedAt = Date.now();
+        const updatedAt = Date.now();
+        (file as ProjectFile & { type: "operation" }).updatedAt = updatedAt;
+        project.updatedAt = updatedAt;
       })
     );
   },

@@ -10,15 +10,12 @@ import { Dropdown } from "./Dropdown";
 import {
   createOperationCall,
   getFilteredOperations,
-  executeOperation,
 } from "@/lib/execution/execution";
-import { FaArrowRotateRight } from "react-icons/fa6";
 import { resolveParameters } from "../lib/utils";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
-import { IconButton } from "@/ui/IconButton";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { getOperationCallLayout } from "@/lib/layout";
@@ -65,24 +62,6 @@ const OperationCallComponent = ({
     if (!originalOperation) return undefined;
     return resolveParameters(originalOperation, data, context);
   }, [context, data, originalOperation]);
-
-  const handleManualExecute = useCallback(async () => {
-    if (!originalOperation) return;
-    const result = await executeOperation(
-      originalOperation,
-      data,
-      operation.value.parameters,
-      context
-    );
-    context.setResult(operation.id, {
-      data: { ...result, id: operation.id },
-      shouldCacheResult: originalOperation.shouldCacheResult,
-    });
-    handleOperationCall({
-      ...operation,
-      type: { ...operation.type, result: result.type },
-    });
-  }, [originalOperation, data, operation, context, handleOperationCall]);
 
   const handleDropdown = useCallback(
     async (name: string) => {
@@ -191,18 +170,6 @@ const OperationCallComponent = ({
       isInputTarget
       target={TooltipTarget}
     >
-      {originalOperation?.shouldCacheResult && (
-        <IconButton
-          icon={FaArrowRotateRight}
-          title="Re-run operation"
-          className="mx-0.5"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleManualExecute();
-          }}
-          size={12}
-        />
-      )}
       <span>{"("}</span>
       <div
         className={[
