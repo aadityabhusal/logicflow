@@ -3085,6 +3085,40 @@ describe("memoization", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("caches shouldCacheResult operations inside user-defined operation calls", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(() => Promise.resolve(new Response("ok")));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const ctx = createTestContext({ isSync: false });
+
+    try {
+      const fetchOp = testBuiltInOperation(
+        "fetch",
+        [{ type: { kind: "string" } }],
+        { kind: "instance", className: "Promise", constructorArgs: [] }
+      );
+      const urlParam = stringStatement("", "url");
+      const loadOp = testOperation(
+        [urlParam],
+        [
+          createStatement({
+            data: testReference("url", urlParam.id),
+            operations: [fetchOp],
+          }),
+        ],
+        "load"
+      );
+      const loadOpItem = operationToListItem(loadOp, "load");
+
+      await executeOperation(loadOpItem, testString("/nested"), [], ctx);
+      await executeOperation(loadOpItem, testString("/nested"), [], ctx);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe("abort signal", () => {

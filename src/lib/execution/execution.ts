@@ -193,7 +193,7 @@ function getPersistentResultKey(
   data: IData,
   operation: IData<OperationType>
 ) {
-  return `${getCacheKey(context, operation.id)}:${JSON.stringify([
+  return `persistent:${operation.id}:${JSON.stringify([
     serializeMemoInput(data, context),
     operation.value.parameters,
   ])}`;
@@ -475,7 +475,6 @@ function executeStatementCore(
     };
   }
   const shouldCacheResult = foundOp.shouldCacheResult;
-  // We pass persistentResultKey as a parameter to share the key to the operation call that called a cached operation.
   const persistentResultKey = shouldCacheResult
     ? getPersistentResultKey(opCallContext, data, operation)
     : undefined;

@@ -9,7 +9,6 @@ import { formatCode, generateOperation } from "@/lib/format-code";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 
 function CodePanelComponent() {
-  const currentOperationName = useProjectStore((s) => s.getCurrentFile()?.name);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const clipboard = useClipboard({ timeout: 500 });
@@ -41,7 +40,7 @@ function CodePanelComponent() {
     <div className="flex flex-col h-full bg-editor">
       <div className="flex justify-between items-center p-1 border-b bg-dropdown-default">
         <p className="font-bold">Code</p>
-        <span className="text-sm">{currentOperationName}.js</span>
+        <span className="text-sm">{currentFile?.name}.js</span>
         <IconButton
           icon={clipboard.copied ? FaCheck : FaRegCopy}
           title={clipboard.copied ? "Copied!" : "Copy code"}

@@ -186,18 +186,21 @@ const StatementComponent = ({
         <div className="flex items-center gap-1 mr-1">
           {hasName ? (
             <BaseInput
+              key={`${statement.name ?? ""}_${statement.id}`}
               ref={(elem) => isNameFocused && elem?.focus()}
-              value={statement.name || ""}
+              defaultValue={statement.name || ""}
               className={[
                 "text-variable",
                 isNameFocused ? "outline outline-border" : "",
               ].join(" ")}
-              onChange={(value) => {
-                const name = value || statement.name || "";
+              onBlur={(e) => {
+                const name = e.currentTarget.value || statement.name;
+                if (name === statement.name) return;
                 if (name && !isValidIdentifier(name)) {
-                  return notifications.show({
+                  notifications.show({
                     message: `"${name}" is not a valid name`,
                   });
+                  return;
                 }
                 const isReserved = Array.from(reservedNames ?? []).find(
                   (r) => r.name === name

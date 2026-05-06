@@ -16,7 +16,12 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Button, Tooltip } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
 import { useMemo, useState, useEffect } from "react";
-import { getTypeSignature, isPendingContext, getCacheKey } from "@/lib/utils";
+import {
+  createOperationFromFile,
+  getTypeSignature,
+  isPendingContext,
+  getCacheKey,
+} from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
 import { CodeHighlight } from "./CodeHighlight";
@@ -29,6 +34,7 @@ import { Link } from "react-router";
 
 export function DetailsPanel() {
   const operationId = useProjectStore((s) => s.currentFileId);
+  const currentFile = useProjectStore((s) => s.getCurrentFile());
   const result = useNavigationStore((s) => s.result);
   const skipExecution = useNavigationStore((s) =>
     s.skipExecution?.kind !== "error" ? s.skipExecution : undefined
@@ -36,7 +42,11 @@ export function DetailsPanel() {
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
-  const operation = useNavigationStore((s) => s.operation);
+  const _operation = useNavigationStore((s) => s.operation);
+  const currentOperation = useMemo(
+    () => createOperationFromFile(currentFile),
+    [currentFile]
+  );
 
   const panelLockedId = useUiConfigStore((s) => {
     const lockedId = operationId && s.sidebar?.lockedIds?.[operationId];
@@ -51,22 +61,31 @@ export function DetailsPanel() {
     }
     return lockedId;
   });
+  const detailsId =
+    !panelLockedId &&
+    (!navigationId || navigationId === `${currentOperation?.id}_statement_add`)
+      ? undefined
+      : (panelLockedId ?? navigationId);
+  const displayedResult = detailsId ? result : currentOperation;
+  const operation = detailsId ? _operation : currentOperation;
 
   const context = useExecutionResultsStore((s) =>
-    s.getContext(panelLockedId ?? navigationId ?? "_root_")
+    s.getContext(detailsId ?? "_root_")
   );
 
   const isResultPending =
-    navigationId && navigationId === operation?.id
+    detailsId && detailsId === operation?.id
       ? !useExecutionResultsStore
           .getState()
-          .results.has(getCacheKey(context, navigationId))
-      : result?.type.kind === "reference" && isPendingContext(context);
+          .results.has(getCacheKey(context, detailsId))
+      : detailsId && displayedResult?.type.kind === "reference"
+        ? isPendingContext(context)
+        : false;
 
   const typeSignature = useMemo(() => {
     if (isResultPending) return "Pending";
-    return getTypeSignature(result?.type ?? { kind: "undefined" });
-  }, [result?.type, isResultPending]);
+    return getTypeSignature(displayedResult?.type ?? { kind: "undefined" });
+  }, [displayedResult?.type, isResultPending]);
 
   const docsUrl = useMemo(
     () => getDocsUrl(operation?.value.source, operation?.value.name),
@@ -80,7 +99,7 @@ export function DetailsPanel() {
   const clipboard = useClipboard({ timeout: 500 });
 
   useEffect(() => {
-    if (!result) {
+    if (!displayedResult) {
       setFormattedValue(isResultPending ? "Pending" : "");
       return;
     }
@@ -89,18 +108,24 @@ export function DetailsPanel() {
       return;
     }
     const codeString = generateData(
-      result,
+      displayedResult,
       createCodeGenContext(context, { showResult: true })
     );
+    let ignore = false;
 
     formatCode(`export default ${codeString}`, { semi: false })
-      .then((formatted) =>
-        setFormattedValue(formatted.replace(/^export\s+default\s+/, "").trim())
-      )
-      .catch(() => setFormattedValue(codeString));
-  }, [result, context, isResultPending]);
+      .then((formatted) => {
+        if (ignore) return;
+        setFormattedValue(formatted.replace(/^export\s+default\s+/, "").trim());
+      })
+      .catch(() => !ignore && setFormattedValue(codeString));
 
-  if (!result && !isResultPending) {
+    return () => {
+      ignore = true;
+    };
+  }, [displayedResult, context, isResultPending]);
+
+  if (!displayedResult && !isResultPending) {
     return (
       <div className="flex flex-col h-full">
         <div className="p-1 border-b font-bold bg-dropdown-default">
@@ -127,11 +152,10 @@ export function DetailsPanel() {
             }}
           />
         ) : null}
-        {useExecutionResultsStore
+        {detailsId &&
+        useExecutionResultsStore
           .getState()
-          .results.has(
-            getCacheKey(context, panelLockedId ?? navigationId!)
-          ) && (
+          .results.has(getCacheKey(context, detailsId)) ? (
           <IconButton
             icon={panelLockedId ? FaLock : FaUnlock}
             title={panelLockedId ? "Unlock" : "Lock"}
@@ -142,15 +166,21 @@ export function DetailsPanel() {
                 if (!operationId) return p;
                 const lockedIds = { ...(p.sidebar?.lockedIds ?? {}) };
                 if (panelLockedId) delete lockedIds[operationId];
-                else lockedIds[operationId] = navigationId!;
+                else lockedIds[operationId] = detailsId;
                 return { sidebar: { ...(p.sidebar ?? {}), lockedIds } };
               });
             }}
           />
-        )}
+        ) : null}
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="border-b p-1 gap-1">
+        {!detailsId && operation?.value.name ? (
+          <div className="border-b p-1 gap-1">
+            <div className="text-gray-300 mb-1.5">Operation</div>
+            <div className="mb-1.5">{operation.value.name}</div>
+          </div>
+        ) : null}
+        <div className="p-1 border-b gap-1">
           <div className="text-gray-300 mb-1.5">Type</div>
           <Tooltip label={typeSignature}>
             <div className="overflow-x-auto dropdown-scrollbar whitespace-nowrap">
@@ -158,7 +188,7 @@ export function DetailsPanel() {
             </div>
           </Tooltip>
         </div>
-        {skipExecution && (
+        {detailsId && skipExecution && (
           <div className="p-1 border-b gap-1">
             <div className="text-gray-300 mb-1.5">Skipped</div>
             <div className="text-sm">{skipExecution.reason}</div>
