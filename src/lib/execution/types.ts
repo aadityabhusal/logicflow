@@ -16,6 +16,8 @@ export type Thenable<T> = {
 
 export type ExecutionResult = { data?: IData; shouldCacheResult?: boolean };
 
+export type ExecutionScheduler = { steps: number; deadline: number };
+
 export type ReservedNames = {
   kind: "data-type" | "operation" | "variable" | "reserved";
   name: string;
@@ -37,7 +39,7 @@ export type Context = {
   callDepth?: number;
   maxCallDepth?: number;
   abortSignal?: AbortSignal;
-  yieldCounter?: { calls: number };
+  executionScheduler?: ExecutionScheduler;
   operationCache?: Map<string, IData>;
   _memoCacheKey?: string;
   controlFlowState?: { returned?: IData };

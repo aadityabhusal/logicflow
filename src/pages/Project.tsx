@@ -14,7 +14,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { useHotkeys, useClickOutside } from "@mantine/hooks";
+import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
@@ -74,6 +74,7 @@ export default function Project() {
   );
 
   const deferredOperation = useDeferredValue(currentOperation);
+  const [debouncedOperation] = useDebouncedValue(currentOperation, 250);
   useEffect(() => {
     if (deferredOperation?.id !== currentOperation?.id) return;
     if (deferredOperation) {
@@ -91,8 +92,8 @@ export default function Project() {
   }, [currentFileId, currentProject?.deployment?.envVariables]);
 
   useEffect(() => {
-    if (!deferredOperation) return;
-    if (deferredOperation?.id !== currentOperation?.id) return;
+    if (!debouncedOperation) return;
+    if (debouncedOperation.id !== currentOperation?.id) return;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -120,7 +121,7 @@ export default function Project() {
 
     useExecutionResultsStore.getState().setIsExecuting(true);
     Promise.resolve(
-      setOperationResults(deferredOperation, localContext)
+      setOperationResults(debouncedOperation, localContext)
     ).finally(() => {
       if (cancelled) return;
       useExecutionResultsStore.setState({
@@ -136,7 +137,7 @@ export default function Project() {
       controller.abort();
       useExecutionResultsStore.getState().setIsExecuting(false);
     };
-  }, [deferredOperation, currentOperation?.id, rootContext]);
+  }, [debouncedOperation, currentOperation?.id, rootContext]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

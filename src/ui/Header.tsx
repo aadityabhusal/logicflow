@@ -55,7 +55,7 @@ function HeaderComponent() {
           </Tooltip>
         )}
         <IconButton
-          title="Clear cached results"
+          title="Clear cache and run"
           icon={MdCached}
           size={20}
           onClick={() => useExecutionResultsStore.getState().removeAll()}

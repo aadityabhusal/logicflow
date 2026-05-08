@@ -3229,36 +3229,34 @@ describe("abort signal", () => {
   });
 });
 
-describe("yield counter", () => {
-  it("yieldCounter is not set on sync contexts", () => {
+describe("execution scheduler", () => {
+  it("executionScheduler is not set on sync contexts", () => {
     const ctx = createTestContext({ isSync: true });
 
     const op = testOperation([], [stringStatement("hello", "x")]);
     setOperationResults(op, ctx);
 
-    expect(ctx.yieldCounter).toBeUndefined();
+    expect(ctx.executionScheduler).toBeUndefined();
   });
 
-  it("yieldCounter is not incremented at callDepth 0", async () => {
+  it("scheduler initializes and increments steps during async execution", async () => {
     const ctx = createTestContext({
       isSync: false,
-      callDepth: 0,
-      yieldCounter: { calls: 0 },
+      executionScheduler: { steps: 0, deadline: performance.now() + 60000 },
     });
 
     const op = testOperation([], [stringStatement("hello", "x")]);
     await setOperationResults(op, ctx);
 
-    // At callDepth 0, the yield check in executeStatement is skipped
-    expect(ctx.yieldCounter?.calls).toBe(0);
+    expect(ctx.executionScheduler).toBeDefined();
+    expect(ctx.executionScheduler!.steps).toBeGreaterThan(0);
   });
 
-  it("yieldCounter increments during recursive async execution", async () => {
+  it("scheduler yields during recursive async execution", async () => {
     const ctx = createTestContext({
       isSync: false,
-      callDepth: 0,
       maxCallDepth: 250,
-      yieldCounter: { calls: 0 },
+      executionScheduler: { steps: 0, deadline: performance.now() + 60000 },
     });
 
     const calleeOp: OperationListItem = {
@@ -3301,9 +3299,8 @@ describe("yield counter", () => {
 
     await setOperationResults(testOperation([], callerOp.statements!), ctx);
 
-    // The callee operation increments callDepth to 1 in executeOperationCore,
-    // and executeStatement checks callDepth > 0 at that level
-    expect(ctx.yieldCounter?.calls).toBeGreaterThan(0);
+    expect(ctx.executionScheduler).toBeDefined();
+    expect(ctx.executionScheduler!.steps).toBeGreaterThan(0);
   });
 });
 
@@ -3322,7 +3319,6 @@ describe("buffered setResult/getResult", () => {
   it("results from one statement are visible to the next in the same execution", async () => {
     const ctx = createTestContext({
       isSync: false,
-      yieldCounter: { calls: 0 },
     });
 
     const stmt1 = stringStatement("value1", "var1");

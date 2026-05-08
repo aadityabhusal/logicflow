@@ -70,7 +70,6 @@ export const useExecutionResultsStore =
       rootContext: {
         scopeId: "_root_",
         variables: createExecutionVariables(),
-        yieldCounter: { calls: 0 },
         operationCache: new Map<string, IData>(),
         controlFlowState: {},
         ...getTriggerExpectedType(),
@@ -144,7 +143,6 @@ export const useExecutionResultsStore =
             instances: new Map(),
             rootContext: {
               ...state.rootContext,
-              yieldCounter: { calls: 0 },
               operationCache: new Map<string, IData>(),
               controlFlowState: {},
               variables: createExecutionVariables(),

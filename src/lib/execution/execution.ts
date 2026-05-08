@@ -41,11 +41,26 @@ import {
 } from "@/lib/operations/built-in";
 import { MAX_CALL_DEPTH } from "../data";
 
-const YIELD_INTERVAL = 15;
+const EXEC_SLICE_MS = 6;
+const YIELD_CHECK_INTERVAL = 32;
+
+function shouldYieldExecution(s: { steps: number; deadline: number }) {
+  s.steps++;
+  if (s.steps % YIELD_CHECK_INTERVAL !== 0) return false;
+  return performance.now() >= s.deadline;
+}
 
 async function yieldToBrowser(signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw new Error("Execution aborted");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    await new Promise<void>((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => resolve();
+      channel.port2.postMessage(undefined);
+    });
+  } catch {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
   if (signal?.aborted) throw new Error("Execution aborted");
 }
 
@@ -412,13 +427,6 @@ export function setOperationResults(
   return (async () => {
     for (const [i, stmt] of allStatements.entries()) {
       if (context.abortSignal?.aborted) return;
-      if (context.abortSignal && i > 0 && i % YIELD_INTERVAL === 0) {
-        try {
-          await yieldToBrowser(context.abortSignal);
-        } catch {
-          return;
-        }
-      }
       await processStatement(stmt, i);
     }
   })();
@@ -584,12 +592,16 @@ export async function executeStatement(
   }
   context.setContext(statement.id, context);
 
-  if (!context.isSync && context.callDepth) {
-    if (!context.yieldCounter) context.yieldCounter = { calls: 0 };
-    context.yieldCounter.calls++;
-    if (context.yieldCounter.calls % YIELD_INTERVAL === 0) {
+  if (context.abortSignal?.aborted) return createData();
+  if (!context.isSync) {
+    if (!context.executionScheduler) {
+      const deadline = performance.now() + EXEC_SLICE_MS;
+      context.executionScheduler = { steps: 0, deadline };
+    }
+    if (shouldYieldExecution(context.executionScheduler)) {
       try {
         await yieldToBrowser(context.abortSignal);
+        context.executionScheduler.deadline = performance.now() + EXEC_SLICE_MS;
       } catch {
         return createData();
       }
@@ -680,6 +692,7 @@ export function executeStatementSync(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
+  if (context.abortSignal?.aborted) return createData();
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const condRes = executeStatementSync(currentData.value.condition, context);
