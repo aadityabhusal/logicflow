@@ -41,29 +41,6 @@ import {
 } from "@/lib/operations/built-in";
 import { MAX_CALL_DEPTH } from "../data";
 
-const EXEC_SLICE_MS = 6;
-const YIELD_CHECK_INTERVAL = 32;
-
-function shouldYieldExecution(s: { steps: number; deadline: number }) {
-  s.steps++;
-  if (s.steps % YIELD_CHECK_INTERVAL !== 0) return false;
-  return performance.now() >= s.deadline;
-}
-
-async function yieldToBrowser(signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) throw new Error("Execution aborted");
-  try {
-    await new Promise<void>((resolve) => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = () => resolve();
-      channel.port2.postMessage(undefined);
-    });
-  } catch {
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  }
-  if (signal?.aborted) throw new Error("Execution aborted");
-}
-
 function getChildContext(
   context: Context,
   options?: {
@@ -426,7 +403,7 @@ export function setOperationResults(
 
   return (async () => {
     for (const [i, stmt] of allStatements.entries()) {
-      if (context.abortSignal?.aborted) return;
+      if (context.isCancelled?.()) throw new Error("Execution cancelled");
       await processStatement(stmt, i);
     }
   })();
@@ -490,7 +467,13 @@ function executeStatementCore(
     ? opCallContext.getResult(persistentResultKey)?.data
     : undefined;
   if (result) {
-    return { _narrowedTypes, result, shouldCacheResult, persistentResultKey };
+    if (
+      !isDataOfType(result, "instance") ||
+      !result.value.instanceId ||
+      opCallContext.getInstance(result.value.instanceId)?.instance
+    ) {
+      return { _narrowedTypes, result, shouldCacheResult, persistentResultKey };
+    }
   }
   if (opCallContext.skipExecution) {
     return {
@@ -535,6 +518,7 @@ async function executeStatementsAsync(
 ): Promise<IData> {
   let lastResult: IData = createData();
   for (const stmt of statements) {
+    if (context.isCancelled?.()) throw new Error("Execution cancelled");
     lastResult = await executeStatement(stmt, context);
     if (isFatalError(lastResult)) return lastResult;
     if (!context.controlFlowState?.returned) {
@@ -591,22 +575,7 @@ export async function executeStatement(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
-
-  if (context.abortSignal?.aborted) return createData();
-  if (!context.isSync) {
-    if (!context.executionScheduler) {
-      const deadline = performance.now() + EXEC_SLICE_MS;
-      context.executionScheduler = { steps: 0, deadline };
-    }
-    if (shouldYieldExecution(context.executionScheduler)) {
-      try {
-        await yieldToBrowser(context.abortSignal);
-        context.executionScheduler.deadline = performance.now() + EXEC_SLICE_MS;
-      } catch {
-        return createData();
-      }
-    }
-  }
+  if (context.isCancelled?.()) throw new Error("Execution cancelled");
 
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
@@ -692,7 +661,6 @@ export function executeStatementSync(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
-  if (context.abortSignal?.aborted) return createData();
   let currentData = resolveReference(statement.data, context);
   if (isDataOfType(currentData, "condition")) {
     const condRes = executeStatementSync(currentData.value.condition, context);
@@ -805,6 +773,7 @@ function executeOperationCore(
       ? createThenable(executedParams as IData[])
       : Promise.all(executedParams)
   ).then((parameters) => {
+    if (context.isCancelled?.()) throw new Error("Execution cancelled");
     for (const [index, resolvedParam] of resolvedParams.slice(1).entries()) {
       const param =
         resolvedParam.isRest && "handler" in operation
@@ -894,7 +863,8 @@ function executeOperationCore(
 export async function executeOperation(
   ...args: Parameters<typeof executeOperationCore>
 ): Promise<IData> {
-  const [operation] = args;
+  const [operation, , , context] = args;
+  if (context.isCancelled?.()) throw new Error("Execution cancelled");
   const result = await executeOperationCore(...args);
   if ("type" in result) return result;
   if (!("statements" in operation)) return createData();

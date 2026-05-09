@@ -14,19 +14,18 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { useHotkeys, useClickOutside, useDebouncedValue } from "@mantine/hooks";
+import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
-import { Context } from "@/lib/execution/types";
 import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { setOperationResults } from "@/lib/execution/execution";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 import {
-  useExecutionResultsStore,
-  createExecutionVariables,
-} from "@/lib/execution/store";
+  executionWorkerClient,
+  hydrateContexts,
+} from "@/lib/execution/worker-client";
 
 export default function Project() {
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -74,7 +73,6 @@ export default function Project() {
   );
 
   const deferredOperation = useDeferredValue(currentOperation);
-  const [debouncedOperation] = useDebouncedValue(currentOperation, 250);
   useEffect(() => {
     if (deferredOperation?.id !== currentOperation?.id) return;
     if (deferredOperation) {
@@ -88,56 +86,49 @@ export default function Project() {
   }, [deferredOperation, currentOperation?.id, setNavigation, rootContext]);
 
   useEffect(() => {
+    executionWorkerClient.reset();
     useExecutionResultsStore.getState().removeAll();
   }, [currentFileId, currentProject?.deployment?.envVariables]);
 
   useEffect(() => {
-    if (!debouncedOperation) return;
-    if (debouncedOperation.id !== currentOperation?.id) return;
+    if (!deferredOperation) return;
 
     let cancelled = false;
-    const controller = new AbortController();
-    const store = useExecutionResultsStore.getState();
-    const results = new Map(
-      [...store.results].filter(([, result]) => result.shouldCacheResult)
-    );
-    const contexts = new Map<string, Context>();
-    const instances = new Map(store.instances);
-    const localContext: Context = {
-      ...rootContext,
-      variables: createExecutionVariables(),
-      operationCache: new Map<string, IData>(),
-      abortSignal: controller.signal,
-      getResult: (id) => results.get(id) ?? rootContext.getResult(id),
-      setResult: (id, result) => results.set(id, result),
-      getContext: (id) => contexts.get(id) ?? rootContext.getContext(id),
-      setContext: (id, context) => {
-        if (context.isIsolated && contexts.has(id)) return;
-        contexts.set(id, context);
-      },
-      getInstance: (id) => instances.get(id) ?? rootContext.getInstance(id),
-      setInstance: (id, instance) => instances.set(id, instance),
-    };
-
+    const { results, instances } = useExecutionResultsStore.getState();
+    const project = useProjectStore.getState().getCurrentProject();
     useExecutionResultsStore.getState().setIsExecuting(true);
-    Promise.resolve(
-      setOperationResults(debouncedOperation, localContext)
-    ).finally(() => {
-      if (cancelled) return;
-      useExecutionResultsStore.setState({
-        results,
-        contexts,
-        instances,
-        isExecuting: false,
+
+    executionWorkerClient
+      .run({
+        operation: deferredOperation,
+        files: project?.files ?? [],
+        envVariables: project?.deployment?.envVariables ?? [],
+        cachedResults: [...results].filter(([, r]) => r.shouldCacheResult),
+        expectedType: rootContext.expectedType,
+        enforceExpectedType: rootContext.enforceExpectedType,
+      })
+      .then((result) => {
+        if (cancelled) return;
+        const contexts = hydrateContexts(result.workerContexts, rootContext);
+        useExecutionResultsStore.setState({
+          results: result.results,
+          contexts,
+          instances,
+          isExecuting: false,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        useExecutionResultsStore.getState().setIsExecuting(false);
+        console.error("Execution worker error:", error);
       });
-    });
 
     return () => {
       cancelled = true;
-      controller.abort();
+      executionWorkerClient.cancel();
       useExecutionResultsStore.getState().setIsExecuting(false);
     };
-  }, [debouncedOperation, currentOperation?.id, rootContext]);
+  }, [deferredOperation, rootContext]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

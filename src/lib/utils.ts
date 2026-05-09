@@ -476,6 +476,22 @@ export function createFileVariables(
   }, new Map(base));
 }
 
+export function createExecutionVariables(
+  files: ProjectFile[] = [],
+  envVariables: { key: string; value: string }[] = []
+) {
+  const variables = createFileVariables(files);
+  if (envVariables) {
+    for (const envVar of envVariables) {
+      variables.set(envVar.key, {
+        data: createData({ value: envVar.value }),
+        isEnv: true,
+      });
+    }
+  }
+  return variables;
+}
+
 export function createParamData(
   item: OperationType["parameters"][number]
 ): IStatement["data"] {
