@@ -5,7 +5,7 @@ import {
   executeOperation,
   executeOperationSync,
 } from "./execution";
-import { createExecutionVariables } from "../utils";
+import { createExecutionVariables, createLocalContext } from "../utils";
 import {
   Context,
   WorkerContext,
@@ -42,10 +42,10 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
   activeAbortController = controller;
 
   try {
-    const contexts = new Map<string, Context>();
     const results = new Map(req.cachedResults);
 
-    const localContext: Context = {
+    const rootContext = {} as Context;
+    Object.assign<Context, Context>(rootContext, {
       scopeId: "_root_",
       variables: createExecutionVariables(req.files, req.envVariables),
       expectedType: req.expectedType,
@@ -55,23 +55,21 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
       isCancelled: () => controller.signal.aborted,
       getResult: (id) => results.get(id),
       setResult: (id, result) => results.set(id, result),
-      getContext: (id) => contexts.get(id) ?? localContext,
-      setContext: (id, ctx) => {
-        if (ctx.isIsolated && contexts.has(id)) return;
-        contexts.set(id, ctx);
-      },
+      getContext: () => rootContext,
+      setContext: () => undefined,
       getInstance: (id) => persistentInstances.get(id),
       setInstance: (id, instance) => persistentInstances.set(id, instance),
       executeStatement,
       executeStatementSync,
       executeOperation,
       executeOperationSync,
-    };
+    });
+    const { context: localCtx, getContexts } = createLocalContext(rootContext);
 
-    await setOperationResults(req.operation, localContext);
+    await setOperationResults(req.operation, localCtx);
 
     const workerContexts: [string, WorkerContext][] = [];
-    for (const [id, ctx] of contexts) {
+    for (const [id, ctx] of getContexts()) {
       if (ctx.isIsolated) continue;
       workerContexts.push([id, serializeContext(ctx)]);
     }

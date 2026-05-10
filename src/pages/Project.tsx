@@ -92,6 +92,7 @@ export default function Project() {
 
   useEffect(() => {
     if (!deferredOperation) return;
+    if (deferredOperation.id !== currentOperation?.id) return;
 
     let cancelled = false;
     const { results, instances } = useExecutionResultsStore.getState();
@@ -128,7 +129,7 @@ export default function Project() {
       executionWorkerClient.cancel();
       useExecutionResultsStore.getState().setIsExecuting(false);
     };
-  }, [deferredOperation, rootContext]);
+  }, [deferredOperation, rootContext, currentOperation?.id]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

@@ -72,6 +72,7 @@ const OperationCallComponent = ({
         parameters: operation.value.parameters,
         context,
         operationId: operation.id,
+        executePreview: false,
       });
       operationCall.id = operation.id;
       handleOperationCall(operationCall);

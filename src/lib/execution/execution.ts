@@ -234,12 +234,14 @@ export async function createOperationCall({
   parameters,
   context,
   operationId,
+  executePreview = true,
 }: {
   data: IData;
   name?: string;
   parameters?: IStatement[];
   context: Context;
   operationId?: string;
+  executePreview?: boolean;
 }): Promise<IData<OperationType>> {
   const data = resolveReference(_data, context);
   const operations = getFilteredOperations(data, context);
@@ -275,12 +277,14 @@ export async function createOperationCall({
       return newParam;
     });
 
-  const result = await executeOperation(
-    newOperation,
-    data,
-    newParameters,
-    context
-  );
+  const expectedType: DataType = newOperation.expectedType
+    ? typeof newOperation.expectedType === "function"
+      ? newOperation.expectedType(data)
+      : newOperation.expectedType
+    : { kind: "unknown" };
+  const result = executePreview
+    ? await executeOperation(newOperation, data, newParameters, context)
+    : createData({ id: _operationId, type: expectedType });
 
   const operationResult = { ...result, id: _operationId };
   context.setResult(_operationId, {

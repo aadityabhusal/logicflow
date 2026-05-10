@@ -12,6 +12,7 @@ import { slice } from "@/lib/operations/runtime";
 import {
   createData,
   createStatement,
+  getStatementResult,
   isDataOfType,
   getRawValueFromData,
   updateContextWithNarrowedTypes,
@@ -240,6 +241,27 @@ describe("createOperationCall", () => {
     const cached = ctx.getResult("cached-op");
     expect(cached).toBeDefined();
     expect(cached?.data?.value).toBe(5);
+  });
+
+  it("does not eagerly execute operation previews when disabled", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const data = testArray(
+      Array.from({ length: 1000 }, (_, index) => numberStatement(index)),
+      { kind: "number" }
+    );
+
+    const result = await createOperationCall({
+      data,
+      name: "map",
+      operationId: "large-map",
+      context: ctx,
+      executePreview: false,
+    });
+
+    const cached = ctx.getResult("large-map")?.data;
+    expect(result.type.result).toEqual({ kind: "unknown" });
+    expect(cached?.type).toEqual(result.type.result);
+    expect(cached?.value).toBeUndefined();
   });
 });
 
@@ -637,6 +659,68 @@ describe("executeOperation", () => {
     const data = testNumber(6);
     const result = await executeOperation(op, data, [numberStatement(7)], ctx);
     expect(result.value).toBe(42);
+  });
+
+  it("only converts callback arguments declared by the operation value", () => {
+    const setContext = vi.fn();
+    const ctx = createTestContext({ setContext });
+    const callback = testOperation(
+      [numberStatement(0, "item")],
+      [createStatement({ data: testReference("item", "item") })]
+    );
+    callback.type.parameters = [
+      { name: "item", type: { kind: "number" } },
+      { name: "index", type: { kind: "number" }, isOptional: true },
+      {
+        name: "data",
+        type: { kind: "array", elementType: { kind: "number" } },
+        isOptional: true,
+      },
+    ];
+    const extraArray = new Proxy([1, 2, 3], {
+      get(target, prop, receiver) {
+        if (prop === "map") throw new Error("extra array was converted");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const fn = getRawValueFromData(callback, ctx) as (
+      ...args: unknown[]
+    ) => unknown;
+
+    expect(fn(10, 0, extraArray)).toBe(10);
+    expect(setContext).not.toHaveBeenCalled();
+  });
+
+  it("does not register per-item callback contexts for map", async () => {
+    const setContext = vi.fn();
+    const ctx = createTestContext({ isSync: false, setContext });
+    const data = testArray(
+      Array.from({ length: 500 }, (_, index) => numberStatement(index)),
+      { kind: "number" }
+    );
+    const callback = testOperation(
+      [numberStatement(0, "item")],
+      [numberStatement(10)]
+    );
+    callback.type.parameters = [
+      { name: "item", type: { kind: "number" } },
+      { name: "index", type: { kind: "number" }, isOptional: true },
+      { name: "data", type: data.type, isOptional: true },
+    ];
+
+    const result = await executeOperation(
+      findBuiltIn("map"),
+      data,
+      [createStatement({ data: callback })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "array")).toBe(true);
+    if (!isDataOfType(result, "array")) throw new Error("Expected array");
+    expect(result.value).toHaveLength(500);
+    expect(getStatementResult(result.value[0], ctx).value).toBe(10);
+    expect(setContext.mock.calls.length).toBeLessThan(100);
   });
 
   it("executes lessThan operation", async () => {
@@ -1813,7 +1897,10 @@ describe("call with empty slice preserves parameter types in recursion", () => {
     const paramStmt = createStatement({
       id: "regr-param",
       name: "arr",
-      data: createData({ type: arrayOfNumbers, value: [numberStatement(42), numberStatement(7)] }),
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(42), numberStatement(7)],
+      }),
     });
 
     // base case: return arr when length === 0
@@ -1826,7 +1913,10 @@ describe("call with empty slice preserves parameter types in recursion", () => {
     const atFirst = createData<OperationType>({
       type: {
         kind: "operation",
-        parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }, { type: { kind: "number" } }],
+        parameters: [
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+          { type: { kind: "number" } },
+        ],
         result: { kind: "number" },
       },
       value: { name: "at", parameters: [numberStatement(0)], statements: [] },
@@ -1835,24 +1925,43 @@ describe("call with empty slice preserves parameter types in recursion", () => {
     const sliceRest = createData<OperationType>({
       type: {
         kind: "operation",
-        parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }, { type: { kind: "number" }, isOptional: true }, { type: { kind: "number" }, isOptional: true }],
+        parameters: [
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+          { type: { kind: "number" }, isOptional: true },
+          { type: { kind: "number" }, isOptional: true },
+        ],
         result: { kind: "array", elementType: { kind: "number" } },
       },
-      value: { name: "slice", parameters: [numberStatement(1)], statements: [] },
+      value: {
+        name: "slice",
+        parameters: [numberStatement(1)],
+        statements: [],
+      },
     });
 
     const selfCall = createData<OperationType>({
       type: {
         kind: "operation",
         parameters: [
-          { type: { kind: "operation", parameters: [{ name: "arr", type: arrayOfNumbers }], result: arrayOfNumbers } },
+          {
+            type: {
+              kind: "operation",
+              parameters: [{ name: "arr", type: arrayOfNumbers }],
+              result: arrayOfNumbers,
+            },
+          },
           { name: "arr", type: arrayOfNumbers },
         ],
         result: arrayOfNumbers,
       },
       value: {
         name: "call",
-        parameters: [createStatement({ data: testReference("arr", paramStmt.id), operations: [sliceRest] })],
+        parameters: [
+          createStatement({
+            data: testReference("arr", paramStmt.id),
+            operations: [sliceRest],
+          }),
+        ],
         statements: [],
       },
     });
@@ -1860,13 +1969,19 @@ describe("call with empty slice preserves parameter types in recursion", () => {
     const concatHeadWithRecurse = createData<OperationType>({
       type: {
         kind: "operation",
-        parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }, { type: { kind: "array", elementType: { kind: "unknown" } } }],
+        parameters: [
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+        ],
         result: { kind: "array", elementType: { kind: "number" } },
       },
       value: {
         name: "concat",
         parameters: [
-          createStatement({ data: testReference("recur_reg", "recur-reg-self"), operations: [selfCall] }),
+          createStatement({
+            data: testReference("recur_reg", "recur-reg-self"),
+            operations: [selfCall],
+          }),
         ],
         statements: [],
       },
@@ -1876,41 +1991,69 @@ describe("call with empty slice preserves parameter types in recursion", () => {
       createStatement({
         data: testReference("arr", paramStmt.id),
         operations: [
-          testBuiltInOperation("length", [{ type: { kind: "string" } }], { kind: "number" }),
+          testBuiltInOperation("length", [{ type: { kind: "string" } }], {
+            kind: "number",
+          }),
           createData<OperationType>({
             type: {
               kind: "operation",
-              parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+              parameters: [
+                { type: { kind: "unknown" } },
+                { type: { kind: "unknown" } },
+              ],
               result: { kind: "boolean" },
             },
-            value: { name: "isShallowEqual", parameters: [numberStatement(0)], statements: [] },
+            value: {
+              name: "isShallowEqual",
+              parameters: [numberStatement(0)],
+              statements: [],
+            },
           }),
         ],
       }),
       [baseReturn],
       [
         createStatement({
-          data: createData({ type: arrayOfNumbers, value: [createStatement({ data: testReference("arr", paramStmt.id), operations: [atFirst] })] }),
+          data: createData({
+            type: arrayOfNumbers,
+            value: [
+              createStatement({
+                data: testReference("arr", paramStmt.id),
+                operations: [atFirst],
+              }),
+            ],
+          }),
           operations: [concatHeadWithRecurse],
         }),
-      ],
+      ]
     );
 
     const recurBody = [createStatement({ data: isEmptyCheck })];
 
     const recurOpIData = createData<OperationType>({
       id: "recur-reg-op",
-      type: { kind: "operation", parameters: [{ name: "arr", type: arrayOfNumbers }], result: arrayOfNumbers },
-      value: { parameters: [paramStmt], statements: recurBody, name: "recur_reg" },
+      type: {
+        kind: "operation",
+        parameters: [{ name: "arr", type: arrayOfNumbers }],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [paramStmt],
+        statements: recurBody,
+        name: "recur_reg",
+      },
     });
 
     ctx.variables.set("recur_reg", { data: recurOpIData });
 
     const result = await executeOperation(
       operationToListItem(recurOpIData, "recur_reg"),
-      createData({ type: arrayOfNumbers, value: [numberStatement(42), numberStatement(7)] }),
+      createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(42), numberStatement(7)],
+      }),
       [],
-      ctx,
+      ctx
     );
 
     const rawResult = getRawValueFromData(result, ctx);

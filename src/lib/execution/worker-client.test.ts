@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hydrateContexts } from "./worker-client";
 import {
   Context,
@@ -307,83 +307,224 @@ describe("createExecutionVariablesFromData", () => {
 });
 
 describe("runExecutionInWorker", () => {
+  let workers: MockWorker[];
+  let workerCount: number;
+  let executionWorkerClient: {
+    run: (request: ReturnType<typeof makeRequest>) => Promise<{
+      results: Map<string, ExecutionResult>;
+      workerContexts: [string, WorkerContext][];
+    }>;
+    cancel: () => void;
+    reset: () => void;
+  };
+
+  class MockWorker {
+    onmessage?: (e: MessageEvent<ExecutionWorkerResponse>) => void;
+    onerror?: (e: ErrorEvent) => void;
+    messages: unknown[] = [];
+    terminated = false;
+
+    constructor() {
+      workerCount++;
+      workers.push(this);
+    }
+
+    postMessage(message: unknown) {
+      this.messages.push(message);
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  const makeRequest = () => ({
+    operation: createData({
+      type: {
+        kind: "operation" as const,
+        parameters: [],
+        result: { kind: "undefined" as const },
+      },
+      value: { parameters: [], statements: [] },
+    }),
+    files: [] as ProjectFile[],
+    envVariables: [],
+    cachedResults: [],
+  });
+
+  const respondToWorker = (
+    w: MockWorker,
+    runId: string,
+    overrides: Partial<ExecutionWorkerResponse> = {}
+  ) => {
+    w.onmessage?.({
+      data: {
+        runId,
+        results: [],
+        workerContexts: [],
+        ...overrides,
+      },
+    } as unknown as MessageEvent<ExecutionWorkerResponse>);
+  };
+
+  beforeEach(async () => {
+    workers = [];
+    workerCount = 0;
+
+    vi.stubGlobal("Worker", MockWorker);
+
+    const mod = await import("./worker-client");
+    executionWorkerClient = mod.executionWorkerClient;
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
   });
 
-  it("posts only the latest pending run while another run is active", async () => {
-    const workers: MockWorker[] = [];
-    class MockWorker {
-      onmessage?: (e: MessageEvent<ExecutionWorkerResponse>) => void;
-      onerror?: (e: ErrorEvent) => void;
-      messages: unknown[] = [];
-
-      constructor() {
-        workers.push(this);
-      }
-
-      postMessage(message: unknown) {
-        this.messages.push(message);
-      }
-
-      terminate() {}
-    }
-
-    vi.stubGlobal("Worker", MockWorker);
-
-    const { executionWorkerClient } = await import("./worker-client");
-    const { run: runExecutionInWorker } = executionWorkerClient;
-    const request = {
-      operation: createData({
-        type: {
-          kind: "operation",
-          parameters: [],
-          result: { kind: "undefined" },
-        },
-        value: { parameters: [], statements: [] },
-      }),
-      files: [],
-      envVariables: [],
-      cachedResults: [],
-    };
-
-    const first = runExecutionInWorker(request);
+  it("posts a run message to a new worker", async () => {
+    const request = makeRequest();
+    const promise = executionWorkerClient.run(request);
     await Promise.resolve();
+
+    expect(workerCount).toBe(1);
+    expect(workers[0].messages).toHaveLength(1);
+    expect(workers[0].messages[0]).toEqual(
+      expect.objectContaining({ type: "run" })
+    );
+
+    void promise.catch(() => undefined);
+  });
+
+  it("resolves with results and workerContexts on successful completion", async () => {
+    const request = makeRequest();
+    const promise = executionWorkerClient.run(request);
+    await Promise.resolve();
+
+    const firstRunId = (workers[0].messages[0] as { runId: string }).runId;
+    respondToWorker(workers[0], firstRunId, {
+      results: [],
+      workerContexts: [["ctx-a", { scopeId: "a", variables: [] }]],
+    });
+
+    const result = await promise;
+    expect(result.results).toBeInstanceOf(Map);
+    expect(result.workerContexts).toHaveLength(1);
+    expect(result.workerContexts[0][0]).toBe("ctx-a");
+  });
+
+  it("reuses the worker after a run completes", async () => {
+    const first = executionWorkerClient.run(makeRequest());
     await Promise.resolve();
 
     const worker = workers[0];
     const firstRunId = (worker.messages[0] as { runId: string }).runId;
-    expect(worker.messages[0]).toEqual(
-      expect.objectContaining({ type: "run" })
-    );
-    expect(worker.messages).toHaveLength(1);
+    respondToWorker(worker, firstRunId);
+    await first;
 
-    const second = runExecutionInWorker(request);
-    const third = runExecutionInWorker(request);
-    await Promise.resolve();
+    const second = executionWorkerClient.run(makeRequest());
     await Promise.resolve();
 
-    await expect(second).rejects.toThrow("Execution cancelled");
-    expect(worker.messages).toHaveLength(3);
-    expect(worker.messages[1]).toEqual({ type: "cancel" });
-    expect(worker.messages[2]).toEqual({ type: "cancel" });
-
-    worker.messages = [];
-    worker.onmessage?.({
-      data: { runId: firstRunId, results: [], workerContexts: [] },
-    } as unknown as MessageEvent<ExecutionWorkerResponse>);
-    await expect(first).resolves.toEqual({
-      results: new Map(),
-      workerContexts: [],
-    });
-
-    // After first completes, latest pending (third) should be posted
-    expect(worker.messages).toHaveLength(1);
-    expect(worker.messages[0]).toEqual(
+    expect(workerCount).toBe(1);
+    expect(worker.terminated).toBe(false);
+    expect(worker.messages).toHaveLength(2);
+    expect(worker.messages[1]).toEqual(
       expect.objectContaining({ type: "run" })
     );
 
-    void third.catch(() => undefined);
+    void second.catch(() => undefined);
+  });
+
+  it("terminates the active worker and starts a new run when called while active", async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    const firstWorker = workers[0];
+    expect(workerCount).toBe(1);
+    expect(firstWorker.messages).toHaveLength(1);
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(firstWorker.terminated).toBe(true);
+    await expect(first).rejects.toThrow("Execution cancelled");
+
+    expect(workerCount).toBe(2);
+    const secondWorker = workers[1];
+    expect(secondWorker.terminated).toBe(false);
+    expect(secondWorker.messages).toHaveLength(1);
+    expect(secondWorker.messages[0]).toEqual(
+      expect.objectContaining({ type: "run" })
+    );
+
+    void second.catch(() => undefined);
+  });
+
+  it("cancel terminates the worker and rejects the active promise", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    executionWorkerClient.cancel();
+
+    expect(workers[0].terminated).toBe(true);
+    await expect(promise).rejects.toThrow("Execution cancelled");
+  });
+
+  it("cancel keeps an idle worker alive", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    const worker = workers[0];
+    const firstRunId = (worker.messages[0] as { runId: string }).runId;
+    respondToWorker(worker, firstRunId);
+    await promise;
+
+    executionWorkerClient.cancel();
+
+    expect(workerCount).toBe(1);
+    expect(worker.terminated).toBe(false);
+  });
+
+  it("reset terminates the worker and rejects the active promise", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    executionWorkerClient.reset();
+
+    expect(workers[0].terminated).toBe(true);
+    await expect(promise).rejects.toThrow("Execution cancelled");
+  });
+
+  it("callbacks arriving after terminate are ignored", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    const firstRunId = (workers[0].messages[0] as { runId: string }).runId;
+    executionWorkerClient.cancel();
+
+    respondToWorker(workers[0], firstRunId, { results: [] });
+
+    await expect(promise).rejects.toThrow("Execution cancelled");
+  });
+
+  it("rejects when the worker completes with an error", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    const firstRunId = (workers[0].messages[0] as { runId: string }).runId;
+    respondToWorker(workers[0], firstRunId, { error: "Something broke" });
+
+    await expect(promise).rejects.toThrow("Something broke");
+  });
+
+  it("rejects when cancelled by the worker", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    const firstRunId = (workers[0].messages[0] as { runId: string }).runId;
+    respondToWorker(workers[0], firstRunId, { cancelled: true });
+
+    await expect(promise).rejects.toThrow("Execution cancelled");
   });
 });

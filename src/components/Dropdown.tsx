@@ -307,6 +307,7 @@ const DropdownComponent = ({
       name: "call",
       parameters: [...callArgs, ...data.value.parameters],
       context: { ...context, variables: newVariables },
+      executePreview: false,
     });
 
     handleChange?.(
