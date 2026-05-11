@@ -73,6 +73,7 @@ export default function Project() {
   );
 
   const deferredOperation = useDeferredValue(currentOperation);
+  const runVersion = useExecutionResultsStore((s) => s.runVersion);
   useEffect(() => {
     if (deferredOperation?.id !== currentOperation?.id) return;
     if (deferredOperation) {
@@ -95,7 +96,8 @@ export default function Project() {
     if (deferredOperation.id !== currentOperation?.id) return;
 
     let cancelled = false;
-    const { results, instances } = useExecutionResultsStore.getState();
+    const { results, instances, rootContext } =
+      useExecutionResultsStore.getState();
     const project = useProjectStore.getState().getCurrentProject();
     useExecutionResultsStore.getState().setIsExecuting(true);
 
@@ -126,10 +128,8 @@ export default function Project() {
 
     return () => {
       cancelled = true;
-      executionWorkerClient.cancel();
-      useExecutionResultsStore.getState().setIsExecuting(false);
     };
-  }, [deferredOperation, rootContext, currentOperation?.id]);
+  }, [deferredOperation, currentOperation?.id, runVersion]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

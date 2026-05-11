@@ -1816,6 +1816,49 @@ describe("createDataFromRawValue", () => {
     expect(result.type.kind).toBe("object");
   });
 
+  it("matches expected object properties by key", () => {
+    const ctxWithExpected = createTestContext({
+      expectedType: {
+        kind: "object",
+        properties: [
+          { key: "id", value: { kind: "number" } },
+          { key: "name", value: { kind: "string" } },
+        ],
+        required: ["id"],
+      },
+    });
+
+    const result = createDataFromRawValue({ name: "test" }, ctxWithExpected);
+
+    expect(result.type.kind).toBe("object");
+    if (result.type.kind !== "object") throw new Error("Expected object");
+    expect(result.type.properties[0]).toEqual({
+      key: "name",
+      value: { kind: "string" },
+    });
+  });
+
+  it("does not crash when object has a key missing from expected object type", () => {
+    const ctxWithExpected = createTestContext({
+      expectedType: {
+        kind: "object",
+        properties: [{ key: "id", value: { kind: "number" } }],
+      },
+    });
+
+    const result = createDataFromRawValue(
+      { id: 1, name: "test" },
+      ctxWithExpected
+    );
+
+    expect(result.type.kind).toBe("object");
+    if (result.type.kind !== "object") throw new Error("Expected object");
+    expect(result.type.properties).toEqual([
+      { key: "id", value: { kind: "number" } },
+      { key: "name", value: { kind: "string" } },
+    ]);
+  });
+
   it("converts object to dictionary type when no expectedType", () => {
     const result = createDataFromRawValue({ name: "test" }, ctx);
     expect(result.type.kind).toBe("dictionary");

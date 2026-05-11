@@ -656,14 +656,15 @@ export function createDataFromRawValue(
       });
       return data;
     } else {
-      const entries = Object.entries(value).map(([key, val], i) => ({
+      const entries = Object.entries(value).map(([key, val]) => ({
         key,
         value: createStatement({
           data: createDataFromRawValue(val, {
             ...context,
             expectedType:
               context.expectedType?.kind === "object"
-                ? context.expectedType.properties[i].value
+                ? context.expectedType.properties.find((p) => p.key === key)
+                    ?.value
                 : context.expectedType?.kind === "dictionary"
                   ? context.expectedType.elementType
                   : undefined,

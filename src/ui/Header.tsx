@@ -18,6 +18,7 @@ import { updateFiles } from "@/lib/update";
 import { Button, Tooltip } from "@mantine/core";
 import { Link } from "react-router";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { MdCached } from "react-icons/md";
 
@@ -58,7 +59,10 @@ function HeaderComponent() {
           title="Clear cache and run"
           icon={MdCached}
           size={20}
-          onClick={() => useExecutionResultsStore.getState().removeAll()}
+          onClick={() => {
+            executionWorkerClient.reset();
+            useExecutionResultsStore.getState().clearCache();
+          }}
           disabled={!currentFileId}
           className={!currentFileId ? "cursor-not-allowed" : ""}
         />

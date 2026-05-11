@@ -435,43 +435,23 @@ describe("runExecutionInWorker", () => {
     void second.catch(() => undefined);
   });
 
-  it("terminates the active worker and starts a new run when called while active", async () => {
-    const first = executionWorkerClient.run(makeRequest());
-    await Promise.resolve();
-
-    const firstWorker = workers[0];
-    expect(workerCount).toBe(1);
-    expect(firstWorker.messages).toHaveLength(1);
-
-    const second = executionWorkerClient.run(makeRequest());
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(firstWorker.terminated).toBe(true);
-    await expect(first).rejects.toThrow("Execution cancelled");
-
-    expect(workerCount).toBe(2);
-    const secondWorker = workers[1];
-    expect(secondWorker.terminated).toBe(false);
-    expect(secondWorker.messages).toHaveLength(1);
-    expect(secondWorker.messages[0]).toEqual(
-      expect.objectContaining({ type: "run" })
-    );
-
-    void second.catch(() => undefined);
-  });
-
-  it("cancel terminates the worker and rejects the active promise", async () => {
+  it("cancel sends a cancel message but keeps the worker alive", async () => {
     const promise = executionWorkerClient.run(makeRequest());
     await Promise.resolve();
+    const worker = workers[0];
+    const firstRunId = (worker.messages[0] as { runId: string }).runId;
 
     executionWorkerClient.cancel();
 
-    expect(workers[0].terminated).toBe(true);
+    expect(worker.terminated).toBe(false);
+    expect(worker.messages).toHaveLength(2);
+    expect(worker.messages[1]).toEqual({ type: "cancel" });
+
+    respondToWorker(worker, firstRunId, { cancelled: true });
     await expect(promise).rejects.toThrow("Execution cancelled");
   });
 
-  it("cancel keeps an idle worker alive", async () => {
+  it("cancel keeps an idle worker alive and sends nothing", async () => {
     const promise = executionWorkerClient.run(makeRequest());
     await Promise.resolve();
 
@@ -480,28 +460,127 @@ describe("runExecutionInWorker", () => {
     respondToWorker(worker, firstRunId);
     await promise;
 
+    const msgCount = worker.messages.length;
     executionWorkerClient.cancel();
 
     expect(workerCount).toBe(1);
     expect(worker.terminated).toBe(false);
+    expect(worker.messages).toHaveLength(msgCount);
   });
 
-  it("reset terminates the worker and rejects the active promise", async () => {
-    const promise = executionWorkerClient.run(makeRequest());
+  it("run while active queues the latest pending and sends cancel", { timeout: 10000 }, async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const worker = workers[0];
+    const firstRunId = (worker.messages[0] as { runId: string }).runId;
+    expect(worker.messages).toHaveLength(1);
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const third = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await expect(second).rejects.toThrow("Execution cancelled");
+
+    expect(worker.terminated).toBe(false);
+    expect(workerCount).toBe(1);
+
+    const typeCancel = { type: "cancel" };
+    expect(worker.messages[1]).toEqual(typeCancel);
+    expect(worker.messages[2]).toEqual(typeCancel);
+
+    respondToWorker(worker, firstRunId, { cancelled: true });
+    await expect(first).rejects.toThrow("Execution cancelled");
+
+    expect(worker.messages).toHaveLength(4);
+    expect(worker.messages[3]).toEqual(
+      expect.objectContaining({ type: "run" })
+    );
+
+    void third.catch(() => undefined);
+  });
+
+  it("auto-starts pending run when active run completes successfully", async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const worker = workers[0];
+    const firstRunId = (worker.messages[0] as { runId: string }).runId;
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    respondToWorker(worker, firstRunId, {
+      results: [],
+      workerContexts: [["ctx", { scopeId: "a", variables: [] }]],
+    });
+    await first;
+
+    expect(worker.messages).toHaveLength(3);
+    expect(worker.messages[2]).toEqual(
+      expect.objectContaining({ type: "run" })
+    );
+
+    const secondRunId = (worker.messages[2] as { runId: string }).runId;
+    respondToWorker(worker, secondRunId);
+    await second;
+
+    expect(worker.terminated).toBe(false);
+    expect(workerCount).toBe(1);
+  });
+
+  it("auto-starts pending run when active run errors", async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const worker = workers[0];
+    const firstRunId = (worker.messages[0] as { runId: string }).runId;
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    respondToWorker(worker, firstRunId, { error: "Something broke" });
+    await expect(first).rejects.toThrow("Something broke");
+
+    expect(worker.messages).toHaveLength(3);
+    expect(worker.messages[2]).toEqual(
+      expect.objectContaining({ type: "run" })
+    );
+
+    void second.catch(() => undefined);
+  });
+
+  it("reset terminates the worker and rejects both active and pending", async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
     await Promise.resolve();
 
     executionWorkerClient.reset();
 
     expect(workers[0].terminated).toBe(true);
-    await expect(promise).rejects.toThrow("Execution cancelled");
+    await expect(first).rejects.toThrow("Execution cancelled");
+    await expect(second).rejects.toThrow("Execution cancelled");
   });
 
-  it("callbacks arriving after terminate are ignored", async () => {
+  it("callbacks arriving after reset are ignored", async () => {
     const promise = executionWorkerClient.run(makeRequest());
     await Promise.resolve();
 
     const firstRunId = (workers[0].messages[0] as { runId: string }).runId;
-    executionWorkerClient.cancel();
+    executionWorkerClient.reset();
 
     respondToWorker(workers[0], firstRunId, { results: [] });
 
