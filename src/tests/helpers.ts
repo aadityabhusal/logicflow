@@ -14,6 +14,9 @@ import {
   ReferenceType,
   ErrorType,
   TupleType,
+  Project,
+  ProjectFile,
+  OperationSource,
 } from "@/lib/types";
 import { Context } from "@/lib/execution/types";
 import { createData, createStatement, createDefaultValue } from "@/lib/utils";
@@ -224,11 +227,11 @@ export function booleanStatement(value = false, name?: string): IStatement {
 export function createTestProject(
   overrides?: Partial<
     Pick<
-      import("@/lib/types").Project,
+      Project,
       "id" | "name" | "version" | "files" | "deployment" | "dependencies"
     >
   >
-): import("@/lib/types").Project {
+): Project {
   return {
     id: "test-project",
     name: "Test Project",
@@ -239,9 +242,7 @@ export function createTestProject(
   };
 }
 
-export function createTriggeredOperationFile(
-  name: string
-): import("@/lib/types").ProjectFile {
+export function createTriggeredOperationFile(name: string): ProjectFile {
   return {
     id: `op-${name}`,
     name,
@@ -257,8 +258,8 @@ export function createTriggeredOperationFile(
 
 export function createOperationFile(
   name: string,
-  source?: import("@/lib/types").OperationSource
-): import("@/lib/types").ProjectFile {
+  source?: OperationSource
+): ProjectFile {
   return {
     id: `op-${name}`,
     name,

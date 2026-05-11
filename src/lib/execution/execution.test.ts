@@ -12,6 +12,7 @@ import { slice } from "@/lib/operations/runtime";
 import {
   createData,
   createStatement,
+  getStatementResult,
   isDataOfType,
   getRawValueFromData,
   updateContextWithNarrowedTypes,
@@ -240,6 +241,27 @@ describe("createOperationCall", () => {
     const cached = ctx.getResult("cached-op");
     expect(cached).toBeDefined();
     expect(cached?.data?.value).toBe(5);
+  });
+
+  it("does not eagerly execute operation previews when disabled", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const data = testArray(
+      Array.from({ length: 1000 }, (_, index) => numberStatement(index)),
+      { kind: "number" }
+    );
+
+    const result = await createOperationCall({
+      data,
+      name: "map",
+      operationId: "large-map",
+      context: ctx,
+      executePreview: false,
+    });
+
+    const cached = ctx.getResult("large-map")?.data;
+    expect(result.type.result).toEqual({ kind: "unknown" });
+    expect(cached?.type).toEqual(result.type.result);
+    expect(cached?.value).toBeUndefined();
   });
 });
 
@@ -637,6 +659,68 @@ describe("executeOperation", () => {
     const data = testNumber(6);
     const result = await executeOperation(op, data, [numberStatement(7)], ctx);
     expect(result.value).toBe(42);
+  });
+
+  it("only converts callback arguments declared by the operation value", () => {
+    const setContext = vi.fn();
+    const ctx = createTestContext({ setContext });
+    const callback = testOperation(
+      [numberStatement(0, "item")],
+      [createStatement({ data: testReference("item", "item") })]
+    );
+    callback.type.parameters = [
+      { name: "item", type: { kind: "number" } },
+      { name: "index", type: { kind: "number" }, isOptional: true },
+      {
+        name: "data",
+        type: { kind: "array", elementType: { kind: "number" } },
+        isOptional: true,
+      },
+    ];
+    const extraArray = new Proxy([1, 2, 3], {
+      get(target, prop, receiver) {
+        if (prop === "map") throw new Error("extra array was converted");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const fn = getRawValueFromData(callback, ctx) as (
+      ...args: unknown[]
+    ) => unknown;
+
+    expect(fn(10, 0, extraArray)).toBe(10);
+    expect(setContext).not.toHaveBeenCalled();
+  });
+
+  it("does not register per-item callback contexts for map", async () => {
+    const setContext = vi.fn();
+    const ctx = createTestContext({ isSync: false, setContext });
+    const data = testArray(
+      Array.from({ length: 500 }, (_, index) => numberStatement(index)),
+      { kind: "number" }
+    );
+    const callback = testOperation(
+      [numberStatement(0, "item")],
+      [numberStatement(10)]
+    );
+    callback.type.parameters = [
+      { name: "item", type: { kind: "number" } },
+      { name: "index", type: { kind: "number" }, isOptional: true },
+      { name: "data", type: data.type, isOptional: true },
+    ];
+
+    const result = await executeOperation(
+      findBuiltIn("map"),
+      data,
+      [createStatement({ data: callback })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "array")).toBe(true);
+    if (!isDataOfType(result, "array")) throw new Error("Expected array");
+    expect(result.value).toHaveLength(500);
+    expect(getStatementResult(result.value[0], ctx).value).toBe(10);
+    expect(setContext.mock.calls.length).toBeLessThan(100);
   });
 
   it("executes lessThan operation", async () => {
@@ -1805,6 +1889,175 @@ describe("call with empty slice preserves parameter types in recursion", () => {
 
     expect(isDataOfType(result, "error")).toBe(false);
     expect(getRawValueFromData(result, ctx)).toEqual([1, 2, 3]);
+  });
+
+  it("returns correct values for recursive operation with intermediate expression results (worker regression)", async () => {
+    const ctx = createTestContext({ isSync: false });
+
+    const paramStmt = createStatement({
+      id: "regr-param",
+      name: "arr",
+      data: createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(42), numberStatement(7)],
+      }),
+    });
+
+    // base case: return arr when length === 0
+    const baseReturn = createStatement({
+      controlFlow: "return",
+      data: testReference("arr", paramStmt.id),
+    });
+
+    // recursive case: return [arr.at(0)].concat(recurse(arr.slice(1)))
+    const atFirst = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+          { type: { kind: "number" } },
+        ],
+        result: { kind: "number" },
+      },
+      value: { name: "at", parameters: [numberStatement(0)], statements: [] },
+    });
+
+    const sliceRest = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+          { type: { kind: "number" }, isOptional: true },
+          { type: { kind: "number" }, isOptional: true },
+        ],
+        result: { kind: "array", elementType: { kind: "number" } },
+      },
+      value: {
+        name: "slice",
+        parameters: [numberStatement(1)],
+        statements: [],
+      },
+    });
+
+    const selfCall = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "operation",
+              parameters: [{ name: "arr", type: arrayOfNumbers }],
+              result: arrayOfNumbers,
+            },
+          },
+          { name: "arr", type: arrayOfNumbers },
+        ],
+        result: arrayOfNumbers,
+      },
+      value: {
+        name: "call",
+        parameters: [
+          createStatement({
+            data: testReference("arr", paramStmt.id),
+            operations: [sliceRest],
+          }),
+        ],
+        statements: [],
+      },
+    });
+
+    const concatHeadWithRecurse = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+          { type: { kind: "array", elementType: { kind: "unknown" } } },
+        ],
+        result: { kind: "array", elementType: { kind: "number" } },
+      },
+      value: {
+        name: "concat",
+        parameters: [
+          createStatement({
+            data: testReference("recur_reg", "recur-reg-self"),
+            operations: [selfCall],
+          }),
+        ],
+        statements: [],
+      },
+    });
+
+    const isEmptyCheck = testCondition(
+      createStatement({
+        data: testReference("arr", paramStmt.id),
+        operations: [
+          testBuiltInOperation("length", [{ type: { kind: "string" } }], {
+            kind: "number",
+          }),
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: { kind: "unknown" } },
+                { type: { kind: "unknown" } },
+              ],
+              result: { kind: "boolean" },
+            },
+            value: {
+              name: "isShallowEqual",
+              parameters: [numberStatement(0)],
+              statements: [],
+            },
+          }),
+        ],
+      }),
+      [baseReturn],
+      [
+        createStatement({
+          data: createData({
+            type: arrayOfNumbers,
+            value: [
+              createStatement({
+                data: testReference("arr", paramStmt.id),
+                operations: [atFirst],
+              }),
+            ],
+          }),
+          operations: [concatHeadWithRecurse],
+        }),
+      ]
+    );
+
+    const recurBody = [createStatement({ data: isEmptyCheck })];
+
+    const recurOpIData = createData<OperationType>({
+      id: "recur-reg-op",
+      type: {
+        kind: "operation",
+        parameters: [{ name: "arr", type: arrayOfNumbers }],
+        result: arrayOfNumbers,
+      },
+      value: {
+        parameters: [paramStmt],
+        statements: recurBody,
+        name: "recur_reg",
+      },
+    });
+
+    ctx.variables.set("recur_reg", { data: recurOpIData });
+
+    const result = await executeOperation(
+      operationToListItem(recurOpIData, "recur_reg"),
+      createData({
+        type: arrayOfNumbers,
+        value: [numberStatement(42), numberStatement(7)],
+      }),
+      [],
+      ctx
+    );
+
+    const rawResult = getRawValueFromData(result, ctx);
+    expect(rawResult).toEqual([42, 7]);
   });
 
   it("preserves the base error message across recursive call nesting", async () => {
@@ -3118,189 +3371,6 @@ describe("memoization", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
-  });
-});
-
-describe("abort signal", () => {
-  it("skips all statements when signal is already aborted", async () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    const ctx = createTestContext({
-      isSync: false,
-      abortSignal: controller.signal,
-    });
-
-    const stmt = stringStatement("hello", "x");
-    const op = testOperation([], [stmt]);
-
-    await setOperationResults(op, ctx);
-
-    // No context should be stored for the statement since it was never executed
-    expect(ctx.getContext(stmt.id).scopeId).toBe("_root_");
-  });
-
-  it("executes all statements when signal is not aborted", async () => {
-    const controller = new AbortController();
-
-    const ctx = createTestContext({
-      isSync: false,
-      abortSignal: controller.signal,
-    });
-
-    const stmt = stringStatement("hello", "x");
-    const op = testOperation([], [stmt]);
-
-    await setOperationResults(op, ctx);
-
-    // The statement context should have x stored via executeStatement
-    const stmtCtx = ctx.getContext(stmt.id);
-    expect(stmtCtx.variables.has("x")).toBe(true);
-  });
-
-  it("abort signal does not affect sync path", () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    const ctx = createTestContext({
-      isSync: true,
-      abortSignal: controller.signal,
-    });
-
-    const stmt = stringStatement("hello", "x");
-    const op = testOperation([], [stmt]);
-
-    setOperationResults(op, ctx);
-
-    const stmtCtx = ctx.getContext(stmt.id);
-    expect(stmtCtx.variables.has("x")).toBe(true);
-  });
-
-  it("stops deep execution when signal aborts mid-recursion", async () => {
-    const controller = new AbortController();
-
-    const ctx = createTestContext({
-      isSync: false,
-      abortSignal: controller.signal,
-      callDepth: 0,
-    });
-
-    const selfCallingOp: OperationListItem = {
-      name: "recurse",
-      parameters: [{ type: { kind: "number" }, name: "n" }],
-      statements: [
-        createStatement({
-          data: testNumber(0),
-          operations: [
-            createData({
-              type: {
-                kind: "operation",
-                parameters: [{ type: { kind: "number" } }],
-                result: { kind: "number" },
-              },
-              value: {
-                name: "recurse",
-                parameters: [numberStatement(0)],
-                statements: [],
-              },
-            }),
-          ],
-        }),
-      ],
-    };
-
-    ctx.variables.set("recurse", {
-      data: testOperation(
-        [numberStatement(0, "n")],
-        selfCallingOp.statements!,
-        "recurse"
-      ),
-    });
-
-    setTimeout(() => controller.abort(), 0);
-
-    const thenable = setOperationResults(
-      testOperation([numberStatement(1, "n")], selfCallingOp.statements!),
-      { ...ctx, maxCallDepth: 100 }
-    );
-
-    await thenable;
-    // If we get here without throwing, the abort was handled
-  });
-});
-
-describe("execution scheduler", () => {
-  it("executionScheduler is not set on sync contexts", () => {
-    const ctx = createTestContext({ isSync: true });
-
-    const op = testOperation([], [stringStatement("hello", "x")]);
-    setOperationResults(op, ctx);
-
-    expect(ctx.executionScheduler).toBeUndefined();
-  });
-
-  it("scheduler initializes and increments steps during async execution", async () => {
-    const ctx = createTestContext({
-      isSync: false,
-      executionScheduler: { steps: 0, deadline: performance.now() + 60000 },
-    });
-
-    const op = testOperation([], [stringStatement("hello", "x")]);
-    await setOperationResults(op, ctx);
-
-    expect(ctx.executionScheduler).toBeDefined();
-    expect(ctx.executionScheduler!.steps).toBeGreaterThan(0);
-  });
-
-  it("scheduler yields during recursive async execution", async () => {
-    const ctx = createTestContext({
-      isSync: false,
-      maxCallDepth: 250,
-      executionScheduler: { steps: 0, deadline: performance.now() + 60000 },
-    });
-
-    const calleeOp: OperationListItem = {
-      name: "callee",
-      parameters: [{ type: { kind: "number" }, name: "n" }],
-      statements: [stringStatement("done")],
-    };
-
-    const callerOp: OperationListItem = {
-      name: "caller",
-      parameters: [],
-      statements: [
-        createStatement({
-          data: testNumber(0),
-          operations: [
-            createData({
-              type: {
-                kind: "operation",
-                parameters: [{ type: { kind: "number" } }],
-                result: { kind: "string" },
-              },
-              value: {
-                name: "callee",
-                parameters: [numberStatement(42)],
-                statements: [],
-              },
-            }),
-          ],
-        }),
-      ],
-    };
-
-    ctx.variables.set("callee", {
-      data: testOperation(
-        [numberStatement(0, "n")],
-        calleeOp.statements!,
-        "callee"
-      ),
-    });
-
-    await setOperationResults(testOperation([], callerOp.statements!), ctx);
-
-    expect(ctx.executionScheduler).toBeDefined();
-    expect(ctx.executionScheduler!.steps).toBeGreaterThan(0);
   });
 });
 

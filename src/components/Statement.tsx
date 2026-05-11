@@ -152,7 +152,11 @@ const StatementComponent = ({
 
   const addOperationCall = useCallback(
     async (data: IData, operationId?: string) => {
-      const operation = await createOperationCall({ data, context });
+      const operation = await createOperationCall({
+        data,
+        context,
+        executePreview: false,
+      });
       const operations = [...statement.operations];
       const index = operationId
         ? operations.findIndex((op) => op.id === operationId) + 1

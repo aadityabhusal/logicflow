@@ -398,6 +398,30 @@ export function createContext(
   };
 }
 
+export function createLocalContext(
+  parent: Context,
+  options?: { exportable?: boolean }
+): {
+  context: Context;
+  getContexts: () => Map<string, Context>;
+} {
+  const localContexts = new Map<string, Context>();
+  const isExportable = options?.exportable !== false;
+  const context: Context = {
+    ...parent,
+    getContext: (id) => localContexts.get(id) ?? parent.getContext(id),
+    setContext: (id, ctx) => {
+      if (ctx.isIsolated && localContexts.has(id)) return;
+      localContexts.set(id, ctx);
+    },
+  };
+
+  return {
+    context,
+    getContexts: () => (isExportable ? localContexts : new Map()),
+  };
+}
+
 export function getContextExpectedTypes({
   context,
   expectedType,
@@ -474,6 +498,22 @@ export function createFileVariables(
     });
     return acc;
   }, new Map(base));
+}
+
+export function createExecutionVariables(
+  files: ProjectFile[] = [],
+  envVariables: { key: string; value: string }[] = []
+) {
+  const variables = createFileVariables(files);
+  if (envVariables) {
+    for (const envVar of envVariables) {
+      variables.set(envVar.key, {
+        data: createData({ value: envVar.value }),
+        isEnv: true,
+      });
+    }
+  }
+  return variables;
 }
 
 export function createParamData(
@@ -616,14 +656,15 @@ export function createDataFromRawValue(
       });
       return data;
     } else {
-      const entries = Object.entries(value).map(([key, val], i) => ({
+      const entries = Object.entries(value).map(([key, val]) => ({
         key,
         value: createStatement({
           data: createDataFromRawValue(val, {
             ...context,
             expectedType:
               context.expectedType?.kind === "object"
-                ? context.expectedType.properties[i].value
+                ? context.expectedType.properties.find((p) => p.key === key)
+                    ?.value
                 : context.expectedType?.kind === "dictionary"
                   ? context.expectedType.elementType
                   : undefined,
@@ -1576,18 +1617,33 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
     }
 
     const func = (..._args: unknown[]) => {
-      const [dataArg, ...args] = _args;
+      const { context: localContext } = createLocalContext(context, {
+        exportable: false,
+      });
+      const lastParam = data.type.parameters[data.type.parameters.length - 1];
+      const effectiveLength = lastParam?.isRest
+        ? _args.length
+        : data.value.parameters.length;
+      const [firstArg, ...restArgs] = _args
+        .slice(0, effectiveLength)
+        .map((arg, index) => {
+          const isRestArg =
+            lastParam?.isRest && index >= data.type.parameters.length - 1;
+          const expectedType =
+            isRestArg && lastParam.type.kind === "array"
+              ? lastParam.type.elementType
+              : data.type.parameters[index]?.type;
+          return createDataFromRawValue(arg, { ...localContext, expectedType });
+        });
       const execute = context.isSync
         ? context.executeOperationSync
         : context.executeOperation;
 
       const result = execute(
         operationToListItem(data),
-        createDataFromRawValue(dataArg, context),
-        args.map((arg) =>
-          createStatement({ data: createDataFromRawValue(arg, context) })
-        ),
-        context
+        firstArg ?? createData(),
+        restArgs.map((data) => createStatement({ data })),
+        localContext
       );
       return result instanceof Promise
         ? result.then((r) => getRawValueFromData(r, context))

@@ -36,6 +36,7 @@ import {
   getCacheKey,
   createContext,
   getContextExpectedTypes,
+  createLocalContext,
   operationToListItem,
   isPendingContext,
   getConditionResult,
@@ -1815,6 +1816,49 @@ describe("createDataFromRawValue", () => {
     expect(result.type.kind).toBe("object");
   });
 
+  it("matches expected object properties by key", () => {
+    const ctxWithExpected = createTestContext({
+      expectedType: {
+        kind: "object",
+        properties: [
+          { key: "id", value: { kind: "number" } },
+          { key: "name", value: { kind: "string" } },
+        ],
+        required: ["id"],
+      },
+    });
+
+    const result = createDataFromRawValue({ name: "test" }, ctxWithExpected);
+
+    expect(result.type.kind).toBe("object");
+    if (result.type.kind !== "object") throw new Error("Expected object");
+    expect(result.type.properties[0]).toEqual({
+      key: "name",
+      value: { kind: "string" },
+    });
+  });
+
+  it("does not crash when object has a key missing from expected object type", () => {
+    const ctxWithExpected = createTestContext({
+      expectedType: {
+        kind: "object",
+        properties: [{ key: "id", value: { kind: "number" } }],
+      },
+    });
+
+    const result = createDataFromRawValue(
+      { id: 1, name: "test" },
+      ctxWithExpected
+    );
+
+    expect(result.type.kind).toBe("object");
+    if (result.type.kind !== "object") throw new Error("Expected object");
+    expect(result.type.properties).toEqual([
+      { key: "id", value: { kind: "number" } },
+      { key: "name", value: { kind: "string" } },
+    ]);
+  });
+
   it("converts object to dictionary type when no expectedType", () => {
     const result = createDataFromRawValue({ name: "test" }, ctx);
     expect(result.type.kind).toBe("dictionary");
@@ -3108,6 +3152,68 @@ describe("createContext", () => {
     const parent = createTestContext({ isSync: true });
     const child = createContext(parent);
     expect(child.isSync).toBe(true);
+  });
+});
+
+describe("createLocalContext", () => {
+  it("creates an exportable context whose getContexts returns registered entries", () => {
+    const parent = createTestContext();
+    const { context, getContexts } = createLocalContext(parent);
+    const child = createContext(context);
+    context.setContext("test-1", child);
+    expect(getContexts().get("test-1")).toBe(child);
+  });
+
+  it("creates an ephemeral context whose getContexts returns nothing", () => {
+    const parent = createTestContext();
+    const { context, getContexts } = createLocalContext(parent, {
+      exportable: false,
+    });
+    context.setContext("test-1", createContext(context));
+    expect(getContexts().size).toBe(0);
+  });
+
+  it("still resolves locally stored contexts via getContext", () => {
+    const parent = createTestContext();
+    const { context, getContexts } = createLocalContext(parent, {
+      exportable: false,
+    });
+    const child = createContext(context, { scopeId: "child" });
+    context.setContext("child-id", child);
+    expect(context.getContext("child-id").scopeId).toBe("child");
+    expect(getContexts().size).toBe(0);
+  });
+
+  it("falls back to parent for unknown ids", () => {
+    const parent = createTestContext();
+    const child = createContext(parent, { scopeId: "parent-child" });
+    parent.setContext("parent-child-id", child);
+
+    const { context } = createLocalContext(parent);
+
+    expect(context.getContext("parent-child-id").scopeId).toBe(
+      "parent-child"
+    );
+  });
+
+  it("isolated context is stored only once per id", () => {
+    const parent = createTestContext();
+    const { context, getContexts } = createLocalContext(parent);
+    const first = createContext(context, { isIsolated: true, scopeId: "a" });
+    const second = createContext(context, { isIsolated: true, scopeId: "b" });
+    context.setContext("iso-1", first);
+    context.setContext("iso-1", second);
+    expect(getContexts().get("iso-1")?.scopeId).toBe("a");
+  });
+
+  it("non-isolated context can be overwritten", () => {
+    const parent = createTestContext();
+    const { context, getContexts } = createLocalContext(parent);
+    const first = createContext(context, { scopeId: "a" });
+    const second = createContext(context, { scopeId: "b" });
+    context.setContext("id-1", first);
+    context.setContext("id-1", second);
+    expect(getContexts().get("id-1")?.scopeId).toBe("b");
   });
 });
 

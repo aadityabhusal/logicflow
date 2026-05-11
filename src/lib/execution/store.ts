@@ -3,8 +3,7 @@ import { Context, ExecutionResult, ReservedNames } from "./types";
 import { shallow } from "zustand/shallow";
 import { IData, EntityPath } from "../types";
 import {
-  createFileVariables,
-  createData,
+  createExecutionVariables,
   createOperationFromFile,
   resolveAncestorIds,
 } from "../utils";
@@ -18,19 +17,6 @@ import {
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
 import { builtInOperations } from "../operations/built-in";
 
-export function createExecutionVariables() {
-  const project = useProjectStore.getState().getCurrentProject();
-  const variables = createFileVariables(project?.files);
-  if (project?.deployment) {
-    for (const envVar of project.deployment.envVariables) {
-      variables.set(envVar.key, {
-        data: createData({ value: envVar.value }),
-        isEnv: true,
-      });
-    }
-  }
-  return variables;
-}
 function getTriggerExpectedType() {
   const currentFile = useProjectStore.getState().getCurrentFile();
   if (!currentFile) {
@@ -52,6 +38,7 @@ interface ExecutionResultsState {
   results: Map<string, ExecutionResult>;
   instances: Map<string, ReturnType<Context["getInstance"]>>;
   isExecuting: boolean;
+  runVersion: number;
   getContext: Context["getContext"];
   getContextOrAncestor: (entityId: string, path: EntityPath) => Context;
   setContext: Context["setContext"];
@@ -60,6 +47,7 @@ interface ExecutionResultsState {
   getInstance: Context["getInstance"];
   setInstance: Context["setInstance"];
   setIsExecuting: (value: boolean) => void;
+  clearCache: () => void;
   removeResult: (entityId: string) => void;
   removeAll: () => void;
 }
@@ -69,7 +57,11 @@ export const useExecutionResultsStore =
     (set, get) => ({
       rootContext: {
         scopeId: "_root_",
-        variables: createExecutionVariables(),
+        variables: createExecutionVariables(
+          useProjectStore.getState().getCurrentProject()?.files,
+          useProjectStore.getState().getCurrentProject()?.deployment
+            ?.envVariables
+        ),
         operationCache: new Map<string, IData>(),
         controlFlowState: {},
         ...getTriggerExpectedType(),
@@ -88,7 +80,17 @@ export const useExecutionResultsStore =
       results: new Map(),
       instances: new Map(),
       isExecuting: false,
+      runVersion: 0,
       setIsExecuting: (value) => set({ isExecuting: value }),
+      clearCache: () =>
+        set((state) => ({
+          results: new Map(
+            [...state.results].filter(([, result]) => !result.shouldCacheResult)
+          ),
+          instances: new Map(),
+          rootContext: { ...state.rootContext, operationCache: new Map() },
+          runVersion: state.runVersion + 1,
+        })),
       setResult: (entityId, result) => {
         set((state) => {
           const newResults = new Map(state.results);
@@ -136,20 +138,22 @@ export const useExecutionResultsStore =
         });
       },
       removeAll: () =>
-        set((state) => {
-          return {
-            contexts: new Map(),
-            results: new Map(),
-            instances: new Map(),
-            rootContext: {
-              ...state.rootContext,
-              operationCache: new Map<string, IData>(),
-              controlFlowState: {},
-              variables: createExecutionVariables(),
-              ...getTriggerExpectedType(),
-            },
-          };
-        }),
+        set((state) => ({
+          contexts: new Map(),
+          results: new Map(),
+          instances: new Map(),
+          rootContext: {
+            ...state.rootContext,
+            operationCache: new Map<string, IData>(),
+            controlFlowState: {},
+            variables: createExecutionVariables(
+              useProjectStore.getState().getCurrentProject()?.files,
+              useProjectStore.getState().getCurrentProject()?.deployment
+                ?.envVariables
+            ),
+            ...getTriggerExpectedType(),
+          },
+        })),
       removeResult: (entityId) => {
         set((state) => {
           const newResults = new Map(state.results);

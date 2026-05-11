@@ -5,6 +5,7 @@ import {
   IStatement,
   OperationSource,
   OperationType,
+  ProjectFile,
 } from "../types";
 
 export type Thenable<T> = {
@@ -23,31 +24,34 @@ export type ReservedNames = {
   name: string;
 }[];
 
-export type Context = {
+export type Variable = {
+  data: IData;
+  reference?: { name: string; id: string };
+  isEnv?: boolean;
+};
+
+export type ContextProps = {
   scopeId: string;
-  variables: Map<
-    string,
-    // TODO: Should we remove the reference property since we resolve the statement result by default?
-    { data: IData; reference?: { name: string; id: string }; isEnv?: boolean }
-  >;
-  narrowedTypes?: Context["variables"];
+  variables: Map<string, Variable>;
+  narrowedTypes?: Map<string, Variable>;
   expectedType?: DataType;
   enforceExpectedType?: boolean;
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   isSync?: boolean;
   isIsolated?: boolean;
   callDepth?: number;
-  maxCallDepth?: number;
-  abortSignal?: AbortSignal;
-  executionScheduler?: ExecutionScheduler;
+  maxCallDepth?: number; // Added in Context and not global constant for testing configuration
   operationCache?: Map<string, IData>;
   _memoCacheKey?: string;
   controlFlowState?: { returned?: IData };
+};
+
+export type Context = ContextProps & {
+  isCancelled?: () => boolean;
   getResult: (id: string) => ExecutionResult | undefined;
   getInstance: (
     id: string
   ) => { instance: InstanceType<ConstructorType>; type: DataType } | undefined;
-
   getContext: (id: string) => Context;
   setContext: (id: string, context: Context) => void;
   setResult: (id: string, result: Partial<ExecutionResult>) => void;
@@ -95,3 +99,36 @@ export type OperationListItem = {
     }
   | { statements: IStatement[] }
 );
+
+/* Worker Types */
+export type WorkerContext = Omit<
+  ContextProps,
+  "variables" | "narrowedTypes" | "operationCache" | "_memoCacheKey"
+> & {
+  variables: [string, Variable][];
+  narrowedTypes?: [string, Variable][];
+};
+
+export type ExecutionWorkerRunRequest = {
+  type: "run";
+  runId: string;
+  operation: IData<OperationType>;
+  files: ProjectFile[];
+  envVariables: { key: string; value: string }[];
+  cachedResults: [string, ExecutionResult][];
+  expectedType?: DataType;
+  enforceExpectedType?: boolean;
+};
+
+export type ExecutionWorkerRequest =
+  | ExecutionWorkerRunRequest
+  | { type: "cancel" }
+  | { type: "reset" };
+
+export type ExecutionWorkerResponse = {
+  runId: string;
+  results: [string, ExecutionResult][];
+  workerContexts: [string, WorkerContext][];
+  error?: string;
+  cancelled?: boolean;
+};
