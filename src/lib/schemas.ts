@@ -79,9 +79,7 @@ export const OperationValueSchema = z.object({
   },
   name: z.string().optional(),
   isAsync: z.boolean().optional(),
-  source: z
-    .object({ name: z.enum(["remeda", "wretch", "wretchResponseChain"]) })
-    .optional(),
+  source: z.object({ name: z.string() }).optional(),
   instanceId: z.string().optional(),
 });
 

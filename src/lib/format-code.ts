@@ -8,6 +8,7 @@ import {
 import { OperationListItem } from "./execution/types";
 import { Context } from "./execution/types";
 import {
+  getActualOperationName,
   getUnionActiveType,
   isDataOfType,
   inferTypeFromValue,
@@ -34,12 +35,11 @@ export async function formatCode(code: string, options?: Options) {
   });
 }
 
-type OperationSource =
-  | "instance"
-  | "remeda"
-  | "external"
-  | "builtin"
-  | "userDefined";
+type OperationSource = {
+  type: "instance" | "remeda" | "external" | "builtin" | "userDefined";
+  packageName?: string;
+  callStyle?: "method" | "function";
+};
 
 type CodeGenContext = Context & {
   showResult?: boolean;
@@ -66,6 +66,10 @@ export function createCodeGenContext(
 
 const VARIABLE_REGEX = /^const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*/;
 
+function toReturnStatement(code: string): string {
+  return `return ${code.replace(VARIABLE_REGEX, "")}`;
+}
+
 export function generateData(data: IData, context: CodeGenContext): string {
   if (isDataOfType(data, "unknown") || isDataOfType(data, "never")) {
     const inferredType = inferTypeFromValue(data.value, context);
@@ -84,6 +88,10 @@ export function generateData(data: IData, context: CodeGenContext): string {
     return `new Error(${JSON.stringify(data.value.reason)})`;
   } else if (isDataOfType(data, "instance")) {
     const instanceConfig = InstanceTypes[data.value.className];
+    if (instanceConfig?.referenceExpression) {
+      context.usedPackages.add(instanceConfig.importInfo!.packageName);
+      return instanceConfig.referenceExpression;
+    }
     const constructorArgs = data.value.constructorArgs
       .map((arg) => generateStatement(arg, context, true))
       .join(", ");
@@ -132,31 +140,29 @@ function getOperationSource(
   context: CodeGenContext
 ): OperationSource {
   const opName = operation.value.name;
-  if (!opName) return "userDefined";
+  if (!opName) return { type: "userDefined" };
 
   const valueSourceName = operation.value.source?.name;
-  if (valueSourceName === "remeda") return "remeda";
-  if (valueSourceName && valueSourceName in SOURCE_PACKAGE_MAP) {
-    context.usedPackages.add(SOURCE_PACKAGE_MAP[valueSourceName]);
-    return "external";
-  }
-
   const opItem = context.getOperation(opName);
-  if (opItem?.source?.name === "remeda") return "remeda";
-  const itemSourceName = opItem?.source?.name;
-  if (itemSourceName && itemSourceName in SOURCE_PACKAGE_MAP) {
-    context.usedPackages.add(SOURCE_PACKAGE_MAP[itemSourceName]);
-    return "external";
+  const sourceName = valueSourceName ?? opItem?.source?.name;
+  if (sourceName === "remeda") return { type: "remeda" };
+  if (sourceName && sourceName in SOURCE_PACKAGE_MAP) {
+    const packageName = SOURCE_PACKAGE_MAP[sourceName];
+    context.usedPackages.add(packageName);
+    const firstParamType = operation.type.parameters[0]?.type;
+    const callStyle =
+      firstParamType?.kind === "instance" ? "method" : "function";
+    return { type: "external", packageName, callStyle };
   }
   const firstParamType = operation.type.parameters[0]?.type;
   if (firstParamType?.kind === "instance") {
     const Constructor = InstanceTypes[firstParamType.className]?.Constructor;
     if (Constructor && typeof Constructor.prototype[opName] === "function") {
-      return "instance";
+      return { type: "instance" };
     }
   }
-  if (!opItem) return "userDefined";
-  return "builtin";
+  if (!opItem) return { type: "userDefined" };
+  return { type: "builtin" };
 }
 
 function generateOperationCall(
@@ -168,29 +174,38 @@ function generateOperationCall(
     .map((p) => generateStatement(p, context, true))
     .join(", ");
   const paramStr = operation.value.parameters.length ? `(${params})` : "";
+  const actualName = getActualOperationName(operation.value.name ?? "");
 
   if (operation.value.name === "await") return "";
   if (operation.value.name === "call") return `, (arg) => arg(${params})`;
 
-  switch (source) {
+  switch (source.type) {
     case "instance":
-    case "external":
-      return `, (arg) => arg.${operation.value.name}(${params})`;
+      return `, (arg) => arg.${actualName}(${params})`;
+    case "external": {
+      if (source.callStyle !== "function") {
+        return `, (arg) => arg.${actualName}(${params})`;
+      }
+      const packageName = source.packageName ?? "";
+      const importName =
+        PACKAGE_REGISTRY[packageName]?.importName ?? packageName;
+      return `, ${importName}.${actualName}${paramStr}`;
+    }
     case "remeda":
+      return `, R.${actualName}${paramStr}`;
     case "builtin": {
-      const name = `${source === "remeda" ? "R" : "_"}.${operation.value.name}`;
+      const name = `_.${actualName}`;
       return `, ${name}${paramStr}`;
     }
     case "userDefined": {
-      const name = operation.value.name;
       if (
-        name &&
-        name !== context.currentOperationName &&
-        context.variables.has(name)
+        actualName &&
+        actualName !== context.currentOperationName &&
+        context.variables.has(actualName)
       ) {
-        context.importedOperations.add(name);
+        context.importedOperations.add(actualName);
       }
-      return `, ${paramStr ? `(arg) => ${name}${paramStr}` : name}`;
+      return `, ${paramStr ? `(arg) => ${actualName}${paramStr}` : actualName}`;
     }
   }
 }
@@ -226,7 +241,7 @@ function generateStatement(
         })();
 
   if (statement.controlFlow === "return") {
-    return `return ${result.startsWith("const ") ? result.replace(VARIABLE_REGEX, "") : result}`;
+    return toReturnStatement(result);
   }
   return result;
 }
@@ -271,9 +286,7 @@ function generateConditionStatement(stmt: IStatement, context: CodeGenContext) {
     stmt.name !== undefined ? `const ${stmt.name} = ${ternary}` : ternary;
 
   if (stmt.controlFlow === "return") {
-    return `return ${
-      result.startsWith("const ") ? result.replace(VARIABLE_REGEX, "") : result
-    }`;
+    return toReturnStatement(result);
   }
   return result;
 }
@@ -307,7 +320,7 @@ function generateCallback(
       !stmtCode.startsWith("if") &&
       !stmtCode.startsWith("return")
     ) {
-      return `return ${stmtCode}`;
+      return toReturnStatement(stmtCode);
     }
     return stmtCode;
   });

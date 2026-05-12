@@ -1,5 +1,14 @@
 import { ConstructorType, DataType, ErrorType, OperationType } from "./types";
 import wretch from "wretch";
+import {
+  ColumnBuilder,
+  ConditionChain,
+  PolicyBuilder,
+  SubqueryBuilder,
+  SQLExpression,
+  auth as rowguardAuth,
+  session as rowguardSession,
+} from "rowguard";
 import { SiAnthropic, SiOpenai, SiGooglegemini } from "react-icons/si";
 
 export const DataTypes: {
@@ -112,13 +121,30 @@ function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   ] as OperationType["parameters"];
 }
 
-export const PACKAGE_REGISTRY: Record<string, { importStatement: string }> = {
-  wretch: { importStatement: "import wretch from 'wretch'" },
+export const PACKAGE_REGISTRY: Record<
+  string,
+  { importName: string; importStatement: string }
+> = {
+  wretch: {
+    importName: "wretch",
+    importStatement: "import wretch from 'wretch'",
+  },
+  rowguard: {
+    importName: "rowguard",
+    importStatement: "import * as rowguard from 'rowguard'",
+  },
 };
 
 export const SOURCE_PACKAGE_MAP: Record<string, string> = {
   wretch: "wretch",
   wretchResponseChain: "wretch",
+  rowguard: "rowguard",
+  rowguardColumnBuilder: "rowguard",
+  rowguardConditionChain: "rowguard",
+  rowguardPolicyBuilder: "rowguard",
+  rowguardSubqueryBuilder: "rowguard",
+  rowguardAuthBuilder: "rowguard",
+  rowguardSessionBuilder: "rowguard",
 };
 
 export type InstanceTypeConfig<
@@ -133,6 +159,7 @@ export type InstanceTypeConfig<
   readonly hideFromDropdown?: boolean;
   readonly prepareArgs?: (args: unknown[]) => unknown[];
   readonly importInfo?: { packageName: string };
+  readonly referenceExpression?: string;
 };
 
 export const customInstances = new WeakMap<object, ConstructorType>();
@@ -161,6 +188,29 @@ export class WretchResponseChainClass {
     );
   }
 }
+
+export class AuthClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === AuthClass
+    );
+  }
+}
+
+export class SessionClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === SessionClass
+    );
+  }
+}
+
+customInstances.set(rowguardAuth, AuthClass);
+customInstances.set(rowguardSession, SessionClass);
 
 export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   Promise: {
@@ -244,6 +294,58 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
     Constructor: WretchResponseChainClass,
     constructorArgs: [],
     hideFromDropdown: true,
+  },
+  ColumnBuilder: {
+    name: "ColumnBuilder",
+    Constructor: ColumnBuilder,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+  },
+  ConditionChain: {
+    name: "ConditionChain",
+    Constructor: ConditionChain,
+    constructorArgs: [],
+    hideFromDropdown: true,
+  },
+  PolicyBuilder: {
+    name: "PolicyBuilder",
+    Constructor: PolicyBuilder,
+    constructorArgs: [
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
+  },
+  SubqueryBuilder: {
+    name: "SubqueryBuilder",
+    Constructor: SubqueryBuilder,
+    constructorArgs: [
+      { type: { kind: "string" } },
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
+  },
+  SQLExpression: {
+    name: "SQLExpression",
+    Constructor: SQLExpression,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+    hideFromDropdown: true,
+  },
+  Auth: {
+    name: "Auth",
+    Constructor: AuthClass,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "rowguard" },
+    referenceExpression: "rowguard.auth",
+  },
+  Session: {
+    name: "Session",
+    Constructor: SessionClass,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "rowguard" },
+    referenceExpression: "rowguard.session",
   },
 };
 

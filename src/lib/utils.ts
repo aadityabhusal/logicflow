@@ -577,6 +577,12 @@ export function operationToListItem(
   };
 }
 
+export function getActualOperationName(opName: string): string {
+  return opName.includes(".")
+    ? opName.slice(opName.lastIndexOf(".") + 1)
+    : opName;
+}
+
 export function createDataFromRawValue(
   value: unknown,
   context: Context

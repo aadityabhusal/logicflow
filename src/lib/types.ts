@@ -49,9 +49,7 @@ export type InstanceDataType = {
   result?: DataType;
 };
 
-export type OperationSource = {
-  name: "remeda" | "wretch" | "wretchResponseChain";
-};
+export type OperationSource = { name: string };
 
 export type DataType =
   | UnknownType

@@ -1,5 +1,5 @@
 import { IData, OperationType, UnionType, DataType } from "../types";
-import { DataTypes, InstanceTypes } from "../data";
+import { DataTypes, InstanceTypes, SOURCE_PACKAGE_MAP } from "../data";
 import {
   createData,
   getUnionActiveType,
@@ -15,6 +15,7 @@ import {
   operationToListItem,
 } from "../utils";
 import { wretchOperations } from "./wretch";
+import { rowguardOperations } from "./rowguard";
 import {
   createOperationHandler,
   FunctionKeys,
@@ -612,6 +613,14 @@ const requestOperations: OperationListItem[] = [
   },
 ];
 
+function prefixExternalPackageName(op: OperationListItem): OperationListItem {
+  const sourceName = op.source?.name;
+  if (!sourceName) return op;
+  const packageName = SOURCE_PACKAGE_MAP[sourceName];
+  if (!packageName) return op;
+  return { ...op, name: `${packageName}.${op.name}` };
+}
+
 export const builtInOperations: OperationListItem[] = [
   ...basicOperationList.map((operation) => ({
     ...operation,
@@ -625,8 +634,9 @@ export const builtInOperations: OperationListItem[] = [
   ...responseOperations,
   ...wretchOperations,
   ...remedaOperations,
+  ...rowguardOperations,
   ...requestOperations,
-];
+].map(prefixExternalPackageName);
 
 function getTypeKeys(type: DataType): string[] {
   if (type.kind === "union") return type.types.flatMap(getTypeKeys);

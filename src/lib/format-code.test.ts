@@ -261,6 +261,15 @@ describe("generateOperation", () => {
     expect(result).toContain("return 42");
   });
 
+  it("trims declaration from named last statement return", () => {
+    const ctx = createTestContext();
+    const stmt = numberStatement(42, "result");
+    const op = testOperation([], [stmt], "namedLastStmt");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("return 42");
+    expect(result).not.toContain("return const");
+  });
+
   it("generates empty body for empty statements", () => {
     const ctx = createTestContext();
     const op = testOperation([], [], "emptyOp");
@@ -983,7 +992,7 @@ describe("condition code generation", () => {
     expect(result).not.toContain("if (");
   });
 
-  it("wraps ternary with const when condition statement has a name", () => {
+  it("trims declaration from named last condition return", () => {
     const ctx = createTestContext();
     const condData = testCondition(
       booleanStatement(true),
@@ -993,7 +1002,8 @@ describe("condition code generation", () => {
     const stmt = createStatement({ name: "result", data: condData });
     const op = testOperation([], [stmt], "namedCondOp");
     const result = generateOperation(op, ctx);
-    expect(result).toContain("const result = ");
+    expect(result).toMatch(/return\s+true\s*\?\s*"yes"\s*:\s*"no"/);
+    expect(result).not.toContain("return const");
     expect(result).toContain("?");
   });
 

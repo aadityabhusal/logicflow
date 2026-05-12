@@ -22,6 +22,7 @@ import {
   getTypeSignature,
   isPendingContext,
   getCacheKey,
+  getActualOperationName,
 } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
@@ -207,7 +208,8 @@ export function DetailsPanel() {
               className="outline-none w-fit"
               rightSection={<FaArrowUpRightFromSquare />}
             >
-              {docsConfig.displayName}:{operation?.value.name}
+              {docsConfig.displayName}:
+              {getActualOperationName(operation?.value.name ?? "")}
             </Button>
           </div>
         )}
