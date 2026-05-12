@@ -13,6 +13,7 @@ import {
   ExecutionWorkerRunRequest,
   ExecutionWorkerResponse,
 } from "./types";
+import { syncPackageRegistry } from "../operations/built-in";
 
 function serializeContext(ctx: Context): WorkerContext {
   return {
@@ -42,8 +43,9 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
   activeAbortController = controller;
 
   try {
-    const results = new Map(req.cachedResults);
+    await syncPackageRegistry(req.packageNames ?? []);
 
+    const results = new Map(req.cachedResults);
     const rootContext = {} as Context;
     Object.assign<Context, Context>(rootContext, {
       scopeId: "_root_",

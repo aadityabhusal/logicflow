@@ -32,11 +32,11 @@ import {
   getCacheKey,
   getTypeSignature,
   getRawValueFromData,
+  createRuntimeError,
 } from "@/lib/utils";
 import { OperationListItem, Context, Thenable } from "./types";
 import {
   getOperationsForDataType,
-  createRuntimeError,
   builtInOperationsByName,
 } from "@/lib/operations/built-in";
 import { MAX_CALL_DEPTH } from "../data";
@@ -455,11 +455,15 @@ function executeStatementCore(
 
   if (!foundOp) {
     const kind = resolveReference(data, opCallContext).type.kind;
+    const reason =
+      opName && builtInOperationsByName.has(opName)
+        ? `Cannot chain '${opName}' after '${kind}' type`
+        : `Operation '${opName}' does not exist`;
     return {
       _narrowedTypes,
       result: createData({
         type: { kind: "error", errorType: "type_error" },
-        value: { reason: `Cannot chain '${opName}' after '${kind}' type` },
+        value: { reason },
       }),
     };
   }

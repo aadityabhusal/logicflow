@@ -20,7 +20,7 @@ import {
   resolveConstructorArgs,
 } from "@/lib/utils";
 import { InstanceTypes } from "@/lib/data";
-import { builtInOperations } from "@/lib/operations/built-in";
+import { coreOperations } from "@/lib/operations/built-in";
 import { OperationListItem, Context } from "@/lib/execution/types";
 import {
   createTestContext,
@@ -49,7 +49,7 @@ import {
 } from "../types";
 
 function findBuiltIn(name: string): OperationListItem {
-  const op = builtInOperations.find((o) => o.name === name);
+  const op = coreOperations.find((o) => o.name === name);
   if (!op) throw new Error(`Operation "${name}" not found`);
   return op;
 }
@@ -1466,7 +1466,7 @@ describe("call operation with async operations", () => {
       result: { kind: "string" },
     };
 
-    const callOp = builtInOperations.find((o) => o.name === "call")!;
+    const callOp = coreOperations.find((o) => o.name === "call")!;
 
     expect(callOp.expectedType).toBeDefined();
     const expectedType =
@@ -3225,7 +3225,7 @@ describe("memoization", () => {
       operationCache: new Map(),
     });
 
-    const add = builtInOperations.find((o) => o.name === "add")!;
+    const add = coreOperations.find((o) => o.name === "add")!;
     await executeOperation(add, testNumber(2), [numberStatement(3)], ctx);
     await executeOperation(add, testNumber(2), [numberStatement(3)], ctx);
 

@@ -6,6 +6,7 @@ import {
   InstanceTypeConfig,
   InstanceTypes,
 } from "./data";
+import { getAllInstanceTypes } from "./packages/registry";
 import {
   IData,
   IStatement,
@@ -547,22 +548,27 @@ export function createParamData(
   });
 }
 
-export function createInstance<
-  T extends keyof typeof InstanceTypes,
-  K extends (typeof InstanceTypes)[T]["Constructor"],
->(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
-  const config = InstanceTypes[className];
-  let rawArgs = constructorArgs.map((arg) =>
-    getRawValueFromData(arg, context)
-  ) as ConstructorParameters<K>;
-  if (config.prepareArgs) {
-    rawArgs = config.prepareArgs(rawArgs) as ConstructorParameters<K>;
-  }
+export function createInstance(
+  className: string,
+  constructorArgs: IData[],
+  context: Context
+) {
+  const config = getAllInstanceTypes()[className];
+  if (!config) throw new Error(`Instance type "${className}" not found`);
+  const Constructor = config.Constructor as new (...args: unknown[]) => unknown;
+  let rawArgs: ConstructorParameters<typeof Constructor> = constructorArgs.map(
+    (arg) => getRawValueFromData(arg, context)
+  );
+  if (config.prepareArgs) rawArgs = config.prepareArgs(rawArgs);
+  return new Constructor(...rawArgs) as InstanceType<typeof Constructor>;
+}
 
-  const Constructor = config.Constructor as new (
-    ...args: ConstructorParameters<K>
-  ) => InstanceType<K>;
-  return new Constructor(...rawArgs);
+export function createRuntimeError(error: unknown) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  return createData({
+    type: { kind: "error", errorType: "runtime_error" },
+    value: { reason: errorMessage },
+  });
 }
 
 export function operationToListItem(
@@ -636,7 +642,7 @@ export function createDataFromRawValue(
   }
 
   if (isObject(value)) {
-    const instanceClass = Object.entries(InstanceTypes).find(
+    const instanceClass = Object.entries(getAllInstanceTypes()).find(
       ([, config]) => value instanceof config.Constructor
     );
     if (instanceClass) {
@@ -700,7 +706,9 @@ export function createDataFromRawValue(
 
   if (typeof value === "function") {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const existingInstanceId = (value as any)._operationInstanceId;
+    const existingInstanceId = (
+      value as unknown as { _operationInstanceId: string }
+    )._operationInstanceId;
     const fallbackType: OperationType =
       context.expectedType?.kind === "operation"
         ? context.expectedType
@@ -1771,35 +1779,33 @@ export function getDataDropdownList({
     }
   });
 
-  (Object.keys(InstanceTypes) as (keyof typeof InstanceTypes)[]).forEach(
-    (name) => {
-      if (InstanceTypes[name].hideFromDropdown) return;
-      const instanceConfig = InstanceTypes[name];
-      const instanceType: DataType = {
-        kind: "instance",
-        className: instanceConfig.name,
-        constructorArgs: resolveConstructorArgs(instanceConfig.constructorArgs),
-      };
+  Object.keys(getAllInstanceTypes()).forEach((name) => {
+    const instanceConfig = getAllInstanceTypes()[name];
+    if (instanceConfig.hideFromDropdown) return;
+    const instanceType: DataType = {
+      kind: "instance",
+      className: instanceConfig.name,
+      constructorArgs: resolveConstructorArgs(instanceConfig.constructorArgs),
+    };
 
-      const option: IDropdownItem = {
-        entityType: "data",
-        label: name,
-        value: `instance:${name}`,
-        type: instanceType,
-        onClick: () => {
-          onSelect(createData({ id: data.id, type: instanceType }));
-        },
-      };
-      if (
-        !context.expectedType ||
-        isTypeCompatible(instanceType, context.expectedType, context)
-      ) {
-        allowedOptions.push(option);
-      } else if (!context.enforceExpectedType) {
-        dataTypeOptions.push(option);
-      }
+    const option: IDropdownItem = {
+      entityType: "data",
+      label: name,
+      value: `instance:${name}`,
+      type: instanceType,
+      onClick: () => {
+        onSelect(createData({ id: data.id, type: instanceType }));
+      },
+    };
+    if (
+      !context.expectedType ||
+      isTypeCompatible(instanceType, context.expectedType, context)
+    ) {
+      allowedOptions.push(option);
+    } else if (!context.enforceExpectedType) {
+      dataTypeOptions.push(option);
     }
-  );
+  });
 
   context.variables.forEach((variable, name) => {
     const option: IDropdownItem = {

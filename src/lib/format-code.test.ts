@@ -1,10 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import {
   generateData,
   generateOperation,
   createCodeGenContext,
 } from "@/lib/format-code";
-import { createData, createStatement } from "@/lib/utils";
+import { createData, createStatement, isDataOfType } from "@/lib/utils";
 import {
   createTestContext,
   testString,
@@ -23,7 +23,8 @@ import {
   testCondition,
   booleanStatement,
 } from "@/tests/helpers";
-import { nanoid } from "nanoid";
+import { syncPackageRegistry } from "@/lib/operations/built-in";
+import { operations as wretchOperations } from "@/lib/operations/wretch";
 
 describe("generateData", () => {
   it("generates string literal", () => {
@@ -348,18 +349,63 @@ describe("generateOperation", () => {
 });
 
 describe("wretch code generation", () => {
-  it("generates wretch factory call for Wretch instances", () => {
-    const ctx = createCodeGenContext(createTestContext());
-    const data = createData({
+  beforeAll(async () => {
+    await syncPackageRegistry(["wretch"]);
+  });
+
+  const WretchType = {
+    kind: "instance" as const,
+    className: "Wretch",
+    constructorArgs: [],
+  };
+
+  function createWretchOp() {
+    return createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" as const } }],
+        result: WretchType,
+      },
       value: {
-        className: "Wretch",
-        instanceId: nanoid(),
-        constructorArgs: [stringStatement("https://api.example.com")],
+        name: "wretch",
+        parameters: [],
+        statements: [],
+        source: { name: "wretch" },
       },
     });
-    const result = generateData(data, ctx);
-    expect(result).toBe('wretch("https://api.example.com")');
+  }
+
+  it("generates wretch as a package operation on strings", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const stmt = createStatement({
+      data: testString("https://api.example.com"),
+      operations: [createWretchOp()],
+    });
+    const op = testOperation([], [stmt], "wretchTest");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import wretch from 'wretch'");
+    expect(result).toContain('R.pipe("https://api.example.com", wretch)');
+  });
+
+  it("formats Wretch instances as package class constructors", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    const data = createData({ type: WretchType });
+    expect(generateData(data, ctx)).toBe("new wretch.Wretch()");
     expect(ctx.usedPackages.has("wretch")).toBe(true);
+  });
+
+  it("keeps Wretch factory inputs on the returned instance for cache keys", async () => {
+    const ctx = createTestContext();
+    const op = wretchOperations.find((operation) => operation.name === "wretch");
+    if (!op || !("handler" in op)) throw new Error("wretch operation missing");
+
+    const url = testString("https://api.example.com");
+    const result = await op.handler(ctx, url);
+    if (!isDataOfType(result, "instance")) {
+      throw new Error("wretch operation should return a Wretch instance");
+    }
+
+    expect(result.value.constructorArgs[0].data).toBe(url);
   });
 
   it("generates instance method call for wretch source operations", () => {
@@ -391,20 +437,14 @@ describe("wretch code generation", () => {
       },
     });
     const stmt = createStatement({
-      data: createData({
-        value: {
-          className: "Wretch",
-          instanceId: nanoid(),
-          constructorArgs: [stringStatement("https://api.example.com")],
-        },
-      }),
-      operations: [urlOp],
+      data: testString("https://api.example.com"),
+      operations: [createWretchOp(), urlOp],
     });
     const op = testOperation([], [stmt], "wretchTest");
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe(wretch("https://api.example.com"), (arg) => arg.url("/users"))'
+      'R.pipe("https://api.example.com", wretch, (arg) => arg.url("/users"))'
     );
   });
 
@@ -441,16 +481,12 @@ describe("wretch code generation", () => {
     expect(result).toContain('R.pipe("ignored", (arg) => arg.json())');
   });
 
-  it("includes wretch import when wretch instance is used", () => {
+  it("includes wretch import when wretch operation is used", () => {
     const ctx = createTestContext();
-    const data = createData({
-      value: {
-        className: "Wretch",
-        instanceId: nanoid(),
-        constructorArgs: [stringStatement("https://api.example.com")],
-      },
+    const stmt = createStatement({
+      data: testString("https://api.example.com"),
+      operations: [createWretchOp()],
     });
-    const stmt = createStatement({ data });
     const op = testOperation([], [stmt], "usesWretch");
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
@@ -542,25 +578,37 @@ describe("wretch code generation", () => {
       },
     });
 
-    const wretchInstance = createData({
-      value: {
-        className: "Wretch",
-        instanceId: nanoid(),
-        constructorArgs: [stringStatement("https://api.example.com")],
-      },
-    });
-
     const stmt = createStatement({
-      data: wretchInstance,
-      operations: [urlOp, getOp, jsonOp],
+      data: testString("https://api.example.com"),
+      operations: [createWretchOp(), urlOp, getOp, jsonOp],
     });
 
     const op = testOperation([], [stmt], "fetchUsers");
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe(wretch("https://api.example.com"), (arg) => arg.url("/users"), (arg) => arg.get(), (arg) => arg.json())'
+      'R.pipe("https://api.example.com", wretch, (arg) => arg.url("/users"), (arg) => arg.get(), (arg) => arg.json())'
     );
+  });
+});
+
+describe("rowguard code generation", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry(["rowguard"]);
+  });
+
+  it("formats namespace-imported instances as package class constructors", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    const data = createData({
+      type: {
+        kind: "instance" as const,
+        className: "PolicyBuilder",
+        constructorArgs: [],
+      },
+    });
+
+    expect(generateData(data, ctx)).toBe("new rowguard.PolicyBuilder()");
+    expect(ctx.usedPackages.has("rowguard")).toBe(true);
   });
 });
 

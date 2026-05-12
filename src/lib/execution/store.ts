@@ -15,7 +15,7 @@ import {
   executeStatementSync,
 } from "./execution";
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
-import { builtInOperations } from "../operations/built-in";
+import { getAllOperations } from "../operations/built-in";
 
 function getTriggerExpectedType() {
   const currentFile = useProjectStore.getState().getCurrentFile();
@@ -168,7 +168,7 @@ export const useExecutionResultsStore =
   );
 
 export function getReservedNames(variables: Context["variables"]) {
-  return builtInOperations
+  return getAllOperations()
     .map((op) => ({ kind: "operation", name: op.name }))
     .concat(RESERVED_KEYWORDS.map((name) => ({ kind: "reserved", name })))
     .concat(Object.keys(DataTypes).map((name) => ({ kind: "data-type", name })))

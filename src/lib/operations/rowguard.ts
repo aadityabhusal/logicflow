@@ -7,10 +7,37 @@ import type {
   PolicyOperation,
   SessionVariableType,
 } from "rowguard";
-import { IData, DataType, InstanceDataType } from "../types";
-import { createDataFromRawValue, getRawValueFromData } from "../utils";
-import { createRuntimeError } from "./built-in";
+import { IData, DataType, InstanceDataType, OperationType } from "../types";
+import {
+  createDataFromRawValue,
+  getRawValueFromData,
+  createRuntimeError,
+} from "../utils";
 import { Context, OperationListItem } from "../execution/types";
+import { customInstances, InstanceTypeConfig } from "@/lib/data";
+
+export class AuthClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === AuthClass
+    );
+  }
+}
+
+export class SessionClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === SessionClass
+    );
+  }
+}
+
+customInstances.set(Rg.auth, AuthClass);
+customInstances.set(Rg.session, SessionClass);
 
 const { TypedColumnBuilder } = Rg;
 
@@ -809,7 +836,7 @@ const subqueryBuilderOperations: OperationListItem[] =
 
 // ─── Final export ──────────────────────────────────────────────────
 
-export const rowguardOperations: OperationListItem[] = [
+export const operations: OperationListItem[] = [
   ...standaloneOperations,
   authOp,
   sessionOp,
@@ -825,3 +852,65 @@ export const rowguardOperations: OperationListItem[] = [
   ...authOperations,
   ...sessionOperations,
 ];
+
+export const instanceTypes: Record<string, InstanceTypeConfig> = {
+  ColumnBuilder: {
+    name: "ColumnBuilder",
+    Constructor: Rg.ColumnBuilder,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+    importInfo: { packageName: "rowguard" },
+  },
+  ConditionChain: {
+    name: "ConditionChain",
+    Constructor: Rg.ConditionChain,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "rowguard" },
+  },
+  PolicyBuilder: {
+    name: "PolicyBuilder",
+    Constructor: Rg.PolicyBuilder,
+    constructorArgs: [
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
+    importInfo: { packageName: "rowguard" },
+  },
+  SubqueryBuilder: {
+    name: "SubqueryBuilder",
+    Constructor: Rg.SubqueryBuilder,
+    constructorArgs: [
+      { type: { kind: "string" } },
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
+    importInfo: { packageName: "rowguard" },
+  },
+  SQLExpression: {
+    name: "SQLExpression",
+    Constructor: Rg.SQLExpression,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+    hideFromDropdown: true,
+    importInfo: { packageName: "rowguard" },
+  },
+  Auth: {
+    name: "Auth",
+    Constructor: AuthClass,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "rowguard" },
+    referenceExpression: "rowguard.auth",
+  },
+  Session: {
+    name: "Session",
+    Constructor: SessionClass,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "rowguard" },
+    referenceExpression: "rowguard.session",
+  },
+};
+
+export default { operations, instanceTypes };

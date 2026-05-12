@@ -31,6 +31,7 @@ export default defineConfig({
       },
     },
   },
+  worker: { format: "es" },
   resolve: {
     alias: {
       "@": path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./src"),

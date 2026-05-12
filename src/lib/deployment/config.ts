@@ -12,6 +12,8 @@ import { generatePlatformConfig } from "./platform-config";
 import { generateBuiltInModule } from "./built-in-module";
 import { prefixNpmImports } from "./utils";
 import { PACKAGE_REGISTRY } from "../data";
+import { getEnabledPackageNames } from "../packages/catalog";
+import { syncPackageRegistry } from "../operations/built-in";
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
   return project.files.filter((f) => f.type === "operation" && f.trigger);
@@ -29,6 +31,7 @@ export async function generateDeployableProject(
   const deployment = project.deployment ?? { envVariables: [], platforms: [] };
   const triggeredOps = getTriggeredOperations(project);
   const operationFiles = project.files.filter((f) => f.type === "operation");
+  await syncPackageRegistry(getEnabledPackageNames(project));
 
   for (const file of operationFiles) {
     const operation = createOperationFromFile(file);
@@ -104,14 +107,17 @@ type Dependency = { name: string; version: string };
 
 function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
   const packages = new Set<string>();
-  const allContents = files.map((f) => f.content).join("\n");
+  const allFiles = files.map((f) => f.content).join("\n");
   for (const pkg of Object.keys(PACKAGE_REGISTRY)) {
-    if (allContents.includes(PACKAGE_REGISTRY[pkg].importStatement)) {
+    if (
+      allFiles.includes(`from '${pkg}'`) ||
+      allFiles.includes(`from "${pkg}"`)
+    ) {
       packages.add(pkg);
     }
   }
-  if (allContents.includes("from 'remeda'")) packages.add("remeda");
-  if (allContents.includes('from "remeda"')) packages.add("remeda");
+  if (allFiles.includes("from 'remeda'")) packages.add("remeda");
+  if (allFiles.includes('from "remeda"')) packages.add("remeda");
   return packages;
 }
 

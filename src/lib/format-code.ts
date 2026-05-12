@@ -18,8 +18,9 @@ import {
   isValidIdentifier,
   isObject,
 } from "./utils";
-import { builtInOperations } from "./operations/built-in";
-import { InstanceTypes, PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./data";
+import { builtInOperationsByName } from "./operations/built-in";
+import { PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./data";
+import { getAllInstanceTypes } from "./packages/registry";
 import type { Options } from "prettier";
 
 export async function formatCode(code: string, options?: Options) {
@@ -59,9 +60,11 @@ export function createCodeGenContext(
     currentOperationName: options?.currentOperationName,
     importedOperations: new Set(),
     usedPackages: new Set(),
-    getOperation: (name: string) =>
-      builtInOperations.find((op) => op.name === name),
+    getOperation: (name: string) => builtInOperationsByName.get(name)?.[0],
   };
+}
+function getPackageImportName(packageName: string): string {
+  return PACKAGE_REGISTRY[packageName]?.importName ?? packageName;
 }
 
 const VARIABLE_REGEX = /^const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*/;
@@ -87,18 +90,24 @@ export function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "error")) {
     return `new Error(${JSON.stringify(data.value.reason)})`;
   } else if (isDataOfType(data, "instance")) {
-    const instanceConfig = InstanceTypes[data.value.className];
-    if (instanceConfig?.referenceExpression) {
-      context.usedPackages.add(instanceConfig.importInfo!.packageName);
-      return instanceConfig.referenceExpression;
+    const config = getAllInstanceTypes()[data.value.className];
+    if (config?.importInfo) {
+      context.usedPackages.add(config.importInfo.packageName);
+      const importName = getPackageImportName(config.importInfo.packageName);
+      if (config.referenceExpression) {
+        const member = config.referenceExpression.slice(
+          config.referenceExpression.indexOf(".") + 1
+        );
+        return `${importName}.${member}`;
+      }
+      const constructorArgs = data.value.constructorArgs
+        .map((arg) => generateStatement(arg, context, true))
+        .join(", ");
+      return `new ${importName}.${data.value.className}(${constructorArgs})`;
     }
     const constructorArgs = data.value.constructorArgs
       .map((arg) => generateStatement(arg, context, true))
       .join(", ");
-    if (instanceConfig?.importInfo) {
-      context.usedPackages.add(instanceConfig.importInfo.packageName);
-      return `${instanceConfig.importInfo.packageName}(${constructorArgs})`;
-    }
     return `new ${data.value.className}(${constructorArgs})`;
   } else if (isDataOfType(data, "operation")) {
     return generateCallback(data, { ...context, showResult: undefined });
@@ -156,13 +165,23 @@ function getOperationSource(
   }
   const firstParamType = operation.type.parameters[0]?.type;
   if (firstParamType?.kind === "instance") {
-    const Constructor = InstanceTypes[firstParamType.className]?.Constructor;
+    const Constructor =
+      getAllInstanceTypes()[firstParamType.className]?.Constructor;
     if (Constructor && typeof Constructor.prototype[opName] === "function") {
       return { type: "instance" };
     }
   }
   if (!opItem) return { type: "userDefined" };
   return { type: "builtin" };
+}
+
+function getPackageFuncName(packageName: string, operationName: string) {
+  const importName = getPackageImportName(packageName);
+  const registry = PACKAGE_REGISTRY[packageName];
+  if (registry?.importKind === "default" && operationName === importName) {
+    return importName;
+  }
+  return `${importName}.${operationName}`;
 }
 
 function generateOperationCall(
@@ -186,10 +205,9 @@ function generateOperationCall(
       if (source.callStyle !== "function") {
         return `, (arg) => arg.${actualName}(${params})`;
       }
-      const packageName = source.packageName ?? "";
-      const importName =
-        PACKAGE_REGISTRY[packageName]?.importName ?? packageName;
-      return `, ${importName}.${actualName}${paramStr}`;
+      const fnName = getPackageFuncName(source.packageName ?? "", actualName);
+      if (!params) return `, ${fnName}`;
+      return `, (arg) => ${fnName}(arg, ${params})`;
     }
     case "remeda":
       return `, R.${actualName}${paramStr}`;
@@ -330,6 +348,17 @@ function generateCallback(
   }`;
 }
 
+function generateImports(packages: string[]): string {
+  return packages
+    .map((pkg) => {
+      const name = getPackageImportName(pkg);
+      return PACKAGE_REGISTRY[pkg]?.importKind === "namespace"
+        ? `import * as ${name} from '${pkg}';`
+        : `import ${name} from '${pkg}';`;
+    })
+    .join("\n");
+}
+
 export function generateOperation(
   operation: IData<OperationType>,
   context: Context
@@ -342,10 +371,7 @@ export function generateOperation(
   const userImports = Array.from(codeGenContext.importedOperations)
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
-  const packageImports = Array.from(codeGenContext.usedPackages)
-    .filter((pkg) => pkg in PACKAGE_REGISTRY)
-    .map((pkg) => PACKAGE_REGISTRY[pkg].importStatement)
-    .join(";\n");
-  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports ? packageImports + ";\n" : ""}${userImports}\n`;
+  const packageImports = generateImports([...codeGenContext.usedPackages]);
+  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
   return `${imports}\nconst ${operationName} = ${callback};\nexport default ${operationName};`;
 }

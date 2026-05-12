@@ -2,16 +2,35 @@ import { IData, DataType } from "@/lib/types";
 import {
   getRawValueFromData,
   createDataFromRawValue,
+  createStatement,
   isObject,
+  isDataOfType,
+  createRuntimeError,
 } from "@/lib/utils";
-import { createRuntimeError } from "@/lib/operations/built-in";
-import { Wretch, WretchResponseChain } from "wretch";
-import {
-  customInstances,
-  WretchClass,
-  WretchResponseChainClass,
-} from "@/lib/data";
+import wretch, { Wretch, WretchResponseChain } from "wretch";
+import { customInstances, InstanceTypeConfig } from "@/lib/data";
 import { Context, OperationListItem } from "../execution/types";
+
+export class WretchClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      (customInstances.get(instance) === WretchClass ||
+        ("url" in instance && "fetch" in instance))
+    );
+  }
+}
+
+export class WretchResponseChainClass {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      typeof instance === "object" &&
+      instance !== null &&
+      customInstances.get(instance) === WretchResponseChainClass
+    );
+  }
+}
 
 // Helper to create Wretch operations
 function createWretchOperation(
@@ -51,6 +70,12 @@ function createWretchOperation(
 const WretchResponseChainType: DataType = {
   kind: "instance",
   className: "WretchResponseChain",
+  constructorArgs: [],
+};
+
+const WretchType: DataType = {
+  kind: "instance",
+  className: "Wretch",
   constructorArgs: [],
 };
 
@@ -97,7 +122,36 @@ function createChainOperation<T extends WretchResponseChain<unknown>>(
   };
 }
 
-const wretchInstanceOperations: OperationListItem[] = [
+const wretchOperations: OperationListItem[] = [
+  {
+    name: "wretch",
+    parameters: [
+      { type: { kind: "string" }, name: "url" },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        name: "options",
+        isOptional: true,
+      },
+    ],
+    shouldCacheResult: true,
+    expectedType: WretchType,
+    handler: (context, ...args) => {
+      const result = createDataFromRawValue(
+        wretch(
+          ...(args.map((arg) =>
+            getRawValueFromData(arg, context)
+          ) as Parameters<typeof wretch>)
+        ),
+        { ...context, expectedType: WretchType }
+      );
+      if (isDataOfType(result, "instance")) {
+        result.value.constructorArgs = args.map((data) =>
+          createStatement({ data })
+        );
+      }
+      return result;
+    },
+  },
   // Wretch Instance Methods
   createWretchOperation(
     "url",
@@ -316,8 +370,8 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
   })
 );
 
-export const wretchOperations: OperationListItem[] = [
-  ...wretchInstanceOperations.map((operation) => ({
+export const operations: OperationListItem[] = [
+  ...wretchOperations.map((operation) => ({
     ...operation,
     source: { name: "wretch" as const },
   })),
@@ -330,3 +384,22 @@ export const wretchOperations: OperationListItem[] = [
     source: { name: "wretchResponseChain" as const },
   })),
 ];
+
+export const instanceTypes: Record<string, InstanceTypeConfig> = {
+  Wretch: {
+    name: "Wretch",
+    Constructor: WretchClass,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "wretch" },
+  },
+  WretchResponseChain: {
+    name: "WretchResponseChain",
+    Constructor: WretchResponseChainClass,
+    constructorArgs: [],
+    hideFromDropdown: true,
+    importInfo: { packageName: "wretch" },
+  },
+};
+
+export default { operations, instanceTypes };

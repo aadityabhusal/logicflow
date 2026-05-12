@@ -13,9 +13,8 @@ import {
   resolveConstructorArgs,
   updateContextWithNarrowedTypes,
   operationToListItem,
+  createRuntimeError,
 } from "../utils";
-import { wretchOperations } from "./wretch";
-import { rowguardOperations } from "./rowguard";
 import {
   createOperationHandler,
   FunctionKeys,
@@ -26,14 +25,11 @@ import {
 } from "./remeda";
 import * as _ from "./runtime";
 import { Context, OperationListItem } from "../execution/types";
-
-export function createRuntimeError(error: unknown) {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  return createData({
-    type: { kind: "error", errorType: "runtime_error" },
-    value: { reason: errorMessage },
-  });
-}
+import {
+  loadedPackageOperations,
+  loadPackage,
+  resetPackageRegistry,
+} from "../packages/registry";
 
 const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   name: FunctionKeys<typeof _>;
@@ -621,23 +617,6 @@ function prefixExternalPackageName(op: OperationListItem): OperationListItem {
   return { ...op, name: `${packageName}.${op.name}` };
 }
 
-export const builtInOperations: OperationListItem[] = [
-  ...basicOperationList.map((operation) => ({
-    ...operation,
-    handler: createOperationHandler(_, operation.name, operation.expectedType),
-  })),
-  ...lazyOperations,
-  ...specialOperations,
-  ...dateOperations,
-  ...urlOperations,
-  ...promiseOperations,
-  ...responseOperations,
-  ...wretchOperations,
-  ...remedaOperations,
-  ...rowguardOperations,
-  ...requestOperations,
-].map(prefixExternalPackageName);
-
 function getTypeKeys(type: DataType): string[] {
   if (type.kind === "union") return type.types.flatMap(getTypeKeys);
   return [type.kind === "instance" ? `instance:${type.className}` : type.kind];
@@ -658,20 +637,10 @@ function getFirstParamKind(op: OperationListItem): string[] {
   return ["unknown"];
 }
 
-const builtInOperationsByKind = new Map<string, OperationListItem[]>();
-for (const op of builtInOperations) {
-  for (const key of getFirstParamKind(op)) {
-    const list = builtInOperationsByKind.get(key);
-    if (list) list.push(op);
-    else builtInOperationsByKind.set(key, [op]);
-  }
-}
-
-export const builtInOperationsByName = new Map<string, OperationListItem[]>();
-for (const op of builtInOperations) {
-  const list = builtInOperationsByName.get(op.name);
-  if (list) list.push(op);
-  else builtInOperationsByName.set(op.name, [op]);
+export function getAllOperations(): OperationListItem[] {
+  const result: OperationListItem[] = [...coreOperations];
+  for (const ops of loadedPackageOperations.values()) result.push(...ops);
+  return result;
 }
 
 export function getOperationsForDataType(data: IData): OperationListItem[] {
@@ -690,3 +659,46 @@ export function getOperationsForDataType(data: IData): OperationListItem[] {
   }
   return result;
 }
+
+export function rebuildIndexes() {
+  builtInOperationsByKind.clear();
+  builtInOperationsByName.clear();
+  for (const op of getAllOperations()) {
+    for (const key of getFirstParamKind(op)) {
+      const list = builtInOperationsByKind.get(key);
+      if (list) list.push(op);
+      else builtInOperationsByKind.set(key, [op]);
+    }
+    const list = builtInOperationsByName.get(op.name);
+    if (list) list.push(op);
+    else builtInOperationsByName.set(op.name, [op]);
+  }
+}
+
+export async function syncPackageRegistry(
+  packageNames: string[]
+): Promise<PromiseSettledResult<void>[]> {
+  resetPackageRegistry();
+  const results = await Promise.allSettled(packageNames.map(loadPackage));
+  rebuildIndexes();
+  return results;
+}
+
+export const coreOperations: OperationListItem[] = [
+  ...basicOperationList.map((operation) => ({
+    ...operation,
+    handler: createOperationHandler(_, operation.name, operation.expectedType),
+  })),
+  ...lazyOperations,
+  ...specialOperations,
+  ...dateOperations,
+  ...urlOperations,
+  ...promiseOperations,
+  ...responseOperations,
+  ...remedaOperations,
+  ...requestOperations,
+].map(prefixExternalPackageName);
+
+const builtInOperationsByKind = new Map<string, OperationListItem[]>();
+export const builtInOperationsByName = new Map<string, OperationListItem[]>();
+rebuildIndexes();

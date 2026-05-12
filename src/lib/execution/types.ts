@@ -114,6 +114,7 @@ export type ExecutionWorkerRunRequest = {
   runId: string;
   operation: IData<OperationType>;
   files: ProjectFile[];
+  packageNames?: string[];
   envVariables: { key: string; value: string }[];
   cachedResults: [string, ExecutionResult][];
   expectedType?: DataType;
