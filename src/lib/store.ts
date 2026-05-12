@@ -346,6 +346,7 @@ type UiConfigStore = {
   };
   disableKeyboard?: boolean;
   disableMobileWrapping?: boolean;
+  wrapResult?: boolean;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;

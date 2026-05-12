@@ -388,7 +388,7 @@ describe("getOperationCallWidth", () => {
       },
       value: { name: "length", parameters: [], statements: [] },
     });
-    expect(getOperationCallWidth(op)).toBe(2);
+    expect(getOperationCallWidth(op)).toBe(5);
   });
 
   it("1 simple param = 1 + 1 = 2", () => {
@@ -407,7 +407,7 @@ describe("getOperationCallWidth", () => {
         statements: [],
       },
     });
-    expect(getOperationCallWidth(op)).toBe(2 + 1);
+    expect(getOperationCallWidth(op)).toBe(6);
   });
 
   it("2 simple params include separator", () => {
@@ -426,7 +426,7 @@ describe("getOperationCallWidth", () => {
         statements: [],
       },
     });
-    expect(getOperationCallWidth(op)).toBe(2 + 1 + 1 + SEPARATOR_WIDTH);
+    expect(getOperationCallWidth(op)).toBe(7 + SEPARATOR_WIDTH);
   });
 
   it("complex param contributes its full width", () => {
@@ -446,7 +446,7 @@ describe("getOperationCallWidth", () => {
         statements: [],
       },
     });
-    expect(getOperationCallWidth(op)).toBe(2 + getEntityWidth(paramObj));
+    expect(getOperationCallWidth(op)).toBe(5 + getEntityWidth(paramObj));
   });
 });
 
@@ -469,7 +469,7 @@ describe("getStatementWidth", () => {
       value: { name: "length", parameters: [], statements: [] },
     });
     const stmt = createStatement({ data: testString("hi"), operations: [op] });
-    expect(getStatementWidth(stmt)).toBe(3);
+    expect(getStatementWidth(stmt)).toBe(6);
   });
 
   it("complex data + op with complex params sums widths", () => {
@@ -497,7 +497,7 @@ describe("getStatementWidth", () => {
     });
     const stmt = createStatement({ data: obj, operations: [op] });
     const expected =
-      getEntityWidth(obj) + 2 + getEntityWidth(paramObj) + 0 * SEPARATOR_WIDTH;
+      getEntityWidth(obj) + 5 + getEntityWidth(paramObj) + 0 * SEPARATOR_WIDTH;
     expect(getStatementWidth(stmt)).toBe(expected);
   });
 });
@@ -666,7 +666,7 @@ describe("getOperationCallLayout with mobile threshold", () => {
       },
       value: { name: "sum", parameters: params, statements: [] },
     });
-    expect(getOperationCallWidth(op)).toBe(9);
+    expect(getOperationCallWidth(op)).toBe(11);
     expect(getOperationCallLayout(op)).toBe("inline");
     expect(getOperationCallLayout(op, true)).toBe("multiline");
   });

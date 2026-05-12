@@ -4,6 +4,7 @@ import {
   FaCrosshairs,
   FaLock,
   FaRegCopy,
+  FaTextWidth,
   FaUnlock,
 } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
@@ -42,6 +43,7 @@ export function DetailsPanel() {
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
+  const wrapResult = useUiConfigStore((s) => s.wrapResult);
   const _operation = useNavigationStore((s) => s.operation);
   const currentOperation = useMemo(
     () => createOperationFromFile(currentFile),
@@ -213,16 +215,32 @@ export function DetailsPanel() {
           <div className="flex-1 min-h-0 flex flex-col">
             <div className="flex items-center justify-between mb-1.5 p-1">
               <div className="text-gray-300">Result</div>
-              <IconButton
-                icon={clipboard.copied ? FaCheck : FaRegCopy}
-                title={clipboard.copied ? "Copied!" : "Copy result"}
-                size={14}
-                onClick={() => clipboard.copy(formattedValue)}
-              />
+              <div className="flex items-center gap-1.5">
+                <IconButton
+                  icon={FaTextWidth}
+                  title={wrapResult ? "Disable wrapping" : "Wrap result"}
+                  size={14}
+                  className={wrapResult ? "text-reserved" : ""}
+                  aria-pressed={wrapResult}
+                  onClick={() =>
+                    setUiConfig((s) => ({ wrapResult: !s.wrapResult }))
+                  }
+                />
+                <IconButton
+                  icon={clipboard.copied ? FaCheck : FaRegCopy}
+                  title={clipboard.copied ? "Copied!" : "Copy result"}
+                  size={14}
+                  onClick={() => clipboard.copy(formattedValue)}
+                />
+              </div>
             </div>
             <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
               <ErrorBoundary displayError={true}>
-                <CodeHighlight code={formattedValue} showLineNumbers={false} />
+                <CodeHighlight
+                  code={formattedValue}
+                  showLineNumbers={false}
+                  wrap={wrapResult}
+                />
               </ErrorBoundary>
             </div>
           </div>

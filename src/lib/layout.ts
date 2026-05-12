@@ -134,9 +134,16 @@ export function getEntityWidth(data: IData): number {
 }
 
 export function getOperationCallWidth(operation: IData<OperationType>): number {
+  const name = operation.value.name ?? "";
+  const nameWidth = name.length > 0 ? getStringWidth(name) + 1 : 0;
   const params = operation.value.parameters;
   const paramsWidth = params.reduce((sum, p) => sum + getStatementWidth(p), 0);
-  return 2 + paramsWidth + Math.max(0, params.length - 1) * SEPARATOR_WIDTH;
+  return (
+    2 +
+    nameWidth +
+    paramsWidth +
+    Math.max(0, params.length - 1) * SEPARATOR_WIDTH
+  );
 }
 
 export function getStatementWidth(statement: IStatement): number {

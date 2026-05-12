@@ -4,20 +4,20 @@ import { isDataOfType } from "../utils";
 export interface EntityMappingContext {
   idMap: Map<string, string>;
   reverseMap: Map<string, string>;
-  nextIds: { S: number; D: number; O: number; P: number };
+  nextIds: { S: number; D: number; O: number; P: number; I: number };
 }
 
 function createMappingContext(): EntityMappingContext {
   return {
     idMap: new Map(),
     reverseMap: new Map(),
-    nextIds: { S: 1, D: 1, O: 1, P: 1 },
+    nextIds: { S: 1, D: 1, O: 1, P: 1, I: 1 },
   };
 }
 
 function mapId(
   originalId: string,
-  prefix: "S" | "D" | "O" | "P",
+  prefix: "S" | "D" | "O" | "P" | "I",
   ctx: EntityMappingContext
 ): string {
   if (ctx.idMap.has(originalId)) return ctx.idMap.get(originalId)!;
@@ -40,6 +40,11 @@ export function operationToLLMFormat(
     type: operation.type,
     value: {
       name: operation.value.name,
+      isAsync: operation.value.isAsync,
+      source: operation.value.source,
+      instanceId: operation.value.instanceId
+        ? mapId(operation.value.instanceId, "I", ctx)
+        : undefined,
       parameters: operation.value.parameters.map((p) =>
         statementToLLMFormat(p, ctx, "P")
       ),
@@ -118,7 +123,7 @@ function serializeDataValue(data: IData, ctx: EntityMappingContext): unknown {
       constructorArgs: data.value.constructorArgs?.map((a) =>
         statementToLLMFormat(a, ctx, "P")
       ),
-      instanceId: data.value.instanceId,
+      instanceId: mapId(data.value.instanceId, "I", ctx),
     };
   }
   return data.value;

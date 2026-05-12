@@ -5,7 +5,6 @@ import {
   FaCircleInfo,
   FaRobot,
   FaFileCode,
-  FaCode,
   FaRocket,
   FaGear,
 } from "react-icons/fa6";
@@ -19,9 +18,6 @@ const OperationsList = lazy(() =>
 );
 const DetailsPanel = lazy(() =>
   import("./DetailsPanel").then((m) => ({ default: m.DetailsPanel }))
-);
-const CodePanel = lazy(() =>
-  import("./CodePanel").then((m) => ({ default: m.CodePanel }))
 );
 const Deployment = lazy(() =>
   import("./DeploymentPanel").then((m) => ({ default: m.Deployment }))
@@ -39,7 +35,6 @@ const TABS = [
   ...(import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
     ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
     : []),
-  { value: "code", label: "Code", Icon: FaCode },
   { value: "deployment", label: "Deploy", Icon: FaRocket },
   { value: "settings", label: "Settings", Icon: FaGear },
 ];
@@ -129,11 +124,6 @@ function SidebarTabsComponent() {
                 </Suspense>
               </Tabs.Panel>
             )}
-            <Tabs.Panel value="code" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <CodePanel />
-              </Suspense>
-            </Tabs.Panel>
             <Tabs.Panel value="deployment" className="h-full w-full">
               <Suspense fallback={<LoadingFallback />}>
                 <Deployment />
