@@ -1,4 +1,4 @@
-import { InstanceTypeConfig } from "../data";
+import { InstanceTypeConfig } from "./registry";
 import type { OperationListItem } from "../execution/types";
 import type { Project } from "../types";
 

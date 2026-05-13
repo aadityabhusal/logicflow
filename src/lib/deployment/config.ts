@@ -11,7 +11,7 @@ import { generatePlatformHandlers } from "./entrypoint-wrapper";
 import { generatePlatformConfig } from "./platform-config";
 import { generateBuiltInModule } from "./built-in-module";
 import { prefixNpmImports } from "./utils";
-import { PACKAGE_REGISTRY } from "../data";
+import { PACKAGE_REGISTRY } from "../packages/registry";
 import { getEnabledPackageNames } from "../packages/catalog";
 import { syncPackageRegistry } from "../operations/built-in";
 

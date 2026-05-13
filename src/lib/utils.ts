@@ -1,12 +1,11 @@
 import { nanoid } from "nanoid";
 import { isDeepEqual } from "remeda";
+import { DataTypes, ErrorTypesData } from "./data";
 import {
-  DataTypes,
-  ErrorTypesData,
-  InstanceTypeConfig,
+  getAllInstanceTypes,
   InstanceTypes,
-} from "./data";
-import { getAllInstanceTypes } from "./packages/registry";
+  type InstanceTypeConfig,
+} from "./packages/registry";
 import {
   IData,
   IStatement,

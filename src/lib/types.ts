@@ -49,7 +49,10 @@ export type InstanceDataType = {
   result?: DataType;
 };
 
-export type OperationSource = { name: string };
+export type OperationSource = {
+  name: string;
+  packageCallTarget?: "import" | "member";
+};
 
 export type DataType =
   | UnknownType

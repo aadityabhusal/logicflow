@@ -2,8 +2,8 @@ import { DataType, IData, IStatement, OperationType } from "./types";
 
 export type LayoutMode = "inline" | "multiline";
 
-const THRESHOLD = 15;
-const MOBILE_THRESHOLD = 8;
+const THRESHOLD = 12;
+const MOBILE_THRESHOLD = 6;
 const SEPARATOR_WIDTH = 1;
 const MAX_STRING_DISPLAY_LENGTH = 28;
 
@@ -133,9 +133,14 @@ export function getEntityWidth(data: IData): number {
   return 1;
 }
 
+export function getOperationNameWidth(name: string): number {
+  const overflow = Math.max(0, name.length - 12);
+  return Math.min(Math.ceil(overflow / 8), 3);
+}
+
 export function getOperationCallWidth(operation: IData<OperationType>): number {
   const name = operation.value.name ?? "";
-  const nameWidth = name.length > 0 ? getStringWidth(name) + 1 : 0;
+  const nameWidth = name.length > 0 ? getOperationNameWidth(name) : 0;
   const params = operation.value.parameters;
   const paramsWidth = params.reduce((sum, p) => sum + getStatementWidth(p), 0);
   return (

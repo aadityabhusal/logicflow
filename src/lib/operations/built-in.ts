@@ -1,5 +1,5 @@
 import { IData, OperationType, UnionType, DataType } from "../types";
-import { DataTypes, InstanceTypes, SOURCE_PACKAGE_MAP } from "../data";
+import { DataTypes } from "../data";
 import {
   createData,
   getUnionActiveType,
@@ -29,6 +29,8 @@ import {
   loadedPackageOperations,
   loadPackage,
   resetPackageRegistry,
+  SOURCE_PACKAGE_MAP,
+  InstanceTypes,
 } from "../packages/registry";
 
 const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {

@@ -390,8 +390,8 @@ const DropdownComponent = ({
             isOperationFile && (
               <IconButton
                 tabIndex={-1}
-                size={8}
-                className="absolute -top-1.5 right-2.5 text-white bg-border rounded-full z-10 p-0.5"
+                size={10}
+                className="absolute -top-1.5 right-3 text-white bg-border rounded-full z-10 p-0.5"
                 icon={FaSquareArrowUpRight}
                 onClick={() =>
                   setSearchParams(...handleSearchParams({ file: value }, true))
@@ -403,8 +403,8 @@ const DropdownComponent = ({
           {isDataOfType(data, "operation") && handleChange && (
             <IconButton
               tabIndex={-1}
-              size={8}
-              className="absolute -top-1.5 right-2.5 text-white bg-border rounded-full z-10 p-0.5"
+              size={10}
+              className="absolute -top-1.5 right-3 text-white bg-border rounded-full z-10 p-0.5"
               icon={FaObjectUngroup}
               onClick={() => handleExtractToFile(data)}
               hidden={!isFocused && !isHovered}
@@ -414,8 +414,8 @@ const DropdownComponent = ({
           {handleDelete && (
             <IconButton
               tabIndex={-1}
-              size={12}
-              className="absolute -top-1.5 -right-1 text-border bg-white rounded-full z-10"
+              size={13}
+              className="absolute -top-1.5 -right-0.5 text-border bg-white rounded-full z-10"
               icon={FaCircleXmark}
               onClick={() => {
                 combobox?.closeDropdown();
@@ -427,7 +427,7 @@ const DropdownComponent = ({
           )}
           {addOperationCall && (
             <IconButton
-              size={12}
+              size={13}
               title="Add operation call"
               className="absolute top-1.5 -right-2 text-border bg-white rounded-full z-10"
               icon={FaCirclePlus}
@@ -441,8 +441,8 @@ const DropdownComponent = ({
           {options?.withDropdownIcon &&
             !!dropdownOptions?.flatMap(([, i]) => i).length && (
               <IconButton
-                size={12}
-                className="absolute -bottom-1.5 -right-1 text-border bg-white rounded-full z-10"
+                size={13}
+                className="absolute -bottom-1.5 -right-0.5 text-border bg-white rounded-full z-10"
                 icon={FaCircleChevronDown}
                 onClick={() => {
                   combobox?.openDropdown();
@@ -499,7 +499,7 @@ const DropdownComponent = ({
                         className={`flex items-center justify-between gap-4 p-0.5 data-combobox-selected:bg-dropdown-hover data-combobox-active:bg-dropdown-selected hover:bg-dropdown-hover`}
                         active={option.value === value}
                       >
-                        <span className="max-w-32 truncate">
+                        <span className={!operation ? "max-w-32 truncate" : ""}>
                           {option.label || option.value}
                         </span>
                         <span className="text-sm text-disabled">

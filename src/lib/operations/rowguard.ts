@@ -14,7 +14,7 @@ import {
   createRuntimeError,
 } from "../utils";
 import { Context, OperationListItem } from "../execution/types";
-import { customInstances, InstanceTypeConfig } from "@/lib/data";
+import { customInstances, InstanceTypeConfig } from "@/lib/packages/registry";
 
 export class AuthClass {
   static [Symbol.hasInstance](instance: unknown): boolean {

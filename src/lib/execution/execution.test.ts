@@ -19,7 +19,7 @@ import {
   operationToListItem,
   resolveConstructorArgs,
 } from "@/lib/utils";
-import { InstanceTypes } from "@/lib/data";
+import { InstanceTypes } from "@/lib/packages/registry";
 import { coreOperations } from "@/lib/operations/built-in";
 import { OperationListItem, Context } from "@/lib/execution/types";
 import {

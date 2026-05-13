@@ -8,6 +8,7 @@ import { useCallback, useState } from "react";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
+import { FaSpinner } from "react-icons/fa6";
 
 export function SettingsPanel() {
   const disableKeyboard = useUiConfigStore((s) => s.disableKeyboard);
@@ -104,10 +105,10 @@ export function SettingsPanel() {
               return (
                 <div key={name} className="flex flex-col gap-1">
                   <label className="flex items-center justify-between gap-2">
-                    <span className="text-sm">
-                      {entry.displayName}
-                      {loadingPackage === name ? " (loading...)" : ""}
-                    </span>
+                    <span className="text-sm mr-auto">{entry.displayName}</span>
+                    {loadingPackage === name && (
+                      <FaSpinner className="animate-spin" />
+                    )}
                     <BooleanInput
                       data={createData({ value: Boolean(dependency) })}
                       handleData={() => {

@@ -1,7 +1,111 @@
 import type { OperationListItem } from "../execution/types";
-import type { InstanceTypeConfig } from "../data";
-import { InstanceTypes as CoreInstanceTypes } from "../data";
+import type { ConstructorType, OperationType } from "../types";
+import { getPromiseArgsType } from "../data";
 import { PACKAGE_CATALOG, getPackageSourceNames } from "./catalog";
+
+export type InstanceTypeConfig<
+  K extends string = string,
+  C extends ConstructorType = ConstructorType,
+> = {
+  readonly name: K;
+  readonly Constructor: C;
+  readonly constructorArgs:
+    | OperationType["parameters"]
+    | ((data?: OperationType["parameters"]) => OperationType["parameters"]);
+  readonly hideFromDropdown?: boolean;
+  readonly prepareArgs?: (args: unknown[]) => unknown[];
+  readonly importInfo?: { packageName: string };
+  readonly referenceExpression?: string;
+};
+
+export const customInstances = new WeakMap<object, ConstructorType>();
+
+export const PACKAGE_REGISTRY: Record<
+  string,
+  { importName: string; importKind: "default" | "namespace" }
+> = {
+  wretch: { importName: "wretch", importKind: "default" },
+  rowguard: { importName: "rowguard", importKind: "namespace" },
+};
+
+export const SOURCE_PACKAGE_MAP: Record<string, string> = {
+  wretch: "wretch",
+  wretchResponseChain: "wretch",
+  rowguard: "rowguard",
+  rowguardColumnBuilder: "rowguard",
+  rowguardConditionChain: "rowguard",
+  rowguardPolicyBuilder: "rowguard",
+  rowguardSubqueryBuilder: "rowguard",
+  rowguardAuthBuilder: "rowguard",
+  rowguardSessionBuilder: "rowguard",
+};
+
+export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
+  Promise: {
+    name: "Promise",
+    Constructor: Promise,
+    constructorArgs: getPromiseArgsType,
+  },
+  Date: {
+    name: "Date",
+    Constructor: Date,
+    constructorArgs: [
+      { type: { kind: "string" }, isOptional: true },
+    ] as OperationType["parameters"],
+  },
+  URL: {
+    name: "URL",
+    Constructor: URL,
+    constructorArgs: [
+      { type: { kind: "string" } },
+    ] as OperationType["parameters"],
+  },
+  Request: {
+    name: "Request",
+    Constructor: Request,
+    constructorArgs: [
+      { type: { kind: "string" }, name: "url" },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        name: "options",
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
+    prepareArgs(args) {
+      const [url, options, ...rest] = args;
+      if (
+        options !== null &&
+        typeof options === "object" &&
+        "body" in (options as Record<string, unknown>)
+      ) {
+        const opts = { ...(options as Record<string, unknown>) };
+        if (opts.body !== null && typeof opts.body === "object") {
+          opts.body = JSON.stringify(opts.body);
+        }
+        return [url, opts, ...rest];
+      }
+      return args;
+    },
+  },
+  Response: {
+    name: "Response",
+    Constructor: Response,
+    constructorArgs: [
+      { type: { kind: "unknown" }, isOptional: true },
+      {
+        type: { kind: "dictionary", elementType: { kind: "unknown" } },
+        isOptional: true,
+      },
+    ] as OperationType["parameters"],
+    prepareArgs(args) {
+      const [body, ...rest] = args;
+      if (body !== null && typeof body === "object") {
+        return [JSON.stringify(body), ...rest];
+      }
+      return args;
+    },
+  },
+};
 
 type PackageLoadResult = {
   operations: OperationListItem[];
@@ -20,7 +124,11 @@ export async function loadPackage(packageName: string): Promise<void> {
 
   const prefixedOps = result.operations.map((op) => ({
     ...op,
-    name: `${packageName}.${op.name}`,
+    name:
+      op.source?.packageCallTarget === "import"
+        ? op.name
+        : `${packageName}.${op.name}`,
+    source: op.source ? op.source : { name: packageName },
   }));
 
   loadedPackageOperations.set(packageName, prefixedOps);
@@ -51,7 +159,7 @@ export function getAllInstanceTypes(): Record<string, InstanceTypeConfig> {
   for (const [key, config] of loadedInstanceTypes) {
     loaded[key] = config;
   }
-  return { ...CoreInstanceTypes, ...loaded };
+  return { ...InstanceTypes, ...loaded };
 }
 
 export function resetPackageRegistry(): void {

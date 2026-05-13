@@ -9,6 +9,7 @@ import {
   getEntityLayout,
   getStatementLayout,
   getOperationCallLayout,
+  getOperationNameWidth,
   THRESHOLD,
   MOBILE_THRESHOLD,
   SEPARATOR_WIDTH,
@@ -102,8 +103,8 @@ describe("isComplexData", () => {
 });
 
 describe("constants", () => {
-  it("THRESHOLD is 15", () => expect(THRESHOLD).toBe(15));
-  it("MOBILE_THRESHOLD is 8", () => expect(MOBILE_THRESHOLD).toBe(8));
+  it("THRESHOLD is 12", () => expect(THRESHOLD).toBe(12));
+  it("MOBILE_THRESHOLD is 6", () => expect(MOBILE_THRESHOLD).toBe(6));
   it("SEPARATOR_WIDTH is 1", () => expect(SEPARATOR_WIDTH).toBe(1));
   it("MAX_STRING_DISPLAY_LENGTH is 28", () =>
     expect(MAX_STRING_DISPLAY_LENGTH).toBe(28));
@@ -388,7 +389,7 @@ describe("getOperationCallWidth", () => {
       },
       value: { name: "length", parameters: [], statements: [] },
     });
-    expect(getOperationCallWidth(op)).toBe(5);
+    expect(getOperationCallWidth(op)).toBe(2);
   });
 
   it("1 simple param = 1 + 1 = 2", () => {
@@ -407,7 +408,7 @@ describe("getOperationCallWidth", () => {
         statements: [],
       },
     });
-    expect(getOperationCallWidth(op)).toBe(6);
+    expect(getOperationCallWidth(op)).toBe(2 + 1);
   });
 
   it("2 simple params include separator", () => {
@@ -426,7 +427,7 @@ describe("getOperationCallWidth", () => {
         statements: [],
       },
     });
-    expect(getOperationCallWidth(op)).toBe(7 + SEPARATOR_WIDTH);
+    expect(getOperationCallWidth(op)).toBe(2 + 1 + 1 + SEPARATOR_WIDTH);
   });
 
   it("complex param contributes its full width", () => {
@@ -446,7 +447,7 @@ describe("getOperationCallWidth", () => {
         statements: [],
       },
     });
-    expect(getOperationCallWidth(op)).toBe(5 + getEntityWidth(paramObj));
+    expect(getOperationCallWidth(op)).toBe(2 + getEntityWidth(paramObj));
   });
 });
 
@@ -469,7 +470,7 @@ describe("getStatementWidth", () => {
       value: { name: "length", parameters: [], statements: [] },
     });
     const stmt = createStatement({ data: testString("hi"), operations: [op] });
-    expect(getStatementWidth(stmt)).toBe(6);
+    expect(getStatementWidth(stmt)).toBe(3);
   });
 
   it("complex data + op with complex params sums widths", () => {
@@ -497,7 +498,7 @@ describe("getStatementWidth", () => {
     });
     const stmt = createStatement({ data: obj, operations: [op] });
     const expected =
-      getEntityWidth(obj) + 5 + getEntityWidth(paramObj) + 0 * SEPARATOR_WIDTH;
+      getEntityWidth(obj) + 2 + getEntityWidth(paramObj) + 0 * SEPARATOR_WIDTH;
     expect(getStatementWidth(stmt)).toBe(expected);
   });
 });
@@ -549,14 +550,14 @@ describe("getEntityLayout", () => {
   });
 
   it("returns inline when complex data width is just below threshold", () => {
-    const items = Array.from({ length: 7 }, () => numberStatement(1));
-    expect(getEntityWidth(testArray(items))).toBe(14);
+    const items = Array.from({ length: 5 }, () => numberStatement(1));
+    expect(getEntityWidth(testArray(items))).toBe(10);
     expect(getEntityLayout(testArray(items))).toBe("inline");
   });
 
-  it("returns multiline when complex data width exceeds threshold", () => {
-    const items = Array.from({ length: 8 }, () => numberStatement(1));
-    expect(getEntityWidth(testArray(items))).toBe(16);
+  it("returns multiline when complex data reaches threshold", () => {
+    const items = Array.from({ length: 6 }, () => numberStatement(1));
+    expect(getEntityWidth(testArray(items))).toBe(12);
     expect(getEntityLayout(testArray(items))).toBe("multiline");
   });
 });
@@ -666,9 +667,88 @@ describe("getOperationCallLayout with mobile threshold", () => {
       },
       value: { name: "sum", parameters: params, statements: [] },
     });
-    expect(getOperationCallWidth(op)).toBe(11);
+    expect(getOperationCallWidth(op)).toBe(9);
     expect(getOperationCallLayout(op)).toBe("inline");
     expect(getOperationCallLayout(op, true)).toBe("multiline");
+  });
+});
+
+describe("getOperationNameWidth", () => {
+  it("returns 0 for names <= 12 chars", () => {
+    expect(getOperationNameWidth("")).toBe(0);
+    expect(getOperationNameWidth("map")).toBe(0);
+    expect(getOperationNameWidth("length")).toBe(0);
+    expect(getOperationNameWidth("wretch.get")).toBe(0);
+  });
+
+  it("returns 1 for names with 13-20 overflow chars", () => {
+    expect(getOperationNameWidth("a".repeat(13))).toBe(1);
+    expect(getOperationNameWidth("a".repeat(20))).toBe(1);
+  });
+
+  it("returns 2 for names with 21-28 overflow chars", () => {
+    expect(getOperationNameWidth("a".repeat(21))).toBe(2);
+    expect(getOperationNameWidth("a".repeat(28))).toBe(2);
+  });
+
+  it("returns 3 (capped) for names longer than 28 overflow chars", () => {
+    expect(getOperationNameWidth("a".repeat(29))).toBe(3);
+    expect(getOperationNameWidth("a".repeat(60))).toBe(3);
+  });
+});
+
+describe("getOperationCallWidth with long name", () => {
+  it("adds overflow width for a long operation name", () => {
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "number" },
+      },
+      value: {
+        name: "veryLongOperationName",
+        parameters: [],
+        statements: [],
+      },
+    });
+    // "veryLongOperationName" = 21 chars -> overflow = 9 -> ceil(9/8) = 2
+    expect(getOperationCallWidth(op)).toBe(2 + 2);
+  });
+});
+
+describe("getOperationCallLayout with long name near threshold", () => {
+  it("long name pushes near-threshold params to multiline", () => {
+    // 6 simple params with a short name (<= 12) = 2 + 6 + 5 = 13 — above threshold.
+    // Use 5 params: 2 + 5 + 4 = 11 (inline), then long name 11+2=13 => multiline.
+    const shortNameParams = Array.from({ length: 5 }, () => numberStatement(1));
+    const longNameParams = Array.from({ length: 5 }, () => numberStatement(1));
+
+    const shortOp = createData({
+      type: {
+        kind: "operation",
+        parameters: shortNameParams.map(() => ({ type: { kind: "number" } })),
+        result: { kind: "number" },
+      },
+      value: { name: "sum", parameters: shortNameParams, statements: [] },
+    });
+
+    const longOp = createData({
+      type: {
+        kind: "operation",
+        parameters: longNameParams.map(() => ({ type: { kind: "number" } })),
+        result: { kind: "number" },
+      },
+      value: {
+        name: "veryLongOperationName",
+        parameters: longNameParams,
+        statements: [],
+      },
+    });
+
+    // short name: width = 2 + 5*1 + 4*1 = 11 < 12 => inline
+    expect(getOperationCallLayout(shortOp)).toBe("inline");
+    // long name (21 chars): nameWidth = 2, width = 2 + 2 + 5 + 4 = 13 >= 12 => multiline
+    expect(getOperationCallLayout(longOp)).toBe("multiline");
   });
 });
 
