@@ -23,9 +23,9 @@ import {
   MapValue,
   InstanceDataType,
   EntityPath,
-  ReferenceType,
 } from "./types";
 import { Context, OperationListItem, Thenable } from "./execution/types";
+import { walkData } from "./walk";
 
 /* Create */
 
@@ -292,88 +292,30 @@ export function createFileFromOperation(operation: IData<OperationType>) {
   } as ProjectFile;
 }
 
-export function walkStatements(
-  statements: IStatement[],
-  visitors: {
-    onStatement?: (stmt: IStatement) => void;
-    onData?: (data: IData) => void;
-    onReference?: (data: IData<ReferenceType>) => void;
-    onArray?: (data: IData<ArrayType | TupleType>) => void;
-    onObject?: (data: IData<ObjectType | DictionaryType>) => void;
-    onOperation?: (data: IData<OperationType>) => void;
-    onCondition?: (data: IData<ConditionType>) => void;
-  },
-  options?: { includeNestedOperations?: boolean }
-): void {
-  const walkData = (data: IData) => {
-    visitors.onData?.(data);
-
-    if (isDataOfType(data, "reference")) {
-      visitors.onReference?.(data);
-    } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
-      visitors.onArray?.(data);
-      for (const item of data.value) walkStatement(item);
-    } else if (
-      isDataOfType(data, "object") ||
-      isDataOfType(data, "dictionary")
-    ) {
-      visitors.onObject?.(data);
-      for (const entry of data.value.entries) walkStatement(entry.value);
-    } else if (isDataOfType(data, "operation")) {
-      visitors.onOperation?.(data);
-      if (options?.includeNestedOperations) {
-        for (const param of data.value.parameters) walkStatement(param);
-        for (const stmt of data.value.statements) walkStatement(stmt);
-      }
-    } else if (isDataOfType(data, "condition")) {
-      visitors.onCondition?.(data);
-      walkStatement(data.value.condition);
-      for (const stmt of data.value.trueBranch) walkStatement(stmt);
-      for (const stmt of data.value.falseBranch) walkStatement(stmt);
-      if (options?.includeNestedOperations) {
-        for (const branch of [data.value.trueBranch, data.value.falseBranch])
-          for (const statement of branch)
-            for (const op of statement.operations)
-              for (const param of op.value.parameters) walkStatement(param);
-      }
-    }
-  };
-
-  const walkStatement = (stmt: IStatement) => {
-    visitors.onStatement?.(stmt);
-    walkData(stmt.data);
-    for (const op of stmt.operations) {
-      for (const param of op.value.parameters) {
-        walkStatement(param);
-      }
-    }
-  };
-
-  for (const stmt of statements) {
-    walkStatement(stmt);
-  }
-}
-
 export function getFreeVariableNames(
   operation: IData<OperationType>,
   context: Context
 ): Set<string> {
   const freeVars = new Set<string>();
 
-  walkStatements(operation.value.statements, {
-    onReference: (data) => {
-      const name = data.value.name;
-      if (typeof name !== "string" || freeVars.has(name)) return;
-      const variable = context.variables.get(name);
-      if (
-        variable &&
-        !variable.isEnv &&
-        !isDataOfType(variable.data, "operation")
-      ) {
-        freeVars.add(name);
-      }
+  walkData(
+    operation,
+    {
+      onReference: (data) => {
+        const name = data.value.name;
+        if (typeof name !== "string" || freeVars.has(name)) return;
+        const variable = context.variables.get(name);
+        if (
+          variable &&
+          !variable.isEnv &&
+          !isDataOfType(variable.data, "operation")
+        ) {
+          freeVars.add(name);
+        }
+      },
     },
-  });
+    { nestedOperations: true }
+  );
 
   return freeVars;
 }
@@ -1885,4 +1827,43 @@ export function fuzzySearch<T extends object>(
     }
     return acc;
   }, []);
+}
+
+export function renamePackagePrefix(
+  files: ProjectFile[],
+  oldPrefix: string,
+  newPrefix: string
+): ProjectFile[] {
+  const renamePrefix = (value: string) => {
+    const oldDot = oldPrefix + ".";
+    const newDot = newPrefix + ".";
+    return value.startsWith(oldDot)
+      ? newDot + value.slice(oldDot.length)
+      : value;
+  };
+
+  return files.map((file) => {
+    if (file.type !== "operation") return file;
+    const content = structuredClone(file.content);
+
+    walkData(
+      { id: file.id, type: content.type, value: content.value },
+      {
+        onDataType: (type) => {
+          if (type.kind === "instance") {
+            type.className = renamePrefix(type.className);
+          }
+        },
+        onInstance: (data) => {
+          data.value.className = renamePrefix(data.value.className);
+        },
+        onOperation: (data) => {
+          if (data.value.name) data.value.name = renamePrefix(data.value.name);
+        },
+      },
+      { nestedOperations: true, operationCalls: true, dataTypes: true }
+    );
+
+    return { ...file, content, updatedAt: Date.now() };
+  });
 }

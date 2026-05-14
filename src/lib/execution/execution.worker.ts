@@ -43,7 +43,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
   activeAbortController = controller;
 
   try {
-    await syncPackageRegistry(req.packageNames ?? []);
+    await syncPackageRegistry(req.packages);
 
     const results = new Map(req.cachedResults);
     const rootContext = {} as Context;

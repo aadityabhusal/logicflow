@@ -26,7 +26,7 @@ import {
   executionWorkerClient,
   hydrateContexts,
 } from "@/lib/execution/worker-client";
-import { getEnabledPackageNames } from "@/lib/packages/catalog";
+import { getEnabledPackages } from "@/lib/packages/catalog";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 
 export default function Project() {
@@ -92,7 +92,7 @@ export default function Project() {
   useEffect(() => {
     const project = useProjectStore.getState().getCurrentProject();
     if (!project) return;
-    void syncPackageRegistry(getEnabledPackageNames(project));
+    void syncPackageRegistry(getEnabledPackages(project));
   }, [projectId]);
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export default function Project() {
       .run({
         operation: deferredOperation,
         files: project?.files ?? [],
-        packageNames: getEnabledPackageNames(project),
+        packages: getEnabledPackages(project),
         envVariables: project?.deployment?.envVariables ?? [],
         cachedResults: [...results].filter(([, r]) => r.shouldCacheResult),
         expectedType: rootContext.expectedType,

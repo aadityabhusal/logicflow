@@ -350,7 +350,7 @@ describe("generateOperation", () => {
 
 describe("wretch code generation", () => {
   beforeAll(async () => {
-    await syncPackageRegistry(["wretch"]);
+    await syncPackageRegistry([{ name: "wretch" }]);
   });
 
   const WretchType = {
@@ -627,7 +627,7 @@ describe("wretch code generation", () => {
 
 describe("rowguard code generation", () => {
   beforeAll(async () => {
-    await syncPackageRegistry(["rowguard"]);
+    await syncPackageRegistry([{ name: "rowguard" }]);
   });
 
   it("formats namespace-imported instances as package class constructors", () => {

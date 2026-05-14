@@ -5,6 +5,7 @@ import {
   IStatement,
   OperationSource,
   OperationType,
+  PackageNamespace,
   ProjectFile,
 } from "../types";
 
@@ -114,7 +115,7 @@ export type ExecutionWorkerRunRequest = {
   runId: string;
   operation: IData<OperationType>;
   files: ProjectFile[];
-  packageNames?: string[];
+  packages?: PackageNamespace[];
   envVariables: { key: string; value: string }[];
   cachedResults: [string, ExecutionResult][];
   expectedType?: DataType;

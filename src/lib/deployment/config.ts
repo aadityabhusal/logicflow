@@ -12,7 +12,7 @@ import { generatePlatformConfig } from "./platform-config";
 import { generateBuiltInModule } from "./built-in-module";
 import { prefixNpmImports } from "./utils";
 import { PACKAGE_REGISTRY } from "../packages/registry";
-import { getEnabledPackageNames } from "../packages/catalog";
+import { getEnabledPackages } from "../packages/catalog";
 import { syncPackageRegistry } from "../operations/built-in";
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
@@ -31,7 +31,7 @@ export async function generateDeployableProject(
   const deployment = project.deployment ?? { envVariables: [], platforms: [] };
   const triggeredOps = getTriggeredOperations(project);
   const operationFiles = project.files.filter((f) => f.type === "operation");
-  await syncPackageRegistry(getEnabledPackageNames(project));
+  await syncPackageRegistry(getEnabledPackages(project));
 
   for (const file of operationFiles) {
     const operation = createOperationFromFile(file);
@@ -39,7 +39,9 @@ export async function generateDeployableProject(
       errors.push(`Failed to create operation from file: ${file.name}`);
       continue;
     }
-    const code = generateOperation(operation, context);
+    const code = generateOperation(operation, context, {
+      packages: getEnabledPackages(project),
+    });
     files.push({
       path: `src/operations/${file.name}.js`,
       content: code,

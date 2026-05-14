@@ -8,7 +8,7 @@ import {
   loadedPackageOperations,
   getAllInstanceTypes,
 } from "./registry";
-import { PACKAGE_CATALOG, getPackageSourceNames } from "./catalog";
+import { PACKAGE_CATALOG } from "./catalog";
 
 describe("PACKAGE_REGISTRY derivation", () => {
   it("has an entry for every catalog package", () => {
@@ -163,18 +163,5 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
   it("loadPackage is a no-op for unknown packages", async () => {
     await loadPackage("nonexistent");
     expect(loadedPackageOperations.size).toBe(0);
-  });
-});
-
-describe("getPackageSourceNames", () => {
-  it("returns source names for known packages", () => {
-    expect(getPackageSourceNames("wretch")).toEqual([
-      "wretch",
-      "wretchResponseChain",
-    ]);
-  });
-
-  it("returns empty array for unknown packages", () => {
-    expect(getPackageSourceNames("nonexistent")).toEqual([]);
   });
 });

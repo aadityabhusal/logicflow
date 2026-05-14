@@ -8,7 +8,12 @@ import { useCallback, useState } from "react";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
-import { FaSpinner } from "react-icons/fa6";
+import {
+  FaSpinner,
+  FaChevronDown,
+  FaChevronRight,
+  FaArrowUpRightFromSquare,
+} from "react-icons/fa6";
 
 export function SettingsPanel() {
   const disableKeyboard = useUiConfigStore((s) => s.disableKeyboard);
@@ -22,10 +27,11 @@ export function SettingsPanel() {
     (s) => s.getCurrentProject()?.name
   );
   const updateProject = useProjectStore((s) => s.updateProject);
-  const npmDependencies = useProjectStore(
-    (s) => s.getCurrentProject()?.dependencies?.npm
+  const dependencies = useProjectStore(
+    (s) => s.getCurrentProject()?.dependencies
   );
   const [loadingPackage, setLoadingPackage] = useState<string | null>(null);
+  const [expandedPackages, setExpandedPackages] = useState(new Set<string>());
 
   const togglePackage = useCallback(
     async (pkgName: string) => {
@@ -40,7 +46,9 @@ export function SettingsPanel() {
 
       setLoadingPackage(pkgName);
       try {
-        await syncPackageRegistry(nextDeps.map((dep) => dep.name));
+        await syncPackageRegistry(
+          nextDeps.map((dep) => ({ name: dep.name, namespace: dep.namespace }))
+        );
 
         updateProject(currentProjectId, {
           dependencies: { ...project.dependencies, npm: nextDeps },
@@ -101,21 +109,90 @@ export function SettingsPanel() {
           <div className="border-t pt-2 flex flex-col gap-2">
             <span className="text-sm text-gray-300">Packages</span>
             {externalPackages.map(([name, entry]) => {
-              const dependency = npmDependencies?.find((d) => d.name === name);
+              const dependency = dependencies?.npm?.find(
+                (d) => d.name === name
+              );
+              const isExpanded = expandedPackages.has(name);
               return (
-                <div key={name} className="flex flex-col gap-1">
-                  <label className="flex items-center justify-between gap-2">
-                    <span className="text-sm mr-auto">{entry.displayName}</span>
+                <div key={name} className="border border-border">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={[
+                        "flex items-center gap-2 p-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
+                        isExpanded ? "" : "text-gray-300",
+                      ].join(" ")}
+                      onClick={() => {
+                        setExpandedPackages((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(name)) next.delete(name);
+                          else next.add(name);
+                          return next;
+                        });
+                      }}
+                    >
+                      {isExpanded ? (
+                        <FaChevronDown className="shrink-0" size={10} />
+                      ) : (
+                        <FaChevronRight className="shrink-0" size={10} />
+                      )}
+                      {entry.displayName}
+                    </span>
                     {loadingPackage === name && (
                       <FaSpinner className="animate-spin" />
                     )}
-                    <BooleanInput
-                      data={createData({ value: Boolean(dependency) })}
-                      handleData={() => {
-                        if (loadingPackage !== name) togglePackage(name);
-                      }}
-                    />
-                  </label>
+                    <div className="mr-1">
+                      <BooleanInput
+                        data={createData({ value: Boolean(dependency) })}
+                        handleData={() => {
+                          if (loadingPackage !== name) togglePackage(name);
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div className="flex flex-col p-2 gap-2 bg-dropdown-hover/30">
+                      {entry.description && (
+                        <p className="text-sm text-gray-300">
+                          {entry.description}
+                        </p>
+                      )}
+                      {entry.links && entry.links.length > 0 && (
+                        <div className="flex gap-3 flex-wrap">
+                          {entry.links.map((link) => (
+                            <a
+                              key={link.url}
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-sm text-blue-400 hover:underline"
+                            >
+                              {link.label}
+                              <FaArrowUpRightFromSquare size={9} />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm text-gray-300">Alias</span>
+                        <input
+                          type="text"
+                          className="focus:outline outline-white border w-full p-0.5 text-sm"
+                          placeholder="Global alias for the package"
+                          value={dependency?.namespace ?? ""}
+                          onChange={({ target: { value } }) => {
+                            if (!currentProjectId || !dependencies?.npm) return;
+                            const updated = dependencies?.npm.map((dep) => {
+                              if (dep.name !== name) return dep;
+                              return { ...dep, namespace: value || undefined };
+                            });
+                            updateProject(currentProjectId, {
+                              dependencies: { ...dependencies, npm: updated },
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

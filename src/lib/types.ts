@@ -237,9 +237,7 @@ interface Dependencies {
   logicflow?: (DependencyBase & { projectId: string })[];
 }
 
-export type DeploymentCredentials = {
-  token: string;
-};
+export type PackageNamespace = { name: string; namespace?: string };
 
 export type DeploymentStatus = "queued" | "building" | "ready" | "error";
 
@@ -253,7 +251,7 @@ export type DeploymentRecord = {
 };
 
 type BaseDeployment = {
-  credentials?: DeploymentCredentials;
+  credentials?: { token: string };
   projectId?: string;
   deployments: DeploymentRecord[];
 };

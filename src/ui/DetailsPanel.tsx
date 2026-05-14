@@ -32,6 +32,7 @@ import {
   generateData,
   createCodeGenContext,
 } from "@/lib/format-code";
+import { getEnabledPackages } from "@/lib/packages/catalog";
 import { Link } from "react-router";
 
 export function DetailsPanel() {
@@ -115,7 +116,12 @@ export function DetailsPanel() {
     }
     const codeString = generateData(
       displayedResult,
-      createCodeGenContext(context, { showResult: true })
+      createCodeGenContext(context, {
+        showResult: true,
+        packages: getEnabledPackages(
+          useProjectStore.getState().getCurrentProject()
+        ),
+      })
     );
     let ignore = false;
 

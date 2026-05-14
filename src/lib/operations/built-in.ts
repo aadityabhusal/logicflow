@@ -1,4 +1,10 @@
-import { IData, OperationType, UnionType, DataType } from "../types";
+import {
+  IData,
+  OperationType,
+  UnionType,
+  DataType,
+  PackageNamespace,
+} from "../types";
 import { DataTypes } from "../data";
 import {
   createData,
@@ -700,10 +706,12 @@ export function rebuildIndexes() {
 }
 
 export async function syncPackageRegistry(
-  packageNames: string[]
+  packages: PackageNamespace[] = []
 ): Promise<PromiseSettledResult<void>[]> {
   resetPackageRegistry();
-  const results = await Promise.allSettled(packageNames.map(loadPackage));
+  const results = await Promise.allSettled(
+    packages.map(({ name, namespace }) => loadPackage(name, namespace))
+  );
   rebuildIndexes();
   return results;
 }

@@ -4,6 +4,7 @@ import {
   OperationType,
   ConditionType,
   DataValue,
+  PackageNamespace,
 } from "./types";
 import { OperationListItem } from "./execution/types";
 import { Context } from "./execution/types";
@@ -49,27 +50,49 @@ type CodeGenContext = Context & {
   importedOperations: Set<string>;
   usedPackages: Set<string>;
   currentOperationName?: string;
+  packageNamespaces: Record<string, string>;
 };
 
 export function createCodeGenContext(
   context: Context,
-  options?: { showResult?: boolean; currentOperationName?: string }
+  options?: {
+    showResult?: boolean;
+    currentOperationName?: string;
+    packages?: PackageNamespace[];
+  }
 ): CodeGenContext {
+  const packageNamespaces: Record<string, string> = {};
+  for (const p of options?.packages ?? []) {
+    if (p.namespace) packageNamespaces[p.name] = p.namespace;
+  }
   return {
     ...context,
     showResult: options?.showResult,
     currentOperationName: options?.currentOperationName,
+    packageNamespaces,
     importedOperations: new Set(),
     usedPackages: new Set(),
     getOperation: (name: string) => builtInOperationsByName.get(name)?.[0],
   };
 }
-function getPackageImportName(packageName: string): string {
-  return PACKAGE_REGISTRY[packageName]?.importName ?? packageName;
+function getPackageImportName(
+  packageName: string,
+  context?: CodeGenContext
+): string {
+  return (
+    context?.packageNamespaces?.[packageName] ??
+    PACKAGE_REGISTRY[packageName]?.importName ??
+    packageName
+  );
 }
 
-function stripPackagePrefix(name: string, packageName: string): string {
-  const prefix = packageName + ".";
+function stripPackagePrefix(
+  name: string,
+  packageName: string,
+  context?: CodeGenContext
+): string {
+  const prefix =
+    (context?.packageNamespaces?.[packageName] ?? packageName) + ".";
   return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
@@ -99,7 +122,10 @@ export function generateData(data: IData, context: CodeGenContext): string {
     const config = getAllInstanceTypes()[data.value.className];
     if (config?.importInfo) {
       context.usedPackages.add(config.importInfo.packageName);
-      const importName = getPackageImportName(config.importInfo.packageName);
+      const importName = getPackageImportName(
+        config.importInfo.packageName,
+        context
+      );
       if (config.referenceExpression) {
         const member = config.referenceExpression.slice(
           config.referenceExpression.indexOf(".") + 1
@@ -111,7 +137,8 @@ export function generateData(data: IData, context: CodeGenContext): string {
         .join(", ");
       const bareClassName = stripPackagePrefix(
         data.value.className,
-        config.importInfo.packageName
+        config.importInfo.packageName,
+        context
       );
       return `new ${importName}.${bareClassName}(${constructorArgs})`;
     }
@@ -190,11 +217,12 @@ function getOperationSource(
 function getPackageFuncName(
   packageName: string,
   operationName: string,
-  callTarget: "import" | "member"
+  callTarget: "import" | "member",
+  context?: CodeGenContext
 ) {
-  const importName = getPackageImportName(packageName);
+  const importName = getPackageImportName(packageName, context);
   if (callTarget === "import") return importName;
-  const bareName = stripPackagePrefix(operationName, packageName);
+  const bareName = stripPackagePrefix(operationName, packageName, context);
   return `${importName}.${bareName}`;
 }
 
@@ -222,7 +250,8 @@ function generateOperationCall(
       const fnName = getPackageFuncName(
         source.packageName ?? "",
         operation.value.name ?? "",
-        source.packageCallTarget ?? "member"
+        source.packageCallTarget ?? "member",
+        context
       );
       if (!params) return `, ${fnName}`;
       return `, (arg) => ${fnName}(arg, ${params})`;
@@ -366,10 +395,10 @@ function generateCallback(
   }`;
 }
 
-function generateImports(packages: string[]): string {
-  return packages
+function generateImports(codegenContext?: CodeGenContext): string {
+  return [...(codegenContext?.usedPackages ?? [])]
     .map((pkg) => {
-      const name = getPackageImportName(pkg);
+      const name = getPackageImportName(pkg, codegenContext);
       return PACKAGE_REGISTRY[pkg]?.importKind === "namespace"
         ? `import * as ${name} from '${pkg}';`
         : `import ${name} from '${pkg}';`;
@@ -379,17 +408,19 @@ function generateImports(packages: string[]): string {
 
 export function generateOperation(
   operation: IData<OperationType>,
-  context: Context
+  context: Context,
+  options?: { packages?: PackageNamespace[] }
 ): string {
   const operationName = operation.value.name ?? "op";
   const codeGenContext = createCodeGenContext(context, {
     currentOperationName: operationName,
+    packages: options?.packages,
   });
   const callback = generateCallback(operation, codeGenContext);
   const userImports = Array.from(codeGenContext.importedOperations)
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
-  const packageImports = generateImports([...codeGenContext.usedPackages]);
+  const packageImports = generateImports(codeGenContext);
   const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
   return `${imports}\nconst ${operationName} = ${callback};\nexport default ${operationName};`;
 }
