@@ -14,56 +14,70 @@ import {
   createRuntimeError,
 } from "../utils";
 import { Context, OperationListItem } from "../execution/types";
-import { customInstances, InstanceTypeConfig } from "@/lib/packages/registry";
+import { InstanceTypeConfig } from "@/lib/packages/registry";
+import { createData } from "../utils";
 
-export class AuthClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
-    return (
-      typeof instance === "object" &&
-      instance !== null &&
-      customInstances.get(instance) === AuthClass
-    );
-  }
-}
-
-export class SessionClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
-    return (
-      typeof instance === "object" &&
-      instance !== null &&
-      customInstances.get(instance) === SessionClass
-    );
-  }
-}
-
-customInstances.set(Rg.auth, AuthClass);
-customInstances.set(Rg.session, SessionClass);
-
-const { TypedColumnBuilder } = Rg;
+// Placeholder constructor for structural Rowguard types that have no real
+// runtime class (Condition, ContextValue are TypeScript structural interfaces).
+// Required by the InstanceTypeConfig registry; not used at runtime.
+class RowguardStructuralConditionPlaceholder {}
 
 const ColumnBuilderType: DataType = {
   kind: "instance",
-  className: "ColumnBuilder",
+  className: "rowguard.ColumnBuilder",
   constructorArgs: [],
 };
 
 const ConditionChainType: DataType = {
   kind: "instance",
-  className: "ConditionChain",
+  className: "rowguard.ConditionChain",
   constructorArgs: [],
 };
 
 const PolicyBuilderType: DataType = {
   kind: "instance",
-  className: "PolicyBuilder",
+  className: "rowguard.PolicyBuilder",
   constructorArgs: [],
 };
 
 const SubqueryBuilderType: DataType = {
   kind: "instance",
-  className: "SubqueryBuilder",
+  className: "rowguard.SubqueryBuilder",
   constructorArgs: [],
 };
+
+const ConditionType: DataType = {
+  kind: "instance",
+  className: "rowguard.Condition",
+  constructorArgs: [],
+};
+
+const ContextValueType: DataType = {
+  kind: "instance",
+  className: "rowguard.ContextValue",
+  constructorArgs: [],
+};
+
+const conditionInputType = (): DataType => ({
+  kind: "union",
+  // Rowguard condition input (ConditionChain | Condition | ContextValue)
+  types: [ConditionChainType, ConditionType, ContextValueType],
+});
+
+// Wraps a structural Rowguard object (e.g. Condition, ContextValue)
+// as a LogicFlow instance so it is not treated as a generic object/dictionary.
+function createRowguardInstanceData(
+  value: unknown,
+  instanceType: InstanceDataType,
+  context: Context
+) {
+  const data = createData({ type: instanceType });
+  context.setInstance(data.value.instanceId, {
+    instance: value,
+    type: data.type,
+  });
+  return data;
+}
 
 // ─── Handler factories ────────────────────────────────────────────
 
@@ -83,9 +97,11 @@ function createBuilderOperation<T>(
   name: string,
   instanceType: DataType,
   method: (instance: T, context: Context, ...args: IData[]) => unknown,
-  parameters: OperationListItem["parameters"] = []
+  parameters: OperationListItem["parameters"] = [],
+  wrapResult?: (value: unknown, context: Context) => IData
 ): OperationListItem {
   const instType = instanceType as InstanceDataType;
+  const wrap = wrapResult ?? createDataFromRawValue;
   return {
     name,
     parameters: (data) => [
@@ -98,7 +114,7 @@ function createBuilderOperation<T>(
         return createRuntimeError(`${instType.className} instance not found`);
       try {
         const result = method(instance, context, ...args);
-        return createDataFromRawValue(result, context);
+        return wrap(result, context);
       } catch (error) {
         return createRuntimeError(error);
       }
@@ -199,99 +215,65 @@ const standaloneOperations: OperationListItem[] = standaloneDefs.map((def) => ({
   handler: createRowguardHandler(def.name),
 }));
 
-const AuthType: DataType = {
-  kind: "instance",
-  className: "Auth",
-  constructorArgs: [],
-};
+// ─── Direct auth + session operations ──────────────────────────────
 
-const SessionType: DataType = {
-  kind: "instance",
-  className: "Session",
-  constructorArgs: [],
-};
-
-// ─── auth + session standalone (property access) ──────────────────
-
-const authOp: OperationListItem = {
-  name: "auth",
+const authUidOp: OperationListItem = {
+  name: "auth.uid",
   parameters: [],
-  source: { name: "rowguard" as const },
-  handler: (context: Context) => createDataFromRawValue(Rg.auth, context),
+  source: { name: "rowguard" },
+  handler: (_context: Context) =>
+    createRowguardInstanceData(Rg.auth.uid(), ContextValueType, _context),
 };
 
-const sessionOp: OperationListItem = {
-  name: "session",
-  parameters: [],
-  source: { name: "rowguard" as const },
-  handler: (context: Context) => createDataFromRawValue(Rg.session, context),
-};
-
-// ─── Auth builder methods ─────────────────────────────────────────
-
-const authMethods: OperationListItem[] = [
-  createNoParamBuilderOp("uid", AuthType, (instance: typeof Rg.auth) =>
-    instance.uid()
-  ),
-];
-
-const authOperations: OperationListItem[] = authMethods.map((op) => ({
-  ...op,
-  source: { name: "rowguardAuthBuilder" as const },
-}));
-
-// ─── Session builder methods ──────────────────────────────────────
-
-const sessionMethods: OperationListItem[] = [
-  createBuilderOperation(
-    "get",
-    SessionType,
-    (instance: typeof Rg.session, context, key, type) =>
-      instance.get(
-        getRawValueFromData(key, context) as string,
-        (type
-          ? (getRawValueFromData(type, context) as SessionVariableType)
-          : "text") as SessionVariableType
-      ),
-    [
-      { type: { kind: "string" }, name: "key" },
-      {
-        type: { kind: "string" },
-        name: "type",
-        isOptional: true,
-      },
-    ]
-  ),
-];
-
-const sessionOperations: OperationListItem[] = sessionMethods.map((op) => ({
-  ...op,
-  source: { name: "rowguardSessionBuilder" as const },
-}));
-
-// ─── qualifiedColumn (table, column) ───────────────────────────────
-
-const qualifiedColumnOp: OperationListItem = {
-  name: "qualifiedColumn",
+const sessionGetOp: OperationListItem = {
+  name: "session.get",
   parameters: [
-    { type: { kind: "string" }, name: "table" },
-    { type: { kind: "string" }, name: "column" },
+    { type: { kind: "string" }, name: "key" },
+    {
+      type: { kind: "string" },
+      name: "type",
+      isOptional: true,
+    },
   ],
-  source: { name: "rowguard" as const },
-  handler: (_context: Context, tableData: IData, columnData: IData) => {
-    const table = getRawValueFromData(tableData, _context) as string;
-    const column = getRawValueFromData(columnData, _context) as string;
-    return createDataFromRawValue(
-      new TypedColumnBuilder(table, column),
+  source: { name: "rowguard" },
+  handler: (_context: Context, keyData: IData, typeData?: IData) => {
+    const key = getRawValueFromData(keyData, _context) as string;
+    const type = typeData
+      ? (getRawValueFromData(typeData, _context) as SessionVariableType)
+      : "text";
+    return createRowguardInstanceData(
+      Rg.session.get(key, type),
+      ContextValueType,
       _context
     );
   },
 };
 
+// ─── Nested package path handler ───────────────────────────────────
+
+function createNestedHandler(pathSegments: string[]) {
+  return (context: Context, ...args: IData[]): IData => {
+    const rawArgs = args
+      .map((arg) => getRawValueFromData(arg, context))
+      .filter((val) => val !== undefined);
+    let target: unknown = Rg;
+    for (const segment of pathSegments.slice(0, -1)) {
+      target = (target as Record<string, unknown>)[segment];
+    }
+    const methodName = pathSegments[pathSegments.length - 1];
+    const result = (
+      (target as Record<string, unknown>)[methodName] as (
+        ...a: unknown[]
+      ) => unknown
+    )(...rawArgs);
+    return createDataFromRawValue(result, context);
+  };
+}
+
 // ─── Policy template operations ───────────────────────────────────
 
 const policiesUserOwnedOp: OperationListItem = {
-  name: "policiesUserOwned",
+  name: "policies.userOwned",
   parameters: [
     { type: { kind: "string" }, name: "table" },
     { type: { kind: "unknown" }, name: "operations", isOptional: true },
@@ -302,31 +284,11 @@ const policiesUserOwnedOp: OperationListItem = {
     },
   ],
   source: { name: "rowguard" as const },
-  handler: (
-    context: Context,
-    tableData: IData,
-    opsData?: IData,
-    colData?: IData
-  ) => {
-    const table = getRawValueFromData(tableData, context) as string;
-    const operations = opsData
-      ? (getRawValueFromData(opsData, context) as string | string[])
-      : undefined;
-    const userIdColumn = colData
-      ? (getRawValueFromData(colData, context) as string)
-      : undefined;
-    const args: unknown[] = [table];
-    if (operations !== undefined) args.push(operations);
-    if (userIdColumn !== undefined) args.push(userIdColumn);
-    const result = (Rg.policies.userOwned as (...a: unknown[]) => unknown)(
-      ...args
-    );
-    return createDataFromRawValue(result, context);
-  },
+  handler: createNestedHandler(["policies", "userOwned"]),
 };
 
 const policiesTenantIsolationOp: OperationListItem = {
-  name: "policiesTenantIsolation",
+  name: "policies.tenantIsolation",
   parameters: [
     { type: { kind: "string" }, name: "table" },
     {
@@ -341,31 +303,11 @@ const policiesTenantIsolationOp: OperationListItem = {
     },
   ],
   source: { name: "rowguard" as const },
-  handler: (
-    context: Context,
-    tableData: IData,
-    tcData?: IData,
-    skData?: IData
-  ) => {
-    const table = getRawValueFromData(tableData, context) as string;
-    const tenantColumn = tcData
-      ? (getRawValueFromData(tcData, context) as string)
-      : undefined;
-    const sessionKey = skData
-      ? (getRawValueFromData(skData, context) as string)
-      : undefined;
-    const args: unknown[] = [table];
-    if (tenantColumn !== undefined) args.push(tenantColumn);
-    if (sessionKey !== undefined) args.push(sessionKey);
-    const result = (
-      Rg.policies.tenantIsolation as (...a: unknown[]) => unknown
-    )(...args);
-    return createDataFromRawValue(result, context);
-  },
+  handler: createNestedHandler(["policies", "tenantIsolation"]),
 };
 
 const policiesPublicAccessOp: OperationListItem = {
-  name: "policiesPublicAccess",
+  name: "policies.publicAccess",
   parameters: [
     { type: { kind: "string" }, name: "table" },
     {
@@ -375,46 +317,18 @@ const policiesPublicAccessOp: OperationListItem = {
     },
   ],
   source: { name: "rowguard" as const },
-  handler: (context: Context, tableData: IData, vcData?: IData) => {
-    const table = getRawValueFromData(tableData, context) as string;
-    const visibilityColumn = vcData
-      ? (getRawValueFromData(vcData, context) as string)
-      : undefined;
-    const args: unknown[] = [table];
-    if (visibilityColumn !== undefined) args.push(visibilityColumn);
-    const result = (Rg.policies.publicAccess as (...a: unknown[]) => unknown)(
-      ...args
-    );
-    return createDataFromRawValue(result, context);
-  },
+  handler: createNestedHandler(["policies", "publicAccess"]),
 };
 
 const policiesRoleAccessOp: OperationListItem = {
-  name: "policiesRoleAccess",
+  name: "policies.roleAccess",
   parameters: [
     { type: { kind: "string" }, name: "table" },
     { type: { kind: "string" }, name: "role" },
     { type: { kind: "unknown" }, name: "operations", isOptional: true },
   ],
   source: { name: "rowguard" as const },
-  handler: (
-    context: Context,
-    tableData: IData,
-    roleData: IData,
-    opsData?: IData
-  ) => {
-    const table = getRawValueFromData(tableData, context) as string;
-    const role = getRawValueFromData(roleData, context) as string;
-    const operations = opsData
-      ? (getRawValueFromData(opsData, context) as string | string[])
-      : undefined;
-    const args: unknown[] = [table, role];
-    if (operations !== undefined) args.push(operations);
-    const result = (Rg.policies.roleAccess as (...a: unknown[]) => unknown)(
-      ...args
-    );
-    return createDataFromRawValue(result, context);
-  },
+  handler: createNestedHandler(["policies", "roleAccess"]),
 };
 
 // ─── ColumnBuilder instance methods ────────────────────────────────
@@ -617,19 +531,22 @@ const conditionChainMethods: OperationListItem[] = [
     ConditionChainType,
     (instance, context, other) =>
       instance.and(getRawValueFromData(other, context) as IConditionChain),
-    [{ type: ConditionChainType, name: "other" }]
+    [{ type: conditionInputType(), name: "other" }]
   ),
   createBuilderOperation<IConditionChain>(
     "or",
     ConditionChainType,
     (instance, context, other) =>
       instance.or(getRawValueFromData(other, context) as IConditionChain),
-    [{ type: ConditionChainType, name: "other" }]
+    [{ type: conditionInputType(), name: "other" }]
   ),
-  createNoParamBuilderOp<IConditionChain>(
+  createBuilderOperation<IConditionChain>(
     "toCondition",
     ConditionChainType,
-    (instance) => instance.toCondition()
+    (instance) => instance.toCondition(),
+    [],
+    (value, context) =>
+      createRowguardInstanceData(value, ConditionType, context)
   ),
   createNoParamBuilderOp<IConditionChain>(
     "toSQL",
@@ -644,6 +561,21 @@ const conditionChainOperations: OperationListItem[] = conditionChainMethods.map(
     source: { name: "rowguardConditionChain" as const },
   })
 );
+
+// ─── Condition + ContextValue instance methods ──────────────────────
+
+const structuralConditionOperations: OperationListItem[] = [
+  createNoParamBuilderOp<{ toSQL(): string }>(
+    "toSQL",
+    ConditionType,
+    (instance) => instance.toSQL()
+  ),
+  createNoParamBuilderOp<{ toSQL(): string }>(
+    "toSQL",
+    ContextValueType,
+    (instance) => instance.toSQL()
+  ),
+].map((op) => ({ ...op, source: { name: "rowguardCondition" as const } }));
 
 // ─── PolicyBuilder instance methods ────────────────────────────────
 
@@ -697,7 +629,7 @@ const policyBuilderMethods: OperationListItem[] = [
     PolicyBuilderType,
     (instance, context, condition) =>
       instance.when(getRawValueFromData(condition, context) as IConditionChain),
-    [{ type: ConditionChainType, name: "condition" }]
+    [{ type: conditionInputType(), name: "condition" }]
   ),
   createBuilderOperation<IPolicyBuilder>(
     "withCheck",
@@ -706,7 +638,7 @@ const policyBuilderMethods: OperationListItem[] = [
       instance.withCheck(
         getRawValueFromData(condition, context) as IConditionChain
       ),
-    [{ type: ConditionChainType, name: "condition" }]
+    [{ type: conditionInputType(), name: "condition" }]
   ),
   createBuilderOperation<IPolicyBuilder>(
     "allow",
@@ -715,7 +647,7 @@ const policyBuilderMethods: OperationListItem[] = [
       instance.allow(
         getRawValueFromData(condition, context) as IConditionChain
       ),
-    [{ type: ConditionChainType, name: "condition" }]
+    [{ type: conditionInputType(), name: "condition" }]
   ),
   createNoParamBuilderOp<IPolicyBuilder>(
     "restrictive",
@@ -788,7 +720,7 @@ const subqueryBuilderMethods: OperationListItem[] = [
       instance.where(
         getRawValueFromData(condition, context) as IConditionChain
       ),
-    [{ type: ConditionChainType, name: "condition" }]
+    [{ type: conditionInputType(), name: "condition" }]
   ),
   createBuilderOperation<ISubqueryBuilder>(
     "join",
@@ -808,7 +740,7 @@ const subqueryBuilderMethods: OperationListItem[] = [
       ),
     [
       { type: { kind: "string" }, name: "table" },
-      { type: ConditionChainType, name: "on" },
+      { type: conditionInputType(), name: "on" },
       {
         type: { kind: "string" },
         name: "type",
@@ -838,47 +770,45 @@ const subqueryBuilderOperations: OperationListItem[] =
 
 export const operations: OperationListItem[] = [
   ...standaloneOperations,
-  authOp,
-  sessionOp,
-  qualifiedColumnOp,
+  authUidOp,
+  sessionGetOp,
   policiesUserOwnedOp,
   policiesTenantIsolationOp,
   policiesPublicAccessOp,
   policiesRoleAccessOp,
   ...columnBuilderOperations,
   ...conditionChainOperations,
+  ...structuralConditionOperations,
   ...policyBuilderOperations,
   ...subqueryBuilderOperations,
-  ...authOperations,
-  ...sessionOperations,
 ];
 
 export const instanceTypes: Record<string, InstanceTypeConfig> = {
-  ColumnBuilder: {
-    name: "ColumnBuilder",
+  "rowguard.ColumnBuilder": {
+    name: "rowguard.ColumnBuilder",
     Constructor: Rg.ColumnBuilder,
     constructorArgs: [
       { type: { kind: "string" } },
     ] as OperationType["parameters"],
     importInfo: { packageName: "rowguard" },
   },
-  ConditionChain: {
-    name: "ConditionChain",
+  "rowguard.ConditionChain": {
+    name: "rowguard.ConditionChain",
     Constructor: Rg.ConditionChain,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "rowguard" },
   },
-  PolicyBuilder: {
-    name: "PolicyBuilder",
+  "rowguard.PolicyBuilder": {
+    name: "rowguard.PolicyBuilder",
     Constructor: Rg.PolicyBuilder,
     constructorArgs: [
       { type: { kind: "string" }, isOptional: true },
     ] as OperationType["parameters"],
     importInfo: { packageName: "rowguard" },
   },
-  SubqueryBuilder: {
-    name: "SubqueryBuilder",
+  "rowguard.SubqueryBuilder": {
+    name: "rowguard.SubqueryBuilder",
     Constructor: Rg.SubqueryBuilder,
     constructorArgs: [
       { type: { kind: "string" } },
@@ -886,8 +816,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     ] as OperationType["parameters"],
     importInfo: { packageName: "rowguard" },
   },
-  SQLExpression: {
-    name: "SQLExpression",
+  "rowguard.SQLExpression": {
+    name: "rowguard.SQLExpression",
     Constructor: Rg.SQLExpression,
     constructorArgs: [
       { type: { kind: "string" } },
@@ -895,21 +825,19 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     hideFromDropdown: true,
     importInfo: { packageName: "rowguard" },
   },
-  Auth: {
-    name: "Auth",
-    Constructor: AuthClass,
+  "rowguard.Condition": {
+    name: "rowguard.Condition",
+    Constructor: RowguardStructuralConditionPlaceholder,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "rowguard" },
-    referenceExpression: "rowguard.auth",
   },
-  Session: {
-    name: "Session",
-    Constructor: SessionClass,
+  "rowguard.ContextValue": {
+    name: "rowguard.ContextValue",
+    Constructor: RowguardStructuralConditionPlaceholder,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "rowguard" },
-    referenceExpression: "rowguard.session",
   },
 };
 

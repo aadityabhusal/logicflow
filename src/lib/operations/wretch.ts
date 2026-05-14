@@ -8,7 +8,7 @@ import {
   createRuntimeError,
 } from "@/lib/utils";
 import wretch, { Wretch, WretchResponseChain } from "wretch";
-import { customInstances, InstanceTypeConfig } from "@/lib/data";
+import { customInstances, InstanceTypeConfig } from "@/lib/packages/registry";
 import { Context, OperationListItem } from "../execution/types";
 
 export class WretchClass {
@@ -42,7 +42,13 @@ function createWretchOperation(
   return {
     name,
     parameters: (data) => [
-      { type: { kind: "instance", className: "Wretch", constructorArgs: [] } },
+      {
+        type: {
+          kind: "instance",
+          className: "wretch.Wretch",
+          constructorArgs: [],
+        },
+      },
       ...(typeof parameters === "function" ? parameters(data) : parameters),
     ],
     shouldCacheResult,
@@ -69,13 +75,13 @@ function createWretchOperation(
 
 const WretchResponseChainType: DataType = {
   kind: "instance",
-  className: "WretchResponseChain",
+  className: "wretch.WretchResponseChain",
   constructorArgs: [],
 };
 
 const WretchType: DataType = {
   kind: "instance",
-  className: "Wretch",
+  className: "wretch.Wretch",
   constructorArgs: [],
 };
 
@@ -373,7 +379,12 @@ const wretchErrorOperations: OperationListItem[] = errorMethods.map(
 export const operations: OperationListItem[] = [
   ...wretchOperations.map((operation) => ({
     ...operation,
-    source: { name: "wretch" as const },
+    source: {
+      ...operation.source,
+      name: "wretch" as const,
+      packageCallTarget:
+        operation.name === "wretch" ? ("import" as const) : undefined,
+    },
   })),
   ...chainPromiseOperations.map((operation) => ({
     ...operation,
@@ -386,15 +397,15 @@ export const operations: OperationListItem[] = [
 ];
 
 export const instanceTypes: Record<string, InstanceTypeConfig> = {
-  Wretch: {
-    name: "Wretch",
+  "wretch.Wretch": {
+    name: "wretch.Wretch",
     Constructor: WretchClass,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "wretch" },
   },
-  WretchResponseChain: {
-    name: "WretchResponseChain",
+  "wretch.WretchResponseChain": {
+    name: "wretch.WretchResponseChain",
     Constructor: WretchResponseChainClass,
     constructorArgs: [],
     hideFromDropdown: true,

@@ -28,11 +28,10 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     sourceNames: [
       "rowguard",
       "rowguardColumnBuilder",
+      "rowguardCondition",
       "rowguardConditionChain",
       "rowguardPolicyBuilder",
       "rowguardSubqueryBuilder",
-      "rowguardAuthBuilder",
-      "rowguardSessionBuilder",
     ],
     load: () => import("../operations/rowguard").then((m) => m.default),
   },

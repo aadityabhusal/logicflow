@@ -46,16 +46,6 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
       `https://supabase-community.github.io/rowguard/classes/SubqueryBuilder.html#${name}`,
     displayName: "Rowguard SubqueryBuilder",
   },
-  rowguardAuthBuilder: {
-    urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/interfaces/TypedRowguard.html#${name}`,
-    displayName: "Rowguard Auth",
-  },
-  rowguardSessionBuilder: {
-    urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/interfaces/TypedRowguard.html#${name}`,
-    displayName: "Rowguard Session",
-  },
 };
 
 export function getDocsUrl(source?: OperationSource, operationName?: string) {

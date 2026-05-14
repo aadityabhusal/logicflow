@@ -355,7 +355,7 @@ describe("wretch code generation", () => {
 
   const WretchType = {
     kind: "instance" as const,
-    className: "Wretch",
+    className: "wretch.Wretch",
     constructorArgs: [],
   };
 
@@ -387,6 +387,37 @@ describe("wretch code generation", () => {
     expect(result).toContain('R.pipe("https://api.example.com", wretch)');
   });
 
+  it("generates same-named package member operations without treating them as imports", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const memberOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" as const } }],
+        result: WretchType,
+      },
+      value: {
+        name: "wretch",
+        parameters: [],
+        statements: [],
+        source: {
+          name: "wretch",
+          packageCallTarget: "member",
+        },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("https://api.example.com"),
+      operations: [memberOp],
+    });
+    const op = testOperation([], [stmt], "wretchMemberTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import wretch from 'wretch'");
+    expect(result).toContain(
+      'R.pipe("https://api.example.com", wretch.wretch)'
+    );
+  });
+
   it("formats Wretch instances as package class constructors", () => {
     const ctx = createCodeGenContext(createTestContext(), { showResult: true });
     const data = createData({ type: WretchType });
@@ -396,7 +427,9 @@ describe("wretch code generation", () => {
 
   it("keeps Wretch factory inputs on the returned instance for cache keys", async () => {
     const ctx = createTestContext();
-    const op = wretchOperations.find((operation) => operation.name === "wretch");
+    const op = wretchOperations.find(
+      (operation) => operation.name === "wretch"
+    );
     if (!op || !("handler" in op)) throw new Error("wretch operation missing");
 
     const url = testString("https://api.example.com");
@@ -417,7 +450,7 @@ describe("wretch code generation", () => {
           {
             type: {
               kind: "instance",
-              className: "Wretch",
+              className: "wretch.Wretch",
               constructorArgs: [],
             },
           },
@@ -425,7 +458,7 @@ describe("wretch code generation", () => {
         ],
         result: {
           kind: "instance",
-          className: "Wretch",
+          className: "wretch.Wretch",
           constructorArgs: [],
         },
       },
@@ -457,7 +490,7 @@ describe("wretch code generation", () => {
           {
             type: {
               kind: "instance",
-              className: "WretchResponseChain",
+              className: "wretch.WretchResponseChain",
               constructorArgs: [],
             },
           },
@@ -510,7 +543,7 @@ describe("wretch code generation", () => {
           {
             type: {
               kind: "instance",
-              className: "Wretch",
+              className: "wretch.Wretch",
               constructorArgs: [],
             },
           },
@@ -518,7 +551,7 @@ describe("wretch code generation", () => {
         ],
         result: {
           kind: "instance",
-          className: "Wretch",
+          className: "wretch.Wretch",
           constructorArgs: [],
         },
       },
@@ -537,14 +570,14 @@ describe("wretch code generation", () => {
           {
             type: {
               kind: "instance",
-              className: "Wretch",
+              className: "wretch.Wretch",
               constructorArgs: [],
             },
           },
         ],
         result: {
           kind: "instance",
-          className: "WretchResponseChain",
+          className: "wretch.WretchResponseChain",
           constructorArgs: [],
         },
       },
@@ -563,7 +596,7 @@ describe("wretch code generation", () => {
           {
             type: {
               kind: "instance",
-              className: "WretchResponseChain",
+              className: "wretch.WretchResponseChain",
               constructorArgs: [],
             },
           },
@@ -602,13 +635,390 @@ describe("rowguard code generation", () => {
     const data = createData({
       type: {
         kind: "instance" as const,
-        className: "PolicyBuilder",
+        className: "rowguard.PolicyBuilder",
         constructorArgs: [],
       },
     });
 
     expect(generateData(data, ctx)).toBe("new rowguard.PolicyBuilder()");
     expect(ctx.usedPackages.has("rowguard")).toBe(true);
+  });
+
+  it("generates dotted package function call for policies.userOwned with no extra args", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "unknown" as const }, isOptional: true },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "policies.userOwned",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "policyTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain('R.pipe("myTable", rowguard.policies.userOwned)');
+  });
+
+  it("generates dotted package function with arguments for policies.userOwned", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "unknown" as const }, isOptional: true },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "policies.userOwned",
+        parameters: [stringStatement("SELECT")],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "policyWithArgs");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain(
+      'R.pipe("myTable", (arg) => rowguard.policies.userOwned(arg, "SELECT"))'
+    );
+  });
+
+  it("generates dotted package function for policies.tenantIsolation", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "string" as const }, isOptional: true },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "policies.tenantIsolation",
+        parameters: [stringStatement("tenant_col")],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "policyTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain(
+      'R.pipe("myTable", (arg) => rowguard.policies.tenantIsolation(arg, "tenant_col"))'
+    );
+  });
+
+  it("generates dotted package function for policies.publicAccess with no extra args", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "policies.publicAccess",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "policyTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain(
+      'R.pipe("myTable", rowguard.policies.publicAccess)'
+    );
+  });
+
+  it("generates dotted package function for policies.roleAccess with required role arg", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "string" as const } },
+          { type: { kind: "unknown" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "policies.roleAccess",
+        parameters: [stringStatement("admin")],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "policyTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain(
+      'R.pipe("myTable", (arg) => rowguard.policies.roleAccess(arg, "admin"))'
+    );
+  });
+
+  it("strips package prefix when operation name is already prefixed by registry", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" as const } }],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "rowguard.policies.userOwned",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "prefixedName");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain('R.pipe("myTable", rowguard.policies.userOwned)');
+  });
+
+  it("generates zero-arg package call for auth.uid", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const authUidOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "auth.uid",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [authUidOp],
+    });
+    const op = testOperation([], [stmt], "authUidTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain("R.pipe(undefined, rowguard.auth.uid)");
+  });
+
+  it("generates package call with arg for session.get", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const sessionGetOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "session.get",
+        parameters: [stringStatement("app.tenant_id")],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("app.current_tenant_id"),
+      operations: [sessionGetOp],
+    });
+    const op = testOperation([], [stmt], "sessionGetTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain(
+      'R.pipe("app.current_tenant_id", (arg) => rowguard.session.get(arg, "app.tenant_id"))'
+    );
+  });
+
+  it("generates direct pipe for session.get with no extra args", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const sessionGetOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "session.get",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("app.current_tenant_id"),
+      operations: [sessionGetOp],
+    });
+    const op = testOperation([], [stmt], "sessionGetDirect");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain(
+      'R.pipe("app.current_tenant_id", rowguard.session.get)'
+    );
+  });
+});
+
+describe("toSQL codegen for structural conditions", () => {
+  it("generates method call for toSQL after auth.uid", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const authUidOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: {
+          kind: "instance",
+          className: "rowguard.ContextValue",
+          constructorArgs: [],
+        } as const,
+      },
+      value: {
+        name: "auth.uid",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const toSQLOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "rowguard.ContextValue",
+              constructorArgs: [],
+            } as const,
+          },
+        ],
+        result: { kind: "string" as const },
+      },
+      value: {
+        name: "toSQL",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguardCondition" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [authUidOp, toSQLOp],
+    });
+    const op = testOperation([], [stmt], "toSQLTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as rowguard from 'rowguard'");
+    expect(result).toContain("(arg) => arg.toSQL()");
+  });
+
+  it("generates _.get for property access after session.get", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const sessionGetOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+          { type: { kind: "string" as const }, isOptional: true },
+        ],
+        result: {
+          kind: "instance",
+          className: "rowguard.ContextValue",
+          constructorArgs: [],
+        } as const,
+      },
+      value: {
+        name: "session.get",
+        parameters: [stringStatement("org_id")],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const getOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "rowguard.ContextValue",
+              constructorArgs: [],
+            } as const,
+          },
+          { type: { kind: "string" as const } },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "get",
+        parameters: [stringStatement("key")],
+        statements: [],
+      },
+    });
+    const stmt = createStatement({
+      data: testString("org_id"),
+      operations: [sessionGetOp, getOp],
+    });
+    const op = testOperation([], [stmt], "getOnSessionTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain('_.get("key")');
   });
 });
 

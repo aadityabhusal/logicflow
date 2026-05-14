@@ -127,8 +127,20 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
     parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
     expectedType: { kind: "tuple", elements: [] },
   },
-  { name: "get", parameters: [getObjectParam(), { type: { kind: "string" } }] },
-  { name: "has", parameters: [getObjectParam(), { type: { kind: "string" } }] },
+  {
+    name: "get",
+    parameters: (data) => [
+      getObjectParam(data, { includeInstance: true }),
+      { type: { kind: "string" } },
+    ],
+  },
+  {
+    name: "has",
+    parameters: (data) => [
+      getObjectParam(data, { includeInstance: true }),
+      { type: { kind: "string" } },
+    ],
+  },
   {
     name: "toObject",
     parameters: [
@@ -621,7 +633,9 @@ function prefixExternalPackageName(op: OperationListItem): OperationListItem {
 
 function getTypeKeys(type: DataType): string[] {
   if (type.kind === "union") return type.types.flatMap(getTypeKeys);
-  return [type.kind === "instance" ? `instance:${type.className}` : type.kind];
+  if (type.kind === "instance")
+    return [`instance:${type.className}`, "instance"];
+  return [type.kind];
 }
 
 function getFirstParamKind(op: OperationListItem): string[] {
@@ -665,11 +679,19 @@ export function getOperationsForDataType(data: IData): OperationListItem[] {
 export function rebuildIndexes() {
   builtInOperationsByKind.clear();
   builtInOperationsByName.clear();
+  // get/has accept any instance type but sampling stops before reaching
+  // the instance DataTypes entry, so we index them manually here.
+  const instanceAccessOps = new Set(["get", "has"]);
   for (const op of getAllOperations()) {
     for (const key of getFirstParamKind(op)) {
       const list = builtInOperationsByKind.get(key);
       if (list) list.push(op);
       else builtInOperationsByKind.set(key, [op]);
+    }
+    if (instanceAccessOps.has(op.name)) {
+      const list = builtInOperationsByKind.get("instance");
+      if (list) list.push(op);
+      else builtInOperationsByKind.set("instance", [op]);
     }
     const list = builtInOperationsByName.get(op.name);
     if (list) list.push(op);

@@ -1,7 +1,7 @@
 import type { OperationListItem } from "../execution/types";
 import type { ConstructorType, OperationType } from "../types";
 import { getPromiseArgsType } from "../data";
-import { PACKAGE_CATALOG, getPackageSourceNames } from "./catalog";
+import { PACKAGE_CATALOG } from "./catalog";
 
 export type InstanceTypeConfig<
   K extends string = string,
@@ -20,25 +20,31 @@ export type InstanceTypeConfig<
 
 export const customInstances = new WeakMap<object, ConstructorType>();
 
-export const PACKAGE_REGISTRY: Record<
-  string,
-  { importName: string; importKind: "default" | "namespace" }
-> = {
-  wretch: { importName: "wretch", importKind: "default" },
-  rowguard: { importName: "rowguard", importKind: "namespace" },
-};
+function buildPackageRegistry() {
+  const registry: Record<
+    string,
+    { importName: string; importKind: "default" | "namespace" }
+  > = {};
+  for (const [name, entry] of Object.entries(PACKAGE_CATALOG)) {
+    registry[name] = {
+      importName: entry.packageName,
+      importKind: entry.importKind,
+    };
+  }
+  return registry;
+}
 
-export const SOURCE_PACKAGE_MAP: Record<string, string> = {
-  wretch: "wretch",
-  wretchResponseChain: "wretch",
-  rowguard: "rowguard",
-  rowguardColumnBuilder: "rowguard",
-  rowguardConditionChain: "rowguard",
-  rowguardPolicyBuilder: "rowguard",
-  rowguardSubqueryBuilder: "rowguard",
-  rowguardAuthBuilder: "rowguard",
-  rowguardSessionBuilder: "rowguard",
-};
+export const PACKAGE_REGISTRY = buildPackageRegistry();
+
+function buildSourcePackageMap() {
+  const map: Record<string, string> = {};
+  for (const [name, entry] of Object.entries(PACKAGE_CATALOG)) {
+    for (const sourceName of entry.sourceNames) map[sourceName] = name;
+  }
+  return map;
+}
+
+export const SOURCE_PACKAGE_MAP = buildSourcePackageMap();
 
 export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
   Promise: {
@@ -145,10 +151,7 @@ export async function unloadPackage(packageName: string): Promise<void> {
 
   for (const key of loadedInstanceTypes.keys()) {
     const config = loadedInstanceTypes.get(key);
-    if (
-      config?.importInfo &&
-      getPackageSourceNames(packageName).includes(config.importInfo.packageName)
-    ) {
+    if (config?.importInfo?.packageName === packageName) {
       loadedInstanceTypes.delete(key);
     }
   }

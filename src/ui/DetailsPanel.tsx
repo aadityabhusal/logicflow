@@ -87,8 +87,11 @@ export function DetailsPanel() {
 
   const typeSignature = useMemo(() => {
     if (isResultPending) return "Pending";
+    if (detailsId && operation?.type.kind === "operation") {
+      return getTypeSignature(operation.type);
+    }
     return getTypeSignature(displayedResult?.type ?? { kind: "undefined" });
-  }, [displayedResult?.type, isResultPending]);
+  }, [displayedResult?.type, isResultPending, detailsId, operation?.type]);
 
   const docsUrl = useMemo(
     () => getDocsUrl(operation?.value.source, operation?.value.name),

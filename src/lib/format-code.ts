@@ -19,7 +19,7 @@ import {
   isObject,
 } from "./utils";
 import { builtInOperationsByName } from "./operations/built-in";
-import { PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./data";
+import { PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./packages/registry";
 import { getAllInstanceTypes } from "./packages/registry";
 import type { Options } from "prettier";
 
@@ -39,6 +39,7 @@ export async function formatCode(code: string, options?: Options) {
 type OperationSource = {
   type: "instance" | "remeda" | "external" | "builtin" | "userDefined";
   packageName?: string;
+  packageCallTarget?: "import" | "member";
   callStyle?: "method" | "function";
 };
 
@@ -65,6 +66,11 @@ export function createCodeGenContext(
 }
 function getPackageImportName(packageName: string): string {
   return PACKAGE_REGISTRY[packageName]?.importName ?? packageName;
+}
+
+function stripPackagePrefix(name: string, packageName: string): string {
+  const prefix = packageName + ".";
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
 const VARIABLE_REGEX = /^const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*/;
@@ -103,7 +109,11 @@ export function generateData(data: IData, context: CodeGenContext): string {
       const constructorArgs = data.value.constructorArgs
         .map((arg) => generateStatement(arg, context, true))
         .join(", ");
-      return `new ${importName}.${data.value.className}(${constructorArgs})`;
+      const bareClassName = stripPackagePrefix(
+        data.value.className,
+        config.importInfo.packageName
+      );
+      return `new ${importName}.${bareClassName}(${constructorArgs})`;
     }
     const constructorArgs = data.value.constructorArgs
       .map((arg) => generateStatement(arg, context, true))
@@ -151,17 +161,19 @@ function getOperationSource(
   const opName = operation.value.name;
   if (!opName) return { type: "userDefined" };
 
-  const valueSourceName = operation.value.source?.name;
   const opItem = context.getOperation(opName);
-  const sourceName = valueSourceName ?? opItem?.source?.name;
+  const source = { ...opItem?.source, ...operation.value.source };
+  const sourceName = source.name;
   if (sourceName === "remeda") return { type: "remeda" };
   if (sourceName && sourceName in SOURCE_PACKAGE_MAP) {
-    const packageName = SOURCE_PACKAGE_MAP[sourceName];
-    context.usedPackages.add(packageName);
+    context.usedPackages.add(SOURCE_PACKAGE_MAP[sourceName]);
     const firstParamType = operation.type.parameters[0]?.type;
-    const callStyle =
-      firstParamType?.kind === "instance" ? "method" : "function";
-    return { type: "external", packageName, callStyle };
+    return {
+      type: "external",
+      packageName: SOURCE_PACKAGE_MAP[sourceName],
+      packageCallTarget: source.packageCallTarget ?? "member",
+      callStyle: firstParamType?.kind === "instance" ? "method" : "function",
+    };
   }
   const firstParamType = operation.type.parameters[0]?.type;
   if (firstParamType?.kind === "instance") {
@@ -175,13 +187,15 @@ function getOperationSource(
   return { type: "builtin" };
 }
 
-function getPackageFuncName(packageName: string, operationName: string) {
+function getPackageFuncName(
+  packageName: string,
+  operationName: string,
+  callTarget: "import" | "member"
+) {
   const importName = getPackageImportName(packageName);
-  const registry = PACKAGE_REGISTRY[packageName];
-  if (registry?.importKind === "default" && operationName === importName) {
-    return importName;
-  }
-  return `${importName}.${operationName}`;
+  if (callTarget === "import") return importName;
+  const bareName = stripPackagePrefix(operationName, packageName);
+  return `${importName}.${bareName}`;
 }
 
 function generateOperationCall(
@@ -205,7 +219,11 @@ function generateOperationCall(
       if (source.callStyle !== "function") {
         return `, (arg) => arg.${actualName}(${params})`;
       }
-      const fnName = getPackageFuncName(source.packageName ?? "", actualName);
+      const fnName = getPackageFuncName(
+        source.packageName ?? "",
+        operation.value.name ?? "",
+        source.packageCallTarget ?? "member"
+      );
       if (!params) return `, ${fnName}`;
       return `, (arg) => ${fnName}(arg, ${params})`;
     }
