@@ -489,7 +489,9 @@ const DropdownComponent = ({
                       classNames={{ tooltip: !option.type ? "hidden" : "" }}
                       label={
                         <span className="text-xs">
-                          {option.type ? getTypeSignature(option.type) : null}
+                          {option.type
+                            ? getTypeSignature(option.type, context)
+                            : null}
                         </span>
                       }
                     >

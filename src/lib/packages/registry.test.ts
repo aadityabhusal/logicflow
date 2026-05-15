@@ -7,8 +7,14 @@ import {
   resetPackageRegistry,
   loadedPackageOperations,
   getAllInstanceTypes,
+  resolveDisplayName,
 } from "./registry";
-import { PACKAGE_CATALOG } from "./catalog";
+import {
+  PACKAGE_CATALOG,
+  getAliasesFromPackages,
+  getEnabledPackages,
+} from "./catalog";
+import type { Project } from "../types";
 
 describe("PACKAGE_REGISTRY derivation", () => {
   it("has an entry for every catalog package", () => {
@@ -91,6 +97,48 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
     expect(instanceTypes["rowguard.ColumnBuilder"]).toBeDefined();
   });
 
+  it("stores operations and instance types with package-scoped names", async () => {
+    await loadPackage("rowguard");
+
+    const ops = loadedPackageOperations.get("rowguard")!;
+    const onOp = ops.find((op) => op.name === "rowguard.on");
+    expect(onOp).toBeDefined();
+
+    const parameters =
+      typeof onOp!.parameters === "function"
+        ? onOp!.parameters({
+            id: "test",
+            type: { kind: "unknown" },
+            value: undefined,
+          })
+        : onOp!.parameters;
+
+    expect(parameters[0].type).toMatchObject({
+      kind: "instance",
+      className: "rowguard.PolicyBuilder",
+    });
+
+    const instanceTypes = getAllInstanceTypes();
+    expect(instanceTypes["rowguard.PolicyBuilder"]).toBeDefined();
+    expect(instanceTypes["rowguard.PolicyBuilder"]?.name).toBe(
+      "rowguard.PolicyBuilder"
+    );
+  });
+
+  it("resolveDisplayName replaces package prefix with alias", () => {
+    expect(
+      resolveDisplayName("rowguard.PolicyBuilder", { rowguard: "Rg" })
+    ).toBe("Rg.PolicyBuilder");
+    expect(resolveDisplayName("rowguard.on", { rowguard: "Rg" })).toBe("Rg.on");
+  });
+
+  it("resolveDisplayName returns original when no alias", () => {
+    expect(resolveDisplayName("rowguard.PolicyBuilder", {})).toBe(
+      "rowguard.PolicyBuilder"
+    );
+    expect(resolveDisplayName("Promise", {})).toBe("Promise");
+  });
+
   it("prefixes operation names with the package name", async () => {
     await loadPackage("wretch");
     const ops = loadedPackageOperations.get("wretch")!;
@@ -163,5 +211,102 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
   it("loadPackage is a no-op for unknown packages", async () => {
     await loadPackage("nonexistent");
     expect(loadedPackageOperations.size).toBe(0);
+  });
+});
+
+describe("resolveDisplayName edge cases", () => {
+  it("returns name unchanged when alias map is empty", () => {
+    expect(resolveDisplayName("foo.bar", {})).toBe("foo.bar");
+  });
+
+  it("returns name unchanged when package has no alias", () => {
+    expect(resolveDisplayName("foo.bar", { other: "X" })).toBe("foo.bar");
+  });
+
+  it("returns name unchanged when name has no dot", () => {
+    expect(resolveDisplayName("Promise", { Promise: "P" })).toBe("Promise");
+  });
+
+  it("only replaces the first dot segment", () => {
+    expect(resolveDisplayName("a.b.c", { a: "X" })).toBe("X.b.c");
+  });
+
+  it("does not partial-match package prefixes", () => {
+    expect(resolveDisplayName("rowguardApi.foo", { rowguard: "Rg" })).toBe(
+      "rowguardApi.foo"
+    );
+  });
+
+  it("returns name unchanged for empty string input", () => {
+    expect(resolveDisplayName("", {})).toBe("");
+  });
+});
+
+describe("getAliasesFromPackages", () => {
+  it("returns an empty object for undefined input", () => {
+    expect(getAliasesFromPackages(undefined)).toEqual({});
+  });
+
+  it("returns an empty object for an empty array", () => {
+    expect(getAliasesFromPackages([])).toEqual({});
+  });
+
+  it("returns an empty object when no packages have namespaces", () => {
+    expect(
+      getAliasesFromPackages([
+        { name: "wretch", namespace: undefined },
+        { name: "rowguard" },
+      ])
+    ).toEqual({});
+  });
+
+  it("maps namespaced packages to the alias record", () => {
+    expect(
+      getAliasesFromPackages([
+        { name: "wretch", namespace: "W" },
+        { name: "rowguard", namespace: "Rg" },
+        { name: "other", namespace: undefined },
+      ])
+    ).toEqual({ wretch: "W", rowguard: "Rg" });
+  });
+
+  it("skips falsy namespaces", () => {
+    expect(
+      getAliasesFromPackages([
+        { name: "wretch", namespace: "" },
+        { name: "rowguard", namespace: "Rg" },
+      ])
+    ).toEqual({ rowguard: "Rg" });
+  });
+});
+
+describe("getEnabledPackages", () => {
+  it("returns an empty array for undefined project", () => {
+    expect(getEnabledPackages(undefined)).toEqual([]);
+  });
+
+  it("returns an empty array when project has no dependencies", () => {
+    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [] };
+    expect(getEnabledPackages(project)).toEqual([]);
+  });
+
+  it("returns an empty array when npm deps are empty", () => {
+    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [] } };
+    expect(getEnabledPackages(project)).toEqual([]);
+  });
+
+  it("returns only catalog packages with their namespaces", () => {
+    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [{ name: "rowguard", version: "latest", exports: [], namespace: "Rg" }] } };
+    expect(getEnabledPackages(project)).toEqual([{ name: "rowguard", namespace: "Rg" }]);
+  });
+
+  it("filters out non-catalog packages", () => {
+    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [{ name: "nonexistent", version: "latest", exports: [], namespace: "Nx" }] } };
+    expect(getEnabledPackages(project)).toEqual([]);
+  });
+
+  it("filters out non-catalog packages while keeping catalog ones", () => {
+    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [{ name: "wretch", version: "latest", exports: [], namespace: "W" }, { name: "nonexistent", version: "latest", exports: [] }] } };
+    expect(getEnabledPackages(project)).toEqual([{ name: "wretch", namespace: "W" }]);
   });
 });

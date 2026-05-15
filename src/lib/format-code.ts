@@ -4,7 +4,6 @@ import {
   OperationType,
   ConditionType,
   DataValue,
-  PackageNamespace,
 } from "./types";
 import { OperationListItem } from "./execution/types";
 import { Context } from "./execution/types";
@@ -50,7 +49,6 @@ type CodeGenContext = Context & {
   importedOperations: Set<string>;
   usedPackages: Set<string>;
   currentOperationName?: string;
-  packageNamespaces: Record<string, string>;
 };
 
 export function createCodeGenContext(
@@ -58,18 +56,12 @@ export function createCodeGenContext(
   options?: {
     showResult?: boolean;
     currentOperationName?: string;
-    packages?: PackageNamespace[];
   }
 ): CodeGenContext {
-  const packageNamespaces: Record<string, string> = {};
-  for (const p of options?.packages ?? []) {
-    if (p.namespace) packageNamespaces[p.name] = p.namespace;
-  }
   return {
     ...context,
     showResult: options?.showResult,
     currentOperationName: options?.currentOperationName,
-    packageNamespaces,
     importedOperations: new Set(),
     usedPackages: new Set(),
     getOperation: (name: string) => builtInOperationsByName.get(name)?.[0],
@@ -80,19 +72,14 @@ function getPackageImportName(
   context?: CodeGenContext
 ): string {
   return (
-    context?.packageNamespaces?.[packageName] ??
+    context?.packageAliases?.[packageName] ??
     PACKAGE_REGISTRY[packageName]?.importName ??
     packageName
   );
 }
 
-function stripPackagePrefix(
-  name: string,
-  packageName: string,
-  context?: CodeGenContext
-): string {
-  const prefix =
-    (context?.packageNamespaces?.[packageName] ?? packageName) + ".";
+function stripPackagePrefix(name: string, packageName: string): string {
+  const prefix = packageName + ".";
   return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
@@ -137,8 +124,7 @@ export function generateData(data: IData, context: CodeGenContext): string {
         .join(", ");
       const bareClassName = stripPackagePrefix(
         data.value.className,
-        config.importInfo.packageName,
-        context
+        config.importInfo.packageName
       );
       return `new ${importName}.${bareClassName}(${constructorArgs})`;
     }
@@ -222,7 +208,7 @@ function getPackageFuncName(
 ) {
   const importName = getPackageImportName(packageName, context);
   if (callTarget === "import") return importName;
-  const bareName = stripPackagePrefix(operationName, packageName, context);
+  const bareName = stripPackagePrefix(operationName, packageName);
   return `${importName}.${bareName}`;
 }
 
@@ -367,7 +353,7 @@ function generateCallback(
       const type = storedType?.kind === "operation" ? storedType : undefined;
       return `(${type ? type.parameters.map((p) => p.name).join(", ") : "...args"}) => {
     /* internal logic */ 
-    /* @returns ${getTypeSignature(type?.result ?? { kind: "unknown" })} */
+    /* @returns ${getTypeSignature(type?.result ?? { kind: "unknown" }, context)} */
   }`;
     }
   }
@@ -408,13 +394,11 @@ function generateImports(codegenContext?: CodeGenContext): string {
 
 export function generateOperation(
   operation: IData<OperationType>,
-  context: Context,
-  options?: { packages?: PackageNamespace[] }
+  context: Context
 ): string {
-  const operationName = operation.value.name ?? "op";
+  const currentOperationName = operation.value.name ?? "op";
   const codeGenContext = createCodeGenContext(context, {
-    currentOperationName: operationName,
-    packages: options?.packages,
+    currentOperationName,
   });
   const callback = generateCallback(operation, codeGenContext);
   const userImports = Array.from(codeGenContext.importedOperations)
@@ -422,5 +406,5 @@ export function generateOperation(
     .join("\n");
   const packageImports = generateImports(codeGenContext);
   const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
-  return `${imports}\nconst ${operationName} = ${callback};\nexport default ${operationName};`;
+  return `${imports}\nconst ${currentOperationName} = ${callback};\nexport default ${currentOperationName};`;
 }

@@ -19,6 +19,7 @@ function createHydrationBaseContext(): Context {
   const base: Context = {
     scopeId: "_root_",
     variables,
+    packageAliases: {},
     controlFlowState: {},
     getResult: (id) => results.get(id),
     setResult: (id, result) => results.set(id, result),
@@ -42,6 +43,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [["x", { data: createData({ value: 42 }) }]],
           callDepth: 1,
           isIsolated: true,
@@ -51,6 +53,7 @@ describe("hydrateContexts", () => {
         "ctx-2",
         {
           scopeId: "scope-2",
+          packageAliases: {},
           variables: [],
           callDepth: 2,
           isIsolated: true,
@@ -72,6 +75,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [],
         },
       ],
@@ -96,6 +100,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [
             ["x", { data: xData, isEnv: true }],
             ["y", { data: yData, reference: { name: "yRef", id: "y-id" } }],
@@ -123,6 +128,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [],
           narrowedTypes: [["key", { data: narrowedData }]],
         },
@@ -144,6 +150,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [],
         },
       ],
@@ -162,6 +169,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [],
           skipExecution: { reason: "Unreachable branch", kind: "unreachable" },
           expectedType: { kind: "string" },
@@ -186,6 +194,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [],
           callDepth: 5,
           maxCallDepth: 250,
@@ -209,6 +218,7 @@ describe("hydrateContexts", () => {
         "ctx-1",
         {
           scopeId: "scope-1",
+          packageAliases: {},
           variables: [],
           controlFlowState: { returned: returnedData },
         },
@@ -404,7 +414,9 @@ describe("runExecutionInWorker", () => {
     const firstRunId = (workers[0].messages[0] as { runId: string }).runId;
     respondToWorker(workers[0], firstRunId, {
       results: [],
-      workerContexts: [["ctx-a", { scopeId: "a", variables: [] }]],
+      workerContexts: [
+        ["ctx-a", { scopeId: "a", packageAliases: {}, variables: [] }],
+      ],
     });
 
     const result = await promise;
@@ -468,42 +480,46 @@ describe("runExecutionInWorker", () => {
     expect(worker.messages).toHaveLength(msgCount);
   });
 
-  it("run while active queues the latest pending and sends cancel", { timeout: 10000 }, async () => {
-    const first = executionWorkerClient.run(makeRequest());
-    await Promise.resolve();
-    await Promise.resolve();
+  it(
+    "run while active queues the latest pending and sends cancel",
+    { timeout: 10000 },
+    async () => {
+      const first = executionWorkerClient.run(makeRequest());
+      await Promise.resolve();
+      await Promise.resolve();
 
-    const worker = workers[0];
-    const firstRunId = (worker.messages[0] as { runId: string }).runId;
-    expect(worker.messages).toHaveLength(1);
+      const worker = workers[0];
+      const firstRunId = (worker.messages[0] as { runId: string }).runId;
+      expect(worker.messages).toHaveLength(1);
 
-    const second = executionWorkerClient.run(makeRequest());
-    await Promise.resolve();
-    await Promise.resolve();
+      const second = executionWorkerClient.run(makeRequest());
+      await Promise.resolve();
+      await Promise.resolve();
 
-    const third = executionWorkerClient.run(makeRequest());
-    await Promise.resolve();
-    await Promise.resolve();
+      const third = executionWorkerClient.run(makeRequest());
+      await Promise.resolve();
+      await Promise.resolve();
 
-    await expect(second).rejects.toThrow("Execution cancelled");
+      await expect(second).rejects.toThrow("Execution cancelled");
 
-    expect(worker.terminated).toBe(false);
-    expect(workerCount).toBe(1);
+      expect(worker.terminated).toBe(false);
+      expect(workerCount).toBe(1);
 
-    const typeCancel = { type: "cancel" };
-    expect(worker.messages[1]).toEqual(typeCancel);
-    expect(worker.messages[2]).toEqual(typeCancel);
+      const typeCancel = { type: "cancel" };
+      expect(worker.messages[1]).toEqual(typeCancel);
+      expect(worker.messages[2]).toEqual(typeCancel);
 
-    respondToWorker(worker, firstRunId, { cancelled: true });
-    await expect(first).rejects.toThrow("Execution cancelled");
+      respondToWorker(worker, firstRunId, { cancelled: true });
+      await expect(first).rejects.toThrow("Execution cancelled");
 
-    expect(worker.messages).toHaveLength(4);
-    expect(worker.messages[3]).toEqual(
-      expect.objectContaining({ type: "run" })
-    );
+      expect(worker.messages).toHaveLength(4);
+      expect(worker.messages[3]).toEqual(
+        expect.objectContaining({ type: "run" })
+      );
 
-    void third.catch(() => undefined);
-  });
+      void third.catch(() => undefined);
+    }
+  );
 
   it("auto-starts pending run when active run completes successfully", async () => {
     const first = executionWorkerClient.run(makeRequest());
@@ -519,7 +535,9 @@ describe("runExecutionInWorker", () => {
 
     respondToWorker(worker, firstRunId, {
       results: [],
-      workerContexts: [["ctx", { scopeId: "a", variables: [] }]],
+      workerContexts: [
+        ["ctx", { scopeId: "a", packageAliases: {}, variables: [] }],
+      ],
     });
     await first;
 

@@ -644,6 +644,55 @@ describe("rowguard code generation", () => {
     expect(ctx.usedPackages.has("rowguard")).toBe(true);
   });
 
+  it("uses packageAlias for namespace-imported instance constructors", () => {
+    const ctx = createCodeGenContext(
+      { ...createTestContext(), packageAliases: { rowguard: "Rg" } },
+      { showResult: true }
+    );
+    const data = createData({
+      type: {
+        kind: "instance" as const,
+        className: "rowguard.PolicyBuilder",
+        constructorArgs: [],
+      },
+    });
+
+    expect(generateData(data, ctx)).toBe("new Rg.PolicyBuilder()");
+    expect(ctx.usedPackages.has("rowguard")).toBe(true);
+  });
+
+  it("uses packageAlias in generated import statement", () => {
+    const ctxWithAlias = {
+      ...createTestContext(),
+      packageAliases: { rowguard: "Rg" },
+    };
+    const policiesOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" as const } },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "policies.userOwned",
+        parameters: [],
+        statements: [],
+        source: { name: "rowguard" },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("myTable"),
+      operations: [policiesOp],
+    });
+    const op = testOperation([], [stmt], "aliasTest");
+
+    const result = generateOperation(op, ctxWithAlias);
+
+    expect(result).toContain("import * as Rg from 'rowguard'");
+    expect(result).toContain('R.pipe("myTable", Rg.policies.userOwned)');
+  });
+
   it("generates dotted package function call for policies.userOwned with no extra args", () => {
     const ctx = createCodeGenContext(createTestContext());
     const policiesOp = createData({

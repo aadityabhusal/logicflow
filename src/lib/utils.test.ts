@@ -44,7 +44,7 @@ import {
   resolveConstructorArgs,
 } from "@/lib/utils";
 import { DataType, UnionType, OperationType, IData } from "@/lib/types";
-import { OperationListItem } from "@/lib/execution/types";
+import { Context, OperationListItem } from "@/lib/execution/types";
 import {
   createTestContext,
   testString,
@@ -1554,105 +1554,160 @@ describe("isObject", () => {
 });
 
 describe("getTypeSignature", () => {
+  const ctx = { packageAliases: {} } as unknown as Context;
+
   it("returns kind for primitive types", () => {
-    expect(getTypeSignature({ kind: "string" })).toBe("string");
-    expect(getTypeSignature({ kind: "number" })).toBe("number");
-    expect(getTypeSignature({ kind: "boolean" })).toBe("boolean");
-    expect(getTypeSignature({ kind: "undefined" })).toBe("undefined");
-    expect(getTypeSignature({ kind: "unknown" })).toBe("unknown");
-    expect(getTypeSignature({ kind: "never" })).toBe("never");
+    expect(getTypeSignature({ kind: "string" }, ctx)).toBe("string");
+    expect(getTypeSignature({ kind: "number" }, ctx)).toBe("number");
+    expect(getTypeSignature({ kind: "boolean" }, ctx)).toBe("boolean");
+    expect(getTypeSignature({ kind: "undefined" }, ctx)).toBe("undefined");
+    expect(getTypeSignature({ kind: "unknown" }, ctx)).toBe("unknown");
+    expect(getTypeSignature({ kind: "never" }, ctx)).toBe("never");
   });
 
   it("formats array type signature", () => {
     expect(
-      getTypeSignature({ kind: "array", elementType: { kind: "string" } })
+      getTypeSignature({ kind: "array", elementType: { kind: "string" } }, ctx)
     ).toBe("array<string>");
   });
 
   it("formats tuple type signature", () => {
-    const sig = getTypeSignature({
-      kind: "tuple",
-      elements: [{ kind: "string" }, { kind: "number" }],
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "tuple",
+        elements: [{ kind: "string" }, { kind: "number" }],
+      },
+      ctx
+    );
     expect(sig).toBe("[string, number]");
   });
 
   it("formats object type signature with required and optional", () => {
-    const sig = getTypeSignature({
-      kind: "object",
-      properties: [
-        { key: "name", value: { kind: "string" } },
-        { key: "age", value: { kind: "number" } },
-      ],
-      required: ["name"],
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "object",
+        properties: [
+          { key: "name", value: { kind: "string" } },
+          { key: "age", value: { kind: "number" } },
+        ],
+        required: ["name"],
+      },
+      ctx
+    );
     expect(sig).toContain("name: string");
     expect(sig).toContain("age?: number");
   });
 
   it("formats dictionary type signature", () => {
     expect(
-      getTypeSignature({ kind: "dictionary", elementType: { kind: "string" } })
+      getTypeSignature(
+        { kind: "dictionary", elementType: { kind: "string" } },
+        ctx
+      )
     ).toBe("dictionary<string>");
   });
 
   it("formats union type signature", () => {
-    const sig = getTypeSignature({
-      kind: "union",
-      types: [{ kind: "string" }, { kind: "number" }],
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "union",
+        types: [{ kind: "string" }, { kind: "number" }],
+      },
+      ctx
+    );
     expect(sig).toBe("string | number");
   });
 
   it("formats operation type signature", () => {
-    const sig = getTypeSignature({
-      kind: "operation",
-      parameters: [{ name: "x", type: { kind: "number" } }],
-      result: { kind: "string" },
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "operation",
+        parameters: [{ name: "x", type: { kind: "number" } }],
+        result: { kind: "string" },
+      },
+      ctx
+    );
     expect(sig).toContain("=>");
     expect(sig).toContain("string");
   });
 
   it("formats reference type signature as name", () => {
-    expect(getTypeSignature({ kind: "reference", name: "myVar" })).toBe(
+    expect(getTypeSignature({ kind: "reference", name: "myVar" }, ctx)).toBe(
       "myVar"
     );
   });
 
   it("formats instance type signature with className", () => {
-    const sig = getTypeSignature({
-      kind: "instance",
-      className: "Promise",
-      constructorArgs: [],
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "instance",
+        className: "Promise",
+        constructorArgs: [],
+      },
+      ctx
+    );
     expect(sig).toContain("Promise");
   });
 
   it("formats instance type signature with result type", () => {
-    const sig = getTypeSignature({
-      kind: "instance",
-      className: "Promise",
-      constructorArgs: [],
-      result: { kind: "string" },
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "instance",
+        className: "Promise",
+        constructorArgs: [],
+        result: { kind: "string" },
+      },
+      ctx
+    );
     expect(sig).toContain("Promise");
     expect(sig).toContain("string");
   });
 
+  it("formats instance className using packageAliases", () => {
+    const aliased = { packageAliases: { rowguard: "Rg" } } as unknown as Context;
+    const sig = getTypeSignature(
+      {
+        kind: "instance",
+        className: "rowguard.PolicyBuilder",
+        constructorArgs: [],
+      },
+      aliased
+    );
+    expect(sig).toBe("Rg.PolicyBuilder");
+  });
+
+  it("formats instance className with no matching alias unchanged", () => {
+    const aliased = { packageAliases: { other: "O" } } as unknown as Context;
+    const sig = getTypeSignature(
+      {
+        kind: "instance",
+        className: "rowguard.PolicyBuilder",
+        constructorArgs: [],
+      },
+      aliased
+    );
+    expect(sig).toBe("rowguard.PolicyBuilder");
+  });
+
   it("formats condition type signature as result type", () => {
-    const sig = getTypeSignature({
-      kind: "condition",
-      result: { kind: "number" },
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "condition",
+        result: { kind: "number" },
+      },
+      ctx
+    );
     expect(sig).toBe("number");
   });
 
   it("formats error type signature", () => {
-    const sig = getTypeSignature({
-      kind: "error",
-      errorType: "reference_error",
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "error",
+        errorType: "reference_error",
+      },
+      ctx
+    );
     expect(sig).toBeTruthy();
   });
 
@@ -1661,48 +1716,57 @@ describe("getTypeSignature", () => {
       kind: "array",
       elementType: { kind: "array", elementType: { kind: "string" } },
     };
-    expect(getTypeSignature(deep, 1)).toContain("...");
+    expect(getTypeSignature(deep, ctx, 1)).toContain("...");
   });
 
   it("formats operation with rest parameter", () => {
-    const sig = getTypeSignature({
-      kind: "operation",
-      parameters: [{ type: { kind: "number" }, isRest: true }],
-      result: { kind: "undefined" },
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "operation",
+        parameters: [{ type: { kind: "number" }, isRest: true }],
+        result: { kind: "undefined" },
+      },
+      ctx
+    );
     expect(sig).toContain("...");
     expect(sig).toContain("array");
   });
 
   it("formats operation with optional parameter", () => {
-    const sig = getTypeSignature({
-      kind: "operation",
-      parameters: [{ name: "x", type: { kind: "string" }, isOptional: true }],
-      result: { kind: "undefined" },
-    });
+    const sig = getTypeSignature(
+      {
+        kind: "operation",
+        parameters: [{ name: "x", type: { kind: "string" }, isOptional: true }],
+        result: { kind: "undefined" },
+      },
+      ctx
+    );
     expect(sig).toContain("x?");
   });
 
   it("formats empty tuple as []", () => {
-    const sig = getTypeSignature({ kind: "tuple", elements: [] });
+    const sig = getTypeSignature({ kind: "tuple", elements: [] }, ctx);
     expect(sig).toBe("[]");
   });
 
   it("formats nested object with depth", () => {
-    const sig = getTypeSignature({
-      kind: "object",
-      properties: [
-        {
-          key: "user",
-          value: {
-            kind: "object",
-            properties: [{ key: "name", value: { kind: "string" } }],
-            required: ["name"],
+    const sig = getTypeSignature(
+      {
+        kind: "object",
+        properties: [
+          {
+            key: "user",
+            value: {
+              kind: "object",
+              properties: [{ key: "name", value: { kind: "string" } }],
+              required: ["name"],
+            },
           },
-        },
-      ],
-      required: ["user"],
-    });
+        ],
+        required: ["user"],
+      },
+      ctx
+    );
     expect(sig).toContain("user: {");
     expect(sig).toContain("name: string");
   });
@@ -3191,9 +3255,7 @@ describe("createLocalContext", () => {
 
     const { context } = createLocalContext(parent);
 
-    expect(context.getContext("parent-child-id").scopeId).toBe(
-      "parent-child"
-    );
+    expect(context.getContext("parent-child-id").scopeId).toBe("parent-child");
   });
 
   it("isolated context is stored only once per id", () => {

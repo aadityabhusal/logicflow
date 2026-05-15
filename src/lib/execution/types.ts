@@ -34,6 +34,7 @@ export type Variable = {
 export type ContextProps = {
   scopeId: string;
   variables: Map<string, Variable>;
+  packageAliases: Record<string, string>;
   narrowedTypes?: Map<string, Variable>;
   expectedType?: DataType;
   enforceExpectedType?: boolean;

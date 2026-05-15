@@ -1,3 +1,4 @@
+import type { Project } from "../lib/types";
 import { useUiConfigStore, useProjectStore } from "../lib/store";
 import { BooleanInput } from "../components/Input/BooleanInput";
 import { createData } from "@/lib/utils";
@@ -8,6 +9,8 @@ import { useCallback, useState } from "react";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
+import { notifications } from "@mantine/notifications";
+import { useRestrictedName } from "@/lib/useRestrictedName";
 import {
   FaSpinner,
   FaChevronDown,
@@ -32,35 +35,58 @@ export function SettingsPanel() {
   );
   const [loadingPackage, setLoadingPackage] = useState<string | null>(null);
   const [expandedPackages, setExpandedPackages] = useState(new Set<string>());
+  const [aliasInputs, setAliasInputs] = useState<Record<string, string>>({});
+  const { isRestricted } = useRestrictedName();
+
+  const applyPackageChanges = useCallback(
+    async (
+      nextDeps: NonNullable<NonNullable<Project["dependencies"]>["npm"]>
+    ) => {
+      if (!currentProjectId) return;
+
+      await syncPackageRegistry(
+        nextDeps.map((dep) => ({ name: dep.name, namespace: dep.namespace }))
+      );
+      updateProject(currentProjectId, {
+        dependencies: { ...dependencies, npm: nextDeps },
+      });
+      executionWorkerClient.reset();
+      useExecutionResultsStore.getState().clearCache();
+    },
+    [currentProjectId, dependencies, updateProject]
+  );
 
   const togglePackage = useCallback(
     async (pkgName: string) => {
-      if (!currentProjectId) return;
-      const project = useProjectStore.getState().getCurrentProject();
-      if (!project) return;
-      const deps = project.dependencies?.npm ?? [];
-      const enabled = deps.some((dep) => dep.name === pkgName);
-      const nextDeps = !enabled
+      const deps = dependencies?.npm ?? [];
+      const nextDeps = !deps.some((dep) => dep.name === pkgName)
         ? [...deps, { name: pkgName, version: "latest", exports: [] }]
         : deps.filter((dep) => dep.name !== pkgName);
 
       setLoadingPackage(pkgName);
       try {
-        await syncPackageRegistry(
-          nextDeps.map((dep) => ({ name: dep.name, namespace: dep.namespace }))
-        );
-
-        updateProject(currentProjectId, {
-          dependencies: { ...project.dependencies, npm: nextDeps },
-        });
-
-        executionWorkerClient.reset();
-        useExecutionResultsStore.getState().clearCache();
+        await applyPackageChanges(nextDeps);
       } finally {
         setLoadingPackage(null);
       }
     },
-    [currentProjectId, updateProject]
+    [applyPackageChanges, dependencies]
+  );
+
+  const handleAliasChange = useCallback(
+    async (pkgName: string, newAlias: string) => {
+      if (!currentProjectId) return;
+      const deps = dependencies?.npm ?? [];
+      const dep = deps.find((d) => d.name === pkgName);
+      if (!dep) return;
+      if (newAlias === (dep.namespace ?? "")) return;
+
+      const nextDeps = deps.map((d) =>
+        d.name !== pkgName ? d : { ...d, namespace: newAlias || undefined }
+      );
+      await applyPackageChanges(nextDeps);
+    },
+    [currentProjectId, dependencies, applyPackageChanges]
   );
 
   const externalPackages = Object.entries(PACKAGE_CATALOG);
@@ -178,16 +204,33 @@ export function SettingsPanel() {
                           type="text"
                           className="focus:outline outline-white border w-full p-0.5 text-sm"
                           placeholder="Global alias for the package"
-                          value={dependency?.namespace ?? ""}
-                          onChange={({ target: { value } }) => {
-                            if (!currentProjectId || !dependencies?.npm) return;
-                            const updated = dependencies?.npm.map((dep) => {
-                              if (dep.name !== name) return dep;
-                              return { ...dep, namespace: value || undefined };
+                          value={
+                            aliasInputs[name] ?? dependency?.namespace ?? ""
+                          }
+                          onChange={(e) =>
+                            setAliasInputs((prev) => {
+                              return { ...prev, [name]: e.target.value };
+                            })
+                          }
+                          onBlur={(e) => {
+                            const alias = e.target.value.trim();
+                            const error = isRestricted(alias, name);
+                            if (error) {
+                              notifications.show({ message: error });
+                            } else {
+                              handleAliasChange(name, alias);
+                            }
+                            setAliasInputs((prev) => {
+                              const next = { ...prev };
+                              delete next[name];
+                              return next;
                             });
-                            updateProject(currentProjectId, {
-                              dependencies: { ...dependencies, npm: updated },
-                            });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              e.currentTarget.blur();
+                            }
                           }}
                         />
                       </div>

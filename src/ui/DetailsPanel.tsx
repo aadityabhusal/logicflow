@@ -32,7 +32,7 @@ import {
   generateData,
   createCodeGenContext,
 } from "@/lib/format-code";
-import { getEnabledPackages } from "@/lib/packages/catalog";
+import { resolveDisplayName } from "@/lib/packages/registry";
 import { Link } from "react-router";
 
 export function DetailsPanel() {
@@ -89,10 +89,19 @@ export function DetailsPanel() {
   const typeSignature = useMemo(() => {
     if (isResultPending) return "Pending";
     if (detailsId && operation?.type.kind === "operation") {
-      return getTypeSignature(operation.type);
+      return getTypeSignature(operation.type, context);
     }
-    return getTypeSignature(displayedResult?.type ?? { kind: "undefined" });
-  }, [displayedResult?.type, isResultPending, detailsId, operation?.type]);
+    return getTypeSignature(
+      displayedResult?.type ?? { kind: "undefined" },
+      context
+    );
+  }, [
+    displayedResult?.type,
+    isResultPending,
+    detailsId,
+    operation?.type,
+    context,
+  ]);
 
   const docsUrl = useMemo(
     () => getDocsUrl(operation?.value.source, operation?.value.name),
@@ -116,12 +125,7 @@ export function DetailsPanel() {
     }
     const codeString = generateData(
       displayedResult,
-      createCodeGenContext(context, {
-        showResult: true,
-        packages: getEnabledPackages(
-          useProjectStore.getState().getCurrentProject()
-        ),
-      })
+      createCodeGenContext(context, { showResult: true })
     );
     let ignore = false;
 
@@ -189,7 +193,9 @@ export function DetailsPanel() {
         {!detailsId && operation?.value.name ? (
           <div className="border-b p-1 gap-1">
             <div className="text-gray-300 mb-1.5">Operation</div>
-            <div className="mb-1.5">{operation.value.name}</div>
+            <div className="mb-1.5">
+              {resolveDisplayName(operation.value.name, context.packageAliases)}
+            </div>
           </div>
         ) : null}
         <div className="p-1 border-b gap-1">

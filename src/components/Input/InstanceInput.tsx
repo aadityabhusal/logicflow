@@ -6,6 +6,7 @@ import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { forwardRef, memo, useCallback, useMemo } from "react";
 import { inferTypeFromValue } from "@/lib/utils";
+import { resolveDisplayName } from "@/lib/packages/registry";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
 
@@ -13,6 +14,7 @@ interface InstanceInputProps {
   data: IData<InstanceDataType>;
   handleData: (data: IData<InstanceDataType>) => void;
   context: Context;
+  value?: string;
   onChange?: (value: string) => void;
   basePath: EntityPath;
 }
@@ -24,6 +26,7 @@ const InstanceInputComponent = (
     onChange,
     basePath,
     context,
+    value,
     ...props
   }: InstanceInputProps,
   ref: React.ForwardedRef<HTMLInputElement>
@@ -68,6 +71,7 @@ const InstanceInputComponent = (
           {...props}
           ref={ref}
           className="text-type"
+          value={resolveDisplayName(value ?? "", context.packageAliases)}
           onChange={onChange}
         />
         <span>{"("}</span>

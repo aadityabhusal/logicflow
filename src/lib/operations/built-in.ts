@@ -710,7 +710,7 @@ export async function syncPackageRegistry(
 ): Promise<PromiseSettledResult<void>[]> {
   resetPackageRegistry();
   const results = await Promise.allSettled(
-    packages.map(({ name, namespace }) => loadPackage(name, namespace))
+    packages.map(({ name }) => loadPackage(name))
   );
   rebuildIndexes();
   return results;

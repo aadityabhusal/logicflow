@@ -39,9 +39,7 @@ export async function generateDeployableProject(
       errors.push(`Failed to create operation from file: ${file.name}`);
       continue;
     }
-    const code = generateOperation(operation, context, {
-      packages: getEnabledPackages(project),
-    });
+    const code = generateOperation(operation, context);
     files.push({
       path: `src/operations/${file.name}.js`,
       content: code,

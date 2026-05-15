@@ -14,10 +14,12 @@ import {
   ExecutionWorkerResponse,
 } from "./types";
 import { syncPackageRegistry } from "../operations/built-in";
+import { getAliasesFromPackages } from "../packages/catalog";
 
 function serializeContext(ctx: Context): WorkerContext {
   return {
     scopeId: ctx.scopeId,
+    packageAliases: ctx.packageAliases,
     expectedType: ctx.expectedType,
     enforceExpectedType: ctx.enforceExpectedType,
     skipExecution: ctx.skipExecution,
@@ -50,6 +52,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
     Object.assign<Context, Context>(rootContext, {
       scopeId: "_root_",
       variables: createExecutionVariables(req.files, req.envVariables),
+      packageAliases: getAliasesFromPackages(req.packages),
       expectedType: req.expectedType,
       enforceExpectedType: req.enforceExpectedType,
       operationCache: new Map(),

@@ -800,12 +800,13 @@ function executeOperationCore(
         if (hasFatalError && operation.name === "call") return param;
         const incorrectType = isDataOfType(param, "error")
           ? (getRawValueFromData(param, context) as Error).message
-          : getTypeSignature(param.type);
+          : getTypeSignature(param.type, context);
         return createData({
           type: { kind: "error", errorType: "type_error" },
           value: {
             reason: `Parameter #${index + 1} should be of type: \`${getTypeSignature(
-              resolvedParams[index + 1].type
+              resolvedParams[index + 1].type,
+              context
             )}\` but is of type: \`${incorrectType}\``,
           },
         });

@@ -18,7 +18,6 @@ import {
   createVariableName,
   createStatement,
   createData,
-  isValidIdentifier,
   isDataOfType,
   isBlockCondition,
 } from "../lib/utils";
@@ -33,11 +32,12 @@ import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { useRestrictedName } from "@/lib/useRestrictedName";
 import { EntityPath } from "@/lib/types";
 import { ReservedNames } from "@/lib/execution/types";
 import { getStatementLayout } from "@/lib/layout";
@@ -79,6 +79,7 @@ const StatementComponent = ({
   const context = useExecutionResultsStore((s) =>
     s.getContextOrAncestor(statement.id, path)
   );
+  const { isRestricted } = useRestrictedName({ context, reservedNames });
 
   const isReturn = statement.controlFlow === "return";
   const isTopLevelStatement = enableVariable && !isParameter;
@@ -133,6 +134,7 @@ const StatementComponent = ({
     (s) => s.navigation?.id === `${statement.id}_add` && !s.navigation?.disable
   );
   const setNavigation = useNavigationStore((state) => state.setNavigation);
+  const [localName, setLocalName] = useState(statement.name || "");
   const [popoverOpened, { open, close, toggle }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
     open,
@@ -247,34 +249,34 @@ const StatementComponent = ({
             <BaseInput
               key={`${statement.name ?? ""}_${statement.id}`}
               ref={(elem) => isNameFocused && elem?.focus()}
-              defaultValue={statement.name || ""}
+              value={localName}
+              onChange={setLocalName}
               className={[
                 "text-variable",
                 isNameFocused ? "outline outline-border" : "",
               ].join(" ")}
-              onBlur={(e) => {
-                const name = e.currentTarget.value || statement.name;
-                if (name === statement.name) return;
-                if (name && !isValidIdentifier(name)) {
-                  notifications.show({
-                    message: `"${name}" is not a valid name`,
-                  });
+              onBlur={() => {
+                if (!localName || localName === statement.name) {
+                  setLocalName(statement.name || "");
                   return;
                 }
-                const isReserved = Array.from(reservedNames ?? []).find(
-                  (r) => r.name === name
-                );
-                if (isReserved) {
-                  notifications.show({
-                    message: `Cannot use the ${isReserved.kind} '${name}' as a variable name`,
-                  });
+                const error = isRestricted(localName, statement.name);
+                if (error) {
+                  notifications.show({ message: error });
+                  setLocalName(statement.name || "");
                   return;
                 }
                 handleStatement(
-                  normalizeStatement({ ...statement, name }),
+                  normalizeStatement({ ...statement, name: localName }),
                   false,
                   path
                 );
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
               }}
               onFocus={() =>
                 setNavigation(() => ({

@@ -58,3 +58,11 @@ export function getEnabledPackages(project?: Project): PackageNamespace[] {
     .filter((dep) => dep.name in PACKAGE_CATALOG)
     .map((dep) => ({ name: dep.name, namespace: dep.namespace }));
 }
+
+export function getAliasesFromPackages(packages?: PackageNamespace[]) {
+  const result: Record<string, string> = {};
+  for (const pkg of packages ?? []) {
+    if (pkg.namespace) result[pkg.name] = pkg.namespace;
+  }
+  return result;
+}

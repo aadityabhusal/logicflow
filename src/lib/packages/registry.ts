@@ -121,10 +121,19 @@ type PackageLoadResult = {
 export const loadedPackageOperations = new Map<string, OperationListItem[]>();
 const loadedInstanceTypes = new Map<string, InstanceTypeConfig>();
 
-export async function loadPackage(
-  packageName: string,
-  namespace?: string
-): Promise<void> {
+export function resolveDisplayName(
+  fullName: string,
+  aliases: Record<string, string> = {}
+) {
+  const dotIndex = fullName.indexOf(".");
+  if (dotIndex === -1) return fullName;
+  const packageName = fullName.substring(0, dotIndex);
+  const alias = aliases[packageName];
+  if (!alias) return fullName;
+  return alias + fullName.substring(dotIndex);
+}
+
+export async function loadPackage(packageName: string): Promise<void> {
   if (loadedPackageOperations.has(packageName)) return;
   const entry = PACKAGE_CATALOG[packageName];
   if (!entry) return;
@@ -136,7 +145,7 @@ export async function loadPackage(
     name:
       op.source?.packageCallTarget === "import"
         ? op.name
-        : `${namespace || packageName}.${op.name}`,
+        : `${packageName}.${op.name}`,
     source: op.source ? op.source : { name: packageName },
   }));
 

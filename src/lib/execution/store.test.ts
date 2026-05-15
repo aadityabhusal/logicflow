@@ -9,8 +9,30 @@ vi.mock("idb", () => ({
     }),
 }));
 
+vi.mock("../store", () => ({
+  useProjectStore: {
+    getState: () => ({
+      getCurrentProject: () => ({
+        id: "test-project",
+        name: "test",
+        version: "1",
+        createdAt: 1,
+        files: [],
+        dependencies: {
+          npm: [
+            { name: "rowguard", version: "latest", exports: [], namespace: "Rg" },
+            { name: "wretch", version: "latest", exports: [] },
+          ],
+        },
+      }),
+      getCurrentFile: () => null,
+    }),
+  },
+}));
+
 import { createData } from "../utils";
 import { useExecutionResultsStore } from "./store";
+import type { Context, Variable } from "./types";
 
 describe("execution store cache invalidation", () => {
   beforeEach(() => {
@@ -81,5 +103,94 @@ describe("execution store cache invalidation", () => {
     expect(instances.size).toBe(0);
     expect(rootContext.operationCache?.size).toBe(0);
     expect(runVersion).toBe(initialRunVersion + 1);
+  });
+});
+
+describe("packageAliases in store lifecycle", () => {
+  beforeEach(() => {
+    useExecutionResultsStore.getState().removeAll();
+  });
+
+  it("recomputes packageAliases on removeAll from project dependencies", () => {
+    useExecutionResultsStore.setState((state) => ({
+      rootContext: {
+        ...state.rootContext,
+        packageAliases: { stale: "value" },
+      },
+    }));
+
+    useExecutionResultsStore.getState().removeAll();
+
+    const { rootContext } = useExecutionResultsStore.getState();
+    expect(rootContext.packageAliases).toEqual({ rowguard: "Rg" });
+  });
+
+  it("recomputes packageAliases on clearCache from project dependencies", () => {
+    useExecutionResultsStore.setState((state) => ({
+      rootContext: {
+        ...state.rootContext,
+        packageAliases: { stale: "value" },
+      },
+    }));
+
+    useExecutionResultsStore.getState().clearCache();
+
+    const { rootContext } = useExecutionResultsStore.getState();
+    expect(rootContext.packageAliases).toEqual({ rowguard: "Rg" });
+  });
+
+  it("initial rootContext has packageAliases from project dependencies", () => {
+    const { rootContext } = useExecutionResultsStore.getState();
+    expect(rootContext.packageAliases).toEqual({ rowguard: "Rg" });
+  });
+});
+
+describe("getContext merges rootContext.packageAliases", () => {
+  beforeEach(() => {
+    useExecutionResultsStore.getState().removeAll();
+  });
+
+  it("returns rootContext directly when no context registered", () => {
+    const { rootContext } = useExecutionResultsStore.getState();
+    const ctx = useExecutionResultsStore.getState().getContext("nonexistent");
+    expect(ctx).toBe(rootContext);
+    expect(ctx.packageAliases).toEqual(rootContext.packageAliases);
+  });
+
+  it("returns registered context with root's packageAliases overwriting child's", () => {
+    const state = useExecutionResultsStore.getState();
+    const childContext: Context = {
+      ...state.rootContext,
+      scopeId: "child",
+      packageAliases: { child: "override" },
+      variables: new Map<string, Variable>([["x", { data: createData({ type: { kind: "string" } }) }]]),
+    };
+
+    useExecutionResultsStore.setState((s) => ({
+      contexts: new Map([["entity-1", childContext]]),
+    }));
+
+    const retrieved = useExecutionResultsStore
+      .getState()
+      .getContext("entity-1");
+
+    expect(retrieved).not.toBe(state.rootContext);
+    expect(retrieved.scopeId).toBe("child");
+    expect(retrieved.packageAliases).toEqual({ rowguard: "Rg" });
+    expect(retrieved.variables.has("x")).toBe(true);
+  });
+
+  it("returns rootContext when root packageAliases changes", () => {
+    useExecutionResultsStore.setState((state) => ({
+      rootContext: {
+        ...state.rootContext,
+        packageAliases: { custom: "val" },
+      },
+    }));
+
+    const ctx = useExecutionResultsStore
+      .getState()
+      .getContext("nonexistent");
+    expect(ctx.packageAliases).toEqual({ custom: "val" });
   });
 });

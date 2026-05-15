@@ -4,6 +4,7 @@ import { DataTypes, ErrorTypesData } from "./data";
 import {
   getAllInstanceTypes,
   InstanceTypes,
+  resolveDisplayName,
   type InstanceTypeConfig,
 } from "./packages/registry";
 import {
@@ -35,6 +36,7 @@ export function createData<T extends DataType>(
   const emptyContext = {
     scopeId: "_root_",
     variables: new Map(),
+    packageAliases: {},
     getResult: () => undefined,
     getInstance: () => undefined,
     setInstance: () => undefined,
@@ -1290,7 +1292,11 @@ export function getUnionActiveType(
   return unionType.types[index] ?? unionType.types[0];
 }
 
-export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
+export function getTypeSignature(
+  type: DataType,
+  context: Context,
+  maxDepth: number = 5
+): string {
   if (maxDepth <= 0) return "...";
 
   switch (type.kind) {
@@ -1306,11 +1312,11 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       return ErrorTypesData[type.errorType]?.name ?? "Unknown Error";
 
     case "array":
-      return `array<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
+      return `array<${getTypeSignature(type.elementType, context, maxDepth - 1)}>`;
 
     case "tuple":
       return `[${type.elements
-        .map((element) => getTypeSignature(element, maxDepth - 1))
+        .map((element) => getTypeSignature(element, context, maxDepth - 1))
         .join(", ")}]`;
 
     case "object": {
@@ -1321,7 +1327,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
           ({ key, value }) =>
             `${key}${
               type.required?.includes(key) ? "" : "?"
-            }: ${getTypeSignature(value, maxDepth - 1)}`
+            }: ${getTypeSignature(value, context, maxDepth - 1)}`
         )
         .join(", ");
       return `{ ${props}${
@@ -1329,17 +1335,17 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       } }`;
     }
     case "dictionary":
-      return `dictionary<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
+      return `dictionary<${getTypeSignature(type.elementType, context, maxDepth - 1)}>`;
 
     case "union":
       return resolveUnionType(type.types, true)
-        .types.map((t) => getTypeSignature(t, maxDepth - 1))
+        .types.map((t) => getTypeSignature(t, context, maxDepth - 1))
         .join(" | ");
 
     case "operation": {
       const params = type.parameters
         .map((p) => {
-          const typeSignature = getTypeSignature(p.type, maxDepth - 1);
+          const typeSignature = getTypeSignature(p.type, context, maxDepth - 1);
           return [
             p.isRest ? "..." : "",
             p.name || "_",
@@ -1348,16 +1354,17 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
           ].join("");
         })
         .join(", ");
-      return `(${params}) => ${getTypeSignature(type.result, maxDepth - 1)}`;
+      return `(${params}) => ${getTypeSignature(type.result, context, maxDepth - 1)}`;
     }
 
     case "condition":
-      return getTypeSignature(type.result, maxDepth - 1);
+      return getTypeSignature(type.result, context, maxDepth - 1);
 
     case "reference":
       return type.name;
     case "instance": {
-      return `${type.className}${type.result ? `<${getTypeSignature(type.result)}>` : ``}`;
+      const name = resolveDisplayName(type.className, context.packageAliases);
+      return `${name}${type.result ? `<${getTypeSignature(type.result, context, maxDepth - 1)}>` : ``}`;
     }
     default:
       return "unknown";
@@ -1663,12 +1670,15 @@ export function getDataDropdownList({
   const allowedOptions: IDropdownItem[] = [];
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
-  const dataTypeSignature = getTypeSignature(data.type);
+  const dataTypeSignature = getTypeSignature(data.type, context);
   if (
     context.expectedType &&
     !DataTypes[context.expectedType.kind].hideFromDropdown
   ) {
-    const expectedTypeSignature = getTypeSignature(context.expectedType);
+    const expectedTypeSignature = getTypeSignature(
+      context.expectedType,
+      context
+    );
     const option: IDropdownItem = {
       entityType: "data",
       label: context.expectedType.kind,
@@ -1686,7 +1696,7 @@ export function getDataDropdownList({
   }
 
   (Object.keys(DataTypes) as DataType["kind"][]).forEach((kind) => {
-    const kindSignature = getTypeSignature(DataTypes[kind].type);
+    const kindSignature = getTypeSignature(DataTypes[kind].type, context);
     if (
       DataTypes[kind].hideFromDropdown ||
       (!isDataOfType(data, "reference") &&
@@ -1711,7 +1721,7 @@ export function getDataDropdownList({
     };
     if (
       !context.expectedType ||
-      (kindSignature === getTypeSignature(context.expectedType) &&
+      (kindSignature === getTypeSignature(context.expectedType, context) &&
         kind === context.expectedType.kind)
     ) {
       allowedOptions.push(option);
@@ -1731,7 +1741,7 @@ export function getDataDropdownList({
 
     const option: IDropdownItem = {
       entityType: "data",
-      label: name,
+      label: resolveDisplayName(name, context.packageAliases),
       value: `instance:${name}`,
       type: instanceType,
       onClick: () => {
@@ -1827,43 +1837,4 @@ export function fuzzySearch<T extends object>(
     }
     return acc;
   }, []);
-}
-
-export function renamePackagePrefix(
-  files: ProjectFile[],
-  oldPrefix: string,
-  newPrefix: string
-): ProjectFile[] {
-  const renamePrefix = (value: string) => {
-    const oldDot = oldPrefix + ".";
-    const newDot = newPrefix + ".";
-    return value.startsWith(oldDot)
-      ? newDot + value.slice(oldDot.length)
-      : value;
-  };
-
-  return files.map((file) => {
-    if (file.type !== "operation") return file;
-    const content = structuredClone(file.content);
-
-    walkData(
-      { id: file.id, type: content.type, value: content.value },
-      {
-        onDataType: (type) => {
-          if (type.kind === "instance") {
-            type.className = renamePrefix(type.className);
-          }
-        },
-        onInstance: (data) => {
-          data.value.className = renamePrefix(data.value.className);
-        },
-        onOperation: (data) => {
-          if (data.value.name) data.value.name = renamePrefix(data.value.name);
-        },
-      },
-      { nestedOperations: true, operationCalls: true, dataTypes: true }
-    );
-
-    return { ...file, content, updatedAt: Date.now() };
-  });
 }
