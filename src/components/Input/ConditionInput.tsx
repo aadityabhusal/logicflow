@@ -7,8 +7,8 @@ import {
 } from "@/lib/utils";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
-import { Context, ReservedNames } from "@/lib/execution/types";
-import { getReservedNames } from "@/lib/execution/store";
+import { Context } from "@/lib/execution/types";
+import { useRestrictedName } from "@/lib/useRestrictedName";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
@@ -50,10 +50,7 @@ const ConditionInputComponent = (
   const useMobileThreshold = useMobileLayout();
   const multiline = getEntityLayout(data, useMobileThreshold) === "multiline";
 
-  const reservedNames = useMemo<ReservedNames>(
-    () => getReservedNames(context.variables),
-    [context.variables]
-  );
+  const { reservedNames } = useRestrictedName({ context });
 
   const handleChange = useCallback(
     (overrides: Partial<typeof data.value>) => {

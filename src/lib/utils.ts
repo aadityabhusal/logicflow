@@ -1,11 +1,12 @@
 import { nanoid } from "nanoid";
 import { isDeepEqual } from "remeda";
+import { DataTypes, ErrorTypesData } from "./data";
 import {
-  DataTypes,
-  ErrorTypesData,
-  InstanceTypeConfig,
+  getAllInstanceTypes,
   InstanceTypes,
-} from "./data";
+  resolveDisplayName,
+  type InstanceTypeConfig,
+} from "./packages/registry";
 import {
   IData,
   IStatement,
@@ -23,9 +24,9 @@ import {
   MapValue,
   InstanceDataType,
   EntityPath,
-  ReferenceType,
 } from "./types";
 import { Context, OperationListItem, Thenable } from "./execution/types";
+import { walkData } from "./walk";
 
 /* Create */
 
@@ -35,6 +36,7 @@ export function createData<T extends DataType>(
   const emptyContext = {
     scopeId: "_root_",
     variables: new Map(),
+    packageAliases: {},
     getResult: () => undefined,
     getInstance: () => undefined,
     setInstance: () => undefined,
@@ -292,88 +294,30 @@ export function createFileFromOperation(operation: IData<OperationType>) {
   } as ProjectFile;
 }
 
-export function walkStatements(
-  statements: IStatement[],
-  visitors: {
-    onStatement?: (stmt: IStatement) => void;
-    onData?: (data: IData) => void;
-    onReference?: (data: IData<ReferenceType>) => void;
-    onArray?: (data: IData<ArrayType | TupleType>) => void;
-    onObject?: (data: IData<ObjectType | DictionaryType>) => void;
-    onOperation?: (data: IData<OperationType>) => void;
-    onCondition?: (data: IData<ConditionType>) => void;
-  },
-  options?: { includeNestedOperations?: boolean }
-): void {
-  const walkData = (data: IData) => {
-    visitors.onData?.(data);
-
-    if (isDataOfType(data, "reference")) {
-      visitors.onReference?.(data);
-    } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
-      visitors.onArray?.(data);
-      for (const item of data.value) walkStatement(item);
-    } else if (
-      isDataOfType(data, "object") ||
-      isDataOfType(data, "dictionary")
-    ) {
-      visitors.onObject?.(data);
-      for (const entry of data.value.entries) walkStatement(entry.value);
-    } else if (isDataOfType(data, "operation")) {
-      visitors.onOperation?.(data);
-      if (options?.includeNestedOperations) {
-        for (const param of data.value.parameters) walkStatement(param);
-        for (const stmt of data.value.statements) walkStatement(stmt);
-      }
-    } else if (isDataOfType(data, "condition")) {
-      visitors.onCondition?.(data);
-      walkStatement(data.value.condition);
-      for (const stmt of data.value.trueBranch) walkStatement(stmt);
-      for (const stmt of data.value.falseBranch) walkStatement(stmt);
-      if (options?.includeNestedOperations) {
-        for (const branch of [data.value.trueBranch, data.value.falseBranch])
-          for (const statement of branch)
-            for (const op of statement.operations)
-              for (const param of op.value.parameters) walkStatement(param);
-      }
-    }
-  };
-
-  const walkStatement = (stmt: IStatement) => {
-    visitors.onStatement?.(stmt);
-    walkData(stmt.data);
-    for (const op of stmt.operations) {
-      for (const param of op.value.parameters) {
-        walkStatement(param);
-      }
-    }
-  };
-
-  for (const stmt of statements) {
-    walkStatement(stmt);
-  }
-}
-
 export function getFreeVariableNames(
   operation: IData<OperationType>,
   context: Context
 ): Set<string> {
   const freeVars = new Set<string>();
 
-  walkStatements(operation.value.statements, {
-    onReference: (data) => {
-      const name = data.value.name;
-      if (typeof name !== "string" || freeVars.has(name)) return;
-      const variable = context.variables.get(name);
-      if (
-        variable &&
-        !variable.isEnv &&
-        !isDataOfType(variable.data, "operation")
-      ) {
-        freeVars.add(name);
-      }
+  walkData(
+    operation,
+    {
+      onReference: (data) => {
+        const name = data.value.name;
+        if (typeof name !== "string" || freeVars.has(name)) return;
+        const variable = context.variables.get(name);
+        if (
+          variable &&
+          !variable.isEnv &&
+          !isDataOfType(variable.data, "operation")
+        ) {
+          freeVars.add(name);
+        }
+      },
     },
-  });
+    { nestedOperations: true }
+  );
 
   return freeVars;
 }
@@ -547,22 +491,27 @@ export function createParamData(
   });
 }
 
-export function createInstance<
-  T extends keyof typeof InstanceTypes,
-  K extends (typeof InstanceTypes)[T]["Constructor"],
->(className: T, constructorArgs: IData[], context: Context): InstanceType<K> {
-  const config = InstanceTypes[className];
-  let rawArgs = constructorArgs.map((arg) =>
-    getRawValueFromData(arg, context)
-  ) as ConstructorParameters<K>;
-  if (config.prepareArgs) {
-    rawArgs = config.prepareArgs(rawArgs) as ConstructorParameters<K>;
-  }
+export function createInstance(
+  className: string,
+  constructorArgs: IData[],
+  context: Context
+) {
+  const config = getAllInstanceTypes()[className];
+  if (!config) throw new Error(`Instance type "${className}" not found`);
+  const Constructor = config.Constructor as new (...args: unknown[]) => unknown;
+  let rawArgs: ConstructorParameters<typeof Constructor> = constructorArgs.map(
+    (arg) => getRawValueFromData(arg, context)
+  );
+  if (config.prepareArgs) rawArgs = config.prepareArgs(rawArgs);
+  return new Constructor(...rawArgs) as InstanceType<typeof Constructor>;
+}
 
-  const Constructor = config.Constructor as new (
-    ...args: ConstructorParameters<K>
-  ) => InstanceType<K>;
-  return new Constructor(...rawArgs);
+export function createRuntimeError(error: unknown) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  return createData({
+    type: { kind: "error", errorType: "runtime_error" },
+    value: { reason: errorMessage },
+  });
 }
 
 export function operationToListItem(
@@ -575,6 +524,12 @@ export function operationToListItem(
     parameters: operation.type.parameters,
     statements: operation.value.statements,
   };
+}
+
+export function getActualOperationName(opName: string): string {
+  return opName.includes(".")
+    ? opName.slice(opName.lastIndexOf(".") + 1)
+    : opName;
 }
 
 export function createDataFromRawValue(
@@ -630,7 +585,7 @@ export function createDataFromRawValue(
   }
 
   if (isObject(value)) {
-    const instanceClass = Object.entries(InstanceTypes).find(
+    const instanceClass = Object.entries(getAllInstanceTypes()).find(
       ([, config]) => value instanceof config.Constructor
     );
     if (instanceClass) {
@@ -694,7 +649,9 @@ export function createDataFromRawValue(
 
   if (typeof value === "function") {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const existingInstanceId = (value as any)._operationInstanceId;
+    const existingInstanceId = (
+      value as unknown as { _operationInstanceId: string }
+    )._operationInstanceId;
     const fallbackType: OperationType =
       context.expectedType?.kind === "operation"
         ? context.expectedType
@@ -1335,7 +1292,11 @@ export function getUnionActiveType(
   return unionType.types[index] ?? unionType.types[0];
 }
 
-export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
+export function getTypeSignature(
+  type: DataType,
+  context: Context,
+  maxDepth: number = 5
+): string {
   if (maxDepth <= 0) return "...";
 
   switch (type.kind) {
@@ -1351,11 +1312,11 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       return ErrorTypesData[type.errorType]?.name ?? "Unknown Error";
 
     case "array":
-      return `array<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
+      return `array<${getTypeSignature(type.elementType, context, maxDepth - 1)}>`;
 
     case "tuple":
       return `[${type.elements
-        .map((element) => getTypeSignature(element, maxDepth - 1))
+        .map((element) => getTypeSignature(element, context, maxDepth - 1))
         .join(", ")}]`;
 
     case "object": {
@@ -1366,7 +1327,7 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
           ({ key, value }) =>
             `${key}${
               type.required?.includes(key) ? "" : "?"
-            }: ${getTypeSignature(value, maxDepth - 1)}`
+            }: ${getTypeSignature(value, context, maxDepth - 1)}`
         )
         .join(", ");
       return `{ ${props}${
@@ -1374,17 +1335,17 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
       } }`;
     }
     case "dictionary":
-      return `dictionary<${getTypeSignature(type.elementType, maxDepth - 1)}>`;
+      return `dictionary<${getTypeSignature(type.elementType, context, maxDepth - 1)}>`;
 
     case "union":
       return resolveUnionType(type.types, true)
-        .types.map((t) => getTypeSignature(t, maxDepth - 1))
+        .types.map((t) => getTypeSignature(t, context, maxDepth - 1))
         .join(" | ");
 
     case "operation": {
       const params = type.parameters
         .map((p) => {
-          const typeSignature = getTypeSignature(p.type, maxDepth - 1);
+          const typeSignature = getTypeSignature(p.type, context, maxDepth - 1);
           return [
             p.isRest ? "..." : "",
             p.name || "_",
@@ -1393,16 +1354,17 @@ export function getTypeSignature(type: DataType, maxDepth: number = 5): string {
           ].join("");
         })
         .join(", ");
-      return `(${params}) => ${getTypeSignature(type.result, maxDepth - 1)}`;
+      return `(${params}) => ${getTypeSignature(type.result, context, maxDepth - 1)}`;
     }
 
     case "condition":
-      return getTypeSignature(type.result, maxDepth - 1);
+      return getTypeSignature(type.result, context, maxDepth - 1);
 
     case "reference":
       return type.name;
     case "instance": {
-      return `${type.className}${type.result ? `<${getTypeSignature(type.result)}>` : ``}`;
+      const name = resolveDisplayName(type.className, context.packageAliases);
+      return `${name}${type.result ? `<${getTypeSignature(type.result, context, maxDepth - 1)}>` : ``}`;
     }
     default:
       return "unknown";
@@ -1708,12 +1670,15 @@ export function getDataDropdownList({
   const allowedOptions: IDropdownItem[] = [];
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
-  const dataTypeSignature = getTypeSignature(data.type);
+  const dataTypeSignature = getTypeSignature(data.type, context);
   if (
     context.expectedType &&
     !DataTypes[context.expectedType.kind].hideFromDropdown
   ) {
-    const expectedTypeSignature = getTypeSignature(context.expectedType);
+    const expectedTypeSignature = getTypeSignature(
+      context.expectedType,
+      context
+    );
     const option: IDropdownItem = {
       entityType: "data",
       label: context.expectedType.kind,
@@ -1731,7 +1696,7 @@ export function getDataDropdownList({
   }
 
   (Object.keys(DataTypes) as DataType["kind"][]).forEach((kind) => {
-    const kindSignature = getTypeSignature(DataTypes[kind].type);
+    const kindSignature = getTypeSignature(DataTypes[kind].type, context);
     if (
       DataTypes[kind].hideFromDropdown ||
       (!isDataOfType(data, "reference") &&
@@ -1756,7 +1721,7 @@ export function getDataDropdownList({
     };
     if (
       !context.expectedType ||
-      (kindSignature === getTypeSignature(context.expectedType) &&
+      (kindSignature === getTypeSignature(context.expectedType, context) &&
         kind === context.expectedType.kind)
     ) {
       allowedOptions.push(option);
@@ -1765,35 +1730,33 @@ export function getDataDropdownList({
     }
   });
 
-  (Object.keys(InstanceTypes) as (keyof typeof InstanceTypes)[]).forEach(
-    (name) => {
-      if (InstanceTypes[name].hideFromDropdown) return;
-      const instanceConfig = InstanceTypes[name];
-      const instanceType: DataType = {
-        kind: "instance",
-        className: instanceConfig.name,
-        constructorArgs: resolveConstructorArgs(instanceConfig.constructorArgs),
-      };
+  Object.keys(getAllInstanceTypes()).forEach((name) => {
+    const instanceConfig = getAllInstanceTypes()[name];
+    if (instanceConfig.hideFromDropdown) return;
+    const instanceType: DataType = {
+      kind: "instance",
+      className: instanceConfig.name,
+      constructorArgs: resolveConstructorArgs(instanceConfig.constructorArgs),
+    };
 
-      const option: IDropdownItem = {
-        entityType: "data",
-        label: name,
-        value: `instance:${name}`,
-        type: instanceType,
-        onClick: () => {
-          onSelect(createData({ id: data.id, type: instanceType }));
-        },
-      };
-      if (
-        !context.expectedType ||
-        isTypeCompatible(instanceType, context.expectedType, context)
-      ) {
-        allowedOptions.push(option);
-      } else if (!context.enforceExpectedType) {
-        dataTypeOptions.push(option);
-      }
+    const option: IDropdownItem = {
+      entityType: "data",
+      label: resolveDisplayName(name, context.packageAliases),
+      value: `instance:${name}`,
+      type: instanceType,
+      onClick: () => {
+        onSelect(createData({ id: data.id, type: instanceType }));
+      },
+    };
+    if (
+      !context.expectedType ||
+      isTypeCompatible(instanceType, context.expectedType, context)
+    ) {
+      allowedOptions.push(option);
+    } else if (!context.enforceExpectedType) {
+      dataTypeOptions.push(option);
     }
-  );
+  });
 
   context.variables.forEach((variable, name) => {
     const option: IDropdownItem = {

@@ -26,18 +26,21 @@ import {
   executionWorkerClient,
   hydrateContexts,
 } from "@/lib/execution/worker-client";
+import { getEnabledPackages } from "@/lib/packages/catalog";
+import { syncPackageRegistry } from "@/lib/operations/built-in";
 
 export default function Project() {
-  const currentProject = useProjectStore((s) => s.getCurrentProject());
+  const projectFiles = useProjectStore((s) => s.getCurrentProject()?.files);
+  const projectId = useProjectStore((s) => s.getCurrentProject()?.id);
   const deleteFile = useProjectStore((s) => s.deleteFile);
   const updateFile = useProjectStore((s) => s.updateFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const currentOperation = useMemo(() => {
     return createOperationFromFile(
-      currentProject?.files.find((file) => file.id === currentFileId)
+      projectFiles?.find((file) => file.id === currentFileId)
     );
-  }, [currentProject?.files, currentFileId]);
+  }, [projectFiles, currentFileId]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const rootPath = useMemo(() => [], []);
   useHotkeys(useCustomHotkeys(), []);
@@ -87,9 +90,10 @@ export default function Project() {
   }, [deferredOperation, currentOperation?.id, setNavigation, rootContext]);
 
   useEffect(() => {
-    executionWorkerClient.reset();
-    useExecutionResultsStore.getState().removeAll();
-  }, [currentFileId, currentProject?.deployment?.envVariables]);
+    const project = useProjectStore.getState().getCurrentProject();
+    if (!project) return;
+    void syncPackageRegistry(getEnabledPackages(project));
+  }, [projectId]);
 
   useEffect(() => {
     if (!deferredOperation) return;
@@ -105,6 +109,7 @@ export default function Project() {
       .run({
         operation: deferredOperation,
         files: project?.files ?? [],
+        packages: getEnabledPackages(project),
         envVariables: project?.deployment?.envVariables ?? [],
         cachedResults: [...results].filter(([, r]) => r.shouldCacheResult),
         expectedType: rootContext.expectedType,
@@ -142,7 +147,7 @@ export default function Project() {
     [currentOperation?.id, setNavigation]
   );
 
-  if (!currentProject) return <Navigate to="/" replace />;
+  if (!projectId) return <Navigate to="/" replace />;
 
   return (
     <div className="flex flex-col h-dvh">
@@ -161,7 +166,7 @@ export default function Project() {
               </p>
             }
           >
-            {currentProject && currentOperation ? (
+            {currentOperation ? (
               <Operation
                 ref={operationRef}
                 operation={currentOperation}

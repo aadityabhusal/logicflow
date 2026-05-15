@@ -277,7 +277,7 @@ const DataComponent = ({
       value={
         isDataOfType(data, "reference")
           ? data.value.name
-          : getTypeSignature(data.type)
+          : getTypeSignature(data.type, context)
       }
       isInputTarget={
         isDataOfType(data, "reference") ||

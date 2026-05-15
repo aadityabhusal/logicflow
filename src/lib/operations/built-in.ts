@@ -1,5 +1,11 @@
-import { IData, OperationType, UnionType, DataType } from "../types";
-import { DataTypes, InstanceTypes } from "../data";
+import {
+  IData,
+  OperationType,
+  UnionType,
+  DataType,
+  PackageNamespace,
+} from "../types";
+import { DataTypes } from "../data";
 import {
   createData,
   getUnionActiveType,
@@ -13,8 +19,8 @@ import {
   resolveConstructorArgs,
   updateContextWithNarrowedTypes,
   operationToListItem,
+  createRuntimeError,
 } from "../utils";
-import { wretchOperations } from "./wretch";
 import {
   createOperationHandler,
   FunctionKeys,
@@ -25,14 +31,13 @@ import {
 } from "./remeda";
 import * as _ from "./runtime";
 import { Context, OperationListItem } from "../execution/types";
-
-export function createRuntimeError(error: unknown) {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  return createData({
-    type: { kind: "error", errorType: "runtime_error" },
-    value: { reason: errorMessage },
-  });
-}
+import {
+  loadedPackageOperations,
+  loadPackage,
+  resetPackageRegistry,
+  SOURCE_PACKAGE_MAP,
+  InstanceTypes,
+} from "../packages/registry";
 
 const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   name: FunctionKeys<typeof _>;
@@ -128,8 +133,20 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
     parameters: [{ type: { kind: "array", elementType: { kind: "unknown" } } }],
     expectedType: { kind: "tuple", elements: [] },
   },
-  { name: "get", parameters: [getObjectParam(), { type: { kind: "string" } }] },
-  { name: "has", parameters: [getObjectParam(), { type: { kind: "string" } }] },
+  {
+    name: "get",
+    parameters: (data) => [
+      getObjectParam(data, { includeInstance: true }),
+      { type: { kind: "string" } },
+    ],
+  },
+  {
+    name: "has",
+    parameters: (data) => [
+      getObjectParam(data, { includeInstance: true }),
+      { type: { kind: "string" } },
+    ],
+  },
   {
     name: "toObject",
     parameters: [
@@ -612,25 +629,19 @@ const requestOperations: OperationListItem[] = [
   },
 ];
 
-export const builtInOperations: OperationListItem[] = [
-  ...basicOperationList.map((operation) => ({
-    ...operation,
-    handler: createOperationHandler(_, operation.name, operation.expectedType),
-  })),
-  ...lazyOperations,
-  ...specialOperations,
-  ...dateOperations,
-  ...urlOperations,
-  ...promiseOperations,
-  ...responseOperations,
-  ...wretchOperations,
-  ...remedaOperations,
-  ...requestOperations,
-];
+function prefixExternalPackageName(op: OperationListItem): OperationListItem {
+  const sourceName = op.source?.name;
+  if (!sourceName) return op;
+  const packageName = SOURCE_PACKAGE_MAP[sourceName];
+  if (!packageName) return op;
+  return { ...op, name: `${packageName}.${op.name}` };
+}
 
 function getTypeKeys(type: DataType): string[] {
   if (type.kind === "union") return type.types.flatMap(getTypeKeys);
-  return [type.kind === "instance" ? `instance:${type.className}` : type.kind];
+  if (type.kind === "instance")
+    return [`instance:${type.className}`, "instance"];
+  return [type.kind];
 }
 
 function getFirstParamKind(op: OperationListItem): string[] {
@@ -648,20 +659,10 @@ function getFirstParamKind(op: OperationListItem): string[] {
   return ["unknown"];
 }
 
-const builtInOperationsByKind = new Map<string, OperationListItem[]>();
-for (const op of builtInOperations) {
-  for (const key of getFirstParamKind(op)) {
-    const list = builtInOperationsByKind.get(key);
-    if (list) list.push(op);
-    else builtInOperationsByKind.set(key, [op]);
-  }
-}
-
-export const builtInOperationsByName = new Map<string, OperationListItem[]>();
-for (const op of builtInOperations) {
-  const list = builtInOperationsByName.get(op.name);
-  if (list) list.push(op);
-  else builtInOperationsByName.set(op.name, [op]);
+export function getAllOperations(): OperationListItem[] {
+  const result: OperationListItem[] = [...coreOperations];
+  for (const ops of loadedPackageOperations.values()) result.push(...ops);
+  return result;
 }
 
 export function getOperationsForDataType(data: IData): OperationListItem[] {
@@ -680,3 +681,56 @@ export function getOperationsForDataType(data: IData): OperationListItem[] {
   }
   return result;
 }
+
+export function rebuildIndexes() {
+  builtInOperationsByKind.clear();
+  builtInOperationsByName.clear();
+  // get/has accept any instance type but sampling stops before reaching
+  // the instance DataTypes entry, so we index them manually here.
+  const instanceAccessOps = new Set(["get", "has"]);
+  for (const op of getAllOperations()) {
+    for (const key of getFirstParamKind(op)) {
+      const list = builtInOperationsByKind.get(key);
+      if (list) list.push(op);
+      else builtInOperationsByKind.set(key, [op]);
+    }
+    if (instanceAccessOps.has(op.name)) {
+      const list = builtInOperationsByKind.get("instance");
+      if (list) list.push(op);
+      else builtInOperationsByKind.set("instance", [op]);
+    }
+    const list = builtInOperationsByName.get(op.name);
+    if (list) list.push(op);
+    else builtInOperationsByName.set(op.name, [op]);
+  }
+}
+
+export async function syncPackageRegistry(
+  packages: PackageNamespace[] = []
+): Promise<PromiseSettledResult<void>[]> {
+  resetPackageRegistry();
+  const results = await Promise.allSettled(
+    packages.map(({ name }) => loadPackage(name))
+  );
+  rebuildIndexes();
+  return results;
+}
+
+export const coreOperations: OperationListItem[] = [
+  ...basicOperationList.map((operation) => ({
+    ...operation,
+    handler: createOperationHandler(_, operation.name, operation.expectedType),
+  })),
+  ...lazyOperations,
+  ...specialOperations,
+  ...dateOperations,
+  ...urlOperations,
+  ...promiseOperations,
+  ...responseOperations,
+  ...remedaOperations,
+  ...requestOperations,
+].map(prefixExternalPackageName);
+
+const builtInOperationsByKind = new Map<string, OperationListItem[]>();
+export const builtInOperationsByName = new Map<string, OperationListItem[]>();
+rebuildIndexes();

@@ -12,6 +12,7 @@ import {
   getFilteredOperations,
 } from "@/lib/execution/execution";
 import { resolveParameters } from "../lib/utils";
+import { resolveDisplayName } from "../lib/packages/registry";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
@@ -123,7 +124,7 @@ const OperationCallComponent = ({
     return filteredOperations.map(([groupName, groupItems]) => [
       groupName,
       groupItems.map((item) => ({
-        label: item.name,
+        label: resolveDisplayName(item.name, context.packageAliases),
         value: `${
           resolveParameters(item, data, context)?.[0]?.type.kind ?? "undefined"
         }-${item.name}`,
@@ -160,7 +161,10 @@ const OperationCallComponent = ({
       id={operation.id}
       items={dropdownItems}
       context={context}
-      value={operation.value.name}
+      value={resolveDisplayName(
+        operation.value.name ?? "",
+        context.packageAliases
+      )}
       operation={operation}
       addOperationCall={
         filteredOperations.length && !context.skipExecution

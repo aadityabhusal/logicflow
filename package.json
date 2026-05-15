@@ -30,6 +30,7 @@
     "react-router": "^7.12.0",
     "remark-gfm": "^4.0.1",
     "remeda": "^2.33.6",
+    "rowguard": "^0.2.0",
     "wretch": "^3.0.6",
     "zod": "^4.1.11",
     "zustand": "^4.5.5"

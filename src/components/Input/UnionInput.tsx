@@ -203,7 +203,7 @@ const UnionInputComponent = (
         </Menu.Target>
         <Menu.Dropdown onMouseOver={(e) => e.stopPropagation()}>
           {data.type.types.map((type, i) => {
-            const typeSign = getTypeSignature(type);
+            const typeSign = getTypeSignature(type, context);
             return (
               <Tooltip key={typeSign} label={typeSign} position="right">
                 <Menu.Item
@@ -255,7 +255,7 @@ const UnionInputComponent = (
                   .map(([name, { type }]) => (
                     <Tooltip
                       key={name}
-                      label={getTypeSignature(type)}
+                      label={getTypeSignature(type, context)}
                       position="right"
                     >
                       <Menu.Item onClick={() => handleTypeAdd(type)}>

@@ -44,6 +44,7 @@ export function createTestContext(overrides?: Partial<Context>): Context {
   const base: Context = {
     scopeId: "_root_",
     variables: new Map(),
+    packageAliases: {},
     isSync: true,
     callDepth: 0,
     controlFlowState: {},

@@ -18,7 +18,6 @@ import {
   createVariableName,
   createStatement,
   createData,
-  isValidIdentifier,
   isDataOfType,
   isBlockCondition,
 } from "../lib/utils";
@@ -33,11 +32,12 @@ import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
 import { useDisclosure } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { useRestrictedName } from "@/lib/useRestrictedName";
 import { EntityPath } from "@/lib/types";
 import { ReservedNames } from "@/lib/execution/types";
 import { getStatementLayout } from "@/lib/layout";
@@ -79,19 +79,25 @@ const StatementComponent = ({
   const context = useExecutionResultsStore((s) =>
     s.getContextOrAncestor(statement.id, path)
   );
+  const { isRestricted } = useRestrictedName({ context, reservedNames });
 
   const isReturn = statement.controlFlow === "return";
   const isTopLevelStatement = enableVariable && !isParameter;
 
   const normalizeStatement = useCallback((nextStatement: IStatement) => {
-    if (
+    if (!isDataOfType(nextStatement.data, "condition")) return nextStatement;
+
+    const shouldDropName =
       nextStatement.name !== undefined &&
-      isDataOfType(nextStatement.data, "condition") &&
-      isBlockCondition(nextStatement.data.value)
-    ) {
-      return { ...nextStatement, name: undefined };
-    }
-    return nextStatement;
+      isBlockCondition(nextStatement.data.value);
+    const shouldDropOperations = nextStatement.operations.length > 0;
+
+    if (!shouldDropName && !shouldDropOperations) return nextStatement;
+    return {
+      ...nextStatement,
+      ...(shouldDropName ? { name: undefined } : {}),
+      ...(shouldDropOperations ? { operations: [] } : {}),
+    };
   }, []);
 
   const handleDataChange = useCallback(
@@ -128,30 +134,81 @@ const StatementComponent = ({
     (s) => s.navigation?.id === `${statement.id}_add` && !s.navigation?.disable
   );
   const setNavigation = useNavigationStore((state) => state.setNavigation);
-  const [hoverOpened, { open, close }] = useDisclosure(false);
+  const [localName, setLocalName] = useState(statement.name || "");
+  const [popoverOpened, { open, close, toggle }] = useDisclosure(false);
   const { openDropdown, closeDropdown } = useDelayedHover({
     open,
     close,
     openDelay: 0,
     closeDelay: 150,
   });
-  const useMobileThreshold = useMobileLayout();
+  const isMobileLayout = useMobileLayout();
   const isMultiline =
-    getStatementLayout(statement, useMobileThreshold) === "multiline";
+    getStatementLayout(statement, isMobileLayout) === "multiline";
   const PipeArrow = isMultiline ? FaArrowTurnUp : FaArrowRightLong;
+  const equalsIcon = isReturn
+    ? FaArrowTurnDown
+    : isRest
+      ? FaEllipsis
+      : isOptional
+        ? FaQuestion
+        : FaEquals;
 
-  const hoverEvents = useMemo(
-    () => ({
-      onMouseEnter: openDropdown,
-      onFocus: openDropdown,
-      onMouseLeave: closeDropdown,
-      onBlur: closeDropdown,
-    }),
-    [openDropdown, closeDropdown]
-  );
+  const equalsTitle = (() => {
+    if (isReturn) return "Remove return";
+    if (isConditionBlock) return "Cannot add condition block variable";
+    if (disableNameToggle) {
+      if (isRest) return "Rest Parameter";
+      if (isOptional) return "Optional Parameter";
+      return undefined;
+    }
+    if (!isParameter) return "Create variable";
+    if (isRest) return "Make required";
+    if (isOptional) return "Make rest";
+    return "Make optional";
+  })();
+
+  const handleEqualsAction = () => {
+    if (disableNameToggle || isConditionBlock) return;
+    const data = createData({
+      value: [createStatement({ data: statement.data })],
+    });
+    handleStatement(
+      normalizeStatement({
+        ...statement,
+        ...(isReturn
+          ? { controlFlow: undefined }
+          : isParameter
+            ? isRest
+              ? { isOptional: undefined, isRest: undefined }
+              : isOptional
+                ? { isOptional: undefined, isRest: true, data }
+                : { isOptional: true, isRest: undefined }
+            : {
+                name: hasName
+                  ? undefined
+                  : createVariableName({
+                      prefix: "var",
+                      prev: reservedNames?.map((r) => r.name) ?? [],
+                    }),
+              }),
+      }),
+      false,
+      path
+    );
+    setNavigation(() => ({ navigation: { id: `${statement.id}_name` } }));
+  };
+
+  const popoverEvents = !isMobileLayout && {
+    onMouseEnter: openDropdown,
+    onFocus: openDropdown,
+    onMouseLeave: closeDropdown,
+    onBlur: closeDropdown,
+  };
 
   const addOperationCall = useCallback(
     async (data: IData, operationId?: string) => {
+      if (isDataOfType(statement.data, "condition")) return;
       const operation = await createOperationCall({
         data,
         context,
@@ -192,34 +249,34 @@ const StatementComponent = ({
             <BaseInput
               key={`${statement.name ?? ""}_${statement.id}`}
               ref={(elem) => isNameFocused && elem?.focus()}
-              defaultValue={statement.name || ""}
+              value={localName}
+              onChange={setLocalName}
               className={[
                 "text-variable",
                 isNameFocused ? "outline outline-border" : "",
               ].join(" ")}
-              onBlur={(e) => {
-                const name = e.currentTarget.value || statement.name;
-                if (name === statement.name) return;
-                if (name && !isValidIdentifier(name)) {
-                  notifications.show({
-                    message: `"${name}" is not a valid name`,
-                  });
+              onBlur={() => {
+                if (!localName || localName === statement.name) {
+                  setLocalName(statement.name || "");
                   return;
                 }
-                const isReserved = Array.from(reservedNames ?? []).find(
-                  (r) => r.name === name
-                );
-                if (isReserved) {
-                  notifications.show({
-                    message: `Cannot use the ${isReserved.kind} '${name}' as a variable name`,
-                  });
+                const error = isRestricted(localName, statement.name);
+                if (error) {
+                  notifications.show({ message: error });
+                  setLocalName(statement.name || "");
                   return;
                 }
                 handleStatement(
-                  normalizeStatement({ ...statement, name }),
+                  normalizeStatement({ ...statement, name: localName }),
                   false,
                   path
                 );
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
               }}
               onFocus={() =>
                 setNavigation(() => ({
@@ -230,24 +287,18 @@ const StatementComponent = ({
           ) : null}
           <Popover
             opened={
-              context.enforceExpectedType ? false : hoverOpened || isAddFocused
+              !context.enforceExpectedType && (popoverOpened || isAddFocused)
             }
+            onChange={(opened) => !opened && close()}
             offset={4}
-            position="top"
+            position={isMobileLayout ? "bottom-start" : "top"}
             withinPortal={false}
+            clickOutsideEvents={["mousedown", "touchstart"]}
           >
             <Popover.Target>
               <IconButton
                 ref={(elem) => isEqualsFocused && elem?.focus()}
-                icon={
-                  isReturn
-                    ? FaArrowTurnDown
-                    : isRest
-                      ? FaEllipsis
-                      : isOptional
-                        ? FaQuestion
-                        : FaEquals
-                }
+                icon={equalsIcon}
                 position="right"
                 className={[
                   "hover:outline hover:outline-border",
@@ -256,71 +307,39 @@ const StatementComponent = ({
                   disableNameToggle || isConditionBlock ? "text-disabled" : "",
                   isReturn ? "transform rotate-90" : "",
                 ].join(" ")}
-                title={
-                  isReturn
-                    ? "Remove return"
-                    : isConditionBlock
-                      ? "Cannot add condition block variable"
-                      : disableNameToggle
-                        ? isRest
-                          ? "Rest Parameter"
-                          : isOptional
-                            ? "Optional Parameter"
-                            : undefined
-                        : isParameter
-                          ? isRest
-                            ? "Make required"
-                            : isOptional
-                              ? "Make rest"
-                              : "Make optional"
-                          : "Create variable"
-                }
+                title={!isMobileLayout ? equalsTitle : undefined}
+                aria-label={equalsTitle}
                 onClick={() => {
-                  if (disableNameToggle || isConditionBlock) return;
-                  const data = createData({
-                    value: [createStatement({ data: statement.data })],
-                  });
-                  handleStatement(
-                    normalizeStatement({
-                      ...statement,
-                      ...(isReturn
-                        ? { controlFlow: undefined }
-                        : isParameter
-                          ? isRest
-                            ? { isOptional: undefined, isRest: undefined }
-                            : isOptional
-                              ? { isOptional: undefined, isRest: true, data }
-                              : { isOptional: true, isRest: undefined }
-                          : {
-                              name: hasName
-                                ? undefined
-                                : createVariableName({
-                                    prefix: "var",
-                                    prev:
-                                      reservedNames?.map((r) => r.name) ?? [],
-                                  }),
-                            }),
-                    }),
-                    false,
-                    path
-                  );
-                  setNavigation(() => ({
-                    navigation: { id: `${statement.id}_name` },
-                  }));
+                  if (isMobileLayout) toggle();
+                  else handleEqualsAction();
                 }}
-                {...hoverEvents}
+                {...popoverEvents}
               />
             </Popover.Target>
             <Popover.Dropdown
-              {...hoverEvents}
+              {...popoverEvents}
               classNames={{ dropdown: "flex items-center gap-2 border" }}
             >
+              {isMobileLayout && !disableNameToggle && !isConditionBlock ? (
+                <IconButton
+                  icon={equalsIcon}
+                  position="right"
+                  title={!isMobileLayout ? equalsTitle : undefined}
+                  aria-label={equalsTitle}
+                  className={isReturn ? "transform rotate-90" : ""}
+                  onClick={() => {
+                    handleEqualsAction();
+                    close();
+                  }}
+                />
+              ) : null}
               {isTopLevelStatement && !isReturn ? (
                 <IconButton
                   ref={(elem) => isReturnFocused && elem?.focus()}
                   icon={FaArrowTurnDown}
                   position="right"
-                  title={"Return here"}
+                  title={!isMobileLayout ? "Return here" : undefined}
+                  aria-label="Return here"
                   className="hover:outline hover:outline-border transform rotate-90"
                   onClick={() => {
                     handleStatement(
@@ -328,6 +347,7 @@ const StatementComponent = ({
                       false,
                       path
                     );
+                    close();
                   }}
                 />
               ) : null}
@@ -335,9 +355,12 @@ const StatementComponent = ({
                 id={statement.id}
                 onSelect={(newStatement) => {
                   addStatement?.(newStatement, "before", statement.id);
-                  closeDropdown();
+                  close();
                 }}
-                iconProps={{ title: "Add before" }}
+                iconProps={{
+                  title: !isMobileLayout ? "Add before" : undefined,
+                  "aria-label": "Add before",
+                }}
                 className="bg-editor"
               />
             </Popover.Dropdown>
@@ -365,6 +388,7 @@ const StatementComponent = ({
             addOperationCall={
               !isParameter &&
               !context.skipExecution &&
+              !isDataOfType(statement.data, "condition") &&
               getFilteredOperations(statement.data, context).length
                 ? addOperationCall
                 : undefined
@@ -398,7 +422,11 @@ const StatementComponent = ({
                   operation={operation}
                   path={operationPaths[i]}
                   handleOperationCall={handleOperationCall}
-                  addOperationCall={isParameter ? undefined : addOperationCall}
+                  addOperationCall={
+                    isParameter || isDataOfType(statement.data, "condition")
+                      ? undefined
+                      : addOperationCall
+                  }
                 />
               </ErrorBoundary>
             </div>

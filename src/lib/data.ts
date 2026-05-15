@@ -1,5 +1,4 @@
-import { ConstructorType, DataType, ErrorType, OperationType } from "./types";
-import wretch from "wretch";
+import { DataType, ErrorType, OperationType } from "./types";
 import { SiAnthropic, SiOpenai, SiGooglegemini } from "react-icons/si";
 
 export const DataTypes: {
@@ -76,7 +75,7 @@ export const DataTypes: {
   },
 };
 
-function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
+export function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
   return [
     {
       type: {
@@ -111,141 +110,6 @@ function getPromiseArgsType(resolveType?: OperationType["parameters"]) {
     },
   ] as OperationType["parameters"];
 }
-
-export const PACKAGE_REGISTRY: Record<string, { importStatement: string }> = {
-  wretch: { importStatement: "import wretch from 'wretch'" },
-};
-
-export const SOURCE_PACKAGE_MAP: Record<string, string> = {
-  wretch: "wretch",
-  wretchResponseChain: "wretch",
-};
-
-export type InstanceTypeConfig<
-  K extends string = string,
-  C extends ConstructorType = ConstructorType,
-> = {
-  readonly name: K;
-  readonly Constructor: C;
-  readonly constructorArgs:
-    | OperationType["parameters"]
-    | ((data?: OperationType["parameters"]) => OperationType["parameters"]);
-  readonly hideFromDropdown?: boolean;
-  readonly prepareArgs?: (args: unknown[]) => unknown[];
-  readonly importInfo?: { packageName: string };
-};
-
-export const customInstances = new WeakMap<object, ConstructorType>();
-
-export class WretchClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
-    return (
-      typeof instance === "object" &&
-      instance !== null &&
-      customInstances.get(instance) === WretchClass
-    );
-  }
-  constructor(...args: Parameters<typeof wretch>) {
-    const instance = wretch(...args);
-    customInstances.set(instance, WretchClass);
-    return instance;
-  }
-}
-
-export class WretchResponseChainClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
-    return (
-      typeof instance === "object" &&
-      instance !== null &&
-      customInstances.get(instance) === WretchResponseChainClass
-    );
-  }
-}
-
-export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
-  Promise: {
-    name: "Promise",
-    Constructor: Promise,
-    constructorArgs: getPromiseArgsType,
-  },
-  Date: {
-    name: "Date",
-    Constructor: Date,
-    constructorArgs: [
-      { type: { kind: "string" }, isOptional: true },
-    ] as OperationType["parameters"],
-  },
-  URL: {
-    name: "URL",
-    Constructor: URL,
-    constructorArgs: [
-      { type: { kind: "string" } },
-    ] as OperationType["parameters"],
-  },
-  Request: {
-    name: "Request",
-    Constructor: Request,
-    constructorArgs: [
-      { type: { kind: "string" }, name: "url" },
-      {
-        type: { kind: "dictionary", elementType: { kind: "unknown" } },
-        name: "options",
-        isOptional: true,
-      },
-    ] as OperationType["parameters"],
-    prepareArgs(args) {
-      const [url, options, ...rest] = args;
-      if (
-        options !== null &&
-        typeof options === "object" &&
-        "body" in (options as Record<string, unknown>)
-      ) {
-        const opts = { ...(options as Record<string, unknown>) };
-        if (opts.body !== null && typeof opts.body === "object") {
-          opts.body = JSON.stringify(opts.body);
-        }
-        return [url, opts, ...rest];
-      }
-      return args;
-    },
-  },
-  Response: {
-    name: "Response",
-    Constructor: Response,
-    constructorArgs: [
-      { type: { kind: "unknown" }, isOptional: true },
-      {
-        type: { kind: "dictionary", elementType: { kind: "unknown" } },
-        isOptional: true,
-      },
-    ] as OperationType["parameters"],
-    prepareArgs(args) {
-      const [body, ...rest] = args;
-      if (body !== null && typeof body === "object") {
-        return [JSON.stringify(body), ...rest];
-      }
-      return args;
-    },
-  },
-  Wretch: {
-    name: "Wretch",
-    Constructor: WretchClass,
-    constructorArgs: [
-      { type: { kind: "string" } },
-      {
-        type: { kind: "dictionary", elementType: { kind: "unknown" } },
-        isOptional: true,
-      },
-    ] as OperationType["parameters"],
-    importInfo: { packageName: "wretch" },
-  },
-  WretchResponseChain: {
-    name: "WretchResponseChain",
-    Constructor: WretchResponseChainClass,
-    constructorArgs: [],
-    hideFromDropdown: true,
-  },
-};
 
 export const ErrorTypesData: {
   [K in ErrorType["errorType"]]: { name: string };
@@ -356,4 +220,4 @@ export const PLATFORMS = {
   },
 };
 
-export const MAX_CALL_DEPTH = 7500;
+export const MAX_CALL_DEPTH = 2500;

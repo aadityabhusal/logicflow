@@ -1,42 +1,26 @@
 import { FaPencil, FaPlus, FaX, FaGlobe, FaCode } from "react-icons/fa6";
 import { Menu } from "@mantine/core";
 import { fileHistoryActions, useProjectStore } from "../lib/store";
-import {
-  createProjectFile,
-  handleSearchParams,
-  isValidIdentifier,
-} from "../lib/utils";
+import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
 import { useNavigate, useSearchParams } from "react-router";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { notifications } from "@mantine/notifications";
 import { useMediaQuery } from "@mantine/hooks";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
-import {
-  getReservedNames,
-  useExecutionResultsStore,
-} from "@/lib/execution/store";
-import { ReservedNames } from "@/lib/execution/types";
+import { useExecutionResultsStore } from "@/lib/execution/store";
 import { ProjectFile } from "@/lib/types";
+import { useRestrictedName } from "@/lib/useRestrictedName";
 
 const OperationListItem = memo(OperationListItemComponent);
 
 export function OperationsList() {
-  const context = useExecutionResultsStore((s) => s.rootContext);
   const navigate = useNavigate();
   const addFile = useProjectStore((s) => s.addFile);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
-  const currentFileName = useProjectStore((s) => s.getCurrentFile()?.name);
-
-  const reservedNames = useMemo(() => {
-    const _reservedNames = getReservedNames(context.variables);
-    if (!currentFileName) return _reservedNames;
-    return _reservedNames.concat([
-      { kind: "operation", name: currentFileName } as ReservedNames[number],
-    ]);
-  }, [context.variables, currentFileName]);
+  const { isRestricted, reservedNames } = useRestrictedName();
 
   const handleAdd = (isTrigger: boolean) => {
     const newFile = createProjectFile(
@@ -86,7 +70,7 @@ export function OperationsList() {
           <OperationListItem
             key={item.id}
             item={item}
-            reservedNames={reservedNames}
+            isRestricted={isRestricted}
           />
         ))}
       </ul>
@@ -96,10 +80,10 @@ export function OperationsList() {
 
 function OperationListItemComponent({
   item,
-  reservedNames,
+  isRestricted,
 }: {
   item: ProjectFile;
-  reservedNames: ReservedNames;
+  isRestricted: (name: string, selfName?: string) => string | null;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [hoveringId, setHoveringId] = useState<string>();
@@ -145,36 +129,25 @@ function OperationListItemComponent({
           defaultValue={item.name}
           onClick={(e) => e.stopPropagation()}
           onBlur={({ target }) => {
-            if (target.value && !isValidIdentifier(target.value)) {
-              setEditingId(undefined);
-              return notifications.show({
-                message: `"${target.value}" is not a valid name`,
-              });
-            }
-            const isReserved = Array.from(reservedNames).find(
-              (r) => r.name === target.value && item.name !== target.value
-            );
-            if (isReserved) {
-              notifications.show({
-                message: `Cannot use the ${isReserved.kind} '${target.value}' as an operation name`,
-              });
+            const name = target.value.trim();
+            const error = isRestricted(name, item.name);
+            if (error) {
+              notifications.show({ message: error });
               setEditingId(undefined);
               return;
             }
             const file = getFile(item.id);
-            if (target.value && currentProjectId && file) {
+            if (name && currentProjectId && file) {
               updateProject(currentProjectId, {
                 files: updateFiles(
                   useProjectStore.getState().getCurrentProject()?.files ?? [],
                   fileHistoryActions.pushState,
                   useExecutionResultsStore.getState().rootContext,
-                  { ...file, name: target.value }
+                  { ...file, name }
                 ),
               });
               if (searchParams.get("file") === item.name) {
-                setSearchParams(
-                  ...handleSearchParams({ file: target.value }, true)
-                );
+                setSearchParams(...handleSearchParams({ file: name }, true));
               }
             }
             setEditingId(undefined);

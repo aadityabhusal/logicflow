@@ -23,7 +23,7 @@ import {
 import { createOperationCall } from "@/lib/execution/execution";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { ProjectFile, DataType } from "@/lib/types";
-import { InstanceTypes } from "@/lib/data";
+import { InstanceTypes } from "@/lib/packages/registry";
 
 dayjs.extend(relativeTime);
 

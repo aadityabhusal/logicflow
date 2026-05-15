@@ -65,6 +65,7 @@ function BaseInputInner<T extends string | number>(
       setIsFocused(false);
       props.onBlur?.(e);
     },
+    onKeyDown: props.onKeyDown,
   } as typeof props;
 
   return (

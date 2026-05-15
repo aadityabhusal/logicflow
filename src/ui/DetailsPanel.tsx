@@ -4,6 +4,7 @@ import {
   FaCrosshairs,
   FaLock,
   FaRegCopy,
+  FaTextWidth,
   FaUnlock,
 } from "react-icons/fa6";
 import { IconButton } from "./IconButton";
@@ -21,6 +22,7 @@ import {
   getTypeSignature,
   isPendingContext,
   getCacheKey,
+  getActualOperationName,
 } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
@@ -30,6 +32,7 @@ import {
   generateData,
   createCodeGenContext,
 } from "@/lib/format-code";
+import { resolveDisplayName } from "@/lib/packages/registry";
 import { Link } from "react-router";
 
 export function DetailsPanel() {
@@ -42,6 +45,7 @@ export function DetailsPanel() {
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
+  const wrapResult = useUiConfigStore((s) => s.wrapResult);
   const _operation = useNavigationStore((s) => s.operation);
   const currentOperation = useMemo(
     () => createOperationFromFile(currentFile),
@@ -84,8 +88,20 @@ export function DetailsPanel() {
 
   const typeSignature = useMemo(() => {
     if (isResultPending) return "Pending";
-    return getTypeSignature(displayedResult?.type ?? { kind: "undefined" });
-  }, [displayedResult?.type, isResultPending]);
+    if (detailsId && operation?.type.kind === "operation") {
+      return getTypeSignature(operation.type, context);
+    }
+    return getTypeSignature(
+      displayedResult?.type ?? { kind: "undefined" },
+      context
+    );
+  }, [
+    displayedResult?.type,
+    isResultPending,
+    detailsId,
+    operation?.type,
+    context,
+  ]);
 
   const docsUrl = useMemo(
     () => getDocsUrl(operation?.value.source, operation?.value.name),
@@ -177,7 +193,9 @@ export function DetailsPanel() {
         {!detailsId && operation?.value.name ? (
           <div className="border-b p-1 gap-1">
             <div className="text-gray-300 mb-1.5">Operation</div>
-            <div className="mb-1.5">{operation.value.name}</div>
+            <div className="mb-1.5">
+              {resolveDisplayName(operation.value.name, context.packageAliases)}
+            </div>
           </div>
         ) : null}
         <div className="p-1 border-b gap-1">
@@ -205,7 +223,8 @@ export function DetailsPanel() {
               className="outline-none w-fit"
               rightSection={<FaArrowUpRightFromSquare />}
             >
-              {docsConfig.displayName}:{operation?.value.name}
+              {docsConfig.displayName}:
+              {getActualOperationName(operation?.value.name ?? "")}
             </Button>
           </div>
         )}
@@ -213,16 +232,32 @@ export function DetailsPanel() {
           <div className="flex-1 min-h-0 flex flex-col">
             <div className="flex items-center justify-between mb-1.5 p-1">
               <div className="text-gray-300">Result</div>
-              <IconButton
-                icon={clipboard.copied ? FaCheck : FaRegCopy}
-                title={clipboard.copied ? "Copied!" : "Copy result"}
-                size={14}
-                onClick={() => clipboard.copy(formattedValue)}
-              />
+              <div className="flex items-center gap-1.5">
+                <IconButton
+                  icon={FaTextWidth}
+                  title={wrapResult ? "Disable wrapping" : "Wrap result"}
+                  size={14}
+                  className={wrapResult ? "text-reserved" : ""}
+                  aria-pressed={wrapResult}
+                  onClick={() =>
+                    setUiConfig((s) => ({ wrapResult: !s.wrapResult }))
+                  }
+                />
+                <IconButton
+                  icon={clipboard.copied ? FaCheck : FaRegCopy}
+                  title={clipboard.copied ? "Copied!" : "Copy result"}
+                  size={14}
+                  onClick={() => clipboard.copy(formattedValue)}
+                />
+              </div>
             </div>
             <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
               <ErrorBoundary displayError={true}>
-                <CodeHighlight code={formattedValue} showLineNumbers={false} />
+                <CodeHighlight
+                  code={formattedValue}
+                  showLineNumbers={false}
+                  wrap={wrapResult}
+                />
               </ErrorBoundary>
             </div>
           </div>

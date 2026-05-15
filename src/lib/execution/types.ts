@@ -5,6 +5,7 @@ import {
   IStatement,
   OperationSource,
   OperationType,
+  PackageNamespace,
   ProjectFile,
 } from "../types";
 
@@ -33,6 +34,7 @@ export type Variable = {
 export type ContextProps = {
   scopeId: string;
   variables: Map<string, Variable>;
+  packageAliases: Record<string, string>;
   narrowedTypes?: Map<string, Variable>;
   expectedType?: DataType;
   enforceExpectedType?: boolean;
@@ -114,6 +116,7 @@ export type ExecutionWorkerRunRequest = {
   runId: string;
   operation: IData<OperationType>;
   files: ProjectFile[];
+  packages?: PackageNamespace[];
   envVariables: { key: string; value: string }[];
   cachedResults: [string, ExecutionResult][];
   expectedType?: DataType;

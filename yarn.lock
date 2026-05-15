@@ -4805,6 +4805,11 @@ rollup@^4.20.0, rollup@^4.23.0:
     "@rollup/rollup-win32-x64-msvc" "4.59.0"
     fsevents "~2.3.2"
 
+rowguard@^0.2.0:
+  version "0.2.0"
+  resolved "https://registry.yarnpkg.com/rowguard/-/rowguard-0.2.0.tgz#513aa72e0390b475af29e5d90f38752de4f0f993"
+  integrity sha512-g+JWNS/znmtf5hj9CJ0FOE9ea0y3RNz/oE3g6vg8TepkxIZyaue5PxprauTgx6FYI5OArdo42hf9tW9ks/hQ/Q==
+
 rrweb-cssom@^0.6.0:
   version "0.6.0"
   resolved "https://registry.yarnpkg.com/rrweb-cssom/-/rrweb-cssom-0.6.0.tgz#ed298055b97cbddcdeb278f904857629dec5e0e1"

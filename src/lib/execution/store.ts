@@ -15,7 +15,11 @@ import {
   executeStatementSync,
 } from "./execution";
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
-import { builtInOperations } from "../operations/built-in";
+import { getAllOperations } from "../operations/built-in";
+import {
+  getAliasesFromPackages,
+  getEnabledPackages,
+} from "../packages/catalog";
 
 function getTriggerExpectedType() {
   const currentFile = useProjectStore.getState().getCurrentFile();
@@ -62,6 +66,9 @@ export const useExecutionResultsStore =
           useProjectStore.getState().getCurrentProject()?.deployment
             ?.envVariables
         ),
+        packageAliases: getAliasesFromPackages(
+          getEnabledPackages(useProjectStore.getState().getCurrentProject())
+        ),
         operationCache: new Map<string, IData>(),
         controlFlowState: {},
         ...getTriggerExpectedType(),
@@ -88,7 +95,13 @@ export const useExecutionResultsStore =
             [...state.results].filter(([, result]) => !result.shouldCacheResult)
           ),
           instances: new Map(),
-          rootContext: { ...state.rootContext, operationCache: new Map() },
+          rootContext: {
+            ...state.rootContext,
+            operationCache: new Map(),
+            packageAliases: getAliasesFromPackages(
+              getEnabledPackages(useProjectStore.getState().getCurrentProject())
+            ),
+          },
           runVersion: state.runVersion + 1,
         })),
       setResult: (entityId, result) => {
@@ -113,18 +126,25 @@ export const useExecutionResultsStore =
         });
       },
       getContext: (entityId) => {
-        return get().contexts.get(entityId) ?? get().rootContext;
+        const registered = get().contexts.get(entityId);
+        if (registered) {
+          const packageAliases = get().rootContext.packageAliases;
+          return { ...registered, packageAliases };
+        }
+        return get().rootContext;
       },
       getContextOrAncestor: (entityId, path) => {
-        const registered = get().contexts.get(entityId);
-        if (registered) return registered;
+        const directCtx = get().getContext(entityId);
+        if (directCtx !== get().rootContext) return directCtx;
+
         const file = useProjectStore.getState().getCurrentFile();
         const rootValue =
           file?.type === "operation" ? file.content.value : undefined;
         if (!rootValue) return get().rootContext;
+
         for (const id of resolveAncestorIds(path, rootValue)) {
-          const ctx = get().contexts.get(id);
-          if (ctx) return ctx;
+          const ctx = get().getContext(id);
+          if (ctx !== get().rootContext) return ctx;
         }
         return get().rootContext;
       },
@@ -146,6 +166,9 @@ export const useExecutionResultsStore =
             ...state.rootContext,
             operationCache: new Map<string, IData>(),
             controlFlowState: {},
+            packageAliases: getAliasesFromPackages(
+              getEnabledPackages(useProjectStore.getState().getCurrentProject())
+            ),
             variables: createExecutionVariables(
               useProjectStore.getState().getCurrentProject()?.files,
               useProjectStore.getState().getCurrentProject()?.deployment
@@ -168,7 +191,7 @@ export const useExecutionResultsStore =
   );
 
 export function getReservedNames(variables: Context["variables"]) {
-  return builtInOperations
+  return getAllOperations()
     .map((op) => ({ kind: "operation", name: op.name }))
     .concat(RESERVED_KEYWORDS.map((name) => ({ kind: "reserved", name })))
     .concat(Object.keys(DataTypes).map((name) => ({ kind: "data-type", name })))

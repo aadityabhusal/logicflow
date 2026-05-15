@@ -8,6 +8,7 @@ import {
 import { OperationListItem } from "./execution/types";
 import { Context } from "./execution/types";
 import {
+  getActualOperationName,
   getUnionActiveType,
   isDataOfType,
   inferTypeFromValue,
@@ -17,8 +18,9 @@ import {
   isValidIdentifier,
   isObject,
 } from "./utils";
-import { builtInOperations } from "./operations/built-in";
-import { InstanceTypes, PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./data";
+import { builtInOperationsByName } from "./operations/built-in";
+import { PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./packages/registry";
+import { getAllInstanceTypes } from "./packages/registry";
 import type { Options } from "prettier";
 
 export async function formatCode(code: string, options?: Options) {
@@ -34,12 +36,12 @@ export async function formatCode(code: string, options?: Options) {
   });
 }
 
-type OperationSource =
-  | "instance"
-  | "remeda"
-  | "external"
-  | "builtin"
-  | "userDefined";
+type OperationSource = {
+  type: "instance" | "remeda" | "external" | "builtin" | "userDefined";
+  packageName?: string;
+  packageCallTarget?: "import" | "member";
+  callStyle?: "method" | "function";
+};
 
 type CodeGenContext = Context & {
   showResult?: boolean;
@@ -51,7 +53,10 @@ type CodeGenContext = Context & {
 
 export function createCodeGenContext(
   context: Context,
-  options?: { showResult?: boolean; currentOperationName?: string }
+  options?: {
+    showResult?: boolean;
+    currentOperationName?: string;
+  }
 ): CodeGenContext {
   return {
     ...context,
@@ -59,12 +64,30 @@ export function createCodeGenContext(
     currentOperationName: options?.currentOperationName,
     importedOperations: new Set(),
     usedPackages: new Set(),
-    getOperation: (name: string) =>
-      builtInOperations.find((op) => op.name === name),
+    getOperation: (name: string) => builtInOperationsByName.get(name)?.[0],
   };
+}
+function getPackageImportName(
+  packageName: string,
+  context?: CodeGenContext
+): string {
+  return (
+    context?.packageAliases?.[packageName] ??
+    PACKAGE_REGISTRY[packageName]?.importName ??
+    packageName
+  );
+}
+
+function stripPackagePrefix(name: string, packageName: string): string {
+  const prefix = packageName + ".";
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
 const VARIABLE_REGEX = /^const\s+[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*/;
+
+function toReturnStatement(code: string): string {
+  return `return ${code.replace(VARIABLE_REGEX, "")}`;
+}
 
 export function generateData(data: IData, context: CodeGenContext): string {
   if (isDataOfType(data, "unknown") || isDataOfType(data, "never")) {
@@ -83,14 +106,31 @@ export function generateData(data: IData, context: CodeGenContext): string {
   } else if (isDataOfType(data, "error")) {
     return `new Error(${JSON.stringify(data.value.reason)})`;
   } else if (isDataOfType(data, "instance")) {
-    const instanceConfig = InstanceTypes[data.value.className];
+    const config = getAllInstanceTypes()[data.value.className];
+    if (config?.importInfo) {
+      context.usedPackages.add(config.importInfo.packageName);
+      const importName = getPackageImportName(
+        config.importInfo.packageName,
+        context
+      );
+      if (config.referenceExpression) {
+        const member = config.referenceExpression.slice(
+          config.referenceExpression.indexOf(".") + 1
+        );
+        return `${importName}.${member}`;
+      }
+      const constructorArgs = data.value.constructorArgs
+        .map((arg) => generateStatement(arg, context, true))
+        .join(", ");
+      const bareClassName = stripPackagePrefix(
+        data.value.className,
+        config.importInfo.packageName
+      );
+      return `new ${importName}.${bareClassName}(${constructorArgs})`;
+    }
     const constructorArgs = data.value.constructorArgs
       .map((arg) => generateStatement(arg, context, true))
       .join(", ");
-    if (instanceConfig?.importInfo) {
-      context.usedPackages.add(instanceConfig.importInfo.packageName);
-      return `${instanceConfig.importInfo.packageName}(${constructorArgs})`;
-    }
     return `new ${data.value.className}(${constructorArgs})`;
   } else if (isDataOfType(data, "operation")) {
     return generateCallback(data, { ...context, showResult: undefined });
@@ -132,31 +172,44 @@ function getOperationSource(
   context: CodeGenContext
 ): OperationSource {
   const opName = operation.value.name;
-  if (!opName) return "userDefined";
-
-  const valueSourceName = operation.value.source?.name;
-  if (valueSourceName === "remeda") return "remeda";
-  if (valueSourceName && valueSourceName in SOURCE_PACKAGE_MAP) {
-    context.usedPackages.add(SOURCE_PACKAGE_MAP[valueSourceName]);
-    return "external";
-  }
+  if (!opName) return { type: "userDefined" };
 
   const opItem = context.getOperation(opName);
-  if (opItem?.source?.name === "remeda") return "remeda";
-  const itemSourceName = opItem?.source?.name;
-  if (itemSourceName && itemSourceName in SOURCE_PACKAGE_MAP) {
-    context.usedPackages.add(SOURCE_PACKAGE_MAP[itemSourceName]);
-    return "external";
+  const source = { ...opItem?.source, ...operation.value.source };
+  const sourceName = source.name;
+  if (sourceName === "remeda") return { type: "remeda" };
+  if (sourceName && sourceName in SOURCE_PACKAGE_MAP) {
+    context.usedPackages.add(SOURCE_PACKAGE_MAP[sourceName]);
+    const firstParamType = operation.type.parameters[0]?.type;
+    return {
+      type: "external",
+      packageName: SOURCE_PACKAGE_MAP[sourceName],
+      packageCallTarget: source.packageCallTarget ?? "member",
+      callStyle: firstParamType?.kind === "instance" ? "method" : "function",
+    };
   }
   const firstParamType = operation.type.parameters[0]?.type;
   if (firstParamType?.kind === "instance") {
-    const Constructor = InstanceTypes[firstParamType.className]?.Constructor;
+    const Constructor =
+      getAllInstanceTypes()[firstParamType.className]?.Constructor;
     if (Constructor && typeof Constructor.prototype[opName] === "function") {
-      return "instance";
+      return { type: "instance" };
     }
   }
-  if (!opItem) return "userDefined";
-  return "builtin";
+  if (!opItem) return { type: "userDefined" };
+  return { type: "builtin" };
+}
+
+function getPackageFuncName(
+  packageName: string,
+  operationName: string,
+  callTarget: "import" | "member",
+  context?: CodeGenContext
+) {
+  const importName = getPackageImportName(packageName, context);
+  if (callTarget === "import") return importName;
+  const bareName = stripPackagePrefix(operationName, packageName);
+  return `${importName}.${bareName}`;
 }
 
 function generateOperationCall(
@@ -168,29 +221,42 @@ function generateOperationCall(
     .map((p) => generateStatement(p, context, true))
     .join(", ");
   const paramStr = operation.value.parameters.length ? `(${params})` : "";
+  const actualName = getActualOperationName(operation.value.name ?? "");
 
   if (operation.value.name === "await") return "";
   if (operation.value.name === "call") return `, (arg) => arg(${params})`;
 
-  switch (source) {
+  switch (source.type) {
     case "instance":
-    case "external":
-      return `, (arg) => arg.${operation.value.name}(${params})`;
+      return `, (arg) => arg.${actualName}(${params})`;
+    case "external": {
+      if (source.callStyle !== "function") {
+        return `, (arg) => arg.${actualName}(${params})`;
+      }
+      const fnName = getPackageFuncName(
+        source.packageName ?? "",
+        operation.value.name ?? "",
+        source.packageCallTarget ?? "member",
+        context
+      );
+      if (!params) return `, ${fnName}`;
+      return `, (arg) => ${fnName}(arg, ${params})`;
+    }
     case "remeda":
+      return `, R.${actualName}${paramStr}`;
     case "builtin": {
-      const name = `${source === "remeda" ? "R" : "_"}.${operation.value.name}`;
+      const name = `_.${actualName}`;
       return `, ${name}${paramStr}`;
     }
     case "userDefined": {
-      const name = operation.value.name;
       if (
-        name &&
-        name !== context.currentOperationName &&
-        context.variables.has(name)
+        actualName &&
+        actualName !== context.currentOperationName &&
+        context.variables.has(actualName)
       ) {
-        context.importedOperations.add(name);
+        context.importedOperations.add(actualName);
       }
-      return `, ${paramStr ? `(arg) => ${name}${paramStr}` : name}`;
+      return `, ${paramStr ? `(arg) => ${actualName}${paramStr}` : actualName}`;
     }
   }
 }
@@ -226,7 +292,7 @@ function generateStatement(
         })();
 
   if (statement.controlFlow === "return") {
-    return `return ${result.startsWith("const ") ? result.replace(VARIABLE_REGEX, "") : result}`;
+    return toReturnStatement(result);
   }
   return result;
 }
@@ -271,9 +337,7 @@ function generateConditionStatement(stmt: IStatement, context: CodeGenContext) {
     stmt.name !== undefined ? `const ${stmt.name} = ${ternary}` : ternary;
 
   if (stmt.controlFlow === "return") {
-    return `return ${
-      result.startsWith("const ") ? result.replace(VARIABLE_REGEX, "") : result
-    }`;
+    return toReturnStatement(result);
   }
   return result;
 }
@@ -289,7 +353,7 @@ function generateCallback(
       const type = storedType?.kind === "operation" ? storedType : undefined;
       return `(${type ? type.parameters.map((p) => p.name).join(", ") : "...args"}) => {
     /* internal logic */ 
-    /* @returns ${getTypeSignature(type?.result ?? { kind: "unknown" })} */
+    /* @returns ${getTypeSignature(type?.result ?? { kind: "unknown" }, context)} */
   }`;
     }
   }
@@ -307,7 +371,7 @@ function generateCallback(
       !stmtCode.startsWith("if") &&
       !stmtCode.startsWith("return")
     ) {
-      return `return ${stmtCode}`;
+      return toReturnStatement(stmtCode);
     }
     return stmtCode;
   });
@@ -317,22 +381,30 @@ function generateCallback(
   }`;
 }
 
+function generateImports(codegenContext?: CodeGenContext): string {
+  return [...(codegenContext?.usedPackages ?? [])]
+    .map((pkg) => {
+      const name = getPackageImportName(pkg, codegenContext);
+      return PACKAGE_REGISTRY[pkg]?.importKind === "namespace"
+        ? `import * as ${name} from '${pkg}';`
+        : `import ${name} from '${pkg}';`;
+    })
+    .join("\n");
+}
+
 export function generateOperation(
   operation: IData<OperationType>,
   context: Context
 ): string {
-  const operationName = operation.value.name ?? "op";
+  const currentOperationName = operation.value.name ?? "op";
   const codeGenContext = createCodeGenContext(context, {
-    currentOperationName: operationName,
+    currentOperationName,
   });
   const callback = generateCallback(operation, codeGenContext);
   const userImports = Array.from(codeGenContext.importedOperations)
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
-  const packageImports = Array.from(codeGenContext.usedPackages)
-    .filter((pkg) => pkg in PACKAGE_REGISTRY)
-    .map((pkg) => PACKAGE_REGISTRY[pkg].importStatement)
-    .join(";\n");
-  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports ? packageImports + ";\n" : ""}${userImports}\n`;
-  return `${imports}\nconst ${operationName} = ${callback};\nexport default ${operationName};`;
+  const packageImports = generateImports(codeGenContext);
+  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
+  return `${imports}\nconst ${currentOperationName} = ${callback};\nexport default ${currentOperationName};`;
 }

@@ -19,8 +19,9 @@ import {
   operationToListItem,
   resolveConstructorArgs,
 } from "@/lib/utils";
-import { InstanceTypes } from "@/lib/data";
-import { builtInOperations } from "@/lib/operations/built-in";
+import { InstanceTypes } from "@/lib/packages/registry";
+import { coreOperations } from "@/lib/operations/built-in";
+import { operations as rowguardOperations } from "@/lib/operations/rowguard";
 import { OperationListItem, Context } from "@/lib/execution/types";
 import {
   createTestContext,
@@ -49,7 +50,7 @@ import {
 } from "../types";
 
 function findBuiltIn(name: string): OperationListItem {
-  const op = builtInOperations.find((o) => o.name === name);
+  const op = coreOperations.find((o) => o.name === name);
   if (!op) throw new Error(`Operation "${name}" not found`);
   return op;
 }
@@ -1466,7 +1467,7 @@ describe("call operation with async operations", () => {
       result: { kind: "string" },
     };
 
-    const callOp = builtInOperations.find((o) => o.name === "call")!;
+    const callOp = coreOperations.find((o) => o.name === "call")!;
 
     expect(callOp.expectedType).toBeDefined();
     const expectedType =
@@ -3225,7 +3226,7 @@ describe("memoization", () => {
       operationCache: new Map(),
     });
 
-    const add = builtInOperations.find((o) => o.name === "add")!;
+    const add = coreOperations.find((o) => o.name === "add")!;
     await executeOperation(add, testNumber(2), [numberStatement(3)], ctx);
     await executeOperation(add, testNumber(2), [numberStatement(3)], ctx);
 
@@ -4045,5 +4046,124 @@ describe("cached instance preservation across re-executions", () => {
     if (result.type.kind === "instance") {
       expect(result.type.className).toBe("Response");
     }
+  });
+});
+
+describe("Rowguard structural condition operations", () => {
+  const findRgOp = (name: string) =>
+    rowguardOperations.find((op) => op.name === name)!;
+
+  it("auth.uid returns ContextValue instance", async () => {
+    const op = findRgOp("auth.uid");
+    const ctx = createTestContext();
+    const result = await executeOperation(op, createData(), [], ctx);
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("rowguard.ContextValue");
+    }
+  });
+
+  it("session.get returns ContextValue instance", async () => {
+    const op = findRgOp("session.get");
+    const ctx = createTestContext();
+    const result = await executeOperation(
+      op,
+      testString("org_id"),
+      [stringStatement("uuid")],
+      ctx
+    );
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("rowguard.ContextValue");
+    }
+  });
+
+  it("auth.uid raw value has toSQL", async () => {
+    const op = findRgOp("auth.uid");
+    const ctx = createTestContext();
+    const result = await executeOperation(op, createData(), [], ctx);
+    const raw = getRawValueFromData(result, ctx);
+    expect(typeof (raw as { toSQL?: () => string }).toSQL).toBe("function");
+  });
+
+  it("session.get raw value has key and sessionType", async () => {
+    const op = findRgOp("session.get");
+    const ctx = createTestContext();
+    const result = await executeOperation(
+      op,
+      testString("org_id"),
+      [stringStatement("uuid")],
+      ctx
+    );
+    const raw = getRawValueFromData(result, ctx) as Record<string, unknown>;
+    expect(raw.key).toBe("org_id");
+    expect(raw.sessionType).toBe("uuid");
+  });
+
+  it("get after session.get accesses properties", async () => {
+    const sessionOp = findRgOp("session.get");
+    const ctx = createTestContext();
+    const result = await executeOperation(
+      sessionOp,
+      testString("org_id"),
+      [stringStatement("uuid")],
+      ctx
+    );
+    // Use the built-in get operation
+    const getOp = coreOperations.find((op) => op.name === "get")!;
+    const getResult = await executeOperation(
+      getOp,
+      result,
+      [stringStatement("key")],
+      ctx
+    );
+    expect(getRawValueFromData(getResult, ctx)).toBe("org_id");
+  });
+
+  it("has after session.get checks property existence", async () => {
+    const sessionOp = findRgOp("session.get");
+    const ctx = createTestContext();
+    const result = await executeOperation(
+      sessionOp,
+      testString("org_id"),
+      [stringStatement("uuid")],
+      ctx
+    );
+    const hasOp = coreOperations.find((op) => op.name === "has")!;
+    const hasResult = await executeOperation(
+      hasOp,
+      result,
+      [stringStatement("key")],
+      ctx
+    );
+    expect(getRawValueFromData(hasResult, ctx)).toBe(true);
+  });
+
+  it("toSQL on ContextValue returns SQL string", async () => {
+    const ctx = createTestContext();
+    const authOp = findRgOp("auth.uid");
+    const authResult = await executeOperation(authOp, createData(), [], ctx);
+    // Find the toSQL operation for ContextValue (check first param type)
+    const toSQLOps = rowguardOperations.filter((op) => op.name === "toSQL");
+    const ctxValToSQLOp = toSQLOps.find((op) => {
+      const params =
+        typeof op.parameters === "function"
+          ? op.parameters(createData())
+          : op.parameters;
+      const firstType = params[0]?.type;
+      return (
+        firstType &&
+        firstType.kind === "instance" &&
+        (firstType as InstanceDataType).className === "rowguard.ContextValue"
+      );
+    });
+    expect(ctxValToSQLOp).toBeDefined();
+    const sqlResult = await executeOperation(
+      ctxValToSQLOp!,
+      authResult,
+      [],
+      ctx
+    );
+    expect(getRawValueFromData(sqlResult, ctx)).toBe("auth.uid()");
   });
 });

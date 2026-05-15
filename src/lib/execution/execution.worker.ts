@@ -13,10 +13,13 @@ import {
   ExecutionWorkerRunRequest,
   ExecutionWorkerResponse,
 } from "./types";
+import { syncPackageRegistry } from "../operations/built-in";
+import { getAliasesFromPackages } from "../packages/catalog";
 
 function serializeContext(ctx: Context): WorkerContext {
   return {
     scopeId: ctx.scopeId,
+    packageAliases: ctx.packageAliases,
     expectedType: ctx.expectedType,
     enforceExpectedType: ctx.enforceExpectedType,
     skipExecution: ctx.skipExecution,
@@ -42,12 +45,14 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
   activeAbortController = controller;
 
   try {
-    const results = new Map(req.cachedResults);
+    await syncPackageRegistry(req.packages);
 
+    const results = new Map(req.cachedResults);
     const rootContext = {} as Context;
     Object.assign<Context, Context>(rootContext, {
       scopeId: "_root_",
       variables: createExecutionVariables(req.files, req.envVariables),
+      packageAliases: getAliasesFromPackages(req.packages),
       expectedType: req.expectedType,
       enforceExpectedType: req.enforceExpectedType,
       operationCache: new Map(),

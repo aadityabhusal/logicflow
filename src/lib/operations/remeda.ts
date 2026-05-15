@@ -98,7 +98,13 @@ function getOrderRuleParams(
   ];
 }
 
-export function getObjectParam(): OperationType["parameters"][number] {
+export function getObjectParam(
+  data?: IData,
+  options?: { includeInstance?: boolean }
+): OperationType["parameters"][number] {
+  if (options?.includeInstance && data?.type.kind === "instance") {
+    return { type: data.type };
+  }
   return {
     type: resolveUnionType([
       { kind: "object", properties: [] },
