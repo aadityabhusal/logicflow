@@ -35,6 +35,7 @@ import {
   testCondition,
   testDictionary,
   testTuple,
+  testUnion,
   stringStatement,
   numberStatement,
   booleanStatement,
@@ -605,6 +606,31 @@ describe("executeStatementSync", () => {
     const stmt = createStatement({ data: unionData });
     const result = executeStatementSync(stmt, ctx);
     expect(isDataOfType(result, "union")).toBe(true);
+  });
+
+  it("executes isTypeOf against an example value", () => {
+    const ctx = createTestContext();
+    const data = testUnion([{ kind: "string" }, { kind: "number" }], 42);
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: data.type }, { type: { kind: "number" } }],
+        result: { kind: "boolean" },
+      },
+      value: {
+        name: "isTypeOf",
+        parameters: [numberStatement(0)],
+        statements: [],
+      },
+    });
+
+    const result = executeStatementSync(
+      createStatement({ data, operations: [op] }),
+      ctx
+    );
+
+    expect(result.type.kind).toBe("boolean");
+    expect(result.value).toBe(true);
   });
 
   it("executes statement with dictionary data synchronously", () => {
@@ -4047,5 +4073,3 @@ describe("cached instance preservation across re-executions", () => {
     }
   });
 });
-
-

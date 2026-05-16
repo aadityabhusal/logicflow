@@ -29,6 +29,7 @@ import {
   getUnionParam,
   remedaOperations,
 } from "./remeda";
+import { immerOperations } from "./immer";
 import * as _ from "./runtime";
 import { Context, OperationListItem } from "../execution/types";
 import {
@@ -727,6 +728,7 @@ export const coreOperations: OperationListItem[] = [
   ...urlOperations,
   ...promiseOperations,
   ...responseOperations,
+  ...immerOperations,
   ...remedaOperations,
   ...requestOperations,
 ].map(prefixExternalPackageName);

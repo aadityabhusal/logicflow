@@ -35,7 +35,7 @@ describe("generatePlatformHandlers", () => {
     });
   });
 
-  describe("Vercel handlers", () => {
+  describe("Vercel handlers (Edge — default)", () => {
     it("has filename api/{name}.js", () => {
       const result = generatePlatformHandlers("vercel", ops);
       expect(result[0].filename).toBe("api/getUser.js");
@@ -56,11 +56,40 @@ describe("generatePlatformHandlers", () => {
       );
     });
 
-    it("uses export default async function handler pattern", () => {
+    it("uses Edge (Request → Response) handler pattern", () => {
       const result = generatePlatformHandlers("vercel", ops);
       expect(result[0].content).toContain(
         "export default async function handler(request)"
       );
+      expect(result[0].content).toContain("new Response(JSON.stringify");
+      expect(result[0].content).not.toContain("res.status");
+    });
+  });
+
+  describe("Vercel handlers (Node.js — opt-in)", () => {
+    it("omits edge runtime config", () => {
+      const result = generatePlatformHandlers("vercel", ops, { nodejs: true });
+      expect(result[0].content).not.toContain("runtime: 'edge'");
+    });
+
+    it("uses Node.js (req, res) handler pattern", () => {
+      const result = generatePlatformHandlers("vercel", ops, { nodejs: true });
+      expect(result[0].content).toContain(
+        "export default async function handler(req, res)"
+      );
+      expect(result[0].content).toContain("res.status(200).json(result)");
+    });
+
+    it("passes operation name through as-is even for names with special characters", () => {
+      const weirdOp = [createTriggeredOperationFile("my_op$")];
+      const result = generatePlatformHandlers("vercel", weirdOp, {
+        nodejs: true,
+      });
+      expect(result[0].filename).toBe("api/my_op$.js");
+      expect(result[0].content).toContain(
+        "import my_op$ from '../src/operations/my_op$.js'"
+      );
+      expect(result[0].content).toContain("await my_op$(req)");
     });
   });
 
@@ -96,15 +125,25 @@ describe("generatePlatformHandlers", () => {
       expect(result[0].content).toContain("} catch (error)");
     });
 
-    it("returns JSON response on success", () => {
+    it("returns JSON response on success (Edge)", () => {
       const result = generatePlatformHandlers("vercel", ops);
       expect(result[0].content).toContain("JSON.stringify(result)");
       expect(result[0].content).toContain("status: 200");
     });
 
-    it("returns 500 error response on catch", () => {
+    it("returns 500 error response on catch (Edge)", () => {
       const result = generatePlatformHandlers("vercel", ops);
       expect(result[0].content).toContain("status: 500");
+    });
+
+    it("returns JSON response on success (Node.js)", () => {
+      const result = generatePlatformHandlers("vercel", ops, { nodejs: true });
+      expect(result[0].content).toContain("res.status(200).json(result)");
+    });
+
+    it("returns 500 error response on catch (Node.js)", () => {
+      const result = generatePlatformHandlers("vercel", ops, { nodejs: true });
+      expect(result[0].content).toContain("res.status(500).json(");
     });
 
     it("uses error.message for Error instances with fallback", () => {
@@ -124,7 +163,7 @@ describe("generatePlatformHandlers", () => {
       expect(generatePlatformHandlers("supabase", threeOps)).toHaveLength(3);
     });
 
-    it("passes operation name through as-is even for names with special characters", () => {
+    it("passes operation name through as-is even for names with special characters (Edge)", () => {
       const weirdOp = [createTriggeredOperationFile("my_op$")];
       const result = generatePlatformHandlers("vercel", weirdOp);
       expect(result[0].filename).toBe("api/my_op$.js");

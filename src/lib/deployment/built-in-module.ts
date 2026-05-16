@@ -1,4 +1,5 @@
 const builtInModuleCode = `import { purry } from "remeda";
+import { produce } from "immer";
 
 // ===== Pipe Operations =====
 
@@ -198,7 +199,15 @@ export const log = (value) => {
   console.log(value);
 };
 
-export const isTypeOf = (type) => (value) => typeof value === type;
+export const isTypeOf = (typeValue) => (value) => {
+  if (Array.isArray(value) || Array.isArray(typeValue)) {
+    return Array.isArray(value) && Array.isArray(typeValue);
+  }
+  if (value === null || typeValue === null) return value === typeValue;
+  if (typeof value !== typeof typeValue) return false;
+  if (typeof value === "object") return value.constructor === typeValue.constructor;
+  return true;
+};
 
 export function fetch(...args) {
   if (args.length === 2) return globalThis.fetch(args[0], args[1]);
@@ -242,6 +251,116 @@ export const getHash = (url) => url.hash;
 // ===== Response Instance Operations =====
 
 export const getStatus = (response) => response.status;
+
+// ===== Immutable Update Operations =====
+
+function navigatePath(target, path) {
+  let current = target;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (current == null || typeof current !== "object") return null;
+    current = current[path[i]];
+  }
+  if (current == null || typeof current !== "object") return null;
+  return current;
+}
+
+function _setIn(value, path, nextValue) {
+  return produce(value, (draft) => {
+    const parent = navigatePath(draft, path);
+    if (parent) parent[path[path.length - 1]] = nextValue;
+  });
+}
+export function setIn(...args) {
+  return purry(_setIn, args);
+}
+
+function _updateIn(value, path, updater) {
+  return produce(value, (draft) => {
+    const parent = navigatePath(draft, path);
+    if (parent) {
+      const lastKey = path[path.length - 1];
+      parent[lastKey] = updater(parent[lastKey]);
+    }
+  });
+}
+export function updateIn(...args) {
+  return purry(_updateIn, args);
+}
+
+function _removeIn(value, path) {
+  return produce(value, (draft) => {
+    const parent = navigatePath(draft, path);
+    if (parent) {
+      const lastKey = path[path.length - 1];
+      if (Array.isArray(parent)) {
+        parent.splice(lastKey, 1);
+      } else {
+        delete parent[lastKey];
+      }
+    }
+  });
+}
+export function removeIn(...args) {
+  return purry(_removeIn, args);
+}
+
+function _setKey(value, key, nextValue) {
+  return { ...value, [key]: nextValue };
+}
+export function setKey(...args) {
+  return purry(_setKey, args);
+}
+
+function _updateKey(value, key, updater) {
+  return { ...value, [key]: updater(value[key]) };
+}
+export function updateKey(...args) {
+  return purry(_updateKey, args);
+}
+
+function _removeKey(value, key) {
+  const { [key]: _, ...rest } = value;
+  return rest;
+}
+export function removeKey(...args) {
+  return purry(_removeKey, args);
+}
+
+function _replaceAt(value, index, nextValue) {
+  return produce(value, (draft) => {
+    draft[index] = nextValue;
+  });
+}
+export function replaceAt(...args) {
+  return purry(_replaceAt, args);
+}
+
+function _updateAt(value, index, updater) {
+  return produce(value, (draft) => {
+    draft[index] = updater(draft[index]);
+  });
+}
+export function updateAt(...args) {
+  return purry(_updateAt, args);
+}
+
+function _insertAt(value, index, nextValue) {
+  return produce(value, (draft) => {
+    draft.splice(index, 0, nextValue);
+  });
+}
+export function insertAt(...args) {
+  return purry(_insertAt, args);
+}
+
+function _removeAt(value, index) {
+  return produce(value, (draft) => {
+    draft.splice(index, 1);
+  });
+}
+export function removeAt(...args) {
+  return purry(_removeAt, args);
+}
 `;
 
 export function generateBuiltInModule(): string {

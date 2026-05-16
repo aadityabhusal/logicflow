@@ -7,13 +7,14 @@ export interface GeneratedHandler {
 
 export function generatePlatformHandlers(
   platform: DeploymentTarget["platform"],
-  triggeredOps: ProjectFile[]
+  triggeredOps: ProjectFile[],
+  opts?: { nodejs?: boolean }
 ): GeneratedHandler[] {
   if (triggeredOps.length === 0) return [];
 
   switch (platform) {
     case "vercel":
-      return generateVercelHandlers(triggeredOps);
+      return generateVercelHandlers(triggeredOps, opts?.nodejs);
     case "supabase":
       return generateSupabaseHandlers(triggeredOps);
     default:
@@ -22,16 +23,25 @@ export function generatePlatformHandlers(
 }
 
 function generateVercelHandlers(
-  triggeredOps: ProjectFile[]
+  triggeredOps: ProjectFile[],
+  nodejs?: boolean
 ): GeneratedHandler[] {
-  return triggeredOps.map((op) => {
-    const handlerContent = `import ${op.name} from '../src/operations/${op.name}.js';
+  return triggeredOps.map((op) => ({
+    filename: `api/${op.name}.js`,
+    content: nodejs
+      ? generateVercelNodeHandler(op.name)
+      : generateVercelEdgeHandler(op.name),
+  }));
+}
+
+function generateVercelEdgeHandler(name: string): string {
+  return `import ${name} from '../src/operations/${name}.js';
 
 export const config = { runtime: 'edge' };
 
 export default async function handler(request) {
   try {
-    const result = await ${op.name}(request);
+    const result = await ${name}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -45,9 +55,23 @@ export default async function handler(request) {
   }
 }
 `;
+}
 
-    return { filename: `api/${op.name}.js`, content: handlerContent };
-  });
+function generateVercelNodeHandler(name: string): string {
+  return `import ${name} from '../src/operations/${name}.js';
+
+export default async function handler(req, res) {
+  try {
+    const result = await ${name}(req);
+
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+    );
+  }
+}
+`;
 }
 
 function generateSupabaseHandlers(

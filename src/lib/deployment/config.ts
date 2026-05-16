@@ -12,7 +12,7 @@ import { generatePlatformConfig } from "./platform-config";
 import { generateBuiltInModule } from "./built-in-module";
 import { prefixNpmImports } from "./utils";
 import { PACKAGE_REGISTRY } from "../packages/registry";
-import { getEnabledPackages } from "../packages/catalog";
+import { getEnabledPackages, PACKAGE_CATALOG } from "../packages/catalog";
 import { syncPackageRegistry } from "../operations/built-in";
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
@@ -66,7 +66,11 @@ export async function generateDeployableProject(
     try {
       const handlerFiles = generatePlatformHandlers(
         target.platform,
-        triggeredOps
+        triggeredOps,
+        {
+          nodejs:
+            target.platform === "vercel" && hasEdgeIncompatiblePackages(files),
+        }
       );
       files.push(
         ...handlerFiles.map((f) => ({ path: f.filename, content: f.content }))
@@ -105,19 +109,31 @@ export async function generateDeployableProject(
 
 type Dependency = { name: string; version: string };
 
+const EDGE_INCOMPATIBLE_PACKAGES: readonly string[] = ["@faker-js/faker"];
+
+function hasEdgeIncompatiblePackages(files: DeploymentFile[]): boolean {
+  const allFiles = files.map((f) => f.content).join("\n");
+  return EDGE_INCOMPATIBLE_PACKAGES.some(
+    (pkg) => allFiles.includes(`'${pkg}'`) || allFiles.includes(`"${pkg}"`)
+  );
+}
+
 function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
   const packages = new Set<string>();
   const allFiles = files.map((f) => f.content).join("\n");
   for (const pkg of Object.keys(PACKAGE_REGISTRY)) {
+    const packageName = PACKAGE_CATALOG[pkg]?.packageName ?? pkg;
     if (
-      allFiles.includes(`from '${pkg}'`) ||
-      allFiles.includes(`from "${pkg}"`)
+      allFiles.includes(`from '${packageName}'`) ||
+      allFiles.includes(`from "${packageName}"`)
     ) {
-      packages.add(pkg);
+      packages.add(packageName);
     }
   }
   if (allFiles.includes("from 'remeda'")) packages.add("remeda");
   if (allFiles.includes('from "remeda"')) packages.add("remeda");
+  if (allFiles.includes("from 'immer'")) packages.add("immer");
+  if (allFiles.includes('from "immer"')) packages.add("immer");
   return packages;
 }
 
@@ -130,9 +146,15 @@ export function resolveNpmDependencies(
   const npmDependencies: Dependency[] = [];
 
   for (const name of packageNames) {
+    const catalogName = Object.keys(PACKAGE_CATALOG).find(
+      (pkg) => PACKAGE_CATALOG[pkg].packageName === name
+    );
     npmDependencies.push({
       name,
-      version: dependencies?.find((d) => d.name === name)?.version || "latest",
+      version:
+        dependencies?.find(
+          (d) => d.name === name || (catalogName && d.name === catalogName)
+        )?.version || "latest",
     });
   }
 

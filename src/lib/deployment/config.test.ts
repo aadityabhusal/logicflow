@@ -150,6 +150,34 @@ describe("resolveNpmDependencies", () => {
     expect(result.find((d) => d.name === "wretch")!.version).toBe("latest");
   });
 
+  it("includes faker by its real npm package name", () => {
+    const project = createTestProject();
+    const files = [
+      {
+        path: "src/operations/fake.js",
+        content: "import { faker } from '@faker-js/faker';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
+    expect(result).toEqual([{ name: "@faker-js/faker", version: "latest" }]);
+  });
+
+  it("uses configured faker version from catalog dependency name", () => {
+    const project = createTestProject({
+      dependencies: {
+        npm: [{ name: "faker", version: "9.0.0", exports: [] }],
+      },
+    });
+    const files = [
+      {
+        path: "src/operations/fake.js",
+        content: "import { faker } from '@faker-js/faker';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
+    expect(result).toEqual([{ name: "@faker-js/faker", version: "9.0.0" }]);
+  });
+
   it("uses specified wretch version from project dependencies", () => {
     const project = createTestProject({
       dependencies: {
@@ -390,7 +418,8 @@ describe("generateDeployableProject", () => {
     );
     expect(generatePlatformHandlers).toHaveBeenCalledWith(
       "vercel",
-      expect.any(Array)
+      expect.any(Array),
+      { nodejs: false }
     );
     expect(files.some((f) => f.path === "vercel.json")).toBe(true);
     expect(files.some((f) => f.path === "api/op.js")).toBe(true);
@@ -441,6 +470,38 @@ describe("generateDeployableProject", () => {
     expect(packageJson).toBeDefined();
     expect(JSON.parse(packageJson!.content).dependencies).toMatchObject({
       remeda: "latest",
+    });
+  });
+
+  it("includes faker dependency and uses Node.js Vercel handler", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("main")],
+      dependencies: {
+        npm: [{ name: "faker", version: "9.0.0", exports: [] }],
+      },
+      deployment: {
+        envVariables: [],
+        platforms: [{ platform: "vercel", deployments: [] }],
+      },
+    });
+    (formatCode as ReturnType<typeof vi.fn>).mockImplementation((c: string) =>
+      Promise.resolve(c)
+    );
+    (generateOperation as ReturnType<typeof vi.fn>).mockReturnValue(
+      "import { faker } from '@faker-js/faker';\nexport default () => faker.person.firstName();"
+    );
+
+    const { files } = await generateDeployableProject(project, ctx);
+    const packageJson = files.find((f) => f.path === "package.json");
+
+    expect(generatePlatformHandlers).toHaveBeenCalledWith(
+      "vercel",
+      expect.any(Array),
+      { nodejs: true }
+    );
+    expect(packageJson).toBeDefined();
+    expect(JSON.parse(packageJson!.content).dependencies).toMatchObject({
+      "@faker-js/faker": "9.0.0",
     });
   });
 

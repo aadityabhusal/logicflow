@@ -1,4 +1,5 @@
 import { purry } from "remeda";
+import { produce } from "immer";
 
 // ===== Pipe Operations =====
 
@@ -214,9 +215,18 @@ export const log = <T>(value: T) => {
 };
 
 export const isTypeOf =
-  (type: string) =>
-  (value: unknown): boolean =>
-    typeof value === type;
+  (typeValue: unknown) =>
+  (value: unknown): boolean => {
+    if (Array.isArray(value) || Array.isArray(typeValue)) {
+      return Array.isArray(value) && Array.isArray(typeValue);
+    }
+    if (value === null || typeValue === null) return value === typeValue;
+    if (typeof value !== typeof typeValue) return false;
+    if (typeof value === "object") {
+      return value.constructor === (typeValue as object).constructor;
+    }
+    return true;
+  };
 
 export function fetch(...args: readonly unknown[]) {
   if (args.length === 2)
@@ -266,3 +276,152 @@ export const getHash = (url: URL): string => url.hash;
 // ===== Response Instance Operations =====
 
 export const getStatus = (response: Response): number => response.status;
+
+// ===== Immutable Update Operations =====
+
+type PathSegment = string | number;
+
+function navigatePath(
+  target: unknown,
+  path: PathSegment[]
+): Record<string | number, unknown> | null {
+  let current: unknown = target;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (current == null || typeof current !== "object") return null;
+    current = (current as Record<string | number, unknown>)[path[i]];
+  }
+  if (current == null || typeof current !== "object") return null;
+  return current as Record<string | number, unknown>;
+}
+
+function _setIn<T extends object | unknown[]>(
+  value: T,
+  path: PathSegment[],
+  nextValue: unknown
+): T {
+  return produce(value, (draft) => {
+    const parent = navigatePath(draft, path);
+    if (parent) parent[path[path.length - 1]] = nextValue;
+  });
+}
+export function setIn(...args: readonly unknown[]) {
+  return purry(_setIn, args);
+}
+
+function _updateIn<T extends object | unknown[]>(
+  value: T,
+  path: PathSegment[],
+  updater: (v: unknown) => unknown
+): T {
+  return produce(value, (draft) => {
+    const parent = navigatePath(draft, path);
+    if (parent) {
+      const lastKey = path[path.length - 1];
+      parent[lastKey] = updater(parent[lastKey]);
+    }
+  });
+}
+export function updateIn(...args: readonly unknown[]) {
+  return purry(_updateIn, args);
+}
+
+function _removeIn<T extends object | unknown[]>(
+  value: T,
+  path: PathSegment[]
+): T {
+  return produce(value, (draft) => {
+    const parent = navigatePath(draft, path);
+    if (parent) {
+      const lastKey = path[path.length - 1];
+      if (Array.isArray(parent)) {
+        parent.splice(lastKey as number, 1);
+      } else {
+        delete parent[lastKey];
+      }
+    }
+  });
+}
+export function removeIn(...args: readonly unknown[]) {
+  return purry(_removeIn, args);
+}
+
+function _setKey<T extends Record<string, unknown>>(
+  value: T,
+  key: string,
+  nextValue: unknown
+): T {
+  return { ...value, [key]: nextValue };
+}
+export function setKey(...args: readonly unknown[]) {
+  return purry(_setKey, args);
+}
+
+function _updateKey<T extends Record<string, unknown>>(
+  value: T,
+  key: string,
+  updater: (v: unknown) => unknown
+): T {
+  return { ...value, [key]: updater(value[key]) };
+}
+export function updateKey(...args: readonly unknown[]) {
+  return purry(_updateKey, args);
+}
+
+function _removeKey<T extends Record<string, unknown>>(
+  value: T,
+  key: string
+): T {
+  const { [key]: _, ...rest } = value;
+  return rest as T;
+}
+export function removeKey(...args: readonly unknown[]) {
+  return purry(_removeKey, args);
+}
+
+function _replaceAt<T extends unknown[]>(
+  value: T,
+  index: number,
+  nextValue: unknown
+): T {
+  return produce(value, (draft) => {
+    draft[index] = nextValue;
+  });
+}
+export function replaceAt(...args: readonly unknown[]) {
+  return purry(_replaceAt, args);
+}
+
+function _updateAt<T extends unknown[]>(
+  value: T,
+  index: number,
+  updater: (v: unknown) => unknown
+): T {
+  return produce(value, (draft) => {
+    draft[index] = updater(draft[index]);
+  });
+}
+export function updateAt(...args: readonly unknown[]) {
+  return purry(_updateAt, args);
+}
+
+function _insertAt<T extends unknown[]>(
+  value: T,
+  index: number,
+  nextValue: unknown
+): T {
+  return produce(value, (draft) => {
+    draft.splice(index, 0, nextValue);
+  });
+}
+export function insertAt(...args: readonly unknown[]) {
+  return purry(_insertAt, args);
+}
+
+function _removeAt<T extends unknown[]>(value: T, index: number): T {
+  return produce(value, (draft) => {
+    draft.splice(index, 1);
+  });
+}
+export function removeAt(...args: readonly unknown[]) {
+  return purry(_removeAt, args);
+}

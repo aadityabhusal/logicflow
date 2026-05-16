@@ -319,6 +319,40 @@ describe("generateOperation", () => {
     expect(result).toContain("_.length");
   });
 
+  it("generates isTypeOf with an example value parameter", () => {
+    const ctx = createTestContext();
+    const input = createStatement({
+      name: "input",
+      data: testUnion([{ kind: "string" }, { kind: "number" }], 42),
+    });
+    const isTypeOf = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: input.data.type }, { type: { kind: "number" } }],
+        result: { kind: "boolean" },
+      },
+      value: {
+        name: "isTypeOf",
+        parameters: [numberStatement(0)],
+        statements: [],
+      },
+    });
+    const op = testOperation(
+      [input],
+      [
+        createStatement({
+          data: testReference("input", input.id),
+          operations: [isTypeOf],
+        }),
+      ],
+      "checkType"
+    );
+
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("_.isTypeOf(0)");
+  });
+
   it("generates await R.pipeAsync for async operations", () => {
     const ctx = createTestContext();
     const awaitOp = createData({
@@ -1677,5 +1711,33 @@ describe("faker code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("faker.location.streetAddress");
+  });
+
+  it("generates aliased named import with as clause", () => {
+    const ctx = createCodeGenContext(
+      createTestContext({ packageAliases: { faker: "f" } })
+    );
+    const fakerOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "string" as const },
+      },
+      value: {
+        name: "faker.person.firstName",
+        parameters: [],
+        statements: [],
+        source: { name: "faker" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [fakerOp],
+    });
+    const op = testOperation([], [stmt], "fakerAliasTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import { faker as f } from '@faker-js/faker';");
+    expect(result).toContain("R.pipe(undefined, f.person.firstName)");
   });
 });

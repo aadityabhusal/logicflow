@@ -392,8 +392,11 @@ function generateImports(codegenContext?: CodeGenContext): string {
       const importKind = PACKAGE_CATALOG[pkg]?.importKind ?? "default";
       const name = getPackageImportName(pkg, codegenContext);
 
-      if (importKind === "named")
-        return `import { ${name} } from '${npmName}';`;
+      if (importKind === "named") {
+        const importName = PACKAGE_REGISTRY[pkg]?.importName ?? pkg;
+        const _name = name !== importName ? `${importName} as ${name}` : name;
+        return `import { ${_name} } from '${npmName}';`;
+      }
       if (importKind === "namespace")
         return `import * as ${name} from '${npmName}';`;
       return `import ${name} from '${npmName}';`;
