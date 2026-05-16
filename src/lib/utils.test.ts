@@ -448,6 +448,15 @@ describe("isTypeCompatible", () => {
     );
   });
 
+  it("unknown and undefined are mutually compatible", () => {
+    expect(
+      isTypeCompatible({ kind: "unknown" }, { kind: "undefined" }, ctx)
+    ).toBe(true);
+    expect(
+      isTypeCompatible({ kind: "undefined" }, { kind: "unknown" }, ctx)
+    ).toBe(true);
+  });
+
   it("never is compatible with anything as source", () => {
     expect(isTypeCompatible({ kind: "never" }, { kind: "string" }, ctx)).toBe(
       false
@@ -1664,7 +1673,9 @@ describe("getTypeSignature", () => {
   });
 
   it("formats instance className using packageAliases", () => {
-    const aliased = { packageAliases: { rowguard: "Rg" } } as unknown as Context;
+    const aliased = {
+      packageAliases: { rowguard: "Rg" },
+    } as unknown as Context;
     const sig = getTypeSignature(
       {
         kind: "instance",

@@ -23,11 +23,11 @@ export const customInstances = new WeakMap<object, ConstructorType>();
 function buildPackageRegistry() {
   const registry: Record<
     string,
-    { importName: string; importKind: "default" | "namespace" }
+    { importName: string; importKind: "default" | "namespace" | "named" }
   > = {};
   for (const [name, entry] of Object.entries(PACKAGE_CATALOG)) {
     registry[name] = {
-      importName: entry.packageName,
+      importName: name,
       importKind: entry.importKind,
     };
   }

@@ -14,7 +14,6 @@ import {
   getAliasesFromPackages,
   getEnabledPackages,
 } from "./catalog";
-import type { Project } from "../types";
 
 describe("PACKAGE_REGISTRY derivation", () => {
   it("has an entry for every catalog package", () => {
@@ -29,9 +28,9 @@ describe("PACKAGE_REGISTRY derivation", () => {
     }
   });
 
-  it("uses packageName as the importName", () => {
-    for (const [name, entry] of Object.entries(PACKAGE_CATALOG)) {
-      expect(PACKAGE_REGISTRY[name].importName).toBe(entry.packageName);
+  it("stores the catalog key as the importName", () => {
+    for (const name of Object.keys(PACKAGE_CATALOG)) {
+      expect(PACKAGE_REGISTRY[name].importName).toBe(name);
     }
   });
 
@@ -214,6 +213,70 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
   });
 });
 
+describe("faker named-import package", () => {
+  beforeEach(() => {
+    resetPackageRegistry();
+  });
+
+  it("PACKAGE_REGISTRY has named importKind", () => {
+    expect(PACKAGE_REGISTRY["faker"]).toBeDefined();
+    expect(PACKAGE_REGISTRY["faker"].importKind).toBe("named");
+    expect(PACKAGE_REGISTRY["faker"].importName).toBe("faker");
+  });
+
+  it("SOURCE_PACKAGE_MAP maps the faker source name", () => {
+    expect(SOURCE_PACKAGE_MAP["faker"]).toBe("faker");
+  });
+
+  it("loads faker operations", async () => {
+    await loadPackage("faker");
+
+    const ops = loadedPackageOperations.get("faker");
+    expect(ops).toBeDefined();
+    expect(ops!.length).toBeGreaterThan(0);
+
+    const nameOp = ops!.find((op) => op.name === "faker.person.firstName");
+    expect(nameOp).toBeDefined();
+  });
+
+  it("has no instance types", async () => {
+    await loadPackage("faker");
+    const instanceTypes = getAllInstanceTypes();
+
+    expect(Object.keys(instanceTypes).some((k) => k.startsWith("faker."))).toBe(
+      false
+    );
+  });
+
+  it("does not reload an already-loaded package", async () => {
+    await loadPackage("faker");
+    const opsFirst = loadedPackageOperations.get("faker");
+
+    await loadPackage("faker");
+    const opsSecond = loadedPackageOperations.get("faker");
+
+    expect(opsSecond).toBe(opsFirst);
+  });
+
+  it("unloads faker operations", async () => {
+    await loadPackage("faker");
+    expect(loadedPackageOperations.has("faker")).toBe(true);
+
+    await unloadPackage("faker");
+    expect(loadedPackageOperations.has("faker")).toBe(false);
+  });
+
+  it("unloading faker does not affect other packages", async () => {
+    await loadPackage("faker");
+    await loadPackage("rowguard");
+
+    await unloadPackage("faker");
+
+    expect(loadedPackageOperations.has("faker")).toBe(false);
+    expect(loadedPackageOperations.has("rowguard")).toBe(true);
+  });
+});
+
 describe("resolveDisplayName edge cases", () => {
   it("returns name unchanged when alias map is empty", () => {
     expect(resolveDisplayName("foo.bar", {})).toBe("foo.bar");
@@ -286,27 +349,83 @@ describe("getEnabledPackages", () => {
   });
 
   it("returns an empty array when project has no dependencies", () => {
-    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [] };
+    const project = {
+      id: "p1",
+      name: "test",
+      version: "1",
+      createdAt: 1,
+      files: [],
+    };
     expect(getEnabledPackages(project)).toEqual([]);
   });
 
   it("returns an empty array when npm deps are empty", () => {
-    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [] } };
+    const project = {
+      id: "p1",
+      name: "test",
+      version: "1",
+      createdAt: 1,
+      files: [],
+      dependencies: { npm: [] },
+    };
     expect(getEnabledPackages(project)).toEqual([]);
   });
 
   it("returns only catalog packages with their namespaces", () => {
-    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [{ name: "rowguard", version: "latest", exports: [], namespace: "Rg" }] } };
-    expect(getEnabledPackages(project)).toEqual([{ name: "rowguard", namespace: "Rg" }]);
+    const project = {
+      id: "p1",
+      name: "test",
+      version: "1",
+      createdAt: 1,
+      files: [],
+      dependencies: {
+        npm: [
+          { name: "rowguard", version: "latest", exports: [], namespace: "Rg" },
+        ],
+      },
+    };
+    expect(getEnabledPackages(project)).toEqual([
+      { name: "rowguard", namespace: "Rg" },
+    ]);
   });
 
   it("filters out non-catalog packages", () => {
-    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [{ name: "nonexistent", version: "latest", exports: [], namespace: "Nx" }] } };
+    const project = {
+      id: "p1",
+      name: "test",
+      version: "1",
+      createdAt: 1,
+      files: [],
+      dependencies: {
+        npm: [
+          {
+            name: "nonexistent",
+            version: "latest",
+            exports: [],
+            namespace: "Nx",
+          },
+        ],
+      },
+    };
     expect(getEnabledPackages(project)).toEqual([]);
   });
 
   it("filters out non-catalog packages while keeping catalog ones", () => {
-    const project = { id: "p1", name: "test", version: "1", createdAt: 1, files: [], dependencies: { npm: [{ name: "wretch", version: "latest", exports: [], namespace: "W" }, { name: "nonexistent", version: "latest", exports: [] }] } };
-    expect(getEnabledPackages(project)).toEqual([{ name: "wretch", namespace: "W" }]);
+    const project = {
+      id: "p1",
+      name: "test",
+      version: "1",
+      createdAt: 1,
+      files: [],
+      dependencies: {
+        npm: [
+          { name: "wretch", version: "latest", exports: [], namespace: "W" },
+          { name: "nonexistent", version: "latest", exports: [] },
+        ],
+      },
+    };
+    expect(getEnabledPackages(project)).toEqual([
+      { name: "wretch", namespace: "W" },
+    ]);
   });
 });

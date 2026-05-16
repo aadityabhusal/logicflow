@@ -19,8 +19,12 @@ import {
   isObject,
 } from "./utils";
 import { builtInOperationsByName } from "./operations/built-in";
-import { PACKAGE_REGISTRY, SOURCE_PACKAGE_MAP } from "./packages/registry";
-import { getAllInstanceTypes } from "./packages/registry";
+import {
+  PACKAGE_REGISTRY,
+  SOURCE_PACKAGE_MAP,
+  getAllInstanceTypes,
+} from "./packages/registry";
+import { PACKAGE_CATALOG } from "./packages/catalog";
 import type { Options } from "prettier";
 
 export async function formatCode(code: string, options?: Options) {
@@ -384,10 +388,15 @@ function generateCallback(
 function generateImports(codegenContext?: CodeGenContext): string {
   return [...(codegenContext?.usedPackages ?? [])]
     .map((pkg) => {
+      const npmName = PACKAGE_CATALOG[pkg]?.packageName ?? pkg;
+      const importKind = PACKAGE_CATALOG[pkg]?.importKind ?? "default";
       const name = getPackageImportName(pkg, codegenContext);
-      return PACKAGE_REGISTRY[pkg]?.importKind === "namespace"
-        ? `import * as ${name} from '${pkg}';`
-        : `import ${name} from '${pkg}';`;
+
+      if (importKind === "named")
+        return `import { ${name} } from '${npmName}';`;
+      if (importKind === "namespace")
+        return `import * as ${name} from '${npmName}';`;
+      return `import ${name} from '${npmName}';`;
     })
     .join("\n");
 }

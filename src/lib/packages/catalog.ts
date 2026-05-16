@@ -5,7 +5,7 @@ import type { PackageNamespace, Project } from "../types";
 export interface PackageCatalogEntry {
   displayName: string;
   packageName: string;
-  importKind: "default" | "namespace";
+  importKind: "default" | "namespace" | "named";
   sourceNames: string[];
   description?: string;
   links?: { label: string; url: string }[];
@@ -50,6 +50,19 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
       },
     ],
     load: () => import("../operations/rowguard").then((m) => m.default),
+  },
+  faker: {
+    displayName: "Faker",
+    packageName: "@faker-js/faker",
+    importKind: "named",
+    sourceNames: ["faker"],
+    description:
+      "Generate massive amounts of fake data in the browser and node.js",
+    links: [
+      { label: "npm", url: "https://www.npmjs.com/package/@faker-js/faker" },
+      { label: "GitHub", url: "https://github.com/faker-js/faker" },
+    ],
+    load: () => import("../operations/faker").then((m) => m.default),
   },
 };
 

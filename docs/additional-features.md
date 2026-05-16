@@ -120,7 +120,7 @@ The built-in `fetch` operation provides a direct interface to the browser's Fetc
 
 #### Wretch HTTP Client
 
-[Wretch](https://elbywan.github.io/wretch/) provides a fluent, chainable interface for HTTP requests with built-in error handling and configuration options. See the [Wretch](#wretch) and [WretchResponseChain](#wretchresponsechain) data types for available operations.
+[Wretch](https://elbywan.github.io/wretch/) provides a fluent, chainable interface for HTTP requests with built-in error handling and configuration options. See the [Wretch](#wretch) and [WretchResponseChain](#wretchresponsechain) types under [NPM Packages](#npm-packages) for available operations.
 
 ### Triggered Operations
 
@@ -136,7 +136,9 @@ For async operations, the engine yields to the browser periodically during recur
 
 ## External Documentation Links
 
-When you select an operation from the Remeda or Wretch library in the Details panel, Logicflow shows a link to the operation's official documentation.
+When you select an operation from a library (Remeda, Wretch, Rowguard, or Faker) in the Details panel, Logicflow shows a link to the operation's official documentation.
 
 - **Remeda operations**: [remedajs.com/docs](https://remedajs.com/docs)
 - **Wretch operations**: [Wretch API documentation](https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html)
+- **Rowguard operations**: [Rowguard documentation](https://supabase-community.github.io/rowguard/)
+- **Faker operations**: [Faker API documentation](https://fakerjs.dev/api/)

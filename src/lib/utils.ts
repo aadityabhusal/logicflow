@@ -711,6 +711,7 @@ export function isTypeCompatible(
   context: Context
 ): boolean {
   if (second.kind === "unknown") return true;
+  if (first.kind === "unknown" && second.kind === "undefined") return true;
 
   if (first.kind === "operation" && second.kind === "operation") {
     if (!isTypeCompatible(first.result, second.result, context)) return false;

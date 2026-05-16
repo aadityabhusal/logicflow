@@ -8,6 +8,7 @@ import introduction from "@/../docs/introduction.md?raw";
 import gettingStarted from "@/../docs/getting-started.md?raw";
 import coreConcepts from "@/../docs/core-concepts.md?raw";
 import dataTypes from "@/../docs/data-types.md?raw";
+import npmPackages from "@/../docs/npm-packages.md?raw";
 import additionalFeatures from "@/../docs/additional-features.md?raw";
 import keyboardShortcuts from "@/../docs/keyboard-shortcuts.md?raw";
 import codeGeneration from "@/../docs/code-generation.md?raw";
@@ -69,14 +70,6 @@ const docSections = [
     subHeadings: extractHeadings(dataTypes).filter((h) => h.level === 2),
   },
   {
-    id: "additional-features",
-    title: "Additional Features",
-    content: additionalFeatures,
-    subHeadings: extractHeadings(additionalFeatures).filter(
-      (h) => h.level === 2
-    ),
-  },
-  {
     id: "keyboard-shortcuts",
     title: "Keyboard Shortcuts",
     content: keyboardShortcuts,
@@ -97,10 +90,18 @@ const docSections = [
     subHeadings: extractHeadings(deployment).filter((h) => h.level === 2),
   },
   {
-    id: "deployment",
-    title: "Deployment",
-    content: deployment,
-    subHeadings: extractHeadings(deployment).filter((h) => h.level === 2),
+    id: "npm-packages",
+    title: "NPM Packages",
+    content: npmPackages,
+    subHeadings: extractHeadings(npmPackages).filter((h) => h.level === 2),
+  },
+  {
+    id: "additional-features",
+    title: "Additional Features",
+    content: additionalFeatures,
+    subHeadings: extractHeadings(additionalFeatures).filter(
+      (h) => h.level === 2
+    ),
   },
 ];
 

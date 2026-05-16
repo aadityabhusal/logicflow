@@ -669,9 +669,7 @@ describe("rowguard code generation", () => {
     const policiesOp = createData({
       type: {
         kind: "operation",
-        parameters: [
-          { type: { kind: "string" as const } },
-        ],
+        parameters: [{ type: { kind: "string" as const } }],
         result: { kind: "unknown" as const },
       },
       value: {
@@ -1556,5 +1554,128 @@ describe("condition code generation", () => {
     expect(result).toContain("if (");
     expect(result).toContain("else");
     expect(result).not.toContain("?");
+  });
+});
+
+describe("faker code generation", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "faker" }]);
+  });
+
+  it("generates named import for faker", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const fakerOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "string" as const },
+      },
+      value: {
+        name: "faker.person.firstName",
+        parameters: [],
+        statements: [],
+        source: { name: "faker" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [fakerOp],
+    });
+    const op = testOperation([], [stmt], "fakerTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import { faker } from '@faker-js/faker';");
+    expect(result).toContain("R.pipe(undefined, faker.person.firstName)");
+  });
+
+  it("generates faker function call with arguments", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const intOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "unknown" as const }, isOptional: true }],
+        result: { kind: "number" as const },
+      },
+      value: {
+        name: "faker.number.int",
+        parameters: [numberStatement(0)],
+        statements: [],
+        source: { name: "faker" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [intOp],
+    });
+    const op = testOperation([], [stmt], "fakerNumberTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import { faker } from '@faker-js/faker';");
+    expect(result).toContain(
+      "R.pipe(undefined, (arg) => faker.number.int(arg, 0))"
+    );
+  });
+
+  it("generates no-arg faker call without wrapper arrow", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const uuidOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "string" as const },
+      },
+      value: {
+        name: "faker.string.uuid",
+        parameters: [],
+        statements: [],
+        source: { name: "faker" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [uuidOp],
+    });
+    const op = testOperation([], [stmt], "fakerUuidTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import { faker } from '@faker-js/faker';");
+    expect(result).toContain("R.pipe(undefined, faker.string.uuid)");
+  });
+
+  it("omits faker import when no faker usage", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const stmt = createStatement({
+      data: testString("hello"),
+    });
+    const op = testOperation([], [stmt], "noFakerTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).not.toContain("faker");
+    expect(result).not.toContain("@faker-js/faker");
+  });
+
+  it("generates dotted nested faker operations correctly", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const locationOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "string" as const },
+      },
+      value: {
+        name: "faker.location.streetAddress",
+        parameters: [],
+        statements: [],
+        source: { name: "faker" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: { kind: "undefined" } }),
+      operations: [locationOp],
+    });
+    const op = testOperation([], [stmt], "fakerLocationTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("faker.location.streetAddress");
   });
 });

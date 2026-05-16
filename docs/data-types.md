@@ -160,28 +160,6 @@ Wraps the Fetch API Response object for handling HTTP responses.
 
 **Operations**: `json`, `text`, `getStatus`
 
-### Wretch
-
-Wraps the [Wretch](https://elbywan.github.io/wretch/) HTTP client for fluent, chainable HTTP requests.
-
-**Value**: A Wretch instance created from a URL string and optional options dictionary
-
-**Operations**: `url`, `options`, `headers`, `accept`, `content`, `auth`, `body`, `json`, `fetch`, `get`, `post`, `put`, `patch`, `delete`, `head`, `opts`
-
-For the full list of Wretch operations, see the [Wretch API documentation](https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html).
-
-### WretchResponseChain
-
-Returned after calling an HTTP method on a Wretch instance. Provides response parsing and error handling.
-
-**Value**: A WretchResponseChain instance
-
-**Operations**: `res`, `json`, `text`
-
-**Error handlers**: `error`, `badRequest` (400), `unauthorized` (401), `forbidden` (403), `notFound` (404), `timeout`, `internalError` (500), `fetchError`
-
-Each error handler accepts an operation that receives the error and can return a fallback value. For the full list, see the [WretchResponseChain documentation](https://elbywan.github.io/wretch/api/interfaces/index.WretchResponseChain.html).
-
 ### HttpRequest
 
 Received by triggered operations when deployed as API endpoints. Contains the incoming HTTP request data.

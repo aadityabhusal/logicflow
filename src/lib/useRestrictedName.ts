@@ -19,7 +19,6 @@ export function useRestrictedName(options?: UseRestrictedNameOptions) {
 
   const reservedNames = useMemo(() => {
     const ctx = options?.context ?? rootContext;
-    const names = getReservedNames(ctx.variables);
     const deps = dependencies?.npm ?? [];
     const pkgNames: ReservedNames = [
       ...Object.keys(PACKAGE_CATALOG),
@@ -28,7 +27,7 @@ export function useRestrictedName(options?: UseRestrictedNameOptions) {
     ]
       .filter(Boolean)
       .map((name) => ({ kind: "reserved" as const, name }));
-    const all = names.concat(pkgNames);
+    const all = getReservedNames(ctx.variables).concat(pkgNames);
     if (options?.reservedNames) {
       return all.concat(options.reservedNames);
     }
