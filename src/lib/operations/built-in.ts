@@ -4,6 +4,7 @@ import {
   UnionType,
   DataType,
   PackageNamespace,
+  ProjectFile,
 } from "../types";
 import { DataTypes } from "../data";
 import {
@@ -20,6 +21,8 @@ import {
   updateContextWithNarrowedTypes,
   operationToListItem,
   createRuntimeError,
+  resolveParameters,
+  createFileVariables,
 } from "../utils";
 import {
   createOperationHandler,
@@ -31,7 +34,7 @@ import {
 } from "./remeda";
 import { immerOperations } from "./immer";
 import * as _ from "./runtime";
-import { Context, OperationListItem } from "../execution/types";
+import { Context, OperationListItem, Variable } from "../execution/types";
 import {
   loadedPackageOperations,
   loadPackage,
@@ -294,38 +297,44 @@ const specialOperations: OperationListItem[] = [
       return { kind: "unknown" };
     },
     handler: (context, data, ...params) => {
-      const operationData = data as IData<OperationType>;
+      const opData = data as IData<OperationType>;
 
-      const restParamsIndex = operationData.type.parameters.findIndex(
-        (p) => p.isRest
-      );
-
-      if (restParamsIndex !== -1) {
-        const restParams = createData({
-          value: params
-            .slice(restParamsIndex)
-            .map((data) => createStatement({ data })),
+      const restIdx =
+        !opData.value.instanceId && opData.value.statements.length > 0
+          ? opData.type.parameters.findIndex((p) => p.isRest)
+          : -1;
+      if (restIdx !== -1) {
+        const restData = createData({
+          value: params.slice(restIdx).map((data) => createStatement({ data })),
         });
-        params = params.slice(0, restParamsIndex).concat(restParams);
+        params = params.slice(0, restIdx).concat(restData);
       }
-      // Execute user-defined sync ops directly to preserve typed IData params,
-      // avoiding the raw-value round-trip that loses element types on empty arrays.
-      const isUserDefinedSyncOp =
-        !operationData.value.instanceId &&
-        operationData.value.statements.length > 0 &&
-        !operationData.value.isAsync;
 
-      if (isUserDefinedSyncOp) {
-        const opListItem = operationToListItem(operationData);
-        const sourceData = params[0] || createData();
+      const sourceData = params[0] || createData();
+      let opListItem: OperationListItem | undefined;
+      if (isBuiltInOperationRef(opData)) {
+        const name = opData.value.name!;
+        opListItem = builtInOperationsByName
+          .get(name)!
+          .filter(isReferenceableBuiltInOperation)
+          .find((op) => {
+            const resolved = resolveParameters(op, sourceData, context);
+            return resolved[0]?.type.kind !== "never";
+          });
+        if (!opListItem) {
+          return createRuntimeError(`"${name}" cannot be called as data`);
+        }
+      } else if (!opData.value.instanceId && !opData.value.isAsync) {
+        opListItem = operationToListItem(opData);
+      }
+
+      if (opListItem) {
         const opParams = params
           .slice(1)
-          .map((p) => createStatement({ data: p }));
+          .map((data) => createStatement({ data }));
 
         const args = [opListItem, sourceData, opParams, context] as const;
-        if (context.isSync) {
-          return context.executeOperationSync(...args);
-        }
+        if (context.isSync) return context.executeOperationSync(...args);
         return context.executeOperation(...args);
       }
 
@@ -337,10 +346,10 @@ const specialOperations: OperationListItem[] = [
         ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
       );
 
-      if (operationData.value.isAsync) {
+      if (opData.value.isAsync) {
         return createDataFromRawValue(
           result instanceof Promise ? result : Promise.resolve(result),
-          { ...context, expectedType: operationData.type.result }
+          { ...context, expectedType: opData.type.result }
         );
       }
 
@@ -736,3 +745,61 @@ export const coreOperations: OperationListItem[] = [
 const builtInOperationsByKind = new Map<string, OperationListItem[]>();
 export const builtInOperationsByName = new Map<string, OperationListItem[]>();
 rebuildIndexes();
+
+export function isReferenceableBuiltInOperation(operation: OperationListItem) {
+  const parameters = Array.isArray(operation.parameters)
+    ? operation.parameters
+    : operation.parameters(createData());
+  return (
+    !("lazyHandler" in operation) &&
+    parameters[0]?.type.kind !== "instance" &&
+    !["call", "await"].includes(operation.name)
+  );
+}
+
+function isBuiltInOperationRef(data: IData): boolean {
+  if (!isDataOfType(data, "operation")) return false;
+  const { name, statements } = data.value;
+  return !!name && statements.length === 0 && builtInOperationsByName.has(name);
+}
+
+export function createExecutionVariables(
+  context: Context,
+  files: ProjectFile[] = [],
+  envVariables: { key: string; value: string }[] = []
+) {
+  const variables = new Map<string, Variable>();
+  const seenNames = new Set<string>();
+  const sampleData = createData();
+
+  for (const operation of getAllOperations()) {
+    if (!isReferenceableBuiltInOperation(operation)) continue;
+    if (seenNames.has(operation.name)) continue;
+    seenNames.add(operation.name);
+
+    const parameters = resolveParameters(operation, sampleData, context);
+    if (parameters[0]?.type.kind === "never") continue;
+
+    const resultType =
+      typeof operation.expectedType === "function"
+        ? operation.expectedType(sampleData)
+        : (operation.expectedType ?? { kind: "unknown" });
+
+    variables.set(operation.name, {
+      data: createData({
+        id: `builtin:${operation.name}`,
+        type: { kind: "operation", parameters, result: resultType },
+        value: { name: operation.name, parameters: [], statements: [] },
+      }),
+    });
+  }
+
+  const executionVariables = createFileVariables(files, variables);
+  for (const envVar of envVariables) {
+    executionVariables.set(envVar.key, {
+      data: createData({ value: envVar.value }),
+      isEnv: true,
+    });
+  }
+  return executionVariables;
+}

@@ -137,6 +137,8 @@ export function generateData(data: IData, context: CodeGenContext): string {
       .join(", ");
     return `new ${data.value.className}(${constructorArgs})`;
   } else if (isDataOfType(data, "operation")) {
+    const builtInRef = generateBuiltInOperationRef(data, context);
+    if (builtInRef) return builtInRef;
     return generateCallback(data, { ...context, showResult: undefined });
   } else if (isDataOfType(data, "condition")) {
     const condVal = data.value as DataValue<ConditionType>;
@@ -156,7 +158,13 @@ export function generateData(data: IData, context: CodeGenContext): string {
       variable &&
       isDataOfType(variable.data, "operation")
     ) {
+      const builtInRef = generateBuiltInOperationRef(variable.data, context);
+      if (builtInRef) return builtInRef;
       context.importedOperations.add(name);
+    }
+    if (!variable && name !== context.currentOperationName) {
+      const packageRef = generatePackageOperationRef(name, context);
+      if (packageRef) return packageRef;
     }
     return name;
   } else if (isDataOfType(data, "union")) {
@@ -214,6 +222,34 @@ function getPackageFuncName(
   if (callTarget === "import") return importName;
   const bareName = stripPackagePrefix(operationName, packageName);
   return `${importName}.${bareName}`;
+}
+
+function generateBuiltInOperationRef(
+  operation: IData<OperationType>,
+  context: CodeGenContext
+) {
+  if (!operation.id?.startsWith("builtin:")) return undefined;
+
+  const name = operation.value.name ?? "";
+  const packageRef = generatePackageOperationRef(name, context);
+  if (packageRef) return packageRef;
+
+  const actualName = getActualOperationName(name);
+  const sourceName =
+    operation.value.source?.name ?? context.getOperation(name)?.source?.name;
+  if (sourceName === "remeda") return `R.${actualName}`;
+  return `_.${actualName}`;
+}
+
+function generatePackageOperationRef(name: string, context: CodeGenContext) {
+  const dotIndex = name.indexOf(".");
+  if (dotIndex === -1) return undefined;
+
+  const packageName = name.slice(0, dotIndex);
+  if (!(packageName in PACKAGE_CATALOG)) return undefined;
+
+  context.usedPackages.add(packageName);
+  return getPackageFuncName(packageName, name, "member", context);
 }
 
 function generateOperationCall(

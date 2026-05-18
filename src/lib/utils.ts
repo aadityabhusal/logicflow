@@ -444,22 +444,6 @@ export function createFileVariables(
   }, new Map(base));
 }
 
-export function createExecutionVariables(
-  files: ProjectFile[] = [],
-  envVariables: { key: string; value: string }[] = []
-) {
-  const variables = createFileVariables(files);
-  if (envVariables) {
-    for (const envVar of envVariables) {
-      variables.set(envVar.key, {
-        data: createData({ value: envVar.value }),
-        isEnv: true,
-      });
-    }
-  }
-  return variables;
-}
-
 export function createParamData(
   item: OperationType["parameters"][number]
 ): IStatement["data"] {
@@ -976,7 +960,8 @@ export function resolveUnionType(
     return acc;
   }, []);
 
-  if (uniqueTypes.length === 0) return { kind: "never" };
+  if (uniqueTypes.length === 0)
+    return forceUnion ? { kind: "union", types: [] } : { kind: "never" };
   if (uniqueTypes.length === 1 && !forceUnion) return uniqueTypes[0];
   return { kind: "union", types: uniqueTypes, activeIndex: activeIndex ?? 0 };
 }
@@ -1339,6 +1324,7 @@ export function getTypeSignature(
       return `dictionary<${getTypeSignature(type.elementType, context, maxDepth - 1)}>`;
 
     case "union":
+      if (type.types.length === 0) return "never";
       return resolveUnionType(type.types, true)
         .types.map((t) => getTypeSignature(t, context, maxDepth - 1))
         .join(" | ");
@@ -1761,6 +1747,7 @@ export function getDataDropdownList({
 
   context.variables.forEach((variable, name) => {
     const option: IDropdownItem = {
+      label: resolveDisplayName(name, context.packageAliases),
       value: name,
       secondaryLabel: variable.isEnv ? "env" : variable.data.type.kind,
       type: variable.data.type,

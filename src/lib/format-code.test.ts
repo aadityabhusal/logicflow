@@ -25,6 +25,7 @@ import {
 } from "@/tests/helpers";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 import { operations as wretchOperations } from "@/lib/operations/wretch";
+import type { OperationType } from "@/lib/types";
 
 describe("generateData", () => {
   it("generates string literal", () => {
@@ -178,6 +179,26 @@ describe("generateData", () => {
 
     expect(result).toBe("myValue");
     expect(ctx.importedOperations.has("myValue")).toBe(false);
+  });
+
+  it("generates built-in operation references without user imports", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    ctx.variables.set("length", {
+      data: createData<OperationType>({
+        id: "builtin:length",
+        type: {
+          kind: "operation",
+          parameters: [{ type: { kind: "string" } }],
+          result: { kind: "number" },
+        },
+        value: { name: "length", parameters: [], statements: [] },
+      }),
+    });
+
+    const result = generateData(testReference("length", "stmt1"), ctx);
+
+    expect(result).toBe("_.length");
+    expect(ctx.importedOperations.has("length")).toBe(false);
   });
 
   it("generates bracket access for env references that are not valid identifiers", () => {
@@ -1739,5 +1760,68 @@ describe("faker code generation", () => {
 
     expect(result).toContain("import { faker as f } from '@faker-js/faker';");
     expect(result).toContain("R.pipe(undefined, f.person.firstName)");
+  });
+
+  it("generates aliased package name for built-in operation references before package sync", async () => {
+    await syncPackageRegistry([]);
+    const ctx = createCodeGenContext(
+      createTestContext({ packageAliases: { faker: "f" } })
+    );
+    const callOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "operation",
+              parameters: [],
+              result: { kind: "string" },
+            },
+          },
+        ],
+        result: { kind: "string" },
+      },
+      value: { name: "call", parameters: [], statements: [] },
+    });
+    const stmt = createStatement({
+      data: testReference("faker.word.words", "ref1"),
+      operations: [callOp],
+    });
+    const op = testOperation([], [stmt], "fakerRefAliasTest");
+
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import { faker as f } from '@faker-js/faker';");
+    expect(result).toContain("R.pipe(f.word.words, (arg) => arg())");
+    expect(result).not.toContain("./faker.word.words.js");
+    await syncPackageRegistry([{ name: "faker" }]);
+  });
+
+  it("generates aliased package name for built-in variable data before package sync", async () => {
+    await syncPackageRegistry([]);
+    const ctx = createCodeGenContext(
+      createTestContext({ packageAliases: { faker: "f" } })
+    );
+    ctx.variables.set("faker.word.words", {
+      data: createData<OperationType>({
+        id: "builtin:faker.word.words",
+        type: {
+          kind: "operation",
+          parameters: [],
+          result: { kind: "string" },
+        },
+        value: {
+          name: "faker.word.words",
+          parameters: [],
+          statements: [],
+        },
+      }),
+    });
+
+    const result = generateData(testReference("faker.word.words", "ref1"), ctx);
+
+    expect(result).toBe("f.word.words");
+    expect(ctx.importedOperations.has("faker.word.words")).toBe(false);
+    await syncPackageRegistry([{ name: "faker" }]);
   });
 });

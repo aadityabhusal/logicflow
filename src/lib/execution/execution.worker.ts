@@ -5,7 +5,7 @@ import {
   executeOperation,
   executeOperationSync,
 } from "./execution";
-import { createExecutionVariables, createLocalContext } from "../utils";
+import { createLocalContext } from "../utils";
 import {
   Context,
   WorkerContext,
@@ -13,7 +13,10 @@ import {
   ExecutionWorkerRunRequest,
   ExecutionWorkerResponse,
 } from "./types";
-import { syncPackageRegistry } from "../operations/built-in";
+import {
+  createExecutionVariables,
+  syncPackageRegistry,
+} from "../operations/built-in";
 import { getAliasesFromPackages } from "../packages/catalog";
 
 function serializeContext(ctx: Context): WorkerContext {
@@ -51,7 +54,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
     const rootContext = {} as Context;
     Object.assign<Context, Context>(rootContext, {
       scopeId: "_root_",
-      variables: createExecutionVariables(req.files, req.envVariables),
+      variables: new Map(),
       packageAliases: getAliasesFromPackages(req.packages),
       expectedType: req.expectedType,
       enforceExpectedType: req.enforceExpectedType,
@@ -69,6 +72,11 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
       executeOperation,
       executeOperationSync,
     });
+    rootContext.variables = createExecutionVariables(
+      rootContext,
+      req.files,
+      req.envVariables
+    );
     const { context: localCtx, getContexts } = createLocalContext(rootContext);
 
     await setOperationResults(req.operation, localCtx);

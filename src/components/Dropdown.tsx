@@ -50,6 +50,7 @@ import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 import { Context } from "@/lib/execution/types";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { createOperationCall } from "@/lib/execution/execution";
+import { resolveDisplayName } from "@/lib/packages/registry";
 
 const DropdownComponent = ({
   id,
@@ -123,26 +124,31 @@ const DropdownComponent = ({
   const [isHovered, setHovered] = useState(false);
   const [search, setSearch] = useState("");
 
+  const displayValue = useMemo(
+    () => resolveDisplayName(value ?? "", context.packageAliases),
+    [value, context.packageAliases]
+  );
+
   const dropdownOptions = useMemo(() => {
     return items?.reduce(
       (acc, [groupName, groupItems]) => {
         const filteredItem = fuzzySearch(
           groupItems,
-          value === search ? [] : [{ label: search, value: search }]
+          displayValue === search ? [] : [{ label: search, value: search }]
         );
         if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
         return acc;
       },
       [] as [string, IDropdownItem[]][]
     );
-  }, [items, search, value]);
+  }, [items, search, displayValue]);
 
   const hasOptions = !!dropdownOptions?.flatMap(([, i]) => i).length;
 
   const combobox = useCombobox({
     loop: true,
     onDropdownClose: () => {
-      handleSearch(options?.withSearch ? "" : value || "");
+      setSearch(options?.withSearch ? "" : (displayValue ?? ""));
       combobox.resetSelectedOption();
       setNavigation({ navigation: { id, disable: false } });
     },
@@ -204,8 +210,8 @@ const DropdownComponent = ({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (value) setSearch(options?.withSearch ? "" : value);
-  }, [value, options?.withSearch]);
+    setSearch(options?.withSearch ? "" : displayValue);
+  }, [displayValue, options?.withSearch]);
 
   useEffect(() => {
     combobox.selectFirstOption();

@@ -6,9 +6,9 @@ import {
   WorkerContext,
   ExecutionWorkerResponse,
 } from "./types";
-import { createExecutionVariables } from "../utils";
 import { createData, createStatement } from "../utils";
 import { ProjectFile } from "../types";
+import { createExecutionVariables } from "../operations/built-in";
 
 function createHydrationBaseContext(): Context {
   const variables = new Map();
@@ -240,9 +240,24 @@ describe("hydrateContexts", () => {
 });
 
 describe("createExecutionVariablesFromData", () => {
-  it("returns an empty Map when given no files and no env vars", () => {
-    const variables = createExecutionVariables([], []);
-    expect(variables.size).toBe(0);
+  it("includes built-in variables when given no files and no env vars", () => {
+    const context = createHydrationBaseContext();
+    const variables = createExecutionVariables(context, [], []);
+    expect(variables.has("length")).toBe(true);
+  });
+
+  it("excludes non-referenceable built-ins from variables", () => {
+    const context = createHydrationBaseContext();
+    const variables = createExecutionVariables(context, [], []);
+
+    expect(variables.has("call")).toBe(false);
+    expect(variables.has("await")).toBe(false);
+    expect(variables.has("and")).toBe(false);
+    expect(variables.has("or")).toBe(false);
+    expect(variables.has("thenElse")).toBe(false);
+    expect(variables.has("getFullYear")).toBe(false);
+    expect(variables.has("json")).toBe(false);
+    expect(variables.has("getUrl")).toBe(false);
   });
 
   it("creates variables from operation files", () => {
@@ -264,11 +279,36 @@ describe("createExecutionVariablesFromData", () => {
       createdAt: Date.now(),
     };
 
-    const variables = createExecutionVariables([file], []);
+    const context = createHydrationBaseContext();
+    const variables = createExecutionVariables(context, [file], []);
 
-    expect(variables.size).toBe(1);
     expect(variables.has("myOp")).toBe(true);
     expect(variables.get("myOp")?.data.type.kind).toBe("operation");
+  });
+
+  it("lets operation files shadow built-in variables", () => {
+    const file: ProjectFile = {
+      id: "file-1",
+      name: "length",
+      type: "operation",
+      content: {
+        type: {
+          kind: "operation",
+          parameters: [],
+          result: { kind: "string" },
+        },
+        value: {
+          parameters: [],
+          statements: [],
+        },
+      },
+      createdAt: Date.now(),
+    };
+
+    const context = createHydrationBaseContext();
+    const variables = createExecutionVariables(context, [file], []);
+
+    expect(variables.get("length")?.data.id).toBe("file-1");
   });
 
   it("creates env variables marked with isEnv: true", () => {
@@ -277,9 +317,9 @@ describe("createExecutionVariablesFromData", () => {
       { key: "SECRET", value: "abc123" },
     ];
 
-    const variables = createExecutionVariables([], envVars);
+    const context = createHydrationBaseContext();
+    const variables = createExecutionVariables(context, [], envVars);
 
-    expect(variables.size).toBe(2);
     expect(variables.get("API_URL")?.data.value).toBe("https://example.com");
     expect(variables.get("API_URL")?.isEnv).toBe(true);
     expect(variables.get("SECRET")?.data.value).toBe("abc123");
@@ -307,9 +347,9 @@ describe("createExecutionVariablesFromData", () => {
 
     const envVars = [{ key: "NODE_ENV", value: "production" }];
 
-    const variables = createExecutionVariables([file], envVars);
+    const context = createHydrationBaseContext();
+    const variables = createExecutionVariables(context, [file], envVars);
 
-    expect(variables.size).toBe(2);
     expect(variables.has("myOp")).toBe(true);
     expect(variables.has("NODE_ENV")).toBe(true);
     expect(variables.get("NODE_ENV")?.isEnv).toBe(true);

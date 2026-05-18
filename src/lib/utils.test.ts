@@ -42,6 +42,7 @@ import {
   getConditionResult,
   isBlockCondition,
   resolveConstructorArgs,
+  getDataDropdownList,
 } from "@/lib/utils";
 import { DataType, UnionType, OperationType, IData } from "@/lib/types";
 import { Context, OperationListItem } from "@/lib/execution/types";
@@ -3532,6 +3533,37 @@ describe("resolveConstructorArgs", () => {
     const fn = vi.fn().mockReturnValue([]);
     resolveConstructorArgs(fn);
     expect(fn).toHaveBeenCalledWith(undefined);
+  });
+});
+
+describe("getDataDropdownList", () => {
+  it("shows aliased labels for package operation variables", () => {
+    const ctx = createTestContext({ packageAliases: { faker: "f" } });
+    ctx.variables.set("faker.word.words", {
+      data: createData<OperationType>({
+        type: {
+          kind: "operation",
+          parameters: [],
+          result: { kind: "string" },
+        },
+        value: {
+          name: "faker.word.words",
+          parameters: [],
+          statements: [],
+        },
+      }),
+    });
+
+    const groups = getDataDropdownList({
+      data: createData(),
+      onSelect: vi.fn(),
+      context: ctx,
+    });
+    const option = groups
+      .flatMap(([, options]) => options)
+      .find((item) => item.value === "faker.word.words");
+
+    expect(option?.label).toBe("f.word.words");
   });
 });
 

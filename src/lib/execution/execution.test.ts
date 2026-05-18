@@ -1506,6 +1506,46 @@ describe("call operation with async operations", () => {
       expect(expectedType.result?.kind).toBe("string");
     }
   });
+
+  it("packs rest parameters before calling an async operation", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const arrayType: ArrayType = {
+      kind: "array",
+      elementType: { kind: "number" },
+    };
+    const restParam = createStatement({
+      name: "items",
+      isRest: true,
+      data: createData({ type: arrayType, value: [] }),
+    });
+    const asyncOp = testOperation(
+      [restParam],
+      [createStatement({ data: testReference("items", restParam.id) })],
+      "asyncRestOp"
+    );
+    asyncOp.type.result = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: arrayType,
+    };
+    asyncOp.value.isAsync = true;
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      asyncOp,
+      [numberStatement(1), numberStatement(2)],
+      ctx
+    );
+
+    expect(result.type.kind).toBe("instance");
+    if (result.type.kind !== "instance") return;
+    const instanceValue = result.value as { instanceId: string };
+    const promise = ctx.getInstance(instanceValue.instanceId)
+      ?.instance as Promise<number[]>;
+    await expect(promise).resolves.toEqual([1, 2]);
+  });
 });
 
 describe("call with empty slice preserves parameter types in recursion", () => {
@@ -4071,5 +4111,174 @@ describe("cached instance preservation across re-executions", () => {
     if (result.type.kind === "instance") {
       expect(result.type.className).toBe("Response");
     }
+  });
+});
+
+describe("built-in operation as data + call", () => {
+  it("calls built-in length via data ref and call", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const lengthOp = findBuiltIn("length");
+    const sampleParams = lengthOp.parameters as OperationType["parameters"];
+    const builtInData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: sampleParams,
+        result: { kind: "number" },
+      },
+      value: {
+        name: "length",
+        parameters: [],
+        statements: [],
+      },
+    });
+
+    const callOp = findBuiltIn("call");
+    const sourceArg = stringStatement("hello");
+    const result = await executeOperation(
+      callOp,
+      builtInData,
+      [sourceArg],
+      ctx
+    );
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(5);
+  });
+
+  it("calls built-in concat with two args via data ref and call", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const concatOp = findBuiltIn("concat");
+    const sampleParams = concatOp.parameters as OperationType["parameters"];
+    const builtInData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: sampleParams,
+        result: { kind: "string" },
+      },
+      value: {
+        name: "concat",
+        parameters: [],
+        statements: [],
+      },
+    });
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      builtInData,
+      [stringStatement("hello"), stringStatement(" world")],
+      ctx
+    );
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("hello world");
+  });
+
+  it("calls built-in not via data ref and call", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const notOp = findBuiltIn("not");
+    const sampleParams = notOp.parameters as OperationType["parameters"];
+    const builtInData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: sampleParams,
+        result: { kind: "boolean" },
+      },
+      value: {
+        name: "not",
+        parameters: [],
+        statements: [],
+      },
+    });
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      builtInData,
+      [booleanStatement(true)],
+      ctx
+    );
+    expect(result.type.kind).toBe("boolean");
+    expect(result.value).toBe(false);
+  });
+
+  it("calls built-in not on false returns true", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const notOp = findBuiltIn("not");
+    const sampleParams = notOp.parameters as OperationType["parameters"];
+    const builtInData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: sampleParams,
+        result: { kind: "boolean" },
+      },
+      value: {
+        name: "not",
+        parameters: [],
+        statements: [],
+      },
+    });
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      builtInData,
+      [booleanStatement(false)],
+      ctx
+    );
+    expect(result.type.kind).toBe("boolean");
+    expect(result.value).toBe(true);
+  });
+
+  it("sync path works for built-in data ref + call", () => {
+    const ctx = createTestContext({ isSync: true });
+    const lengthOp = findBuiltIn("length");
+    const sampleParams = lengthOp.parameters as OperationType["parameters"];
+    const builtInData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: sampleParams,
+        result: { kind: "number" },
+      },
+      value: {
+        name: "length",
+        parameters: [],
+        statements: [],
+      },
+    });
+
+    const callOp = findBuiltIn("call");
+    const result = executeOperationSync(
+      callOp,
+      builtInData,
+      [stringStatement("hello")],
+      ctx
+    );
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(5);
+  });
+
+  it("does not dispatch via built-in path when operation data has statements", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const builtInData = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "length",
+        parameters: [],
+        statements: [stringStatement("not empty")],
+      },
+    });
+
+    const callOp = findBuiltIn("call");
+    const result = await executeOperation(
+      callOp,
+      builtInData,
+      [stringStatement("hello")],
+      ctx
+    );
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("not empty");
   });
 });

@@ -2,11 +2,7 @@ import { createWithEqualityFn } from "zustand/traditional";
 import { Context, ExecutionResult, ReservedNames } from "./types";
 import { shallow } from "zustand/shallow";
 import { IData, EntityPath } from "../types";
-import {
-  createExecutionVariables,
-  createOperationFromFile,
-  resolveAncestorIds,
-} from "../utils";
+import { createOperationFromFile, resolveAncestorIds } from "../utils";
 import { useProjectStore } from "../store";
 import {
   executeOperation,
@@ -15,7 +11,10 @@ import {
   executeStatementSync,
 } from "./execution";
 import { DataTypes, RESERVED_KEYWORDS } from "../data";
-import { getAllOperations } from "../operations/built-in";
+import {
+  createExecutionVariables,
+  getAllOperations,
+} from "../operations/built-in";
 import {
   getAliasesFromPackages,
   getEnabledPackages,
@@ -57,32 +56,34 @@ interface ExecutionResultsState {
 }
 
 export const useExecutionResultsStore =
-  createWithEqualityFn<ExecutionResultsState>(
-    (set, get) => ({
-      rootContext: {
-        scopeId: "_root_",
-        variables: createExecutionVariables(
-          useProjectStore.getState().getCurrentProject()?.files,
-          useProjectStore.getState().getCurrentProject()?.deployment
-            ?.envVariables
-        ),
-        packageAliases: getAliasesFromPackages(
-          getEnabledPackages(useProjectStore.getState().getCurrentProject())
-        ),
-        operationCache: new Map<string, IData>(),
-        controlFlowState: {},
-        ...getTriggerExpectedType(),
-        getResult: (id) => get().getResult(id),
-        getInstance: (id) => get().getInstance(id),
-        getContext: (id) => get().getContext(id),
-        setContext: (id, context) => get().setContext(id, context),
-        setResult: (id, result) => get().setResult(id, result),
-        setInstance: (id, instance) => get().setInstance(id, instance),
-        executeOperation: executeOperation,
-        executeOperationSync: executeOperationSync,
-        executeStatement: executeStatement,
-        executeStatementSync: executeStatementSync,
-      },
+  createWithEqualityFn<ExecutionResultsState>((set, get) => {
+    const project = useProjectStore.getState().getCurrentProject();
+    const rootContext: Context = {
+      scopeId: "_root_",
+      variables: new Map(),
+      packageAliases: getAliasesFromPackages(getEnabledPackages(project)),
+      operationCache: new Map<string, IData>(),
+      controlFlowState: {},
+      ...getTriggerExpectedType(),
+      getResult: (id) => get().getResult(id),
+      getInstance: (id) => get().getInstance(id),
+      getContext: (id) => get().getContext(id),
+      setContext: (id, context) => get().setContext(id, context),
+      setResult: (id, result) => get().setResult(id, result),
+      setInstance: (id, instance) => get().setInstance(id, instance),
+      executeOperation: executeOperation,
+      executeOperationSync: executeOperationSync,
+      executeStatement: executeStatement,
+      executeStatementSync: executeStatementSync,
+    };
+    rootContext.variables = createExecutionVariables(
+      rootContext,
+      project?.files,
+      project?.deployment?.envVariables
+    );
+
+    return {
+      rootContext,
       contexts: new Map(),
       results: new Map(),
       instances: new Map(),
@@ -158,25 +159,28 @@ export const useExecutionResultsStore =
         });
       },
       removeAll: () =>
-        set((state) => ({
-          contexts: new Map(),
-          results: new Map(),
-          instances: new Map(),
-          rootContext: {
+        set((state) => {
+          const project = useProjectStore.getState().getCurrentProject();
+          const rootContext: Context = {
             ...state.rootContext,
+            variables: new Map(),
             operationCache: new Map<string, IData>(),
             controlFlowState: {},
-            packageAliases: getAliasesFromPackages(
-              getEnabledPackages(useProjectStore.getState().getCurrentProject())
-            ),
-            variables: createExecutionVariables(
-              useProjectStore.getState().getCurrentProject()?.files,
-              useProjectStore.getState().getCurrentProject()?.deployment
-                ?.envVariables
-            ),
+            packageAliases: getAliasesFromPackages(getEnabledPackages(project)),
             ...getTriggerExpectedType(),
-          },
-        })),
+          };
+          rootContext.variables = createExecutionVariables(
+            rootContext,
+            project?.files,
+            project?.deployment?.envVariables
+          );
+          return {
+            contexts: new Map(),
+            results: new Map(),
+            instances: new Map(),
+            rootContext,
+          };
+        }),
       removeResult: (entityId) => {
         set((state) => {
           const newResults = new Map(state.results);
@@ -186,9 +190,8 @@ export const useExecutionResultsStore =
           return { results: newResults, instances: newInstances };
         });
       },
-    }),
-    shallow
-  );
+    };
+  }, shallow);
 
 export function getReservedNames(variables: Context["variables"]) {
   return getAllOperations()
