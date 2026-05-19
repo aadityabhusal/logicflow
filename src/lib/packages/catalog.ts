@@ -6,6 +6,7 @@ export interface PackageCatalogEntry {
   displayName: string;
   packageName: string;
   importKind: "default" | "namespace" | "named";
+  packageType?: "npm" | "virtual";
   sourceNames: string[];
   description?: string;
   links?: { label: string; url: string }[];
@@ -75,6 +76,15 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
       { label: "GitHub", url: "https://github.com/date-fns/date-fns" },
     ],
     load: () => import("../operations/date-fns").then((m) => m.default),
+  },
+  ffmpeg: {
+    displayName: "FFmpeg",
+    packageName: "ffmpeg",
+    packageType: "virtual",
+    importKind: "namespace",
+    sourceNames: ["ffmpeg"],
+    description: "Build FFmpeg command strings through chainable operations.",
+    load: () => import("../operations/ffmpeg").then((m) => m.default),
   },
 };
 

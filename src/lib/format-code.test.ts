@@ -25,7 +25,7 @@ import {
 } from "@/tests/helpers";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 import { operations as wretchOperations } from "@/lib/operations/wretch";
-import type { OperationType } from "@/lib/types";
+import type { DataType, OperationType } from "@/lib/types";
 
 describe("generateData", () => {
   it("generates string literal", () => {
@@ -1823,5 +1823,190 @@ describe("faker code generation", () => {
     expect(result).toBe("f.word.words");
     expect(ctx.importedOperations.has("faker.word.words")).toBe(false);
     await syncPackageRegistry([{ name: "faker" }]);
+  });
+});
+
+describe("ffmpeg code generation", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "ffmpeg" }]);
+  });
+
+  const FfmpegCommandType: DataType = {
+    kind: "instance",
+    className: "ffmpeg.Command",
+    constructorArgs: [],
+  };
+
+  function createFfmpegCommandOp() {
+    return createData<OperationType>({
+      id: "builtin:ffmpeg.command",
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: FfmpegCommandType,
+      },
+      value: {
+        name: "ffmpeg.command",
+        parameters: [],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "function" },
+      },
+    });
+  }
+
+  it("generates ffmpeg.command as a package reference", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const result = generateData(createFfmpegCommandOp(), ctx);
+
+    expect(result).toBe("ffmpeg.command");
+    expect(ctx.usedPackages.has("ffmpeg")).toBe(true);
+  });
+
+  it("generates virtual import for ffmpeg from packages directory", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const stmt = createStatement({
+      data: createFfmpegCommandOp(),
+      operations: [],
+    });
+    const op = testOperation([], [stmt], "ffmpegTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain(
+      "import * as ffmpeg from '../packages/ffmpeg.js';"
+    );
+  });
+
+  it("generates function-style chain call for ffmpeg.input", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const inputOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: FfmpegCommandType }, { type: { kind: "string" } }],
+        result: FfmpegCommandType,
+      },
+      value: {
+        name: "input",
+        parameters: [stringStatement("video.mp4")],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "function" },
+      },
+    });
+    const stmt = createStatement({
+      data: createFfmpegCommandOp(),
+      operations: [inputOp],
+    });
+    const op = testOperation([], [stmt], "ffmpegInputTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain(
+      "import * as ffmpeg from '../packages/ffmpeg.js';"
+    );
+    expect(result).toContain('(arg) => ffmpeg.input(arg, "video.mp4")');
+  });
+
+  it("generates zero-arg chain operation as bare function reference", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const toCommandOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: FfmpegCommandType }],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "toCommand",
+        parameters: [],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "function" },
+      },
+    });
+    const stmt = createStatement({
+      data: createFfmpegCommandOp(),
+      operations: [toCommandOp],
+    });
+    const op = testOperation([], [stmt], "ffmpegToCommandTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("R.pipe(ffmpeg.command, ffmpeg.toCommand)");
+  });
+
+  it("generates full ffmpeg pipeline with function-style chain calls", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const inputOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: FfmpegCommandType }, { type: { kind: "string" } }],
+        result: FfmpegCommandType,
+      },
+      value: {
+        name: "input",
+        parameters: [stringStatement("in.mp4")],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "function" },
+      },
+    });
+    const videoCodecOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: FfmpegCommandType }, { type: { kind: "string" } }],
+        result: FfmpegCommandType,
+      },
+      value: {
+        name: "videoCodec",
+        parameters: [stringStatement("libx264")],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "function" },
+      },
+    });
+    const outputOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: FfmpegCommandType }, { type: { kind: "string" } }],
+        result: FfmpegCommandType,
+      },
+      value: {
+        name: "output",
+        parameters: [stringStatement("out.mp4")],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "function" },
+      },
+    });
+    const stmt = createStatement({
+      data: createFfmpegCommandOp(),
+      operations: [inputOp, videoCodecOp, outputOp],
+    });
+    const op = testOperation([], [stmt], "ffmpegFullTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain(
+      "import * as ffmpeg from '../packages/ffmpeg.js';"
+    );
+    expect(result).toContain('(arg) => ffmpeg.input(arg, "in.mp4")');
+    expect(result).toContain('(arg) => ffmpeg.videoCodec(arg, "libx264")');
+    expect(result).toContain('(arg) => ffmpeg.output(arg, "out.mp4")');
+  });
+
+  it("respects explicit callStyle override on an operation", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const methodOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: FfmpegCommandType }, { type: { kind: "string" } }],
+        result: FfmpegCommandType,
+      },
+      value: {
+        name: "normalize",
+        parameters: [stringStatement("fast")],
+        statements: [],
+        source: { name: "ffmpeg", callStyle: "method" },
+      },
+    });
+    const stmt = createStatement({
+      data: createFfmpegCommandOp(),
+      operations: [methodOp],
+    });
+    const op = testOperation([], [stmt], "ffmpegMethodOverrideTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain('(arg) => arg.normalize("fast")');
   });
 });

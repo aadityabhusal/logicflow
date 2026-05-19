@@ -191,13 +191,16 @@ function getOperationSource(
   const sourceName = source.name;
   if (sourceName === "remeda") return { type: "remeda" };
   if (sourceName && sourceName in SOURCE_PACKAGE_MAP) {
-    context.usedPackages.add(SOURCE_PACKAGE_MAP[sourceName]);
+    const pkgName = SOURCE_PACKAGE_MAP[sourceName];
+    context.usedPackages.add(pkgName);
     const firstParamType = operation.type.parameters[0]?.type;
     return {
       type: "external",
-      packageName: SOURCE_PACKAGE_MAP[sourceName],
+      packageName: pkgName,
       packageCallTarget: source.packageCallTarget ?? "member",
-      callStyle: firstParamType?.kind === "instance" ? "method" : "function",
+      callStyle:
+        source.callStyle ??
+        (firstParamType?.kind === "instance" ? "method" : "function"),
     };
   }
   const firstParamType = operation.type.parameters[0]?.type;
@@ -427,7 +430,9 @@ function generateImports(codegenContext?: CodeGenContext): string {
       const npmName = PACKAGE_CATALOG[pkg]?.packageName ?? pkg;
       const importKind = PACKAGE_CATALOG[pkg]?.importKind ?? "default";
       const name = getPackageImportName(pkg, codegenContext);
-
+      if (PACKAGE_CATALOG[pkg]?.packageType === "virtual") {
+        return `import * as ${name} from '../packages/${pkg}.js';`;
+      }
       if (importKind === "named") {
         const importName = PACKAGE_REGISTRY[pkg]?.importName ?? pkg;
         const _name = name !== importName ? `${importName} as ${name}` : name;

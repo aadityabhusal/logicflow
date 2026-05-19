@@ -69,6 +69,16 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     displayName: "date-fns",
     useRawName: true,
   },
+  ffmpeg: {
+    urlPattern: (name) => {
+      const fnName = name.includes(".")
+        ? name.slice(name.indexOf(".") + 1)
+        : name;
+      return `https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md#${fnName.toLowerCase()}`;
+    },
+    displayName: "FFmpeg",
+    useRawName: true,
+  },
 };
 
 export function getDocsUrl(source?: OperationSource, operationName?: string) {

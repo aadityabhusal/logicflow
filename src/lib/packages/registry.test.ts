@@ -343,6 +343,81 @@ describe("getAliasesFromPackages", () => {
   });
 });
 
+describe("ffmpeg virtual package", () => {
+  beforeEach(() => {
+    resetPackageRegistry();
+  });
+
+  it("PACKAGE_CATALOG entry exists with packageType virtual", () => {
+    expect(PACKAGE_CATALOG["ffmpeg"]).toBeDefined();
+    expect(PACKAGE_CATALOG["ffmpeg"].packageType).toBe("virtual");
+  });
+
+  it("PACKAGE_REGISTRY has namespace importKind", () => {
+    expect(PACKAGE_REGISTRY["ffmpeg"]).toBeDefined();
+    expect(PACKAGE_REGISTRY["ffmpeg"].importKind).toBe("namespace");
+    expect(PACKAGE_REGISTRY["ffmpeg"].importName).toBe("ffmpeg");
+  });
+
+  it("SOURCE_PACKAGE_MAP maps the ffmpeg source name", () => {
+    expect(SOURCE_PACKAGE_MAP["ffmpeg"]).toBe("ffmpeg");
+  });
+
+  it("loads ffmpeg operations with prefix", async () => {
+    await loadPackage("ffmpeg");
+
+    const ops = loadedPackageOperations.get("ffmpeg");
+    expect(ops).toBeDefined();
+    expect(ops!.length).toBeGreaterThan(0);
+
+    const inputOp = ops!.find((op) => op.name === "ffmpeg.input");
+    expect(inputOp).toBeDefined();
+
+    const commandOp = ops!.find((op) => op.name === "ffmpeg.command");
+    expect(commandOp).toBeDefined();
+  });
+
+  it("all operations are prefixed with package name", async () => {
+    await loadPackage("ffmpeg");
+    const ops = loadedPackageOperations.get("ffmpeg")!;
+    const commandOp = ops.every(
+      (op) => op.name.startsWith("ffmpeg.") || op.name === "ffmpeg"
+    );
+    expect(commandOp).toBe(true);
+  });
+
+  it("loads ffmpeg instance types", async () => {
+    await loadPackage("ffmpeg");
+    const instanceTypes = getAllInstanceTypes();
+    expect(instanceTypes["ffmpeg.Command"]).toBeDefined();
+  });
+
+  it("does not reload an already-loaded package", async () => {
+    await loadPackage("ffmpeg");
+    const opsFirst = loadedPackageOperations.get("ffmpeg");
+
+    await loadPackage("ffmpeg");
+    const opsSecond = loadedPackageOperations.get("ffmpeg");
+
+    expect(opsSecond).toBe(opsFirst);
+  });
+
+  it("unloads ffmpeg operations", async () => {
+    await loadPackage("ffmpeg");
+    expect(loadedPackageOperations.has("ffmpeg")).toBe(true);
+
+    await unloadPackage("ffmpeg");
+    expect(loadedPackageOperations.has("ffmpeg")).toBe(false);
+  });
+
+  it("resetPackageRegistry clears ffmpeg state", async () => {
+    await loadPackage("ffmpeg");
+    resetPackageRegistry();
+    expect(loadedPackageOperations.size).toBe(0);
+    expect(getAllInstanceTypes()["ffmpeg.Command"]).toBeUndefined();
+  });
+});
+
 describe("getEnabledPackages", () => {
   it("returns an empty array for undefined project", () => {
     expect(getEnabledPackages(undefined)).toEqual([]);

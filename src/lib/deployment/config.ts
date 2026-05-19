@@ -9,8 +9,11 @@ import {
 import { createOperationFromFile } from "../utils";
 import { generatePlatformHandlers } from "./entrypoint-wrapper";
 import { generatePlatformConfig } from "./platform-config";
-import { generateBuiltInModule } from "./built-in-module";
-import { prefixNpmImports } from "./utils";
+import {
+  generateBuiltInModule,
+  virtualPackageModules,
+  prefixNpmImports,
+} from "./utils";
 import { PACKAGE_REGISTRY } from "../packages/registry";
 import { getEnabledPackages, PACKAGE_CATALOG } from "../packages/catalog";
 import { syncPackageRegistry } from "../operations/built-in";
@@ -46,6 +49,14 @@ export async function generateDeployableProject(
     });
   }
   files.push({ path: "src/built-in.js", content: generateBuiltInModule() });
+
+  const allFileContent = files.map((f) => f.content).join("\n");
+  for (const pkg of Object.keys(virtualPackageModules)) {
+    const moduleContent = virtualPackageModules[pkg];
+    if (moduleContent && allFileContent.includes(`../packages/${pkg}.js`)) {
+      files.push({ path: `src/packages/${pkg}.js`, content: moduleContent });
+    }
+  }
 
   const platforms = platform
     ? deployment.platforms.filter((t) => t.platform === platform)
@@ -122,6 +133,7 @@ function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
   const packages = new Set<string>();
   const allFiles = files.map((f) => f.content).join("\n");
   for (const pkg of Object.keys(PACKAGE_REGISTRY)) {
+    if (PACKAGE_CATALOG[pkg]?.packageType === "virtual") continue;
     const packageName = PACKAGE_CATALOG[pkg]?.packageName ?? pkg;
     if (
       allFiles.includes(`from '${packageName}'`) ||

@@ -52,6 +52,7 @@ export type InstanceDataType = {
 export type OperationSource = {
   name: string;
   packageCallTarget?: "import" | "member";
+  callStyle?: "function" | "method";
 };
 
 export type DataType =

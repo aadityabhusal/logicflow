@@ -31,11 +31,9 @@ vi.mock("@/lib/deployment/platform-config", () => ({
   generatePlatformConfig: vi.fn(),
 }));
 
-vi.mock("@/lib/deployment/built-in-module", () => ({
-  generateBuiltInModule: vi.fn(),
-}));
-
 vi.mock("@/lib/deployment/utils", () => ({
+  generateBuiltInModule: vi.fn(),
+  virtualPackageModules: {},
   prefixNpmImports: vi.fn(),
 }));
 
@@ -43,8 +41,10 @@ import { createOperationFromFile } from "@/lib/utils";
 import { generateOperation, formatCode } from "@/lib/format-code";
 import { generatePlatformHandlers } from "@/lib/deployment/entrypoint-wrapper";
 import { generatePlatformConfig } from "@/lib/deployment/platform-config";
-import { generateBuiltInModule } from "@/lib/deployment/built-in-module";
-import { prefixNpmImports } from "@/lib/deployment/utils";
+import {
+  generateBuiltInModule,
+  prefixNpmImports,
+} from "@/lib/deployment/utils";
 
 describe("getTriggeredOperations", () => {
   it("returns operation files that have a trigger", () => {

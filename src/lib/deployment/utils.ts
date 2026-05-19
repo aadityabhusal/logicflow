@@ -1,4 +1,16 @@
+import builtInModuleCode from "logicflow:source/built-in";
+import ffmpegModuleCode from "logicflow:source/virtual/ffmpeg";
 import { DeploymentFile } from "../types";
+
+const virtualPackageModules: Record<string, string> = {
+  ffmpeg: ffmpegModuleCode,
+};
+
+export { virtualPackageModules };
+
+export function generateBuiltInModule(): string {
+  return builtInModuleCode;
+}
 
 export function createPlatformFetch(platformPath: string) {
   const proxyBase = `${import.meta.env.VITE_API_PROXY_URL || "/api"}${platformPath}`;

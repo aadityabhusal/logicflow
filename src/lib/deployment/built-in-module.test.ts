@@ -1,13 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { generateBuiltInModule } from "@/lib/deployment/built-in-module";
+import { generateBuiltInModule } from "@/lib/deployment/utils";
 import * as runtime from "@/lib/operations/runtime";
 
 describe("generateBuiltInModule", () => {
   function exportedNames() {
-    return Array.from(
-      generateBuiltInModule().matchAll(/export\s+(?:const|function)\s+(\w+)/g),
+    const code = generateBuiltInModule();
+    const directExports = Array.from(
+      code.matchAll(/export\s+(?:const|function)\s+(\w+)/g),
       (match) => match[1]
-    ).sort();
+    );
+    const blockExports = Array.from(
+      code.matchAll(/export\s*{([^}]+)}/g),
+      (match) =>
+        match[1].split(",").map(
+          (name) =>
+            name
+              .trim()
+              .split(/\s+as\s+/)
+              .at(-1) ?? ""
+        )
+    ).flat();
+    return [...directExports, ...blockExports].sort();
   }
 
   it("is deterministic", () => {
