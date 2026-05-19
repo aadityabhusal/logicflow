@@ -347,6 +347,8 @@ function executeDataValue(
         })
       );
     });
+    const existing = context.getInstance(data.value.instanceId);
+    if (existing) return args;
     return [
       (context.isSync
         ? createThenable(args as IData[])

@@ -64,6 +64,18 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     ],
     load: () => import("../operations/faker").then((m) => m.default),
   },
+  "date-fns": {
+    displayName: "date-fns",
+    packageName: "date-fns",
+    importKind: "namespace",
+    sourceNames: ["date-fns"],
+    description: "Modern JavaScript date utility library",
+    links: [
+      { label: "npm", url: "https://www.npmjs.com/package/date-fns" },
+      { label: "GitHub", url: "https://github.com/date-fns/date-fns" },
+    ],
+    load: () => import("../operations/date-fns").then((m) => m.default),
+  },
 };
 
 export function getEnabledPackages(project?: Project): PackageNamespace[] {

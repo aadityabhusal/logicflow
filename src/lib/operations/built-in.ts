@@ -777,8 +777,8 @@ export function createExecutionVariables(
     if (seenNames.has(operation.name)) continue;
     seenNames.add(operation.name);
 
-    const parameters = resolveParameters(operation, sampleData, context);
-    if (parameters[0]?.type.kind === "never") continue;
+    const params = resolveParameters(operation, sampleData, context);
+    if (params[0]?.type.kind === "never") continue;
 
     const resultType =
       typeof operation.expectedType === "function"
@@ -788,7 +788,14 @@ export function createExecutionVariables(
     variables.set(operation.name, {
       data: createData({
         id: `builtin:${operation.name}`,
-        type: { kind: "operation", parameters, result: resultType },
+        type: {
+          kind: "operation",
+          parameters:
+            params[0]?.isOptional && params[0]?.type.kind === "undefined"
+              ? params.slice(1)
+              : params,
+          result: resultType,
+        },
         value: { name: operation.name, parameters: [], statements: [] },
       }),
     });

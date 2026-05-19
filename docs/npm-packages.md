@@ -87,3 +87,20 @@ Faker operations follow the `namespace.method` naming convention and generate va
 - **`finance.amount`** — Random monetary amount (string)
 
 All Faker operations accept an optional configuration object parameter. For the complete list of all 28 namespaces and 261 operations, see the [Faker API documentation](https://fakerjs.dev/api/).
+
+## date-fns
+
+The [date-fns](https://date-fns.org/) package provides the most comprehensive, yet simple and consistent toolset for manipulating JavaScript dates. All 243 operations are available.
+
+date-fns operations chain from a Date instance (or string for parsing functions) and produce typed results:
+
+- **`format`** — Format a date as a string (e.g., `"yyyy-MM-dd"`) (string)
+- **`addDays`** — Add a number of days to a date (Date)
+- **`isAfter`** — Check if a date is after another date (boolean)
+- **`differenceInDays`** — Get the number of full days between dates (number)
+- **`startOfMonth`** — Return the start of a month (Date)
+- **`parseISO`** — Create a date from an ISO 8601 string (Date)
+- **`getYear`** — Get the year of a date (number)
+- **`eachDayOfInterval`** — Generate an array of dates within an interval (Date array)
+
+For the complete list of all 243 operations, see the [date-fns API documentation](https://date-fns.org/v4.1.0/docs/Getting-Started).

@@ -632,7 +632,6 @@ export function createDataFromRawValue(
   }
 
   if (typeof value === "function") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const existingInstanceId = (
       value as unknown as { _operationInstanceId: string }
     )._operationInstanceId;
@@ -1657,6 +1656,7 @@ export function getDataDropdownList({
   const allowedOptions: IDropdownItem[] = [];
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
+  const builtInOptions: IDropdownItem[] = [];
   const dataTypeSignature = getTypeSignature(data.type, context);
   if (
     context.expectedType &&
@@ -1760,7 +1760,9 @@ export function getDataDropdownList({
           value: { name, id: variable.data.id },
         }),
     };
-    if (
+    if (variable.data.id?.startsWith("builtin:")) {
+      builtInOptions.push(option);
+    } else if (
       !context.expectedType ||
       isTypeCompatible(variable.data.type, context.expectedType, context)
     ) {
@@ -1774,6 +1776,7 @@ export function getDataDropdownList({
     ["Allowed", allowedOptions],
     ["Variables", variableOptions],
     ["Data Types", dataTypeOptions],
+    ["Built-in", builtInOptions],
   ] as [string, IDropdownItem[]][];
 }
 

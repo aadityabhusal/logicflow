@@ -59,6 +59,16 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     displayName: "Faker",
     useRawName: true,
   },
+  "date-fns": {
+    urlPattern: (name) => {
+      const fnName = name.includes(".")
+        ? name.slice(name.indexOf(".") + 1)
+        : name;
+      return `https://date-fns.org/v4.1.0/docs/${fnName}`;
+    },
+    displayName: "date-fns",
+    useRawName: true,
+  },
 };
 
 export function getDocsUrl(source?: OperationSource, operationName?: string) {

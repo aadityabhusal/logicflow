@@ -4112,6 +4112,33 @@ describe("cached instance preservation across re-executions", () => {
       expect(result.type.className).toBe("Response");
     }
   });
+
+  it("preserves existing instance while still setting constructor arg contexts", () => {
+    const ctx = createTestContext();
+    const instanceId = "cached-url-id";
+    const instanceType: InstanceDataType = {
+      kind: "instance",
+      className: "URL",
+      constructorArgs: [{ type: { kind: "string" } }],
+    };
+    const url = new URL("https://cached.example/");
+    const urlArg = stringStatement("https://constructor.example/");
+    const urlData = createData({
+      type: instanceType,
+      value: {
+        className: "URL",
+        instanceId,
+        constructorArgs: [urlArg],
+      },
+    });
+
+    ctx.setInstance(instanceId, { instance: url, type: instanceType });
+
+    executeStatementSync(createStatement({ data: urlData }), ctx);
+
+    expect(ctx.getInstance(instanceId)?.instance).toBe(url);
+    expect(ctx.getContext(urlArg.id).expectedType).toEqual({ kind: "string" });
+  });
 });
 
 describe("built-in operation as data + call", () => {

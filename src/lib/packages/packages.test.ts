@@ -3,8 +3,14 @@ import { executeOperation } from "@/lib/execution/execution";
 import { coreOperations } from "@/lib/operations/built-in";
 import { operations as rowguardOperations } from "@/lib/operations/rowguard";
 import { operations as fakerOperations } from "@/lib/operations/faker";
-import { createData, getRawValueFromData, isDataOfType } from "@/lib/utils";
-import { OperationListItem } from "@/lib/execution/types";
+import { operations as dateFnsOperations } from "@/lib/operations/date-fns";
+import {
+  createData,
+  getRawValueFromData,
+  isDataOfType,
+  createDataFromRawValue,
+} from "@/lib/utils";
+import { Context, OperationListItem } from "@/lib/execution/types";
 import { InstanceDataType } from "../types";
 import {
   createTestContext,
@@ -286,5 +292,155 @@ describe("faker operations", () => {
     const result = await executeOperation(op, createData(), [], ctx);
 
     expect(isDataOfType(result, "string")).toBe(true);
+  });
+});
+
+describe("date-fns operations", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "date-fns" }]);
+  });
+
+  function findOp(name: string): OperationListItem {
+    const op = dateFnsOperations.find((o) => o.name === name);
+    if (!op) throw new Error(`date-fns operation "${name}" not found`);
+    return op;
+  }
+
+  const testDate = new Date("2024-06-15T12:00:00.000Z");
+  const testDate2 = new Date("2024-07-20T12:00:00.000Z");
+
+  function dateData(d: Date, ctx: Context) {
+    return createDataFromRawValue(d, ctx);
+  }
+
+  it("format returns a formatted string", async () => {
+    const ctx = createTestContext();
+    const op = findOp("format");
+    const src = dateData(testDate, ctx);
+    const result = await executeOperation(
+      op,
+      src,
+      [stringStatement("yyyy-MM-dd")],
+      ctx
+    );
+
+    expect(isDataOfType(result, "string")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe("2024-06-15");
+  });
+
+  it("addDays returns a Date", async () => {
+    const ctx = createTestContext();
+    const op = findOp("addDays");
+    const src = dateData(testDate, ctx);
+    const result = await executeOperation(
+      op,
+      src,
+      [{ data: createData({ value: 5 }), id: "num", operations: [] }],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    const value = getRawValueFromData(result, ctx);
+    expect(value).toBeInstanceOf(Date);
+    expect((value as Date).toISOString()).toBe("2024-06-20T12:00:00.000Z");
+  });
+
+  it("isAfter returns a boolean", async () => {
+    const ctx = createTestContext();
+    const op = findOp("isAfter");
+    const src = dateData(testDate2, ctx);
+    const result = await executeOperation(
+      op,
+      src,
+      [{ data: dateData(testDate, ctx), id: "other", operations: [] }],
+      ctx
+    );
+
+    expect(isDataOfType(result, "boolean")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe(true);
+  });
+
+  it("isBefore returns false when date is after", async () => {
+    const ctx = createTestContext();
+    const op = findOp("isBefore");
+    const src = dateData(testDate2, ctx);
+    const result = await executeOperation(
+      op,
+      src,
+      [{ data: dateData(testDate, ctx), id: "other", operations: [] }],
+      ctx
+    );
+
+    expect(isDataOfType(result, "boolean")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe(false);
+  });
+
+  it("differenceInDays returns a number", async () => {
+    const ctx = createTestContext();
+    const op = findOp("differenceInDays");
+    const src = dateData(testDate2, ctx);
+    const result = await executeOperation(
+      op,
+      src,
+      [{ data: dateData(testDate, ctx), id: "other", operations: [] }],
+      ctx
+    );
+
+    expect(isDataOfType(result, "number")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe(35);
+  });
+
+  it("getYear returns the year", async () => {
+    const ctx = createTestContext();
+    const op = findOp("getYear");
+    const src = dateData(testDate, ctx);
+    const result = await executeOperation(op, src, [], ctx);
+
+    expect(isDataOfType(result, "number")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe(2024);
+  });
+
+  it("startOfMonth returns the first day of the month", async () => {
+    const ctx = createTestContext();
+    const op = findOp("startOfMonth");
+    const src = dateData(testDate, ctx);
+    const result = await executeOperation(op, src, [], ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    const value = getRawValueFromData(result, ctx);
+    expect(value).toBeInstanceOf(Date);
+    // startOfMonth should be on or before the input date
+    expect((value as Date).getTime()).toBeLessThanOrEqual(testDate.getTime());
+  });
+
+  it("parseISO creates a Date from string", async () => {
+    const ctx = createTestContext();
+    const op = findOp("parseISO");
+    const src = createData({ value: "2024-06-15T12:00:00.000Z" });
+    const result = await executeOperation(op, src, [], ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    const value = getRawValueFromData(result, ctx);
+    expect(value).toBeInstanceOf(Date);
+  });
+
+  it("isPast returns true for past dates", async () => {
+    const ctx = createTestContext();
+    const op = findOp("isPast");
+    const src = dateData(testDate, ctx);
+    const result = await executeOperation(op, src, [], ctx);
+
+    expect(isDataOfType(result, "boolean")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe(true);
+  });
+
+  it("isFuture returns false for past dates", async () => {
+    const ctx = createTestContext();
+    const op = findOp("isFuture");
+    const src = dateData(testDate, ctx);
+    const result = await executeOperation(op, src, [], ctx);
+
+    expect(isDataOfType(result, "boolean")).toBe(true);
+    expect(getRawValueFromData(result, ctx)).toBe(false);
   });
 });
