@@ -23,6 +23,7 @@ import {
   isPendingContext,
   getCacheKey,
   getActualOperationName,
+  isDataOfType,
 } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { getDocsUrl, DOCS_REGISTRY } from "@/lib/docs-registry";
@@ -103,12 +104,20 @@ export function DetailsPanel() {
     context,
   ]);
 
+  const docsOperation = useMemo(() => {
+    if (operation) return operation;
+    if (isDataOfType(displayedResult, "operation")) return displayedResult;
+    if (!isDataOfType(displayedResult, "reference")) return undefined;
+    const variable = context.variables.get(displayedResult.value.name)?.data;
+    return isDataOfType(variable, "operation") ? variable : undefined;
+  }, [operation, displayedResult, context]);
+
   const docsUrl = useMemo(
-    () => getDocsUrl(operation?.value.source, operation?.value.name),
-    [operation]
+    () => getDocsUrl(docsOperation?.value.source, docsOperation?.value.name),
+    [docsOperation]
   );
-  const docsConfig = operation?.value.source
-    ? DOCS_REGISTRY[operation.value.source.name]
+  const docsConfig = docsOperation?.value.source
+    ? DOCS_REGISTRY[docsOperation.value.source.name]
     : undefined;
 
   const [formattedValue, setFormattedValue] = useState("");
@@ -224,7 +233,7 @@ export function DetailsPanel() {
               rightSection={<FaArrowUpRightFromSquare />}
             >
               {docsConfig.displayName}:
-              {getActualOperationName(operation?.value.name ?? "")}
+              {getActualOperationName(docsOperation?.value.name ?? "")}
             </Button>
           </div>
         )}

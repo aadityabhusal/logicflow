@@ -14,6 +14,7 @@ import {
   createData,
   createStatement,
   getUnionActiveType,
+  isBlockCondition,
   isDataOfType,
   isTextInput,
 } from "./utils";
@@ -164,8 +165,15 @@ export function getOperationEntities(
   context: Context,
   depth = 0
 ): NavigationEntity[] {
-  const parameterEntities = operation.value.parameters.flatMap((item) =>
-    getStatementEntities(
+  const expectedParameterType =
+    context.expectedType?.kind === "operation"
+      ? context.expectedType.parameters
+      : undefined;
+
+  const parameterEntities = operation.value.parameters.flatMap((item, i) => {
+    const prev = operation.type.parameters[i - 1];
+    const next = operation.type.parameters[i + 1];
+    return getStatementEntities(
       item,
       depth,
       {
@@ -174,9 +182,13 @@ export function getOperationEntities(
         statementIndex: 0,
       },
       context,
-      true
-    )
-  );
+      true,
+      !!expectedParameterType ||
+        (next && !next.isOptional) ||
+        !!prev?.isOptional ||
+        !!prev?.isRest
+    );
+  });
   const statementEntities = operation.value.statements.flatMap((statement, i) =>
     getStatementEntities(
       statement,
@@ -191,11 +203,6 @@ export function getOperationEntities(
     )
   );
   const statementIndex = operation.value.statements.length + 1;
-
-  const expectedParameterType =
-    context.expectedType?.kind === "operation"
-      ? context.expectedType.parameters
-      : undefined;
 
   const hideAddParameter =
     (expectedParameterType &&
@@ -230,15 +237,23 @@ function getStatementEntities(
   depth: number,
   parent: { operationId: string; statementId: string; statementIndex: number },
   context: Context,
-  allowVariable?: boolean
+  allowVariable?: boolean,
+  disableStatementActions?: boolean
 ): NavigationEntity[] {
+  const stmtCtx = context.getContext(statement.id);
+  const disableEquals =
+    disableStatementActions ||
+    (isDataOfType(statement.data, "condition") &&
+      isBlockCondition(statement.data.value));
   const entities: NavigationEntity[] = [];
   if (statement.name) {
     entities.push({ id: `${statement.id}_name`, depth, ...parent });
   }
   if (allowVariable) {
-    entities.push({ id: `${statement.id}_return`, depth, ...parent });
-    entities.push({ id: `${statement.id}_add`, depth, ...parent });
+    if (!disableEquals) {
+      entities.push({ id: `${statement.id}_return`, depth, ...parent });
+      entities.push({ id: `${statement.id}_add`, depth, ...parent });
+    }
     entities.push({ id: `${statement.id}_equals`, depth, ...parent });
   }
   const dataId = statement.data.id;
@@ -250,31 +265,39 @@ function getStatementEntities(
   ) {
     statement.data.value.forEach((arrayItem) => {
       entities.push(
-        ...getStatementEntities(arrayItem, depth + 1, parent, context)
+        ...getStatementEntities(arrayItem, depth + 1, parent, stmtCtx)
       );
     });
-    if (isDataOfType(statement.data, "array") || !context.expectedType) {
+    if (isDataOfType(statement.data, "array") || !stmtCtx.expectedType) {
       entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
     }
   } else if (
     isDataOfType(statement.data, "object") ||
     isDataOfType(statement.data, "dictionary")
   ) {
-    statement.data.value.entries.forEach((entry, index) => {
+    const entries = statement.data.value.entries;
+    entries.forEach((entry, index) => {
       const keyId = `${statement.data.id}_key_${index}`;
       entities.push({ id: keyId, depth: depth + 1, ...parent });
       if (isDataOfType(statement.data, "object")) {
         entities.push({ id: `${keyId}_colon`, depth: depth + 1, ...parent });
       }
       entities.push(
-        ...getStatementEntities(entry.value, depth + 1, parent, context)
+        ...getStatementEntities(entry.value, depth + 1, parent, stmtCtx)
       );
     });
-    if (isDataOfType(statement.data, "dictionary") || !context.expectedType) {
+    if (
+      isDataOfType(statement.data, "dictionary") ||
+      !stmtCtx.expectedType ||
+      (stmtCtx.expectedType.kind === "object" &&
+        stmtCtx.expectedType.properties.some(
+          ({ key }) => !entries.some((entry) => entry.key === key)
+        ))
+    ) {
       entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
     }
   } else if (isDataOfType(statement.data, "operation")) {
-    entities.push(...getOperationEntities(statement.data, context, depth + 1));
+    entities.push(...getOperationEntities(statement.data, stmtCtx, depth + 1));
   } else if (isDataOfType(statement.data, "condition")) {
     const condVal = statement.data.value as DataValue<ConditionType>;
     entities.push(
@@ -282,16 +305,16 @@ function getStatementEntities(
         condVal.condition,
         depth + 1,
         parent,
-        context,
+        stmtCtx,
         false
       )
     );
     for (const stmt of condVal.trueBranch) {
       entities.push(
-        ...getStatementEntities(stmt, depth + 1, parent, context, allowVariable)
+        ...getStatementEntities(stmt, depth + 1, parent, stmtCtx, allowVariable)
       );
     }
-    if (allowVariable) {
+    if (allowVariable || condVal.trueBranch.length === 0) {
       entities.push({
         id: `${dataId}_trueBranch_add`,
         depth: depth + 1,
@@ -300,10 +323,10 @@ function getStatementEntities(
     }
     for (const stmt of condVal.falseBranch) {
       entities.push(
-        ...getStatementEntities(stmt, depth + 1, parent, context, allowVariable)
+        ...getStatementEntities(stmt, depth + 1, parent, stmtCtx, allowVariable)
       );
     }
-    if (allowVariable) {
+    if (allowVariable || condVal.falseBranch.length === 0) {
       entities.push({
         id: `${dataId}_falseBranch_add`,
         depth: depth + 1,
@@ -312,7 +335,7 @@ function getStatementEntities(
     }
   } else if (isDataOfType(statement.data, "instance")) {
     statement.data.value.constructorArgs.forEach((arg) => {
-      entities.push(...getStatementEntities(arg, depth + 1, parent, context));
+      entities.push(...getStatementEntities(arg, depth + 1, parent, stmtCtx));
     });
     if (
       statement.data.value.constructorArgs.length <
@@ -327,7 +350,7 @@ function getStatementEntities(
   } else if (isDataOfType(statement.data, "union")) {
     const valueType = getUnionActiveType(statement.data.type, {
       value: statement.data.value,
-      context,
+      context: stmtCtx,
     });
     const dataStatement = createStatement({
       data: createData({
@@ -337,7 +360,7 @@ function getStatementEntities(
       }),
     });
     entities.push(
-      ...getStatementEntities(dataStatement, depth + 1, parent, context)
+      ...getStatementEntities(dataStatement, depth + 1, parent, stmtCtx)
     );
     entities.push({ id: `${dataId}_options`, depth: depth + 1, ...parent });
   }
@@ -345,7 +368,7 @@ function getStatementEntities(
   statement.operations.forEach((operation) => {
     entities.push({ id: operation.id, depth, ...parent });
     operation.value.parameters.forEach((param) => {
-      entities.push(...getStatementEntities(param, depth + 1, parent, context));
+      entities.push(...getStatementEntities(param, depth + 1, parent, stmtCtx));
     });
     const restParam = operation.type.parameters.findLast((p) => p.isRest)?.type;
     if (

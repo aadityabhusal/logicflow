@@ -108,6 +108,7 @@ const ConditionInputComponent = (
 
   const renderBranch = (branch: BranchName, separator: string) => {
     const statements = data.value[branch];
+    const canAddStatement = isTopLevelStatement || statements.length === 0;
     return (
       <>
         <span>{separator}</span>
@@ -134,7 +135,7 @@ const ConditionInputComponent = (
               )}
             </div>
           ))}
-          {isTopLevelStatement && (
+          {canAddStatement && (
             <AddStatement
               id={`${data.id}_${branch}`}
               onSelect={(stmt) => addBranchStatement(branch, stmt, "after")}

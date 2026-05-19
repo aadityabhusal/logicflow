@@ -64,7 +64,7 @@ function createOp(
   return {
     name,
     parameters: params.map((p) => ("type" in p ? p : { type: p })),
-    source: { name: "date-fns" },
+    source: { name: "dateFns" },
     handler: (_context: Context, data: IData, ...args: IData[]) => {
       const rawFirst = getRawValueFromData(data, _context);
       const rawArgs = args.map((a) => getRawValueFromData(a, _context));

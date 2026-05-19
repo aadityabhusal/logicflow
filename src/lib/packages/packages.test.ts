@@ -297,7 +297,7 @@ describe("faker operations", () => {
 
 describe("date-fns operations", () => {
   beforeAll(async () => {
-    await syncPackageRegistry([{ name: "date-fns" }]);
+    await syncPackageRegistry([{ name: "dateFns" }]);
   });
 
   function findOp(name: string): OperationListItem {

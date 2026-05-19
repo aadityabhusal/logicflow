@@ -65,11 +65,11 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     ],
     load: () => import("../operations/faker").then((m) => m.default),
   },
-  "date-fns": {
+  dateFns: {
     displayName: "date-fns",
     packageName: "date-fns",
     importKind: "namespace",
-    sourceNames: ["date-fns"],
+    sourceNames: ["dateFns"],
     description: "Modern JavaScript date utility library",
     links: [
       { label: "npm", url: "https://www.npmjs.com/package/date-fns" },

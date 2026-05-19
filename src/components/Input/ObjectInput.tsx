@@ -54,12 +54,14 @@ const ObjectInputComponent = (
     [data, handleData, context]
   );
 
-  function handleKeyUpdate(index: number, newKey: string) {
-    const oldKey = data.value.entries[index].key;
-    const existingKey = data.value.entries.some(
-      (e, i) => i !== index && e.key === newKey
-    );
-    if (typeof newKey === "string" && !existingKey) {
+  const handleKeyUpdate = useCallback(
+    (index: number, newKey: string) => {
+      const oldKey = data.value.entries[index].key;
+      const existingKey = data.value.entries.some(
+        (e, i) => i !== index && e.key === newKey
+      );
+      if (existingKey) return;
+
       const newEntries = [...data.value.entries];
       newEntries[index] = { ...newEntries[index], key: newKey };
       const newRequired = data.type.required?.includes(oldKey)
@@ -76,8 +78,9 @@ const ObjectInputComponent = (
         },
         value: { entries: newEntries },
       });
-    }
-  }
+    },
+    [context, data, handleData]
+  );
 
   const remainingOptionalProperties = useMemo(() => {
     const originalProperties =
@@ -97,21 +100,11 @@ const ObjectInputComponent = (
       type: value,
       onClick: () => {
         if (entryIndex === -1) return;
-        const newEntries = data.value.entries.map((e, i) =>
-          i === entryIndex ? { ...e, key } : e
-        );
-        handleData({
-          ...data,
-          type: inferTypeFromValue(
-            { entries: newEntries },
-            { ...context, expectedType: context.expectedType ?? data.type }
-          ),
-          value: { entries: newEntries },
-        });
+        handleKeyUpdate(entryIndex, key);
       },
     }));
     return [["Properties", results]] as [string, IDropdownItem[]][];
-  }, [navigationId, data, remainingOptionalProperties, handleData, context]);
+  }, [navigationId, remainingOptionalProperties, handleKeyUpdate]);
 
   return (
     <div
@@ -140,7 +133,7 @@ const ObjectInputComponent = (
               isMultiline ? "ml-2" : "",
             ].join(" ")}
           >
-            {context.expectedType ? (
+            {context.expectedType?.kind === "object" ? (
               <Dropdown
                 id={`${data.id}_key_${i}`}
                 value={entry.key}
@@ -148,7 +141,15 @@ const ObjectInputComponent = (
                 context={context}
                 isInputTarget={true}
                 target={(dropdownProps) => (
-                  <BaseInput {...dropdownProps} className={"text-property"} />
+                  <BaseInput
+                    {...dropdownProps}
+                    className={"text-property"}
+                    onChange={(value) => {
+                      const key = String(value);
+                      dropdownProps.onChange?.(key);
+                      handleKeyUpdate(i, key);
+                    }}
+                  />
                 )}
               />
             ) : (

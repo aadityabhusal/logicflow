@@ -52,7 +52,7 @@ const DictionaryInputComponent = (
     const existingKey = data.value.entries.some(
       (e, i) => i !== index && e.key === newKey
     );
-    if (typeof newKey === "string" && !existingKey) {
+    if (!existingKey) {
       const newEntries = [...data.value.entries];
       newEntries[index] = { ...newEntries[index], key: newKey };
       handleData({

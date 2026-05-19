@@ -796,7 +796,12 @@ export function createExecutionVariables(
               : params,
           result: resultType,
         },
-        value: { name: operation.name, parameters: [], statements: [] },
+        value: {
+          name: operation.name,
+          parameters: [],
+          statements: [],
+          source: operation.source,
+        },
       }),
     });
   }

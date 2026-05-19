@@ -59,7 +59,7 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     displayName: "Faker",
     useRawName: true,
   },
-  "date-fns": {
+  dateFns: {
     urlPattern: (name) => {
       const fnName = name.includes(".")
         ? name.slice(name.indexOf(".") + 1)
