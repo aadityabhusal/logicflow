@@ -43,26 +43,11 @@ const OperationCallComponent = ({
   );
 
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const filteredOperations = useMemo(
-    () => getFilteredOperations(data, context, true),
-    [data, context]
-  );
   const restParamType = useMemo(() => {
     const restParam = operation.type.parameters.findLast((p) => p.isRest)?.type;
     if (restParam?.kind === "array") return restParam.elementType;
     return undefined;
   }, [operation.type.parameters]);
-
-  const originalOperation = useMemo(() => {
-    return filteredOperations
-      .flatMap(([_, items]) => items)
-      .find((item) => item.name === operation.value.name);
-  }, [filteredOperations, operation.value.name]);
-
-  const originalParameters = useMemo(() => {
-    if (!originalOperation) return undefined;
-    return resolveParameters(originalOperation, data, context);
-  }, [context, data, originalOperation]);
 
   const handleDropdown = useCallback(
     async (name: string) => {
@@ -95,11 +80,20 @@ const OperationCallComponent = ({
       const index = _index === -1 ? parameters.length : _index;
       if (remove) parameters.splice(index, 1);
       else parameters[index] = item;
+
+      const ops = getFilteredOperations(data, context, true);
+      const origOp = ops
+        .flatMap(([_, items]) => items)
+        .find((opItem) => opItem.name === operation.value.name);
+      const origParams = origOp
+        ? resolveParameters(origOp, data, context)
+        : undefined;
+
       handleOperationCall({
         ...operation,
         type: {
           ...operation.type,
-          parameters: (originalParameters ?? operation.type.parameters).map(
+          parameters: (origParams ?? operation.type.parameters).map(
             (param, i) => {
               const idx = (i >= index && remove ? i + 1 : i) - 1;
               return {
@@ -113,31 +107,38 @@ const OperationCallComponent = ({
         value: { ...operation.value, parameters },
       });
     },
-    [operation, originalParameters, handleOperationCall]
+    [operation, handleOperationCall, data, context]
   );
 
   const handleDelete = useCallback(() => {
     handleOperationCall(operation, true);
   }, [handleOperationCall, operation]);
 
-  const dropdownItems = useMemo(() => {
-    return filteredOperations.map(([groupName, groupItems]) => [
-      groupName,
-      groupItems.map((item) => ({
-        label: resolveDisplayName(item.name, context.packageAliases),
-        value: `${
-          resolveParameters(item, data, context)?.[0]?.type.kind ?? "undefined"
-        }-${item.name}`,
-        color: "method",
-        entityType: "operationCall" as const,
-        onClick: () => handleDropdown(item.name),
-      })),
-    ]) as [string, IDropdownItem[]][];
-  }, [filteredOperations, data, context, handleDropdown]);
+  const getDropdownItems = useCallback(() => {
+    return getFilteredOperations(data, context, true).map(
+      ([groupName, groupItems]) => [
+        groupName,
+        groupItems.map((item) => ({
+          label: resolveDisplayName(item.name, context.packageAliases),
+          value: `${
+            resolveParameters(item, data, context)?.[0]?.type.kind ??
+            "undefined"
+          }-${item.name}`,
+          color: "method",
+          entityType: "operationCall" as const,
+          onClick: () => handleDropdown(item.name),
+        })),
+      ]
+    ) as [string, IDropdownItem[]][];
+  }, [data, context, handleDropdown]);
 
   const handleAddOperationCall = useCallback(
     (_data?: IData) => addOperationCall?.(_data ?? data, operation.id),
     [addOperationCall, data, operation.id]
+  );
+  const canAddOperationCall = useCallback(
+    (_data?: IData) => !!getFilteredOperations(_data ?? data, context).length,
+    [data, context]
   );
 
   const parameterPaths = useMemo(() => {
@@ -159,7 +160,7 @@ const OperationCallComponent = ({
   return (
     <Dropdown
       id={operation.id}
-      items={dropdownItems}
+      items={getDropdownItems}
       context={context}
       value={resolveDisplayName(
         operation.value.name ?? "",
@@ -167,9 +168,10 @@ const OperationCallComponent = ({
       )}
       operation={operation}
       addOperationCall={
-        filteredOperations.length && !context.skipExecution
-          ? handleAddOperationCall
-          : undefined
+        !context.skipExecution ? handleAddOperationCall : undefined
+      }
+      canAddOperationCall={
+        !context.skipExecution ? canAddOperationCall : undefined
       }
       handleDelete={handleDelete}
       isInputTarget

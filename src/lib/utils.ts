@@ -1648,15 +1648,18 @@ export function getDataDropdownList({
   data,
   onSelect,
   context,
+  search,
 }: {
   data: IStatement["data"];
   onSelect: (operation: IStatement["data"], remove?: boolean) => void;
   context: Context;
+  search?: string;
 }) {
   const allowedOptions: IDropdownItem[] = [];
   const dataTypeOptions: IDropdownItem[] = [];
   const variableOptions: IDropdownItem[] = [];
   const builtInOptions: IDropdownItem[] = [];
+  const shouldIncludeBuiltIns = !!search?.trim();
   const dataTypeSignature = getTypeSignature(data.type, context);
   if (
     context.expectedType &&
@@ -1746,6 +1749,9 @@ export function getDataDropdownList({
   });
 
   context.variables.forEach((variable, name) => {
+    const isBuiltIn = variable.data.id?.startsWith("builtin:");
+    if (isBuiltIn && !shouldIncludeBuiltIns) return;
+
     const option: IDropdownItem = {
       label: resolveDisplayName(name, context.packageAliases),
       value: name,
@@ -1760,7 +1766,7 @@ export function getDataDropdownList({
           value: { name, id: variable.data.id },
         }),
     };
-    if (variable.data.id?.startsWith("builtin:")) {
+    if (isBuiltIn) {
       builtInOptions.push(option);
     } else if (
       !context.expectedType ||

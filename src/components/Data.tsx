@@ -29,6 +29,7 @@ import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
 import { OperationType } from "../lib/types";
 import { EntityPath } from "@/lib/types";
+import { getFilteredOperations } from "@/lib/execution/execution";
 
 interface IProps {
   data: IData;
@@ -50,8 +51,9 @@ const DataComponent = ({
   isTopLevelStatement,
 }: IProps) => {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const dropdownItems = useMemo(
-    () => getDataDropdownList({ data, onSelect: handleChange, context }),
+  const getDropdownItems = useCallback(
+    (search: string) =>
+      getDataDropdownList({ data, onSelect: handleChange, context, search }),
     [data, handleChange, context]
   );
 
@@ -88,6 +90,10 @@ const DataComponent = ({
   const handleAddOperationCall = useCallback(
     (_data?: IData) => addOperationCall?.(_data ?? data),
     [addOperationCall, data]
+  );
+  const canAddOperationCall = useCallback(
+    (_data?: IData) => !!getFilteredOperations(_data ?? data, context).length,
+    [data, context]
   );
 
   const handleOperationChange = useCallback(
@@ -268,9 +274,10 @@ const DataComponent = ({
     <Dropdown
       id={data.id}
       data={data}
-      items={dropdownItems}
+      items={getDropdownItems}
       handleDelete={!disableDelete ? handleDelete : undefined}
       addOperationCall={addOperationCall ? handleAddOperationCall : undefined}
+      canAddOperationCall={addOperationCall ? canAddOperationCall : undefined}
       handleChange={handleChange}
       options={dropdownOptions}
       context={context}

@@ -52,6 +52,8 @@ import { useExecutionResultsStore } from "@/lib/execution/store";
 import { createOperationCall } from "@/lib/execution/execution";
 import { resolveDisplayName } from "@/lib/packages/registry";
 
+const MAX_DROPDOWN_ITEMS_PER_GROUP = 100;
+
 const DropdownComponent = ({
   id,
   value,
@@ -59,6 +61,7 @@ const DropdownComponent = ({
   items,
   handleDelete,
   addOperationCall,
+  canAddOperationCall,
   handleChange,
   children,
   options,
@@ -70,9 +73,12 @@ const DropdownComponent = ({
   id: string;
   data?: IData;
   value?: string;
-  items?: [string, IDropdownItem[]][];
+  items?:
+    | [string, IDropdownItem[]][]
+    | ((search: string) => [string, IDropdownItem[]][]);
   handleDelete?: () => void;
   addOperationCall?: (data?: IData) => void;
+  canAddOperationCall?: (data?: IData) => boolean;
   handleChange?: (data: IData) => void;
   children?: ReactNode;
   options?: {
@@ -89,9 +95,6 @@ const DropdownComponent = ({
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
 
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const isOperationFile = useProjectStore((s) =>
-    s.getCurrentProject()?.files.find((f) => f.name === value)
-  );
   const addFile = useProjectStore((s) => s.addFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const detailsPanelLockedId = useUiConfigStore((s) => {
@@ -110,6 +113,10 @@ const DropdownComponent = ({
   const operationResult = useExecutionResultsStore(
     (s) => s.getResult(getCacheKey(context, id))?.data
   );
+  const isOperationFile = useProjectStore((s) => {
+    if (!(isDataOfType(data, "reference") || operationResult)) return undefined;
+    return s.getCurrentProject()?.files.find((f) => f.name === value);
+  });
   const _result = useMemo(
     () =>
       operationResult
@@ -128,23 +135,6 @@ const DropdownComponent = ({
     () => resolveDisplayName(value ?? "", context.packageAliases),
     [value, context.packageAliases]
   );
-
-  const dropdownOptions = useMemo(() => {
-    return items?.reduce(
-      (acc, [groupName, groupItems]) => {
-        const filteredItem = fuzzySearch(
-          groupItems,
-          displayValue === search ? [] : [{ label: search, value: search }]
-        );
-        if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
-        return acc;
-      },
-      [] as [string, IDropdownItem[]][]
-    );
-  }, [items, search, displayValue]);
-
-  const hasOptions = !!dropdownOptions?.flatMap(([, i]) => i).length;
-
   const combobox = useCombobox({
     loop: true,
     onDropdownClose: () => {
@@ -157,6 +147,34 @@ const DropdownComponent = ({
       setNavigation({ navigation: { id, disable: hasOptions } });
     },
   });
+
+  const activeSearch = displayValue === search ? "" : search.trim();
+
+  const resolvedItems = useMemo(() => {
+    if (typeof items !== "function") return items;
+    return isFocused ? items(activeSearch) : undefined;
+  }, [items, isFocused, activeSearch]);
+
+  const dropdownOptions = useMemo(() => {
+    return resolvedItems?.reduce(
+      (acc, [groupName, groupItems]) => {
+        const filteredItem = fuzzySearch(
+          groupItems,
+          activeSearch ? [{ label: activeSearch, value: activeSearch }] : []
+        ).slice(0, MAX_DROPDOWN_ITEMS_PER_GROUP);
+        if (filteredItem.length > 0) acc.push([groupName, filteredItem]);
+        return acc;
+      },
+      [] as [string, IDropdownItem[]][]
+    );
+  }, [resolvedItems, activeSearch]);
+
+  const hasOptions = !!dropdownOptions?.flatMap(([, i]) => i).length;
+
+  const showAddOperationCall =
+    !!addOperationCall &&
+    (isFocused || isHovered) &&
+    (!canAddOperationCall || canAddOperationCall(result));
 
   function handleSearch(val: string) {
     if (!combobox.dropdownOpened) combobox.openDropdown();
@@ -331,7 +349,7 @@ const DropdownComponent = ({
     <Combobox
       onOptionSubmit={(optionValue) => {
         if (value !== optionValue) {
-          items
+          resolvedItems
             ?.flatMap(([, groupItems]) => groupItems)
             .find((item) => item.value === optionValue)
             ?.onClick?.();
@@ -431,7 +449,7 @@ const DropdownComponent = ({
               title="Delete"
             />
           )}
-          {addOperationCall && (
+          {showAddOperationCall && (
             <IconButton
               size={13}
               title="Add operation call"
@@ -441,7 +459,6 @@ const DropdownComponent = ({
                 combobox?.closeDropdown();
                 addOperationCall(result);
               }}
-              hidden={!isFocused && !isHovered}
             />
           )}
           {options?.withDropdownIcon &&

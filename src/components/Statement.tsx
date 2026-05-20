@@ -209,6 +209,7 @@ const StatementComponent = ({
   const addOperationCall = useCallback(
     async (data: IData, operationId?: string) => {
       if (isDataOfType(statement.data, "condition")) return;
+      if (!getFilteredOperations(data, context).length) return;
       const operation = await createOperationCall({
         data,
         context,
@@ -388,8 +389,7 @@ const StatementComponent = ({
             addOperationCall={
               !isParameter &&
               !context.skipExecution &&
-              !isDataOfType(statement.data, "condition") &&
-              getFilteredOperations(statement.data, context).length
+              !isDataOfType(statement.data, "condition")
                 ? addOperationCall
                 : undefined
             }

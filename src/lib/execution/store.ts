@@ -138,6 +138,7 @@ export const useExecutionResultsStore =
         const directCtx = get().getContext(entityId);
         if (directCtx !== get().rootContext) return directCtx;
 
+        if (get().contexts.size === 0) return get().rootContext;
         const file = useProjectStore.getState().getCurrentFile();
         const rootValue =
           file?.type === "operation" ? file.content.value : undefined;
