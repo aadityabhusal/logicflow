@@ -11,6 +11,7 @@ import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 import { notifications } from "@mantine/notifications";
 import { useRestrictedName } from "@/lib/useRestrictedName";
+import { ProjectCheckpoints } from "./ProjectCheckpoints";
 import {
   FaSpinner,
   FaChevronDown,
@@ -97,7 +98,7 @@ export function SettingsPanel() {
       <div className="p-2 flex flex-col gap-2 overflow-y-auto">
         {currentProjectId && (
           <div className="flex flex-col gap-2">
-            <span className="text-sm text-gray-300">Project name</span>
+            <span className="text-gray-300">Project name</span>
             <input
               type="text"
               className="focus:outline outline-white border w-full p-0.5 text-sm"
@@ -109,6 +110,7 @@ export function SettingsPanel() {
             />
           </div>
         )}
+        {currentProjectId && <ProjectCheckpoints />}
         {smallScreen && (
           <label className="flex items-center justify-between gap-2 border-t pt-2">
             <span className="text-sm">Disable keyboard focus</span>
@@ -133,7 +135,7 @@ export function SettingsPanel() {
         )}
         {currentProjectId && externalPackages.length > 0 && (
           <div className="border-t pt-2 flex flex-col gap-2">
-            <span className="text-sm text-gray-300">Packages</span>
+            <span className="text-gray-300">Packages</span>
             {externalPackages.map(([name, entry]) => {
               const dependency = dependencies?.npm?.find(
                 (d) => d.name === name

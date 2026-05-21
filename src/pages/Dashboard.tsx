@@ -8,8 +8,7 @@ import {
   FaTrash,
 } from "react-icons/fa6";
 import { Link, useNavigate } from "react-router";
-import relativeTime from "dayjs/plugin/relativeTime";
-import dayjs from "dayjs";
+import { formatDistanceToNow } from "date-fns";
 import { useProjectStore } from "@/lib/store";
 import {
   createContextVariable,
@@ -24,8 +23,6 @@ import { createOperationCall } from "@/lib/execution/execution";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { ProjectFile, DataType } from "@/lib/types";
 import { InstanceTypes } from "@/lib/packages/registry";
-
-dayjs.extend(relativeTime);
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -193,7 +190,12 @@ export default function Dashboard() {
                   </span>
                   {project.updatedAt && <span>•</span>}
                   {project.updatedAt && (
-                    <span>Updated {dayjs(project.updatedAt).fromNow()}</span>
+                    <span>
+                      Updated{" "}
+                      {formatDistanceToNow(project.updatedAt, {
+                        addSuffix: true,
+                      })}
+                    </span>
                   )}
                 </div>
               </div>

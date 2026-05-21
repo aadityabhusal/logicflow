@@ -271,6 +271,20 @@ export type DeploymentResult = Partial<DeploymentRecord> & {
   error?: string;
 };
 
+export type ProjectCheckpointSnapshot = Omit<
+  Project,
+  "id" | "createdAt" | "updatedAt"
+>;
+
+export type ProjectCheckpoint = {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt: number;
+  schemaVersion: 1;
+  snapshot: ProjectCheckpointSnapshot;
+};
+
 export interface DeploymentFile {
   path: string;
   content: string;

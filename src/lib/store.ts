@@ -9,6 +9,7 @@ import {
   DataType,
   IStatement,
   OperationType,
+  ProjectCheckpoint,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
@@ -19,8 +20,12 @@ import { AgentChange } from "./schemas";
 import { Context } from "./execution/types";
 import { produce } from "immer";
 import { EntityPath } from "./types";
+import {
+  createProjectCheckpoint,
+  restoreProjectFromCheckpoint,
+} from "./checkpoints";
 
-const IDbStore = openDB("logicflow", 2, {
+const IDbStore = openDB("logicflow", 3, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("projects")) {
       db.createObjectStore("projects");
@@ -30,6 +35,9 @@ const IDbStore = openDB("logicflow", 2, {
     }
     if (!db.objectStoreNames.contains("agent")) {
       db.createObjectStore("agent");
+    }
+    if (!db.objectStoreNames.contains("checkpoints")) {
+      db.createObjectStore("checkpoints");
     }
   },
 });
@@ -116,6 +124,7 @@ interface ICurrentProjectStore {
     path: EntityPath,
     newStatement: IStatement
   ) => void;
+  restoreProjectFromCheckpoint: (checkpoint: ProjectCheckpoint) => void;
 }
 
 type ProjectStore = IProjectsStore & ICurrentProjectStore;
@@ -155,6 +164,7 @@ const createProjectsSlice: StateCreator<
       const { [id]: _, ...rest } = state.projects;
       return { projects: rest };
     });
+    useCheckpointStore.getState().deleteProjectCheckpoints(id);
   },
   getProject: (id) => get().projects[id],
   getCurrentProject: () => {
@@ -305,6 +315,20 @@ const createCurrentProjectSlice: StateCreator<
       })
     );
   },
+
+  restoreProjectFromCheckpoint: (checkpoint) => {
+    const project = get().projects[checkpoint.projectId];
+    if (!project) return;
+    fileHistoryActions.clearAllHistories();
+    const restored = restoreProjectFromCheckpoint(project, checkpoint);
+    const currentFile = get().currentFileId
+      ? restored.files.find((f) => f.id === get().currentFileId)
+      : undefined;
+    set((state) => ({
+      projects: { ...state.projects, [restored.id]: restored },
+      currentFileId: currentFile?.id,
+    }));
+  },
 });
 
 export const useProjectStore = createWithEqualityFn(
@@ -440,6 +464,53 @@ export const useAgentStore = createWithEqualityFn<AgentStore>()(
       setIsLoading: (loading) => set({ isLoading: loading }),
     }),
     { name: "agent", storage: createIDbStorage("agent") }
+  ),
+  shallow
+);
+
+/* Checkpoint store */
+
+interface CheckpointStore {
+  checkpoints: Record<string, ProjectCheckpoint[]>;
+  createCheckpoint: (project: Project, name?: string) => void;
+  deleteCheckpoint: (projectId: string, checkpointId: string) => void;
+  deleteProjectCheckpoints: (projectId: string) => void;
+}
+
+export const useCheckpointStore = createWithEqualityFn(
+  persist<CheckpointStore>(
+    (set) => ({
+      checkpoints: {},
+      createCheckpoint: (project, name) => {
+        const checkpoint = createProjectCheckpoint(project, name);
+        set((state) => {
+          const projectCheckpoints = state.checkpoints[project.id] ?? [];
+          return {
+            checkpoints: {
+              ...state.checkpoints,
+              [project.id]: [checkpoint, ...projectCheckpoints],
+            },
+          };
+        });
+      },
+      deleteCheckpoint: (projectId, checkpointId) => {
+        set((state) => {
+          const checkpoints = state.checkpoints[projectId];
+          if (!checkpoints) return state;
+          const filtered = checkpoints.filter((c) => c.id !== checkpointId);
+          return {
+            checkpoints: { ...state.checkpoints, [projectId]: filtered },
+          };
+        });
+      },
+      deleteProjectCheckpoints: (projectId) => {
+        set((state) => {
+          const { [projectId]: _, ...rest } = state.checkpoints;
+          return { checkpoints: rest };
+        });
+      },
+    }),
+    { name: "checkpoints", storage: createIDbStorage("checkpoints") }
   ),
   shallow
 );
