@@ -293,7 +293,6 @@ const DropdownComponent = ({
     const newName = createVariableName({
       prefix: "operation",
       prev: useProjectStore.getState().getCurrentProject()?.files || [],
-      indexOffset: 1,
     });
 
     const definedVars = [...getFreeVariableNames(data, context)]

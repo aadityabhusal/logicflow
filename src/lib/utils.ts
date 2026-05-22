@@ -81,7 +81,7 @@ export function isValidIdentifier(name: string): boolean {
 export function createVariableName({
   prefix,
   prev,
-  indexOffset = 0,
+  indexOffset = 1,
 }: {
   prefix: string;
   prev: (IStatement | string | ProjectFile)[];
@@ -230,7 +230,7 @@ export function createProjectFile(
   const prefix = isTrigger ? "trigger" : "operation";
   return {
     id: nanoid(),
-    name: props.name ?? createVariableName({ prefix, prev, indexOffset: 1 }),
+    name: props.name ?? createVariableName({ prefix, prev }),
     createdAt: Date.now(),
     tags: props.tags,
     type: type,
@@ -1329,12 +1329,16 @@ export function getTypeSignature(
         .join(" | ");
 
     case "operation": {
+      const prevNames: string[] = [];
       const params = type.parameters
         .map((p) => {
           const typeSignature = getTypeSignature(p.type, context, maxDepth - 1);
+          const parameterName =
+            p.name || createVariableName({ prefix: "param", prev: prevNames });
+          prevNames.push(parameterName);
           return [
             p.isRest ? "..." : "",
-            p.name || "_",
+            parameterName,
             p.isOptional ? "?" : "",
             ": " + (p.isRest ? `array<${typeSignature}>` : typeSignature),
           ].join("");

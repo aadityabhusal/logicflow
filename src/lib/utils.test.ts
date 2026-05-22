@@ -1457,8 +1457,14 @@ describe("getInverseTypes", () => {
 });
 
 describe("createVariableName", () => {
-  it("returns bare prefix when no prior names exist", () => {
-    expect(createVariableName({ prefix: "param", prev: [] })).toBe("param");
+  it("starts numbering at 1 when no prior names exist", () => {
+    expect(createVariableName({ prefix: "param", prev: [] })).toBe("param1");
+  });
+
+  it("returns bare prefix when indexOffset is 0", () => {
+    expect(
+      createVariableName({ prefix: "param", prev: [], indexOffset: 0 })
+    ).toBe("param");
   });
 
   it("increments index for existing names", () => {
@@ -1639,6 +1645,25 @@ describe("getTypeSignature", () => {
     );
     expect(sig).toContain("=>");
     expect(sig).toContain("string");
+  });
+
+  it("formats unnamed operation parameters with generated param names", () => {
+    const sig = getTypeSignature(
+      {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "number" } },
+          { type: { kind: "string" } },
+          { type: { kind: "boolean" } },
+        ],
+        result: { kind: "undefined" },
+      },
+      ctx
+    );
+
+    expect(sig).toBe(
+      "(param1: number, param2: string, param3: boolean) => undefined"
+    );
   });
 
   it("formats reference type signature as name", () => {

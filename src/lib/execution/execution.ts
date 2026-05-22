@@ -33,6 +33,7 @@ import {
   getTypeSignature,
   getRawValueFromData,
   createRuntimeError,
+  getFreeVariableNames,
 } from "@/lib/utils";
 import { OperationListItem, Context, Thenable } from "./types";
 import {
@@ -175,8 +176,23 @@ function getMemoKey(
   context: Context
 ) {
   if (!context.operationCache || !operation.id) return;
-  if (!inputs.every((p) => isMemoizableDataType(p.type))) return;
-  const serializedInputs = inputs.map((p) => serializeMemoInput(p, context));
+  const allInputs = [...inputs];
+  const parameters = operation.parameters;
+  if ("statements" in operation && Array.isArray(parameters)) {
+    const paramNames = new Set(parameters.map((p) => p.name));
+    const opData = createData({
+      id: operation.id,
+      type: { kind: "operation", parameters, result: { kind: "unknown" } },
+      value: { statements: operation.statements, parameters: [] },
+    });
+    for (const name of getFreeVariableNames(opData, context)) {
+      if (!paramNames.has(name)) {
+        allInputs.push(context.variables.get(name)!.data);
+      }
+    }
+  }
+  if (!allInputs.every((p) => isMemoizableDataType(p.type))) return;
+  const serializedInputs = allInputs.map((p) => serializeMemoInput(p, context));
   return operation.id + ":" + JSON.stringify(serializedInputs);
 }
 
@@ -347,13 +363,13 @@ function executeDataValue(
         })
       );
     });
-    const existing = context.getInstance(data.value.instanceId);
-    if (existing) return args;
     return [
       (context.isSync
         ? createThenable(args as IData[])
         : Promise.all(args)
       ).then((result) => {
+        const existing = context.getInstance(data.value.instanceId);
+        if (existing && data.value.constructorArgs.length === 0) return;
         const instance = createInstance(data.value.className, result, context);
         context.setInstance(data.value.instanceId, {
           instance,

@@ -13,6 +13,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useState,
 } from "react";
 import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
@@ -43,7 +44,10 @@ export default function Project() {
   }, [projectFiles, currentFileId]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const rootPath = useMemo(() => [], []);
-  useHotkeys(useCustomHotkeys(), []);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<string | undefined>(
+    "operations"
+  );
+  useHotkeys(useCustomHotkeys(setActiveSidebarTab), []);
   const operationRef = useClickOutside(() => {
     setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));
   });
@@ -153,7 +157,10 @@ export default function Project() {
     <div className="flex flex-col h-dvh">
       <Header />
       <div className="flex flex-col-reverse md:flex-row flex-1 min-h-0 relative">
-        <SidebarTabs />
+        <SidebarTabs
+          activeTab={activeSidebarTab}
+          setActiveTab={setActiveSidebarTab}
+        />
         <div
           className={
             "relative flex-1 overflow-y-auto scroll flex flex-col pr-2"

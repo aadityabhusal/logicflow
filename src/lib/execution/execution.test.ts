@@ -3165,6 +3165,30 @@ describe("memoization", () => {
     expect(result2.value).toBe(0);
   });
 
+  it("keys memoized operations by referenced outer variables", async () => {
+    const ctx = createTestContext({
+      isSync: false,
+      operationCache: new Map(),
+    });
+    ctx.variables.set("outer", { data: testNumber(1) });
+
+    const operation = testOperation(
+      [numberStatement(0, "item")],
+      [createStatement({ data: testReference("outer", "outer-ref") })],
+      "closure"
+    );
+    operation.id = "closure-op";
+    const opItem = operationToListItem(operation, "closure");
+
+    const result1 = await executeOperation(opItem, testNumber(1), [], ctx);
+    ctx.variables.set("outer", { data: testNumber(2) });
+    const result2 = await executeOperation(opItem, testNumber(1), [], ctx);
+
+    expect(result1.value).toBe(1);
+    expect(result2.value).toBe(2);
+    expect(ctx.operationCache?.size).toBe(2);
+  });
+
   it("caches along sync path", () => {
     const ctx = createTestContext({ operationCache: new Map() });
 
@@ -4019,6 +4043,56 @@ describe("return stays local in callbacks", () => {
 });
 
 describe("cached instance preservation across re-executions", () => {
+  it("recreates Request instance when constructor URL changes", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const requestType: InstanceDataType = {
+      kind: "instance",
+      className: "Request",
+      constructorArgs: resolveConstructorArgs(
+        InstanceTypes.Request.constructorArgs
+      ),
+    };
+    const requestUrl = stringStatement("https://example.com/old?name=User");
+    const requestData = createData({
+      type: requestType,
+      value: {
+        className: "Request",
+        instanceId: "request-id",
+        constructorArgs: [requestUrl],
+      },
+    });
+    const getPathOp = createData<OperationType>({
+      id: "get-path-op",
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Request",
+              constructorArgs: [],
+            },
+          },
+        ],
+        result: { kind: "string" },
+      },
+      value: { name: "getPath", parameters: [], statements: [] },
+    });
+    const statement = createStatement({
+      data: requestData,
+      operations: [getPathOp],
+    });
+
+    expect((await executeStatement(statement, ctx)).value).toBe("/old");
+
+    requestUrl.data = testString("https://example.com/new?name=User");
+
+    expect((await executeStatement(statement, ctx)).value).toBe("/new");
+    expect(
+      (ctx.getInstance("request-id")?.instance as Request | undefined)?.url
+    ).toBe("https://example.com/new?name=User");
+  });
+
   it("resolves await from cached Promise when instances are seeded from prior cache", async () => {
     // Create a resolved Promise simulating fetch's return value
     const response = new Response("ok");
@@ -4113,7 +4187,7 @@ describe("cached instance preservation across re-executions", () => {
     }
   });
 
-  it("preserves existing instance while still setting constructor arg contexts", () => {
+  it("recreates constructor-arg instance while setting constructor arg contexts", () => {
     const ctx = createTestContext();
     const instanceId = "cached-url-id";
     const instanceType: InstanceDataType = {
@@ -4122,7 +4196,7 @@ describe("cached instance preservation across re-executions", () => {
       constructorArgs: [{ type: { kind: "string" } }],
     };
     const url = new URL("https://cached.example/");
-    const urlArg = stringStatement("https://constructor.example/");
+    const urlArg = stringStatement("https://cached.example/");
     const urlData = createData({
       type: instanceType,
       value: {
@@ -4132,11 +4206,14 @@ describe("cached instance preservation across re-executions", () => {
       },
     });
 
-    ctx.setInstance(instanceId, { instance: url, type: instanceType });
+    ctx.setInstance(instanceId, {
+      instance: url,
+      type: instanceType,
+    });
 
     executeStatementSync(createStatement({ data: urlData }), ctx);
 
-    expect(ctx.getInstance(instanceId)?.instance).toBe(url);
+    expect(ctx.getInstance(instanceId)?.instance).not.toBe(url);
     expect(ctx.getContext(urlArg.id).expectedType).toEqual({ kind: "string" });
   });
 });

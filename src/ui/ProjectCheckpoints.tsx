@@ -9,6 +9,7 @@ import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { ProjectCheckpoint } from "@/lib/types";
 import { IconButton } from "./IconButton";
+import { NoteText } from "./NoteText";
 
 export function ProjectCheckpoints() {
   const navigate = useNavigate();
@@ -79,9 +80,7 @@ export function ProjectCheckpoints() {
         />
       </div>
       {projectCheckpoints.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          No checkpoints yet. Save this project state to create one.
-        </p>
+        <NoteText center>No checkpoints yet.</NoteText>
       ) : (
         <div className="flex flex-col gap-1">
           {projectCheckpoints.map((cp) => (

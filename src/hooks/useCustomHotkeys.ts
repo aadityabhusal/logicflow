@@ -1,11 +1,8 @@
 import { handleNavigation } from "@/lib/navigation";
-import {
-  useProjectStore,
-  useNavigationStore,
-  useUiConfigStore,
-} from "@/lib/store";
+import { useProjectStore, useNavigationStore } from "@/lib/store";
 import { NavigationDirection, NavigationModifier } from "@/lib/types";
 import { HotkeyItem } from "@mantine/hooks";
+import { Dispatch, SetStateAction } from "react";
 
 const SIDEBAR_TABS = [
   { value: "operations", key: "ctrl+shift+1" },
@@ -16,7 +13,9 @@ const SIDEBAR_TABS = [
     : []),
 ] as const;
 
-export function useCustomHotkeys(): HotkeyItem[] {
+export function useCustomHotkeys(
+  setActiveTab: Dispatch<SetStateAction<string | undefined>>
+): HotkeyItem[] {
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
 
@@ -27,7 +26,6 @@ export function useCustomHotkeys(): HotkeyItem[] {
   );
   const setNavigation = useNavigationStore((state) => state.setNavigation);
   const entities = useNavigationStore((state) => state.navigationEntities);
-  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
 
   const hotKeys: {
     key: string;
@@ -55,10 +53,7 @@ export function useCustomHotkeys(): HotkeyItem[] {
     ...(SIDEBAR_TABS.map(({ value, key }) => [
       key,
       () => {
-        setUiConfig((s) => {
-          const activeTab = s.sidebar?.activeTab === value ? undefined : value;
-          return { sidebar: { ...s.sidebar, activeTab } };
-        });
+        setActiveTab((activeTab) => (activeTab === value ? undefined : value));
       },
       { preventDefault: true },
     ]) as HotkeyItem[]),

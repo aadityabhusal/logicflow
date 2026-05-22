@@ -38,25 +38,23 @@ const TABS = [
   { value: "deployment", label: "Deploy", Icon: FaRocket },
   { value: "settings", label: "Settings", Icon: FaGear },
 ];
-function SidebarTabsComponent() {
+
+function SidebarTabsComponent({
+  activeTab,
+  setActiveTab,
+}: {
+  activeTab?: string;
+  setActiveTab: (activeTab: string | undefined) => void;
+}) {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
-  const { activeTab, panelWidth, panelHeight, setUiConfig } = useUiConfigStore(
-    (s) => ({
-      activeTab: s.sidebar.activeTab,
-      panelWidth: s.sidebar.activeTab ? s.sidebar.width || 300 : 0,
-      panelHeight: s.sidebar.activeTab ? s.sidebar.height || 300 : 0,
-      setUiConfig: s.setUiConfig,
-    })
-  );
+  const { panelWidth, panelHeight, setUiConfig } = useUiConfigStore((s) => ({
+    panelWidth: activeTab ? s.sidebar.width || 300 : 0,
+    panelHeight: activeTab ? s.sidebar.height || 300 : 0,
+    setUiConfig: s.setUiConfig,
+  }));
 
   const handleTabChange = (value: string | null) => {
-    setUiConfig((s) => ({
-      sidebar: {
-        ...(s.sidebar || {}),
-        activeTab:
-          value === s.sidebar?.activeTab ? undefined : (value ?? undefined),
-      },
-    }));
+    setActiveTab(value === activeTab ? undefined : (value ?? undefined));
   };
 
   return (

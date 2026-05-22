@@ -363,7 +363,6 @@ export const waitForHydration = () => {
 
 type UiConfigStore = {
   sidebar: {
-    activeTab?: string;
     width?: number;
     height?: number;
     lockedIds?: { [operationId: string]: string };
@@ -379,7 +378,6 @@ export const useUiConfigStore = createWithEqualityFn(
   persist<UiConfigStore>(
     (set) => ({
       sidebar: {
-        activeTab: "operations",
         width: 200,
         height: 150,
         lockedIds: {},
