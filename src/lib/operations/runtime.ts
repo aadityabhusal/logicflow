@@ -277,6 +277,10 @@ export const getHash = (url: URL): string => url.hash;
 
 export const getStatus = (response: Response): number => response.status;
 
+// ===== Error Operations =====
+
+export const getMessage = (error: Error): string => error.message;
+
 // ===== Immutable Update Operations =====
 
 type PathSegment = string | number;

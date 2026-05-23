@@ -180,6 +180,7 @@ export const useExecutionResultsStore =
             results: new Map(),
             instances: new Map(),
             rootContext,
+            runVersion: state.runVersion + 1,
           };
         }),
       removeResult: (entityId) => {

@@ -180,6 +180,11 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   { name: "toString", parameters: [{ type: { kind: "unknown" } }] },
   { name: "toNumber", parameters: [{ type: { kind: "string" } }] },
   {
+    name: "getMessage",
+    parameters: [{ type: { kind: "error", errorType: "custom_error" } }],
+    expectedType: { kind: "string" },
+  },
+  {
     name: "fetch",
     parameters: [
       { type: { kind: "string" } },
@@ -495,10 +500,16 @@ const promiseOperations: OperationListItem[] = [
         type: {
           kind: "operation",
           parameters: [{ name: "reason", type: { kind: "unknown" } }],
-          result: { kind: "undefined" },
+          result: { kind: "unknown" },
         },
       },
     ],
+    expectedType: {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: { kind: "unknown" },
+    },
     handler: (context, promiseData, errorCallback) => {
       try {
         const promiseValue = getRawValueFromData(

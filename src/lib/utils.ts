@@ -409,7 +409,7 @@ export function createContextVariable(
   result: IData,
   parameters?: OperationType["parameters"]
 ): MapValue<Context["variables"]> | undefined {
-  if (!statement.name || isDataOfType(result, "error")) return undefined;
+  if (!statement.name || isFatalError(result)) return undefined;
   const paramInfo = parameters?.find((param) => param.name === statement.name);
   let resultType = result.type;
   if (paramInfo?.isOptional) {
@@ -1556,7 +1556,11 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
     const hasPrefix = Object.values(ErrorTypesData).some((t) =>
       reason.startsWith(`${t.name}: `)
     );
-    return new Error(hasPrefix ? reason : `${prefix}${reason}`);
+    return new Error(
+      data.type.errorType === "custom_error" || hasPrefix
+        ? reason
+        : `${prefix}${reason}`
+    );
   } else if (isDataOfType(data, "instance")) {
     return context.getInstance(data.value.instanceId)?.instance;
   } else if (isDataOfType(data, "operation")) {

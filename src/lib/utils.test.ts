@@ -2901,7 +2901,7 @@ describe("createContextVariable", () => {
     expect(result).toBeUndefined();
   });
 
-  it("returns undefined when result is error", () => {
+  it("returns undefined when result is fatal error", () => {
     const ctx = createTestContext();
     const stmt = stringStatement("hello", "myVar");
     const result = createContextVariable(
@@ -2910,6 +2910,19 @@ describe("createContextVariable", () => {
       testError("broken", "type_error")
     );
     expect(result).toBeUndefined();
+  });
+
+  it("creates variable when result is non-fatal error data", () => {
+    const ctx = createTestContext();
+    const stmt = stringStatement("hello", "myError");
+    const result = createContextVariable(
+      stmt,
+      ctx,
+      testError("broken", "custom_error")
+    );
+    expect(result).toBeDefined();
+    expect(result?.data.type.kind).toBe("error");
+    expect(result?.data.id).toBe(stmt.id);
   });
 
   it("creates variable with data from result", () => {
@@ -3562,6 +3575,25 @@ describe("resolveConstructorArgs", () => {
 });
 
 describe("getDataDropdownList", () => {
+  it("shows variables with non-fatal error data", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("myError", {
+      data: testError("broken", "custom_error"),
+    });
+
+    const groups = getDataDropdownList({
+      data: createData({ type: { kind: "error", errorType: "custom_error" } }),
+      onSelect: vi.fn(),
+      context: ctx,
+    });
+    const option = groups
+      .flatMap(([, options]) => options)
+      .find((item) => item.value === "myError");
+
+    expect(option).toBeDefined();
+    expect(option?.secondaryLabel).toBe("error");
+  });
+
   it("shows aliased labels for package operation variables", () => {
     const ctx = createTestContext({ packageAliases: { faker: "f" } });
     ctx.variables.set("faker.word.words", {

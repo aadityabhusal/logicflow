@@ -20,7 +20,12 @@ vi.mock("../store", () => ({
         files: [],
         dependencies: {
           npm: [
-            { name: "rowguard", version: "latest", exports: [], namespace: "Rg" },
+            {
+              name: "rowguard",
+              version: "latest",
+              exports: [],
+              namespace: "Rg",
+            },
             { name: "wretch", version: "latest", exports: [] },
           ],
         },
@@ -41,6 +46,7 @@ describe("execution store cache invalidation", () => {
 
   it("clears shouldCacheResult entries and memoized operation calls", () => {
     const cachedResult = createData({ value: 42 });
+    const initialRunVersion = useExecutionResultsStore.getState().runVersion;
 
     useExecutionResultsStore.setState((state) => ({
       results: new Map([
@@ -56,12 +62,13 @@ describe("execution store cache invalidation", () => {
 
     useExecutionResultsStore.getState().removeAll();
 
-    const { results, contexts, instances, rootContext } =
+    const { results, contexts, instances, rootContext, runVersion } =
       useExecutionResultsStore.getState();
     expect(results.size).toBe(0);
     expect(contexts.size).toBe(0);
     expect(instances.size).toBe(0);
     expect(rootContext.operationCache?.size).toBe(0);
+    expect(runVersion).toBe(initialRunVersion + 1);
   });
 
   it("clears cache for rerun without clearing execution contexts", () => {
@@ -75,13 +82,18 @@ describe("execution store cache invalidation", () => {
         ["cached-fetch", { data: cachedResult, shouldCacheResult: true }],
         ["normal-result", { data: normalResult }],
       ]),
-      contexts: new Map([[
-        "skipped-branch",
-        {
-          ...state.rootContext,
-          skipExecution: { reason: "Unreachable branch", kind: "unreachable" },
-        },
-      ]]),
+      contexts: new Map([
+        [
+          "skipped-branch",
+          {
+            ...state.rootContext,
+            skipExecution: {
+              reason: "Unreachable branch",
+              kind: "unreachable",
+            },
+          },
+        ],
+      ]),
       instances: new Map([
         ["instance", { instance: {}, type: { kind: "unknown" } }],
       ]),
@@ -163,10 +175,12 @@ describe("getContext merges rootContext.packageAliases", () => {
       ...state.rootContext,
       scopeId: "child",
       packageAliases: { child: "override" },
-      variables: new Map<string, Variable>([["x", { data: createData({ type: { kind: "string" } }) }]]),
+      variables: new Map<string, Variable>([
+        ["x", { data: createData({ type: { kind: "string" } }) }],
+      ]),
     };
 
-    useExecutionResultsStore.setState((s) => ({
+    useExecutionResultsStore.setState(() => ({
       contexts: new Map([["entity-1", childContext]]),
     }));
 
@@ -188,9 +202,7 @@ describe("getContext merges rootContext.packageAliases", () => {
       },
     }));
 
-    const ctx = useExecutionResultsStore
-      .getState()
-      .getContext("nonexistent");
+    const ctx = useExecutionResultsStore.getState().getContext("nonexistent");
     expect(ctx.packageAliases).toEqual({ custom: "val" });
   });
 });

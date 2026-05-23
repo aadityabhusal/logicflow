@@ -18,9 +18,12 @@ import {
   DeploymentTarget,
   DeploymentStatus,
   DeploymentRecord,
+  OperationType,
+  DataValue,
 } from "@/lib/types";
 import { createVariableName } from "@/lib/utils";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { deployToPlatform } from "@/lib/deployment/api/deploy";
 import { DeploymentProgress } from "@/lib/types";
 import { IconButton } from "./IconButton";
@@ -28,6 +31,7 @@ import { NoteText } from "./NoteText";
 import { formatRelativeTime } from "@/lib/deployment/utils";
 import { Link } from "react-router";
 import { capitalize } from "remeda";
+import { walkData } from "@/lib/walk";
 import { PLATFORMS } from "@/lib/data";
 
 type DeploymentState = {
@@ -35,6 +39,27 @@ type DeploymentState = {
   progress?: DeploymentProgress;
   error?: string;
 };
+
+function replaceEnvRefs(
+  content: { type: OperationType; value: DataValue<OperationType> },
+  oldKey: string,
+  newKey: string
+) {
+  const clone = structuredClone(content);
+  walkData(
+    { id: "_", type: clone.type, value: clone.value },
+    {
+      onReference: (data) => {
+        if (data.type.isEnv && data.value.name === oldKey) {
+          data.type.name = newKey;
+          data.value.name = newKey;
+        }
+      },
+    },
+    { nestedOperations: true, operationCalls: true }
+  );
+  return clone;
+}
 
 function DeploymentPanelComponent() {
   const project = useProjectStore((s) => s.getCurrentProject());
@@ -171,6 +196,8 @@ function DeploymentPanelComponent() {
       prev: envVars.map((v) => v.key),
     });
     handleUpdateDeployment({ envVariables: [...envVars, { key, value: "" }] });
+    executionWorkerClient.reset();
+    useExecutionResultsStore.getState().clearCache();
   };
 
   const handleUpdateEnvVar = (
@@ -194,12 +221,28 @@ function DeploymentPanelComponent() {
     const updated = [...envVars];
     updated[index] = { ...updated[index], ...updates };
     handleUpdateDeployment({ envVariables: updated });
+
+    const oldKey = deployment.envVariables[index]?.key;
+    const newKey = updates.key ?? "";
+    if (newKey && oldKey && newKey !== oldKey && project) {
+      const updatedFiles = project.files.map((file) => {
+        if (file.type !== "operation") return file;
+        const newContent = replaceEnvRefs(file.content, oldKey, newKey);
+        return { ...file, content: newContent };
+      });
+      updateProject(project.id, { files: updatedFiles });
+    }
+
+    executionWorkerClient.reset();
+    useExecutionResultsStore.getState().clearCache();
   };
 
   const handleRemoveEnvVar = (index: number) => {
     handleUpdateDeployment({
       envVariables: deployment.envVariables.filter((_, i) => i !== index),
     });
+    executionWorkerClient.reset();
+    useExecutionResultsStore.getState().clearCache();
   };
 
   return (

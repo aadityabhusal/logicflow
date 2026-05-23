@@ -246,15 +246,15 @@ function getStatementEntities(
     (isDataOfType(statement.data, "condition") &&
       isBlockCondition(statement.data.value));
   const entities: NavigationEntity[] = [];
-  if (statement.name) {
-    entities.push({ id: `${statement.id}_name`, depth, ...parent });
-  }
   if (allowVariable) {
+    entities.push({ id: `${statement.id}_equals`, depth, ...parent });
     if (!disableEquals) {
       entities.push({ id: `${statement.id}_return`, depth, ...parent });
       entities.push({ id: `${statement.id}_add`, depth, ...parent });
     }
-    entities.push({ id: `${statement.id}_equals`, depth, ...parent });
+  }
+  if (statement.name) {
+    entities.push({ id: `${statement.id}_name`, depth, ...parent });
   }
   const dataId = statement.data.id;
   entities.push({ id: dataId, depth, ...parent });

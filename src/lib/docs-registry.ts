@@ -14,37 +14,37 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
   },
   wretch: {
     urlPattern: (name) =>
-      `https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html#${name}`,
+      `https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html#${name.toLowerCase()}`,
     displayName: "Wretch",
   },
   wretchResponseChain: {
     urlPattern: (name) =>
-      `https://elbywan.github.io/wretch/api/interfaces/index.WretchResponseChain.html#${name}`,
+      `https://elbywan.github.io/wretch/api/interfaces/index.WretchResponseChain.html#${name.toLowerCase()}`,
     displayName: "WretchResponseChain",
   },
   rowguard: {
     urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/modules.html#${name}`,
+      `https://supabase-community.github.io/rowguard/modules.html#${name.toLowerCase()}`,
     displayName: "Rowguard",
   },
   rowguardColumnBuilder: {
     urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/classes/ColumnBuilder.html#${name}`,
+      `https://supabase-community.github.io/rowguard/classes/ColumnBuilder.html#${name.toLowerCase()}`,
     displayName: "Rowguard ColumnBuilder",
   },
   rowguardConditionChain: {
     urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/classes/ConditionChain.html#${name}`,
+      `https://supabase-community.github.io/rowguard/classes/ConditionChain.html#${name.toLowerCase()}`,
     displayName: "Rowguard ConditionChain",
   },
   rowguardPolicyBuilder: {
     urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/classes/PolicyBuilder.html#${name}`,
+      `https://supabase-community.github.io/rowguard/classes/PolicyBuilder.html#${name.toLowerCase()}`,
     displayName: "Rowguard PolicyBuilder",
   },
   rowguardSubqueryBuilder: {
     urlPattern: (name) =>
-      `https://supabase-community.github.io/rowguard/classes/SubqueryBuilder.html#${name}`,
+      `https://supabase-community.github.io/rowguard/classes/SubqueryBuilder.html#${name.toLowerCase()}`,
     displayName: "Rowguard SubqueryBuilder",
   },
   faker: {
@@ -74,7 +74,7 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
       const fnName = name.includes(".")
         ? name.slice(name.indexOf(".") + 1)
         : name;
-      return `https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md#${fnName.toLowerCase()}`;
+      return `https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md#${fnName}`;
     },
     displayName: "FFmpeg",
     useRawName: true,
@@ -87,6 +87,6 @@ export function getDocsUrl(source?: OperationSource, operationName?: string) {
   if (!config) return undefined;
   const name = config.useRawName
     ? operationName
-    : getActualOperationName(operationName).toLowerCase();
+    : getActualOperationName(operationName);
   return config.urlPattern(name);
 }
