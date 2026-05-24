@@ -1,6 +1,6 @@
 # Introduction
 
-Logicflow is a block-based visual programming environment that helps you build programming logic by chaining operations on data. Unlike node-based tools, it provides a structured, text-like editor where you can visually create programming logic and see real-time output results.
+Logicflow is a live block-based visual programming environment built on the principles of data transformation via functional pipes. It provides a structured editor for creating programming logic by chaining operations, with real-time execution, code generation, and one-click deployment.
 
 ## The Problem
 

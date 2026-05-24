@@ -160,6 +160,18 @@ Wraps the Fetch API Response object for handling HTTP responses.
 
 **Operations**: `json`, `text`, `getStatus`
 
+### Request
+
+Wraps JavaScript's native Request object for creating HTTP requests with configuration.
+
+**Value**: A Request instance created from a URL string and optional options dictionary
+
+**Constructor parameters**:
+- `url` (string) — The request URL
+- `options` (dictionary, optional) — Request options including method, headers, body
+
+When options include a `body` that is an object, it is automatically JSON-stringified before creating the Request instance.
+
 ### HttpRequest
 
 Received by triggered operations when deployed as API endpoints. Contains the incoming HTTP request data.

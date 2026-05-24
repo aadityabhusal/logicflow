@@ -7,8 +7,12 @@ Logicflow makes building programs visual and intuitive. This guide will walk you
 When you first open Logicflow, you'll see the Dashboard where all your projects are managed.
 
 1. Click the **Create project** button
-2. Your new project is created with a default "main" file
-3. The project opens automatically in the editor
+2. Your new project is created with a **starter template** containing two operation files:
+
+   - **`greet`** — A simple operation that takes a `name` string and returns `"Hello! [name]"`
+   - **`main`** — An HTTP trigger (GET method) that extracts a `name` query parameter from an incoming request and calls the `greet` operation with it
+
+3. The project opens automatically in the editor with the `main` file selected
 
 ![Dashboard with 'Create project' button and project list](/docs-images/getting-started-01.png)
 
@@ -60,4 +64,5 @@ Every statement executes immediately as you build. Click any statement to see it
 - Try creating larger programs with complex logic
 - Master keyboard navigation — see [Keyboard Shortcuts](#keyboard-shortcuts)
 - Create a **trigger** operation to expose it as an HTTP endpoint. See [Deployment](#deployment) for how to configure and deploy triggers.
+- Save your project state with **checkpoints** to safely revert changes later. See [Project Checkpoints](#project-checkpoints) for details.
 - View the generated code for your operation in the Code panel

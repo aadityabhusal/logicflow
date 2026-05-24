@@ -104,3 +104,15 @@ date-fns operations chain from a Date instance (or string for parsing functions)
 - **`eachDayOfInterval`** — Generate an array of dates within an interval (Date array)
 
 For the complete list of all 243 operations, see the [date-fns API documentation](https://date-fns.org/v4.1.0/docs/Getting-Started).
+
+## Package Aliases
+
+You can assign custom namespace aliases to packages. An alias lets you reference a package by a shorter or more convenient name in your operations.
+
+### Configuring Aliases
+
+In the **Settings** tab, enabled packages show an alias input field next to their toggle. Enter any valid identifier to set the alias, or clear it to remove.
+
+For example, aliasing the `date-fns` package to `dt` means date-fns operations can be referenced as `dt.format`, `dt.addDays`, etc.
+
+Aliases are stored in the project's dependency configuration and persist across sessions. Changing an alias triggers a full re-execution of your project to pick up the new namespace.

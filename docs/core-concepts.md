@@ -22,7 +22,7 @@ Every statement has three parts:
 
 ## Operations
 
-Operations transform data from one type to another. They're filtered based on what data type they accept as their first parameter. Operations can optionally accept additional parameters beyond the data being transformed:
+Operations transform data from one type to another. They're filtered based on what data type they accept as their first parameter. Operations can optionally accept additional parameters beyond the data being transformed, including optional parameters and **rest parameters** (variadic, collecting remaining arguments into an array):
 
 ![Operations transforming data](/docs-images/core-concepts-03.gif)
 
@@ -79,3 +79,17 @@ Logicflow maintains a context that tracks all available variables and their curr
 Conditional logic is created using the `thenElse` operation on boolean data. This produces a condition type that evaluates the boolean and executes only the matching branch. The `and` and `or` operations also support conditional execution with lazy evaluation.
 
 When combined with type guard operations like `isTypeOf` or `isString`, Logicflow automatically narrows the type in each branch—so in the true branch after `isString`, the data is known to be a string. See [Type Narrowing](#type-narrowing) for details.
+
+## Return Statements
+
+A statement can be marked as a **return statement** by selecting "return" from the control flow selector on the statement. A return statement stops execution at that point and produces the statement's result as the output of the current operation.
+
+All subsequent statements in the same scope are skipped once a return executes. Return statements can appear anywhere — inside conditional branches, at the top level, or as the sole statement. If a return executes inside a conditional branch (e.g., in the true branch of a `thenElse`), the entire operation returns and any remaining branches are skipped.
+
+In the generated TypeScript/JavaScript code, return statements render as actual `return` keywords with the chained data.
+
+## Rest Parameters
+
+Some operations accept a **rest parameter**, which collects any extra arguments into an array. This works like JavaScript's `...rest` syntax — after the non-rest parameters are matched, all remaining arguments are bundled together and passed to the operation.
+
+Rest parameters are used by operations like `pipe` (takes any number of operations to chain), `conform` (applies multiple options at once), and `push` (adds variadic elements to a tuple), as well as several Remeda operations.

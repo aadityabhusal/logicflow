@@ -8,10 +8,46 @@ The sidebar provides access to different tools through tabs:
 - **Details** — Shows type information and execution results for the selected data or operation call.
 - **Code** — Displays the generated TypeScript/JavaScript code for the current operation. See [Code Generation](#code-generation).
 - **Deploy** — Configure deployment settings for your project. Add platforms (Vercel or Supabase), manage API tokens and environment variables, and deploy trigger operations as live HTTP endpoints. See [Deployment](#deployment) for details.
+- **Settings** — Configure project-wide settings including project name, package dependencies, UI preferences, and **project checkpoints**.
 
 Click a tab to open it. Click the same tab again to close it and collapse the sidebar. See [Keyboard Shortcuts](#keyboard-shortcuts) for the full list.
 
 The Details panel can be locked to a specific item using the lock button, so it stays visible even when navigating elsewhere.
+
+## Project Checkpoints
+
+Checkpoints let you save and restore snapshots of your entire project. They're manual safety points you can return to if you need to revert changes.
+
+Checkpoints are managed in the **Settings** tab of the sidebar, under the project name.
+
+### Creating a Checkpoint
+
+1. Open the **Settings** tab
+2. Enter an optional name in the checkpoint input
+3. Click the save button
+
+A checkpoint captures:
+- All operation files and their contents
+- Project settings (name, dependencies)
+- Deployment configuration (platforms, environment variables)
+
+Checkpoints do **not** capture the project ID or creation date — those are preserved when restoring.
+
+### Restoring a Checkpoint
+
+Click the restore icon next to a checkpoint to see a confirmation popover. Restoring overwrites your current project with the checkpoint snapshot.
+
+If the file you were viewing exists in the restored checkpoint, you'll stay on it. If it doesn't exist, the editor shows an empty state and you can select a file from the sidebar.
+
+### Deleting a Checkpoint
+
+Click the delete icon next to a checkpoint to see a confirmation popover. Deleting removes only that checkpoint.
+
+All checkpoints for a project are also cleaned up when the project itself is deleted.
+
+### Storage
+
+Checkpoints are stored locally in your browser's IndexedDB. They are not synced across devices or to any cloud service.
 
 ## Copy and Paste
 
@@ -133,6 +169,37 @@ Operations can call themselves directly or indirectly through other operations. 
 Logicflow tracks call depth on each invocation. If the depth exceeds the maximum allowed limit (**7500**), execution stops and returns a runtime error: `Maximum recursion depth (7500) exceeded`.
 
 For async operations, the engine yields to the browser periodically during recursive execution to keep the UI responsive.
+
+## Background Execution
+
+All real-time execution runs on a background thread, keeping the UI responsive even during complex or long-running operations. You can continue editing and navigating while execution is in progress.
+
+## Operation Caching
+
+Logicflow caches operation results to avoid redundant computation. When an operation is called with the same inputs it has seen before, the cached result is returned immediately without re-executing the operation.
+
+### Clearing the Cache
+
+The **"Clear cache and run"** button (circular arrow icon) in the editor header clears cached results and forces a full re-execution of all statements. Use this when you want to start fresh after making changes that depend on external state or side effects.
+
+## Mobile Layout
+
+Logicflow adapts its interface for smaller screens (below **768px** width) to remain usable on mobile devices and narrow viewports.
+
+### Layout Changes
+
+When the screen width drops below 768px:
+
+- The **sidebar** moves below the editor canvas (bottom of the screen)
+- **Resizable panels** adjust to vertical orientation
+- **Keyboard navigation** may be disabled to avoid conflicts with on-screen keyboards
+
+### Mobile Settings
+
+Two additional settings appear in the Settings panel on mobile devices:
+
+- **Disable keyboard focus** — Disables Logicflow's keyboard navigation system. Useful when using an on-screen keyboard where arrow keys would otherwise navigate between elements instead of moving the text cursor.
+- **Disable code wrapping** — When enabled, the layout stays in desktop mode regardless of screen width. This treats the mobile browser as if it were a desktop viewport.
 
 ## External Documentation Links
 

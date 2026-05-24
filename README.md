@@ -1,69 +1,145 @@
 # Logicflow
 
-Logicflow is a block-based structured editor built on the principle that **all programming is operations done on data**. It provides a visual interface for creating programming logic through a series of data transformations through chained operations along with real-time execution and code generation capabilities.
+Logicflow is a live block-based visual programming environment built on the principles of data transformation via functional pipes. It provides a structured editor for creating programming logic by chaining operations, with real-time execution, code generation, and one-click deployment.
 
 See [documentation](https://logicflow.dev/docs) for more details.
 
-## Editor Features
+## Key Features
 
-### Core Features
+### Core Editor
 
 - **Simple mental model**: All programming is Operations chained after Data. No additional concepts or syntax to learn.
-- **Block-based editor**: Create logic by chaining operations on data in a structured, text-like linear format.
-- **Real-time execution**: See execution results at each step as you build. Track how data transforms through operation chains.
-- **Skipped execution tracking**: Visual indicators for unreachable code in conditional operations.
-- **Undo/Redo**: Per-file history tracking with Undo(_Cmd/Ctrl+Z_) and Redo(_Cmd/Ctrl+Shift+Z_).
+- **Block-based structured editor**: Create logic by chaining operations on data in a text-like linear format with drag-free, keyboard-driven interaction.
+- **Real-time execution**: See execution results at each step as you build. Track how data transforms through operation chains via Web Worker off-main-thread execution.
+- **Skipped execution tracking**: Visual indicators for unreachable code in conditional operations via type narrowing.
+- **Undo/Redo**: Per-file history tracking (up to 50 levels) with Undo (`Cmd/Ctrl+Z`) and Redo (`Cmd/Ctrl+Shift+Z`).
+- **Project checkpoints**: Snapshot-based versioning — create, restore, and delete named checkpoints at any point.
+
+### Operations & NPM Packages
+
+Logicflow ships with a rich set of operations from popular NPM libraries:
+
+- **Remeda** (`pipe`, `map`, `filter`, `sort`, `groupBy`, `reduce`, `pick`, `omit`, and many more) — functional data transformation utilities.
+- **Immer** (`produce`) — immutable state updates with a mutable API.
+- **Wretch** (`url`, `get`, `post`, `headers`, `json`, `body`, `res`) — type-safe HTTP client as chainable operations.
+- **Rowguard** (`table`, `enableRLS`, `policy`, `useSelect`, `useInsert`) — Row-Level Security policy builder for Supabase.
+- **Faker** (261 operations across 28 namespaces: `person`, `string`, `number`, `date`, `location`, etc.) — fake data generation.
+- **date-fns** (243 operations: `format`, `addDays`, `differenceInDays`, `isBefore`, etc.) — date manipulation.
+- **FFmpeg** (virtual package, no npm dependency) — FFmpeg command builder with operations like `input`, `output`, `videoCodec`, `audioCodec`, `format`, `size`, `fps`, and more.
+
+Packages can be enabled/disabled per project and given custom aliases/namespaces.
+
+### Code Generation
+
+- **Visual ops to TypeScript/JavaScript**: Every program generates clean, readable code using Remeda's functional `pipe()`/`pipeAsync()` patterns.
+- **Operation source mapping**: Correctly maps built-in ops, Remeda ops, instance methods, and user-defined operations to their code equivalents.
+- **Prettier-formatted output**: Generated code is automatically formatted.
+
+### Deployment
+
+- **One-click deployment** to **Vercel** (Edge Functions + Node.js fallback) and **Supabase** (Edge Functions).
+- **HTTP triggers**: Turn any operation into an API endpoint with configurable HTTP methods, CORS settings, and environment variables.
+- **Deployment history**: Track all deployments per project with status, timestamps, and deployment URLs.
+- **Platform config generation**: Auto-generates `vercel.json`, `package.json`, and entrypoint wrappers.
+
+### Type System
+
+- **Primitive types**: `string`, `number`, `boolean`, `undefined`
+- **Complex types**: `array`, `tuple`, `object`, `dictionary` with nested properties
+- **Special types**: `operation`, `condition`, `union` (multiple type options), `error` (with 4 error variants), `reference` (variables), `instance` (Date, URL, Promise, etc.), `unknown`, `never`
+- **Type inference**: Automatic type inference from data values and operations.
+- **Type compatibility checking**: Deep structural type comparison.
+- **Type narrowing**: Context-aware type refinement that automatically skips unreachable branches.
+
+### Error Handling
+
+- **Errors as first-class data**: Error entities can be passed around and handled like any other data.
+- **Error types**: `runtime_error`, `type_error`, `reference_error`, and `custom_error` (user-defined).
+- **Error propagation**: Errors propagate through operation chains automatically.
+- **Error boundaries**: React error boundaries isolate rendering failures to individual entities.
+
+### Project Management & Persistence
+
+- **Dashboard**: Create, open, and delete projects from a project list view.
+- **IndexedDB persistence**: All project data (files, operations, settings, checkpoints) stored locally via IndexedDB (version 3).
+- **Per-project settings**: Package management, layout preferences, and deployment configuration.
+- **Built-in documentation viewer**: Markdown-based documentation accessible from within the app at `/docs`.
+- **Responsive layout**: Adaptive UI with mobile support and line wrapping toggle.
 
 ### Keyboard Navigation
 
 - **Arrow keys**: Navigate between statements and operations
 - **Cmd/Ctrl + Arrow keys**: Jump to statement/operation boundaries
-- **Alt + Arrow keys**: Navigate between operations within a statement
-- **Backspace/Alt + Backspace**: Delete focused element
+- **Alt + Arrow keys**: Cycle through operations within a statement
+- **Backspace / Alt + Backspace**: Delete focused element
 - **Escape**: Close dropdowns and details panel
 - **Ctrl + Space**: Open operation dropdown
 - **Alt + =**: Add operation call
+- **Ctrl + Shift + 1/2/3/4**: Switch sidebar tabs
 
 ### UI Features
 
-- **Syntax highlighting**: Color-coded types (variables, types, methods, strings, numbers, etc.)
-- **Dropdown search**: Searchable operation and data type dropdowns
-- **Details panel**: Side panel showing type information and execution results
+- **Syntax highlighting**: Color-coded types, variables, methods, strings, and numbers via prism-react-renderer.
+- **Searchable dropdowns**: Type-filtered, searchable dropdowns for data types and operations.
+- **Details panel**: Side panel showing type information and execution results with the ability to lock/pin to a specific entity.
+- **Tabbed sidebar**: Operations list, Details, Deployment, and Settings.
+- **Resizable panels**: Drag to resize sidebar and details panels.
 
-## Language Features
+## Getting Started
 
-### Core Entities
+### Prerequisites
 
-**Data**:
+- Node.js (v18 or later)
+- Yarn (package manager)
 
-- Represents a typed data value.
-- Can be a primitive value such as string, number, boolean, undefined, null, etc.
-- Can be a complex value such as array, object, operation, union, reference, error, etc.
+### Installation
 
-**Statement**: A variable statement with operations
+```bash
+# Clone the repository
+git clone https://github.com/your-org/logicflow.git
+cd logicflow
 
-- Has a Data entity followed by a series of chained Operation entities.
-- Can be assigned a `name` to create a variable and be referenced.
+# Install dependencies
+yarn install
 
-**Operation**
+# Copy environment variables
+cp .env.example .env.local
+```
 
-- First-class data entities that contain a series of Statement entities that are executed to produce a result.
-- Can be created either as a file or a Data entity type.
-- Can be called/invoked by either using a `call` operation or by chaining after compatible data and operations.
+### Development
 
-### Type System
+```bash
+# Start the dev server (opens at http://localhost:3000)
+yarn dev
 
-- **Primitive types**: `string`, `number`, `boolean`, `undefined`
-- **Complex types**: `array`, `object` with nested properties
-- **Special types**: `operation`, `union` (multiple type options), `error`, `reference` (variables) etc.
-- **Type inference**: Automatic type inference from data values and operations.
-- **Type compatibility checking**: Deep structural type comparison.
-- **Type narrowing**: Context-aware type refinement based on conditions.
+# Run tests
+yarn test
 
-### Error Handling
+# Run tests with coverage
+yarn test --coverage
 
-- Errors as a first-class data entity that can be handled like any other data.
-- Different error types, including runtime errors, type errors, reference errors, and custom user-defined errors.
+# Build for production
+yarn build
+
+# Preview production build
+yarn preview
+```
+
+### Environment Variables
+
+| Variable             | Description                                |
+| -------------------- | ------------------------------------------ |
+| `VITE_API_PROXY_URL` | API proxy URL for deployment platform APIs |
+
+## Tech Stack
+
+- **UI**: React 18, Mantine, Tailwind CSS v4
+- **State**: Zustand with Immer immutable updates and IndexedDB persistence
+- **Execution**: Web Workers for off-main-thread real-time execution
+- **Validation**: Zod schemas for runtime type safety
+- **Routing**: React Router v7
+- **Testing**: Vitest with jsdom and @testing-library/react
+- **Build**: Vite 6 with TypeScript
 
 ## License
 
