@@ -1,6 +1,8 @@
 # Logicflow
 
-Logicflow is a live block-based visual programming environment built on the principles of data transformation via functional pipes. It provides a structured editor for creating programming logic by chaining operations, with real-time execution, code generation, and one-click deployment.
+Logicflow is a live block-based visual programming environment built on the principles of data transformation via functional pipes. It provides a structure editor for creating programming logic by chaining operations, with real-time execution, code generation, and one-click deployment.
+
+Watch the [demo video](https://youtu.be/qzS_zw1iwS0) for an overview.
 
 See [documentation](https://logicflow.dev/docs) for more details.
 
@@ -9,7 +11,7 @@ See [documentation](https://logicflow.dev/docs) for more details.
 ### Core Editor
 
 - **Simple mental model**: All programming is Operations chained after Data. No additional concepts or syntax to learn.
-- **Block-based structured editor**: Create logic by chaining operations on data in a text-like linear format with drag-free, keyboard-driven interaction.
+- **Block-based structure editor**: Create logic by chaining operations on data in a text-like linear format with drag-free, keyboard-driven interaction.
 - **Real-time execution**: See execution results at each step as you build. Track how data transforms through operation chains via Web Worker off-main-thread execution.
 - **Skipped execution tracking**: Visual indicators for unreachable code in conditional operations via type narrowing.
 - **Undo/Redo**: Per-file history tracking (up to 50 levels) with Undo (`Cmd/Ctrl+Z`) and Redo (`Cmd/Ctrl+Shift+Z`).

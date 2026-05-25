@@ -122,6 +122,15 @@ describe("getFilteredOperations", () => {
     expect(names).toContain("values");
   });
 
+  it("returns operations compatible with error data", () => {
+    const ctx = createTestContext();
+    const data = testError("recoverable", "custom_error");
+    const ops = getFilteredOperations(data, ctx);
+    const names = ops.map((op) => op.name);
+    expect(names).toContain("getMessage");
+    expect(names).toContain("toString");
+  });
+
   it("returns no operations for never type", () => {
     const ctx = createTestContext();
     const data = createData({ type: { kind: "never" } });
@@ -799,6 +808,19 @@ describe("executeOperation", () => {
       expect(result.type.errorType).toBe("custom_error");
       expect(result.value.reason).toBe("recoverable");
     }
+  });
+
+  it("executes getMessage operation for custom_error data", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const op = findBuiltIn("getMessage");
+    const result = await executeOperation(
+      op,
+      testError("recoverable", "custom_error"),
+      [],
+      ctx
+    );
+    expect(result.type.kind).toBe("string");
+    expect(result.value).toBe("recoverable");
   });
 
   it("executes a lazyHandler-based operation (not)", async () => {
@@ -2279,6 +2301,55 @@ describe("slice data-last (pipe-style) usage", () => {
 });
 
 describe("manual Promise instances", () => {
+  it("allows catch callbacks to return error data", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const promiseType: InstanceDataType = {
+      kind: "instance",
+      className: "Promise",
+      constructorArgs: [],
+      result: { kind: "string" },
+    };
+    const promiseData = createData({ type: promiseType });
+    expect(isDataOfType(promiseData, "instance")).toBe(true);
+    if (!isDataOfType(promiseData, "instance")) return;
+    ctx.setInstance(promiseData.value.instanceId, {
+      instance: Promise.reject(new Error("boom")),
+      type: promiseType,
+    });
+
+    const callbackType: OperationType = {
+      kind: "operation",
+      parameters: [
+        { name: "res", type: { kind: "error", errorType: "custom_error" } },
+      ],
+      result: { kind: "error", errorType: "custom_error" },
+    };
+    const callback = createData({ type: callbackType });
+    callback.value.statements = [
+      createStatement({ data: testError("handled", "custom_error") }),
+    ];
+
+    const catchResult = await executeOperation(
+      findBuiltIn("catch"),
+      promiseData,
+      [createStatement({ data: callback })],
+      ctx
+    );
+    expect(catchResult.type.kind).toBe("instance");
+    expect(isDataOfType(catchResult, "error")).toBe(false);
+
+    const awaited = await executeOperation(
+      findBuiltIn("await"),
+      catchResult,
+      [],
+      ctx
+    );
+    expect(isDataOfType(awaited, "error")).toBe(true);
+    if (!isDataOfType(awaited, "error")) return;
+    expect(awaited.type.errorType).toBe("custom_error");
+    expect(awaited.value.reason).toContain("handled");
+  });
+
   it("resolves then/await chains for manually created Promise instances", async () => {
     const ctx = createTestContext({ isSync: false });
     const promiseType: OperationType["result"] = {
@@ -3902,6 +3973,231 @@ describe("block condition execution", () => {
 });
 
 describe("return inside block condition", () => {
+  it("narrows following statements after true branch returns", async () => {
+    const ctx = createTestContext({ isSync: false });
+    ctx.variables.set("x", {
+      data: testUnion([{ kind: "string" }, { kind: "number" }], 10),
+    });
+
+    const afterCondition = createStatement({
+      data: testReference("x", "x-after-true-return"),
+      operations: [testOperation([numberStatement(1)], [], "add")],
+    });
+    const stmts = [
+      createStatement({
+        data: testCondition(
+          createStatement({
+            data: testReference("x", "x-condition-true-return"),
+            operations: [
+              testOperation(
+                [createStatement({ data: testString("") })],
+                [],
+                "isTypeOf"
+              ),
+            ],
+          }),
+          [
+            createStatement({
+              data: testString("early"),
+              controlFlow: "return",
+            }),
+          ],
+          []
+        ),
+      }),
+      afterCondition,
+    ];
+    const op: OperationListItem = {
+      name: "narrowAfterTrueReturn",
+      parameters: [],
+      statements: stmts,
+    };
+
+    const result = await executeOperation(op, testUndefined(), [], ctx);
+
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(11);
+    expect(
+      ctx.getContext(afterCondition.id).variables.get("x")?.data.type.kind
+    ).toBe("number");
+  });
+
+  it("narrows following statements after false branch returns (sync)", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("x", {
+      data: testUnion([{ kind: "string" }, { kind: "number" }], "hello"),
+    });
+
+    const afterCondition = createStatement({
+      data: testReference("x", "x-after-false-return"),
+      operations: [testOperation([], [], "length")],
+    });
+    const stmts = [
+      createStatement({
+        data: testCondition(
+          createStatement({
+            data: testReference("x", "x-condition-false-return"),
+            operations: [
+              testOperation(
+                [createStatement({ data: testString("") })],
+                [],
+                "isTypeOf"
+              ),
+            ],
+          }),
+          [],
+          [
+            createStatement({
+              data: testString("early"),
+              controlFlow: "return",
+            }),
+          ]
+        ),
+      }),
+      afterCondition,
+    ];
+    const op: OperationListItem = {
+      name: "narrowAfterFalseReturn",
+      parameters: [],
+      statements: stmts,
+    };
+
+    const result = executeOperationSync(op, testUndefined(), [], ctx);
+
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(5);
+    expect(
+      ctx.getContext(afterCondition.id).variables.get("x")?.data.type.kind
+    ).toBe("string");
+  });
+
+  it("does not narrow parent context when both branches return", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("x", {
+      data: testUnion([{ kind: "string" }, { kind: "number" }], "hello"),
+    });
+
+    const stmts = [
+      createStatement({
+        data: testCondition(
+          createStatement({
+            data: testReference("x", "x-condition-both-return"),
+            operations: [
+              testOperation(
+                [createStatement({ data: testString("") })],
+                [],
+                "isTypeOf"
+              ),
+            ],
+          }),
+          [
+            createStatement({
+              data: testString("true-return"),
+              controlFlow: "return",
+            }),
+          ],
+          [
+            createStatement({
+              data: testString("false-return"),
+              controlFlow: "return",
+            }),
+          ]
+        ),
+      }),
+    ];
+    const op: OperationListItem = {
+      name: "noNarrowWhenBothBranchesReturn",
+      parameters: [],
+      statements: stmts,
+    };
+
+    const result = executeOperationSync(op, testUndefined(), [], ctx);
+
+    expect(result.value).toBe("true-return");
+    expect(ctx.variables.get("x")?.data.type.kind).toBe("union");
+  });
+
+  it("carries narrowing out of nested conditions after early returns", () => {
+    const ctx = createTestContext();
+    const arrayType: ArrayType = {
+      kind: "array",
+      elementType: {
+        kind: "union",
+        types: [{ kind: "string" }, { kind: "number" }],
+      },
+    };
+    ctx.variables.set("union", {
+      data: testUnion(
+        [{ kind: "string" }, { kind: "number" }, arrayType],
+        "hello"
+      ),
+    });
+
+    const afterCondition = createStatement({
+      data: testReference("union", "union-after-nested-return"),
+      operations: [testOperation([], [], "length")],
+    });
+    const stmts = [
+      createStatement({
+        data: testCondition(
+          createStatement({
+            data: testReference("union", "union-is-number"),
+            operations: [
+              testOperation(
+                [createStatement({ data: testNumber(0) })],
+                [],
+                "isTypeOf"
+              ),
+            ],
+          }),
+          [
+            createStatement({
+              data: testReference("union", "union-return-number"),
+              controlFlow: "return",
+            }),
+          ],
+          [
+            createStatement({
+              data: testCondition(
+                createStatement({
+                  data: testReference("union", "union-is-string"),
+                  operations: [
+                    testOperation(
+                      [createStatement({ data: testString("") })],
+                      [],
+                      "isTypeOf"
+                    ),
+                  ],
+                }),
+                [],
+                [
+                  createStatement({
+                    data: testReference("union", "union-return-array"),
+                    controlFlow: "return",
+                  }),
+                ]
+              ),
+            }),
+          ]
+        ),
+      }),
+      afterCondition,
+    ];
+    const op: OperationListItem = {
+      name: "nestedEarlyReturnNarrowing",
+      parameters: [],
+      statements: stmts,
+    };
+
+    const result = executeOperationSync(op, testUndefined(), [], ctx);
+
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(5);
+    expect(
+      ctx.getContext(afterCondition.id).variables.get("union")?.data.type.kind
+    ).toBe("string");
+  });
+
   it("return in true branch exits enclosing operation", async () => {
     const ctx = createTestContext({ isSync: false });
     const skippedInBranch = stringStatement("after-return");

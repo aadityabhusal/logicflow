@@ -580,13 +580,45 @@ function resolveConditionBranch(
       ...ctx,
       variables: skipped === trueBranch ? trueVariables : falseVariables,
     });
-    const branchVariables =
-      branch === trueBranch ? trueVariables : falseVariables;
-    return { branch, context: { ...branchCtx, variables: branchVariables } };
+    const newContext: Context = {
+      ...branchCtx,
+      variables: branch === trueBranch ? trueVariables : falseVariables,
+    };
+    return { branch, skipped, context: newContext };
   }
 
   setStatementsSkipContext(skipped, ctx);
-  return { branch, context: branchCtx };
+  return { branch, skipped, context: branchCtx };
+}
+
+function branchAlwaysReturns(statements: IStatement[]): boolean {
+  return statements.some((statement) => {
+    if (statement.controlFlow === "return") return true;
+    if (!isDataOfType(statement.data, "condition")) return false;
+    return (
+      branchAlwaysReturns(statement.data.value.trueBranch) &&
+      branchAlwaysReturns(statement.data.value.falseBranch)
+    );
+  });
+}
+
+function carryBranchNarrowing(
+  context: Context,
+  resolved: ReturnType<typeof resolveConditionBranch>
+) {
+  if (
+    context.controlFlowState?.returned ||
+    !branchAlwaysReturns(resolved.skipped) ||
+    branchAlwaysReturns(resolved.branch)
+  ) {
+    return;
+  }
+
+  for (const name of [...context.variables.keys()]) {
+    const variable = resolved.context.variables.get(name);
+    if (variable) context.variables.set(name, variable);
+    else context.variables.delete(name);
+  }
 }
 
 export async function executeStatement(
@@ -613,10 +645,12 @@ export async function executeStatement(
     if (context.controlFlowState?.returned)
       return context.controlFlowState.returned;
     const resolved = resolveConditionBranch(currentData, condRes, context);
-    currentData = await executeStatementsAsync(
+    const branchResult = await executeStatementsAsync(
       resolved.branch,
       resolved.context
     );
+    carryBranchNarrowing(context, resolved);
+    currentData = branchResult;
   }
   if (isFatalError(currentData)) return currentData;
   if (context.controlFlowState?.returned)
@@ -694,7 +728,9 @@ export function executeStatementSync(
     if (context.controlFlowState?.returned)
       return context.controlFlowState.returned;
     const resolved = resolveConditionBranch(currentData, condRes, context);
-    currentData = executeStatements(resolved.branch, resolved.context);
+    const branchResult = executeStatements(resolved.branch, resolved.context);
+    carryBranchNarrowing(context, resolved);
+    currentData = branchResult;
   }
   if (isFatalError(currentData)) return currentData;
   if (context.controlFlowState?.returned)

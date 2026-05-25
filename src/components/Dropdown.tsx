@@ -460,18 +460,20 @@ const DropdownComponent = ({
               }}
             />
           )}
-          {options?.withDropdownIcon &&
-            !!dropdownOptions?.flatMap(([, i]) => i).length && (
-              <IconButton
-                size={13}
-                className="absolute -bottom-1.5 -right-0.5 text-border bg-white rounded-full z-10"
-                icon={FaCircleChevronDown}
-                onClick={() => {
-                  combobox?.openDropdown();
-                }}
-                hidden={!isFocused && !isHovered}
-              />
-            )}
+          {options?.withDropdownIcon && (
+            <IconButton
+              size={13}
+              className="absolute -bottom-1.5 -right-0.5 text-border bg-white rounded-full z-10"
+              icon={FaCircleChevronDown}
+              onClick={(e) => {
+                e.stopPropagation();
+                setNavigation({ navigation: { id } });
+                combobox?.openDropdown();
+              }}
+              title="Open dropdown"
+              hidden={!isFocused && !isHovered}
+            />
+          )}
           {children}
         </div>
       </Combobox.DropdownTarget>

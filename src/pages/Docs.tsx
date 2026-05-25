@@ -243,6 +243,25 @@ export default function Docs() {
                       return <pre>{children}</pre>;
                     }
                     const code: string = child?.props?.children?.toString();
+
+                    if (child?.props?.className === "language-youtube") {
+                      const videoId = code.trim();
+
+                      return (
+                        <figure className="my-8">
+                          <div className="aspect-video w-full overflow-hidden rounded border border-border bg-dropdown-hover">
+                            <iframe
+                              src={`https://www.youtube.com/embed/${videoId}`}
+                              title="Logicflow introduction video"
+                              className="h-full w-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                            />
+                          </div>
+                        </figure>
+                      );
+                    }
+
                     return <CodeHighlight code={code.trim() || ""} />;
                   },
                   code: ({ node: _, ...props }) => (
