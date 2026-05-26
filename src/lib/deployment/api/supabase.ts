@@ -132,6 +132,15 @@ async function deployFunction(
     );
   }
 
+  const packageFiles = files.filter((f) => f.path.startsWith("src/packages/"));
+  for (const packageFile of packageFiles) {
+    formData.append(
+      "file",
+      new Blob([packageFile.content], { type: "text/javascript" }),
+      packageFile.path
+    );
+  }
+
   let response: Response;
   try {
     response = await supabaseFetch(

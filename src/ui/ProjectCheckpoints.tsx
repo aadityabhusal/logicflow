@@ -95,7 +95,7 @@ export function ProjectCheckpoints() {
                 </span>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <Popover position="bottom-end" withArrow offset={1}>
+                <Popover position="bottom-end" offset={1}>
                   <Popover.Target>
                     <IconButton icon={FaRotateLeft} title="Restore" />
                   </Popover.Target>
@@ -114,7 +114,7 @@ export function ProjectCheckpoints() {
                     </div>
                   </Popover.Dropdown>
                 </Popover>
-                <Popover position="bottom-end" withArrow offset={1}>
+                <Popover position="bottom-end" offset={1}>
                   <Popover.Target>
                     <IconButton icon={FaTrash} title="Delete" />
                   </Popover.Target>

@@ -1,5 +1,5 @@
-import { FaPencil, FaPlus, FaX, FaGlobe, FaCode } from "react-icons/fa6";
-import { Menu } from "@mantine/core";
+import { FaPencil, FaPlus, FaGlobe, FaCode, FaTrash } from "react-icons/fa6";
+import { Button, Menu, Popover } from "@mantine/core";
 import { fileHistoryActions, useProjectStore } from "../lib/store";
 import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
@@ -94,7 +94,7 @@ function OperationListItemComponent({
   const [editingId, setEditingId] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const currentProjectId = useProjectStore((s) => s.getCurrentProject()?.id);
+  const projectId = useProjectStore((s) => s.getCurrentProject()?.id);
 
   useEffect(() => {
     if (editingId) {
@@ -104,30 +104,20 @@ function OperationListItemComponent({
   return (
     <li
       className={
-        "flex items-center gap-1 p-1 hover:bg-dropdown-hover cursor-pointer " +
+        "flex items-center gap-1 p-0.5 hover:bg-dropdown-hover " +
         (item.name === searchParams.get("file")
           ? "bg-dropdown-hover"
           : "bg-editor")
       }
       key={item.id}
-      onClick={() =>
-        setSearchParams(...handleSearchParams({ file: item.name }, true))
-      }
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          setSearchParams(...handleSearchParams({ file: item.name }, true));
-        }
-      }}
       onPointerOver={() => setHoveringId(item.id)}
       onPointerLeave={() => setHoveringId(undefined)}
     >
       {editingId === item.id ? (
         <input
           ref={inputRef}
-          className="focus:outline outline-white flex-1 w-full"
+          className="focus:outline outline-white flex-1 w-full p-0.5"
           defaultValue={item.name}
-          onClick={(e) => e.stopPropagation()}
           onBlur={({ target }) => {
             const name = target.value.trim();
             const error = isRestricted(name, item.name);
@@ -137,8 +127,8 @@ function OperationListItemComponent({
               return;
             }
             const file = getFile(item.id);
-            if (name && currentProjectId && file) {
-              updateProject(currentProjectId, {
+            if (name && projectId && file) {
+              updateProject(projectId, {
                 files: updateFiles(
                   useProjectStore.getState().getCurrentProject()?.files ?? [],
                   fileHistoryActions.pushState,
@@ -160,40 +150,59 @@ function OperationListItemComponent({
           }}
         />
       ) : (
-        <>
-          {item.type === "operation" &&
-            (item.trigger ? (
+        <Button
+          component="p"
+          className="flex-1 p-0.5! outline-none"
+          onClick={() =>
+            setSearchParams(...handleSearchParams({ file: item.name }, true))
+          }
+          leftSection={
+            item.type !== "operation" ? null : item.trigger ? (
               <FaGlobe className="shrink-0" />
             ) : (
               <FaCode className="shrink-0" />
-            ))}
-          <span className="truncate mr-auto">{item.name}</span>
-        </>
+            )
+          }
+        >
+          {item.name}
+        </Button>
       )}
       {!editingId && (smallScreen ? true : hoveringId === item.id) && (
         <IconButton
           icon={FaPencil}
           title="Edit name"
           className="p-0.5 hover:outline hover:outline-border"
-          size={10}
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditingId(item.id);
-          }}
+          size={12}
+          onClick={() => setEditingId(item.id)}
         />
       )}
       {(smallScreen ? true : hoveringId === item.id) && (
-        <IconButton
-          icon={FaX}
-          title="Delete"
-          className="p-0.5 hover:outline hover:outline-border"
-          size={10}
-          onClick={(e) => {
-            e.stopPropagation();
-            deleteFile(item.id);
-            if (currentProjectId) navigate(`/project/${currentProjectId}`);
-          }}
-        />
+        <Popover position="bottom-end" offset={1}>
+          <Popover.Target>
+            <IconButton
+              icon={FaTrash}
+              title="Delete"
+              className="p-0.5 hover:outline hover:outline-border"
+              size={12}
+            />
+          </Popover.Target>
+          <Popover.Dropdown classNames={{ dropdown: "border" }}>
+            <div className="flex flex-col gap-2 p-1">
+              <span className="text-sm">Delete this operation?</span>
+              <Button
+                leftSection={<FaTrash className="text-red-400" />}
+                className="text-sm self-end"
+                onClick={() => {
+                  deleteFile(item.id);
+                  if (searchParams.get("file") === item.name && projectId)
+                    navigate(`/project/${projectId}`);
+                }}
+              >
+                Yes, delete.
+              </Button>
+            </div>
+          </Popover.Dropdown>
+        </Popover>
       )}
     </li>
   );

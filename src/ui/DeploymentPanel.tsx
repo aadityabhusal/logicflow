@@ -433,7 +433,7 @@ function DeploymentPanelComponent() {
                     )}
 
                     <div className="flex gap-2 justify-between p-1">
-                      <Popover position="bottom-start" withArrow offset={1}>
+                      <Popover position="bottom-start" offset={1}>
                         <Popover.Target>
                           <Button
                             className="text-sm outline-none"

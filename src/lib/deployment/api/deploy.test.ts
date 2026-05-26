@@ -26,6 +26,7 @@ import {
 } from "@/lib/deployment/config";
 import { deployToVercel } from "@/lib/deployment/api/vercel";
 import { deployToSupabase } from "@/lib/deployment/api/supabase";
+import type { deployToSupabase as realDeployToSupabase } from "@/lib/deployment/api/supabase";
 
 describe("deployToPlatform", () => {
   const ctx = createTestContext();
@@ -324,5 +325,52 @@ describe("deployToPlatform", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toBe("Supabase API error");
+  });
+});
+
+describe("deployToSupabase", () => {
+  it("uploads virtual package modules with Supabase functions", async () => {
+    const { deployToSupabase } = await vi.importActual<{
+      deployToSupabase: typeof realDeployToSupabase;
+    }>("@/lib/deployment/api/supabase");
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const files = [
+      {
+        path: "supabase/functions/main/index.js",
+        content: "import main from '../../../src/operations/main.js';",
+      },
+      { path: "src/built-in.js", content: "export {};" },
+      {
+        path: "src/operations/main.js",
+        content: "import * as ffmpeg from '../packages/ffmpeg.js';",
+      },
+      {
+        path: "src/packages/ffmpeg.js",
+        content: "export function command() {}",
+      },
+    ];
+
+    const result = await deployToSupabase(files, "token", {
+      projectId: "project-ref",
+      triggerNames: ["main"],
+    });
+
+    expect(result.success).toBe(true);
+    const [, init] = fetchMock.mock.calls[0];
+    const body = init?.body;
+    expect(body).toBeInstanceOf(FormData);
+
+    const uploadedFileNames = Array.from((body as FormData).entries())
+      .filter(([key]) => key === "file")
+      .map(([, value]) => (value as File).name);
+
+    expect(uploadedFileNames).toContain("src/packages/ffmpeg.js");
+
+    vi.unstubAllGlobals();
   });
 });

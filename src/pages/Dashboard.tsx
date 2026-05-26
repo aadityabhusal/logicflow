@@ -1,13 +1,7 @@
 import { IconButton } from "@/ui/IconButton";
-import { Button, Menu } from "@mantine/core";
+import { Button, Popover } from "@mantine/core";
 import { useMemo } from "react";
-import {
-  FaBookOpen,
-  FaEllipsisVertical,
-  FaGithub,
-  FaPlus,
-  FaTrash,
-} from "react-icons/fa6";
+import { FaBookOpen, FaGithub, FaPlus, FaTrash } from "react-icons/fa6";
 import { Link, useNavigate } from "react-router";
 import { formatDistanceToNow } from "date-fns";
 import { useProjectStore } from "@/lib/store";
@@ -210,20 +204,23 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-              <Menu width={200} position="bottom-end" withinPortal={false}>
-                <Menu.Target>
-                  <IconButton icon={FaEllipsisVertical} className="p-1" />
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Item
-                    leftSection={<FaTrash />}
-                    classNames={{ item: "p-2 text-red-400" }}
-                    onClick={() => deleteProject(project.id)}
-                  >
-                    Delete
-                  </Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
+              <Popover position="bottom-end" offset={1}>
+                <Popover.Target>
+                  <IconButton icon={FaTrash} title="Delete" className="p-1" />
+                </Popover.Target>
+                <Popover.Dropdown classNames={{ dropdown: "border" }}>
+                  <div className="flex flex-col gap-2 p-1">
+                    <span className="text-sm">Delete this project?</span>
+                    <Button
+                      leftSection={<FaTrash className="text-red-400" />}
+                      className="text-sm self-end"
+                      onClick={() => deleteProject(project.id)}
+                    >
+                      Yes, delete.
+                    </Button>
+                  </div>
+                </Popover.Dropdown>
+              </Popover>
             </div>
           ))}
         </div>
