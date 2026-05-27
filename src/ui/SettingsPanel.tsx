@@ -94,14 +94,18 @@ export function SettingsPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-1 border-b font-bold bg-dropdown-default">Settings</div>
-      <div className="p-2 flex flex-col gap-2 overflow-y-auto">
+      <div className="flex justify-between items-center p-1 border-b gap-4 bg-dropdown-default">
+        <p className="font-bold">Settings</p>
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
         {currentProjectId && (
-          <div className="flex flex-col gap-2">
-            <span className="text-gray-300">Project name</span>
+          <div className="border-b p-1">
+            <div className="flex justify-between items-center py-2">
+              <span className="text-gray-300">Project name</span>
+            </div>
             <input
               type="text"
-              className="focus:outline outline-white border w-full p-0.5 text-sm"
+              className="focus:outline outline-white border border-border w-full p-0.5 text-sm"
               placeholder={"Project name"}
               value={currentProjectName}
               onChange={(e) => {
@@ -110,9 +114,8 @@ export function SettingsPanel() {
             />
           </div>
         )}
-        {currentProjectId && <ProjectCheckpoints />}
         {smallScreen && (
-          <label className="flex items-center justify-between gap-2 border-t pt-2">
+          <label className="flex items-center justify-between gap-2 border-b p-2">
             <span className="text-sm">Disable keyboard focus</span>
             <BooleanInput
               data={createData({ value: disableKeyboard ?? false })}
@@ -123,7 +126,7 @@ export function SettingsPanel() {
           </label>
         )}
         {smallScreen && (
-          <label className="flex items-center justify-between gap-2 border-t pt-2">
+          <label className="flex items-center justify-between gap-2 border-b p-2">
             <span className="text-sm">Disable code wrapping</span>
             <BooleanInput
               data={createData({ value: disableMobileWrapping ?? false })}
@@ -133,20 +136,26 @@ export function SettingsPanel() {
             />
           </label>
         )}
+        {currentProjectId && <ProjectCheckpoints />}
         {currentProjectId && externalPackages.length > 0 && (
-          <div className="border-t pt-2 flex flex-col gap-2">
-            <span className="text-gray-300">Packages</span>
+          <div className="border-b p-1">
+            <div className="flex justify-between items-center py-2">
+              <span className="text-gray-300">Packages</span>
+            </div>
             {externalPackages.map(([name, entry]) => {
               const dependency = dependencies?.npm?.find(
                 (d) => d.name === name
               );
               const isExpanded = expandedPackages.has(name);
               return (
-                <div key={name} className="border border-border">
+                <div
+                  key={name}
+                  className="border-b border-border last:border-b-0"
+                >
                   <div className="flex items-center gap-1">
                     <span
                       className={[
-                        "flex items-center gap-2 p-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
+                        "flex items-center gap-2 py-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
                         isExpanded ? "" : "text-gray-300",
                       ].join(" ")}
                       onClick={() => {

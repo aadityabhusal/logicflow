@@ -342,15 +342,15 @@ describe("deployToSupabase", () => {
     const files = [
       {
         path: "supabase/functions/main/index.js",
-        content: "import main from '../../../src/operations/main.js';",
+        content: "import main from '../../../src/main.js';",
       },
-      { path: "src/built-in.js", content: "export {};" },
+      { path: "src/lib/built-in.js", content: "export {};" },
       {
-        path: "src/operations/main.js",
-        content: "import * as ffmpeg from '../packages/ffmpeg.js';",
+        path: "src/main.js",
+        content: "import * as ffmpeg from './lib/ffmpeg.js';",
       },
       {
-        path: "src/packages/ffmpeg.js",
+        path: "src/lib/ffmpeg.js",
         content: "export function command() {}",
       },
     ];
@@ -369,7 +369,7 @@ describe("deployToSupabase", () => {
       .filter(([key]) => key === "file")
       .map(([, value]) => (value as File).name);
 
-    expect(uploadedFileNames).toContain("src/packages/ffmpeg.js");
+    expect(uploadedFileNames).toContain("src/lib/ffmpeg.js");
 
     vi.unstubAllGlobals();
   });

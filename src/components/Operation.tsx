@@ -280,7 +280,7 @@ const OperationComponent = (
             }}
           />
         )}
-        <span>{")"}</span>
+        <span className="self-end">{")"}</span>
       </div>
       <div className="pl-4 [&>div]:mb-1 w-fit">
         {operation.value.statements.map((statement, i) => (
