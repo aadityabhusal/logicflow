@@ -289,6 +289,7 @@ export function createFileFromOperation(operation: IData<OperationType>) {
   return {
     id: operation.id,
     name: operation.value.name,
+    createdAt: Date.now(),
     type: "operation",
     content: { type: operation.type, value: operation.value },
   } as ProjectFile;
