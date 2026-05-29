@@ -49,11 +49,9 @@ describe("generatePlatformHandlers", () => {
       );
     });
 
-    it("imports from ../src/operations/{name}.js", () => {
+    it("imports from ../src/{name}.js", () => {
       const result = generatePlatformHandlers("vercel", ops);
-      expect(result[0].content).toContain(
-        "from '../src/operations/getUser.js'"
-      );
+      expect(result[0].content).toContain("from '../src/getUser.js'");
     });
 
     it("uses Edge (Request → Response) handler pattern", () => {
@@ -87,7 +85,7 @@ describe("generatePlatformHandlers", () => {
       });
       expect(result[0].filename).toBe("api/my_op$.js");
       expect(result[0].content).toContain(
-        "import my_op$ from '../src/operations/my_op$.js'"
+        "import my_op$ from '../src/my_op$.js'"
       );
       expect(result[0].content).toContain("await my_op$(req)");
     });
@@ -105,11 +103,9 @@ describe("generatePlatformHandlers", () => {
       expect(result[0].content).toContain("Deno.serve");
     });
 
-    it("imports from ../../../src/operations/{name}.js", () => {
+    it("imports from ../../../src/{name}.js", () => {
       const result = generatePlatformHandlers("supabase", ops);
-      expect(result[0].content).toContain(
-        "from '../../../src/operations/getUser.js'"
-      );
+      expect(result[0].content).toContain("from '../../../src/getUser.js'");
     });
 
     it("does not contain edge runtime config", () => {
@@ -168,7 +164,7 @@ describe("generatePlatformHandlers", () => {
       const result = generatePlatformHandlers("vercel", weirdOp);
       expect(result[0].filename).toBe("api/my_op$.js");
       expect(result[0].content).toContain(
-        "import my_op$ from '../src/operations/my_op$.js'"
+        "import my_op$ from '../src/my_op$.js'"
       );
       expect(result[0].content).toContain("await my_op$(request)");
     });

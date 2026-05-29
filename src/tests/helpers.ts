@@ -19,7 +19,12 @@ import {
   OperationSource,
 } from "@/lib/types";
 import { Context } from "@/lib/execution/types";
-import { createData, createStatement, createDefaultValue } from "@/lib/utils";
+import {
+  createData,
+  createStatement,
+  createDefaultValue,
+  createTypeFromStatement,
+} from "@/lib/utils";
 import {
   executeOperation,
   executeOperationSync,
@@ -143,12 +148,7 @@ export function testOperation(
 ): IData<OperationType> {
   const opType: OperationType = {
     kind: "operation",
-    parameters: parameters.map((p) => ({
-      name: p.name,
-      type: p.data.type,
-      isOptional: p.isOptional,
-      isRest: p.isRest,
-    })),
+    parameters: parameters.map(createTypeFromStatement),
     result:
       statements.length > 0
         ? statements[statements.length - 1].data.type

@@ -24,6 +24,7 @@ export function CodeHighlight({
             margin: 0,
             padding: showLineNumbers ? "0.5rem 0" : 0,
             maxWidth: "100%",
+            overflowX: "auto",
             whiteSpace: wrap ? "pre-wrap" : "pre",
             overflowWrap: wrap ? "anywhere" : "normal",
           }}

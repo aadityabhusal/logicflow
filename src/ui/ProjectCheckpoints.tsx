@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Button, Popover } from "@mantine/core";
-import { FaRotateLeft, FaTrash, FaCheck } from "react-icons/fa6";
+import { Button, Popover, Tooltip } from "@mantine/core";
+import { FaRotateLeft, FaTrash, FaCheck, FaCircleInfo } from "react-icons/fa6";
 import { formatDistanceToNow } from "date-fns";
 import { notifications } from "@mantine/notifications";
 import { useCheckpointStore, useProjectStore } from "../lib/store";
@@ -57,12 +57,14 @@ export function ProjectCheckpoints() {
   if (!currentProject) return null;
 
   return (
-    <div className="border-t pt-2 flex flex-col gap-2">
-      <span className="text-gray-300">Project checkpoints</span>
+    <div className="border-b p-1">
+      <div className="flex justify-between items-center py-2">
+        <span className="text-gray-300">Project checkpoints</span>
+      </div>
       <div className="flex gap-1">
         <input
           type="text"
-          className="focus:outline outline-white border w-full p-0.5 text-sm flex-1"
+          className="focus:outline outline-white border border-border w-full p-0.5 text-sm flex-1"
           placeholder="Checkpoint name (optional)"
           value={checkpointName}
           onChange={(e) => setCheckpointName(e.target.value)}
@@ -80,21 +82,27 @@ export function ProjectCheckpoints() {
         />
       </div>
       {projectCheckpoints.length === 0 ? (
-        <NoteText center>No checkpoints yet.</NoteText>
+        <NoteText className="pt-3" center>
+          No checkpoints yet.
+        </NoteText>
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col mt-1">
           {projectCheckpoints.map((cp) => (
             <div
               key={cp.id}
-              className="border border-border flex items-center justify-between gap-1 p-1"
+              className="border-b border-border last:border-b-0 flex items-center justify-between gap-3 p-1"
             >
-              <div className="flex flex-col flex-1 min-w-0">
+              <div className="flex flex-1 gap-2 min-w-0">
                 <span className="text-sm truncate">{cp.name}</span>
-                <span className="text-xs text-gray-400">
-                  {formatDistanceToNow(cp.createdAt, { addSuffix: true })}
-                </span>
+                <Tooltip
+                  label={formatDistanceToNow(cp.createdAt, { addSuffix: true })}
+                >
+                  <span className="flex items-center">
+                    <FaCircleInfo size={14} />
+                  </span>
+                </Tooltip>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <Popover position="bottom-end" offset={1}>
                   <Popover.Target>
                     <IconButton icon={FaRotateLeft} title="Restore" />

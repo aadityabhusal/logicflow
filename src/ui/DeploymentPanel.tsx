@@ -11,6 +11,7 @@ import {
   FaArrowUpRightFromSquare,
   FaChevronDown,
   FaChevronRight,
+  FaDownload,
 } from "react-icons/fa6";
 import { MdVpnKey } from "react-icons/md";
 import { useProjectStore } from "@/lib/store";
@@ -29,6 +30,8 @@ import { DeploymentProgress } from "@/lib/types";
 import { IconButton } from "./IconButton";
 import { NoteText } from "./NoteText";
 import { formatRelativeTime } from "@/lib/deployment/utils";
+import { generateExportProject } from "@/lib/deployment/config";
+import { downloadExportZip } from "@/lib/deployment/export";
 import { Link } from "react-router";
 import { capitalize } from "remeda";
 import { walkData } from "@/lib/walk";
@@ -64,11 +67,12 @@ function replaceEnvRefs(
 function DeploymentPanelComponent() {
   const project = useProjectStore((s) => s.getCurrentProject());
   const updateProject = useProjectStore((s) => s.updateProject);
-  const rootContext = useExecutionResultsStore((s) => s.rootContext);
+  const rootCtx = useExecutionResultsStore((s) => s.rootContext);
   const [expanded, setExpandedPlatforms] = useState(new Set<string>());
   const [deploymentStates, setDeploymentStates] = useState<
     Record<string, DeploymentState>
   >({});
+  const [isExporting, setIsExporting] = useState(false);
 
   const deployment = project?.deployment ?? { envVariables: [], platforms: [] };
   const availablePlatforms = Object.keys(PLATFORMS)
@@ -113,7 +117,7 @@ function DeploymentPanelComponent() {
   };
 
   const handleDeploy = async (platform: keyof typeof PLATFORMS) => {
-    if (!project || !rootContext) return;
+    if (!project || !rootCtx) return;
 
     const target = deployment.platforms.find((t) => t.platform === platform);
     if (!target?.credentials?.token) {
@@ -128,7 +132,7 @@ function DeploymentPanelComponent() {
 
     const result = await deployToPlatform(
       project,
-      rootContext,
+      rootCtx,
       target,
       (progress) => {
         setDeploymentStates((prev) => ({
@@ -245,15 +249,35 @@ function DeploymentPanelComponent() {
     useExecutionResultsStore.getState().clearCache();
   };
 
+  const handleExport = async () => {
+    if (!project || !rootCtx) return;
+    setIsExporting(true);
+    try {
+      const { files, errors } = await generateExportProject(project, rootCtx);
+      if (errors.length > 0) {
+        notifications.show({ message: `Export errors: ${errors.join("; ")}` });
+      }
+      if (files.length === 0) {
+        notifications.show({ message: "No files to export" });
+        return;
+      }
+      downloadExportZip(files, project.name);
+    } catch (e) {
+      const error = (e as Error)?.message ?? "Unknown error";
+      notifications.show({ message: `Export failed: ${error}` });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex justify-between items-center p-1 border-b gap-4 bg-dropdown-default">
         <p className="font-bold">Deployment</p>
       </div>
-
       <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
-        <div className="border-b">
-          <div className="flex justify-between items-center p-1">
+        <div className="border-b p-1">
+          <div className="flex justify-between items-center py-2">
             <span className="text-gray-300">Platforms</span>
             {availablePlatforms.length > 0 && (
               <Menu withinPortal={false} position="bottom-end">
@@ -291,7 +315,7 @@ function DeploymentPanelComponent() {
                 <div className="flex items-center gap-1">
                   <span
                     className={[
-                      "flex items-center gap-2 p-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
+                      "flex items-center gap-2 py-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
                       isExpanded ? "" : "text-gray-300",
                     ].join(" ")}
                     onClick={() => togglePlatformExpanded(target.platform)}
@@ -304,7 +328,7 @@ function DeploymentPanelComponent() {
                       <IconButton
                         icon={MdVpnKey}
                         title="Credentials"
-                        className="mr-1 p-1"
+                        className="p-1"
                       />
                     </Popover.Target>
                     <Popover.Dropdown classNames={{ dropdown: "border" }}>
@@ -481,9 +505,8 @@ function DeploymentPanelComponent() {
             );
           })}
         </div>
-
-        <div className="border-b">
-          <div className="flex justify-between items-center p-1">
+        <div className="border-b p-1">
+          <div className="flex justify-between items-center py-2">
             <span className="text-gray-300">Environment Variables</span>
             <IconButton
               icon={FaPlus}
@@ -492,7 +515,7 @@ function DeploymentPanelComponent() {
             />
           </div>
 
-          <div className="flex flex-col gap-1 p-1">
+          <div className="flex flex-col gap-1">
             {deployment.envVariables.length === 0 && (
               <NoteText center>No environment variables</NoteText>
             )}
@@ -522,6 +545,16 @@ function DeploymentPanelComponent() {
               </div>
             ))}
           </div>
+        </div>
+        <div className="p-1 flex justify-between items-center">
+          <div className="flex justify-between items-center py-2">
+            <span>Export Code</span>
+          </div>
+          <IconButton
+            icon={FaDownload}
+            onClick={handleExport}
+            loading={isExporting}
+          />
         </div>
       </div>
     </div>

@@ -112,17 +112,17 @@ async function deployFunction(
     `supabase/functions/${funcName}/index.js`
   );
 
-  const builtInFile = files.find((f) => f.path === "src/built-in.js");
+  const builtInFile = files.find((f) => f.path === "src/lib/built-in.js");
   if (builtInFile) {
     formData.append(
       "file",
       new Blob([builtInFile.content], { type: "text/javascript" }),
-      "src/built-in.js"
+      "src/lib/built-in.js"
     );
   }
 
-  const operationFiles = files.filter((f) =>
-    f.path.startsWith("src/operations/")
+  const operationFiles = files.filter(
+    (f) => f.path.startsWith("src/") && !f.path.startsWith("src/lib/")
   );
   for (const opFile of operationFiles) {
     formData.append(
@@ -132,7 +132,9 @@ async function deployFunction(
     );
   }
 
-  const packageFiles = files.filter((f) => f.path.startsWith("src/packages/"));
+  const packageFiles = files.filter(
+    (f) => f.path.startsWith("src/lib/") && f.path !== "src/lib/built-in.js"
+  );
   for (const packageFile of packageFiles) {
     formData.append(
       "file",

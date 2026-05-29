@@ -18,9 +18,13 @@ import {
   updateContextWithNarrowedTypes,
   operationToListItem,
   resolveConstructorArgs,
+  resolveParameters,
 } from "@/lib/utils";
 import { InstanceTypes } from "@/lib/packages/registry";
-import { coreOperations } from "@/lib/operations/built-in";
+import {
+  coreOperations,
+  createExecutionVariables,
+} from "@/lib/operations/built-in";
 import { OperationListItem, Context } from "@/lib/execution/types";
 import {
   createTestContext,
@@ -4515,6 +4519,64 @@ describe("cached instance preservation across re-executions", () => {
 });
 
 describe("built-in operation as data + call", () => {
+  it("keeps unbound map callback params generic for data ref calls", () => {
+    const ctx = createTestContext({ isSync: false });
+    ctx.variables = createExecutionVariables(ctx);
+    const mapData = ctx.variables.get("map")!.data;
+    const callParams = resolveParameters(findBuiltIn("call"), mapData, ctx);
+
+    expect(callParams[2].type.kind).toBe("operation");
+    if (callParams[2].type.kind !== "operation") return;
+    expect(callParams[2].type.parameters[0].type).toEqual({ kind: "unknown" });
+    expect(callParams[2].type.parameters[2].type).toEqual({ kind: "unknown" });
+  });
+
+  it("calls built-in map via data ref using its generic function signature", async () => {
+    const ctx = createTestContext({ isSync: false });
+    ctx.variables = createExecutionVariables(ctx);
+
+    const itemParam = createStatement({
+      id: "item-param",
+      name: "item",
+      data: testNumber(0),
+    });
+    const callback = testOperation(
+      [itemParam],
+      [createStatement({ data: testReference("item", itemParam.id) })]
+    );
+    callback.type.parameters = [
+      { name: "item", type: { kind: "number" } },
+      { name: "index", type: { kind: "number" }, isOptional: true },
+      { name: "data", type: { kind: "undefined" }, isOptional: true },
+    ];
+    callback.type.result = { kind: "number" };
+
+    const result = await executeStatement(
+      createStatement({
+        data: testReference("map", "builtin:map"),
+        operations: [
+          createData<OperationType>({
+            value: {
+              name: "call",
+              parameters: [
+                createStatement({
+                  data: testArray([numberStatement(1), numberStatement(2)], {
+                    kind: "number",
+                  }),
+                }),
+                createStatement({ data: callback }),
+              ],
+              statements: [],
+            },
+          }),
+        ],
+      }),
+      ctx
+    );
+
+    expect(getRawValueFromData(result, ctx)).toEqual([1, 2]);
+  });
+
   it("calls built-in length via data ref and call", async () => {
     const ctx = createTestContext({ isSync: false });
     const lengthOp = findBuiltIn("length");

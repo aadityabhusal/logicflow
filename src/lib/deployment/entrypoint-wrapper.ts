@@ -35,7 +35,7 @@ function generateVercelHandlers(
 }
 
 function generateVercelEdgeHandler(name: string): string {
-  return `import ${name} from '../src/operations/${name}.js';
+  return `import ${name} from '../src/${name}.js';
 
 export const config = { runtime: 'edge' };
 
@@ -58,7 +58,7 @@ export default async function handler(request) {
 }
 
 function generateVercelNodeHandler(name: string): string {
-  return `import ${name} from '../src/operations/${name}.js';
+  return `import ${name} from '../src/${name}.js';
 
 export default async function handler(req, res) {
   try {
@@ -78,7 +78,7 @@ function generateSupabaseHandlers(
   triggeredOps: ProjectFile[]
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
-    const handlerContent = `import ${op.name} from '../../../src/operations/${op.name}.js';
+    const handlerContent = `import ${op.name} from '../../../src/${op.name}.js';
 
 Deno.serve(async (request) => {
   try {

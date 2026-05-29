@@ -1,5 +1,5 @@
 import * as R from "remeda";
-import { ArrayType, DataType, IData, OperationType } from "../types";
+import { DataType, IData, OperationType } from "../types";
 import {
   createData,
   createDataFromRawValue,
@@ -23,9 +23,9 @@ export function getArrayCallbackParams(
     accumulator?: boolean;
   }
 ): OperationType["parameters"] {
-  const itemType = (data.type as ArrayType).elementType ?? {
-    kind: "undefined",
-  };
+  const itemType =
+    data.type.kind === "array" ? data.type.elementType : { kind: "unknown" };
+  const dataType = data.type.kind === "array" ? data.type : { kind: "unknown" };
   return [
     {
       type: {
@@ -58,7 +58,7 @@ export function getArrayCallbackParams(
             ? []
             : [
                 { name: "index", type: { kind: "number" }, isOptional: true },
-                { name: "data", type: data.type, isOptional: true },
+                { name: "data", type: dataType, isOptional: true },
               ]),
         ],
         result: options?.returnType ?? { kind: "unknown" },

@@ -4,6 +4,7 @@ import {
   resolveNpmDependencies,
   generatePackageJson,
   generateDeployableProject,
+  generateExportProject,
 } from "@/lib/deployment/config";
 import { Project, ProjectFile } from "@/lib/types";
 import {
@@ -111,7 +112,7 @@ describe("resolveNpmDependencies", () => {
     const project = createTestProject();
     const files = [
       {
-        path: "src/operations/myOp.js",
+        path: "src/myOp.js",
         content: "import * as R from 'remeda';",
       },
     ];
@@ -127,7 +128,7 @@ describe("resolveNpmDependencies", () => {
     });
     const files = [
       {
-        path: "src/operations/myOp.js",
+        path: "src/myOp.js",
         content: "import * as R from 'remeda';",
       },
     ];
@@ -139,7 +140,7 @@ describe("resolveNpmDependencies", () => {
     const project = createTestProject();
     const files = [
       {
-        path: "src/operations/api.js",
+        path: "src/api.js",
         content: "import wretch from 'wretch';\nimport * as R from 'remeda';",
       },
     ];
@@ -154,7 +155,7 @@ describe("resolveNpmDependencies", () => {
     const project = createTestProject();
     const files = [
       {
-        path: "src/operations/fake.js",
+        path: "src/fake.js",
         content: "import { faker } from '@faker-js/faker';",
       },
     ];
@@ -170,7 +171,7 @@ describe("resolveNpmDependencies", () => {
     });
     const files = [
       {
-        path: "src/operations/fake.js",
+        path: "src/fake.js",
         content: "import { faker } from '@faker-js/faker';",
       },
     ];
@@ -189,7 +190,7 @@ describe("resolveNpmDependencies", () => {
     });
     const files = [
       {
-        path: "src/operations/api.js",
+        path: "src/api.js",
         content: "import wretch from 'wretch';\nimport * as R from 'remeda';",
       },
     ];
@@ -204,7 +205,7 @@ describe("resolveNpmDependencies", () => {
   ])("extracts remeda from generated import: %s", (content) => {
     const project = createTestProject();
     const result = resolveNpmDependencies(project, [
-      { path: "src/built-in.js", content },
+      { path: "src/lib/built-in.js", content },
     ]);
 
     expect(result).toEqual([{ name: "remeda", version: "latest" }]);
@@ -213,7 +214,7 @@ describe("resolveNpmDependencies", () => {
   it("returns empty array when no known packages found", () => {
     const project = createTestProject();
     const files = [
-      { path: "src/built-in.js", content: "export const foo = 1;" },
+      { path: "src/lib/built-in.js", content: "export const foo = 1;" },
     ];
     const result = resolveNpmDependencies(project, files);
     expect(result).toEqual([]);
@@ -223,11 +224,11 @@ describe("resolveNpmDependencies", () => {
     const project = createTestProject();
     const files = [
       {
-        path: "src/operations/op1.js",
+        path: "src/op1.js",
         content: "import * as R from 'remeda';",
       },
       {
-        path: "src/operations/op2.js",
+        path: "src/op2.js",
         content: "import * as R from 'remeda';",
       },
     ];
@@ -240,9 +241,9 @@ describe("resolveNpmDependencies", () => {
     const project = createTestProject();
     const files = [
       {
-        path: "src/operations/myOp.js",
+        path: "src/myOp.js",
         content:
-          "import * as _ from '../built-in.js';\nimport * as R from 'remeda';",
+          "import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';",
       },
     ];
     const result = resolveNpmDependencies(project, files);
@@ -384,7 +385,7 @@ describe("generateDeployableProject", () => {
 
     const { files, errors } = await generateDeployableProject(project, ctx);
     expect(errors).toEqual([]);
-    const opResult = files.find((f) => f.path === "src/operations/myOp.js");
+    const opResult = files.find((f) => f.path === "src/myOp.js");
     expect(opResult).toBeDefined();
   });
 
@@ -392,7 +393,7 @@ describe("generateDeployableProject", () => {
     const project = createTestProject({ files: [createOperationFile("op")] });
 
     const { files } = await generateDeployableProject(project, ctx);
-    const builtIn = files.find((f) => f.path === "src/built-in.js");
+    const builtIn = files.find((f) => f.path === "src/lib/built-in.js");
     expect(builtIn).toBeDefined();
   });
 
@@ -527,7 +528,7 @@ describe("generateDeployableProject", () => {
 
     const { files, errors } = await generateDeployableProject(project, ctx);
     expect(errors.length).toBe(1);
-    expect(files.some((f) => f.path === "src/operations/good.js")).toBe(true);
+    expect(files.some((f) => f.path === "src/good.js")).toBe(true);
   });
 
   it("collects error when platform config generation throws", async () => {
@@ -601,7 +602,7 @@ describe("generateDeployableProject", () => {
     );
 
     const { files } = await generateDeployableProject(project, ctx);
-    const opFile = files.find((f) => f.path.startsWith("src/operations/"));
+    const opFile = files.find((f) => f.path.startsWith("src/"));
     expect(opFile!.content).toBe("raw-code");
   });
 
@@ -613,7 +614,7 @@ describe("generateDeployableProject", () => {
     );
 
     const { files } = await generateDeployableProject(project, ctx);
-    const opFile = files.find((f) => f.path.startsWith("src/operations/"));
+    const opFile = files.find((f) => f.path.startsWith("src/"));
     expect(opFile!.content).toBe("formatted-code");
   });
 
@@ -659,13 +660,131 @@ describe("generateDeployableProject", () => {
 
     const { files, errors } = await generateDeployableProject(project, ctx);
     expect(errors).toEqual([]);
-    expect(files.some((f) => f.path === "src/built-in.js")).toBe(true);
+    expect(files.some((f) => f.path === "src/lib/built-in.js")).toBe(true);
   });
 
   it("returns warnings array (currently always empty)", async () => {
     const project = createTestProject({ files: [createOperationFile("op")] });
 
     const { warnings } = await generateDeployableProject(project, ctx);
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("generateExportProject", () => {
+  const ctx = createTestContext();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (formatCode as ReturnType<typeof vi.fn>).mockImplementation((c: string) =>
+      Promise.resolve(c)
+    );
+    (createOperationFromFile as ReturnType<typeof vi.fn>).mockReturnValue({});
+    (generateOperation as ReturnType<typeof vi.fn>).mockReturnValue("code");
+    (generateBuiltInModule as ReturnType<typeof vi.fn>).mockReturnValue(
+      "built-in"
+    );
+  });
+
+  it("generates operation files for each operation", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("myOp"), createOperationFile("helper")],
+    });
+
+    const { files, errors } = await generateExportProject(project, ctx);
+    expect(errors).toEqual([]);
+    expect(files.some((f) => f.path === "src/myOp.js")).toBe(true);
+    expect(files.some((f) => f.path === "src/helper.js")).toBe(true);
+  });
+
+  it("includes lib/built-in.js", async () => {
+    const project = createTestProject({ files: [createOperationFile("op")] });
+
+    const { files } = await generateExportProject(project, ctx);
+    expect(files.some((f) => f.path === "src/lib/built-in.js")).toBe(true);
+  });
+
+  it("includes package.json with module type", async () => {
+    const project = createTestProject({ files: [createOperationFile("op")] });
+
+    const { files } = await generateExportProject(project, ctx);
+    const pkgFile = files.find((f) => f.path === "package.json");
+    expect(pkgFile).toBeDefined();
+    const pkg = JSON.parse(pkgFile!.content);
+    expect(pkg.type).toBe("module");
+  });
+
+  it("includes remeda and immer in package.json dependencies when built-in references them", async () => {
+    const project = createTestProject({ files: [createOperationFile("op")] });
+    (generateBuiltInModule as ReturnType<typeof vi.fn>).mockReturnValue(
+      'import { purry } from "remeda";\nimport { produce } from "immer";'
+    );
+
+    const { files } = await generateExportProject(project, ctx);
+    const pkgFile = files.find((f) => f.path === "package.json");
+    const pkg = JSON.parse(pkgFile!.content);
+    expect(pkg.dependencies).toMatchObject({
+      remeda: "latest",
+      immer: "latest",
+    });
+  });
+
+  it("includes .env.example with keys only", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("op")],
+      deployment: {
+        envVariables: [
+          { key: "API_KEY", value: "secret123" },
+          { key: "DB_URL", value: "postgres://..." },
+        ],
+        platforms: [],
+      },
+    });
+
+    const { files } = await generateExportProject(project, ctx);
+    const envFile = files.find((f) => f.path === ".env.example");
+    expect(envFile).toBeDefined();
+    expect(envFile!.content).toContain("API_KEY=");
+    expect(envFile!.content).toContain("DB_URL=");
+    expect(envFile!.content).not.toContain("secret123");
+    expect(envFile!.content).not.toContain("postgres://");
+  });
+
+  it("does not generate platform config or handlers", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("op")],
+      deployment: {
+        envVariables: [],
+        platforms: [{ platform: "vercel", deployments: [] }],
+      },
+    });
+
+    const { files } = await generateExportProject(project, ctx);
+    expect(generatePlatformConfig).not.toHaveBeenCalled();
+    expect(generatePlatformHandlers).not.toHaveBeenCalled();
+    expect(files.some((f) => f.path === "vercel.json")).toBe(false);
+    expect(files.some((f) => f.path.startsWith("api/"))).toBe(false);
+    expect(files.some((f) => f.path.startsWith("supabase/"))).toBe(false);
+  });
+
+  it("collects errors for files that fail createOperationFromFile", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("bad"), createOperationFile("good")],
+    });
+    (createOperationFromFile as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({});
+
+    const { files, errors } = await generateExportProject(project, ctx);
+    expect(errors.length).toBe(1);
+    expect(files.some((f) => f.path === "src/good.js")).toBe(true);
+  });
+
+  it("returns empty errors array when successful", async () => {
+    const project = createTestProject({ files: [createOperationFile("op")] });
+
+    const { errors, warnings } = await generateExportProject(project, ctx);
+    expect(errors).toEqual([]);
     expect(warnings).toEqual([]);
   });
 });

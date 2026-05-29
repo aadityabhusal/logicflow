@@ -431,7 +431,7 @@ function generateImports(codegenContext?: CodeGenContext): string {
       const importKind = PACKAGE_CATALOG[pkg]?.importKind ?? "default";
       const name = getPackageImportName(pkg, codegenContext);
       if (PACKAGE_CATALOG[pkg]?.packageType === "virtual") {
-        return `import * as ${name} from '../packages/${pkg}.js';`;
+        return `import * as ${name} from './lib/${pkg}.js';`;
       }
       if (importKind === "named") {
         const importName = PACKAGE_REGISTRY[pkg]?.importName ?? pkg;
@@ -458,6 +458,6 @@ export function generateOperation(
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
   const packageImports = generateImports(codeGenContext);
-  const imports = `import * as _ from '../built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
+  const imports = `import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
   return `${imports}\nconst ${currentOperationName} = ${callback};\nexport default ${currentOperationName};`;
 }

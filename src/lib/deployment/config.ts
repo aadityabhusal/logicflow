@@ -22,41 +22,52 @@ export function getTriggeredOperations(project: Project): ProjectFile[] {
   return project.files.filter((f) => f.type === "operation" && f.trigger);
 }
 
-export async function generateDeployableProject(
-  project: Project,
-  context: Context,
-  platform?: DeploymentTarget["platform"]
-): Promise<{ files: DeploymentFile[]; errors: string[]; warnings: string[] }> {
+async function generateBaseFiles(project: Project, context: Context) {
   const errors: string[] = [];
-  const warnings: string[] = [];
-  let files: DeploymentFile[] = [];
+  const files: DeploymentFile[] = [];
 
-  const deployment = project.deployment ?? { envVariables: [], platforms: [] };
-  const triggeredOps = getTriggeredOperations(project);
-  const operationFiles = project.files.filter((f) => f.type === "operation");
   await syncPackageRegistry(getEnabledPackages(project));
 
-  for (const file of operationFiles) {
+  for (const file of project.files.filter((f) => f.type === "operation")) {
     const operation = createOperationFromFile(file);
     if (!operation) {
       errors.push(`Failed to create operation from file: ${file.name}`);
       continue;
     }
-    const code = generateOperation(operation, context);
-    files.push({
-      path: `src/operations/${file.name}.js`,
-      content: code,
-    });
+    const content = generateOperation(operation, context);
+    files.push({ path: `src/${file.name}.js`, content });
   }
-  files.push({ path: "src/built-in.js", content: generateBuiltInModule() });
+  files.push({ path: "src/lib/built-in.js", content: generateBuiltInModule() });
 
   const allFileContent = files.map((f) => f.content).join("\n");
   for (const pkg of Object.keys(virtualPackageModules)) {
     const moduleContent = virtualPackageModules[pkg];
-    if (moduleContent && allFileContent.includes(`../packages/${pkg}.js`)) {
-      files.push({ path: `src/packages/${pkg}.js`, content: moduleContent });
+    if (moduleContent && allFileContent.includes(`./lib/${pkg}.js`)) {
+      files.push({ path: `src/lib/${pkg}.js`, content: moduleContent });
     }
   }
+  return { files, errors };
+}
+
+async function formatProjectFiles(files: DeploymentFile[]) {
+  const results = await Promise.allSettled(
+    files.map(async (file) => {
+      if (!file.path.endsWith(".js")) return file;
+      return { ...file, content: await formatCode(file.content) };
+    })
+  );
+  return results.map((r, i) => (r.status === "fulfilled" ? r.value : files[i]));
+}
+
+export async function generateDeployableProject(
+  project: Project,
+  context: Context,
+  platform?: DeploymentTarget["platform"]
+) {
+  const deployment = project.deployment ?? { envVariables: [], platforms: [] };
+  const triggeredOps = getTriggeredOperations(project);
+  const { files: _files, errors } = await generateBaseFiles(project, context);
+  let files = _files;
 
   const platforms = platform
     ? deployment.platforms.filter((t) => t.platform === platform)
@@ -108,28 +119,21 @@ export async function generateDeployableProject(
     }
   }
 
-  const results = await Promise.allSettled(
-    files.map(async (f) => ({ ...f, content: await formatCode(f.content) }))
-  );
-  const formattedFiles = results.map((result, i) =>
-    result.status === "fulfilled" ? result.value : files[i]
-  );
-
-  return { files: formattedFiles, errors, warnings };
+  return { files: await formatProjectFiles(files), errors, warnings: [] };
 }
 
 type Dependency = { name: string; version: string };
 
 const EDGE_INCOMPATIBLE_PACKAGES: readonly string[] = ["@faker-js/faker"];
 
-function hasEdgeIncompatiblePackages(files: DeploymentFile[]): boolean {
+function hasEdgeIncompatiblePackages(files: DeploymentFile[]) {
   const allFiles = files.map((f) => f.content).join("\n");
   return EDGE_INCOMPATIBLE_PACKAGES.some(
     (pkg) => allFiles.includes(`'${pkg}'`) || allFiles.includes(`"${pkg}"`)
   );
 }
 
-function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
+function extractNpmPackageNames(files: DeploymentFile[]) {
   const packages = new Set<string>();
   const allFiles = files.map((f) => f.content).join("\n");
   for (const pkg of Object.keys(PACKAGE_REGISTRY)) {
@@ -152,7 +156,7 @@ function extractNpmPackageNames(files: DeploymentFile[]): Set<string> {
 export function resolveNpmDependencies(
   project: Project,
   generatedFiles: DeploymentFile[]
-): Dependency[] {
+) {
   const dependencies = project.dependencies?.npm;
   const packageNames = extractNpmPackageNames(generatedFiles);
   const npmDependencies: Dependency[] = [];
@@ -176,7 +180,7 @@ export function resolveNpmDependencies(
 export function generatePackageJson(
   project: Project,
   dependencies: Dependency[]
-): string {
+) {
   const depMap = dependencies.reduce<Record<string, string>>((acc, d) => {
     acc[d.name] = d.version;
     return acc;
@@ -202,4 +206,21 @@ export function generatePackageJson(
   };
 
   return JSON.stringify(pkg, null, 2);
+}
+
+export async function generateExportProject(
+  project: Project,
+  context: Context
+) {
+  const { files, errors } = await generateBaseFiles(project, context);
+  const deps = resolveNpmDependencies(project, files);
+  files.push({
+    path: "package.json",
+    content: generatePackageJson(project, deps),
+  });
+  const env = project.deployment?.envVariables?.map(({ key }) => `${key}=`);
+  if (env?.length) {
+    files.push({ path: ".env.example", content: env.join("\n") });
+  }
+  return { files: await formatProjectFiles(files), errors, warnings: [] };
 }

@@ -1871,9 +1871,7 @@ describe("ffmpeg code generation", () => {
     const op = testOperation([], [stmt], "ffmpegTest");
     const result = generateOperation(op, ctx);
 
-    expect(result).toContain(
-      "import * as ffmpeg from '../packages/ffmpeg.js';"
-    );
+    expect(result).toContain("import * as ffmpeg from './lib/ffmpeg.js';");
   });
 
   it("generates function-style chain call for ffmpeg.input", () => {
@@ -1898,9 +1896,7 @@ describe("ffmpeg code generation", () => {
     const op = testOperation([], [stmt], "ffmpegInputTest");
     const result = generateOperation(op, ctx);
 
-    expect(result).toContain(
-      "import * as ffmpeg from '../packages/ffmpeg.js';"
-    );
+    expect(result).toContain("import * as ffmpeg from './lib/ffmpeg.js';");
     expect(result).toContain('(arg) => ffmpeg.input(arg, "video.mp4")');
   });
 
@@ -1977,9 +1973,7 @@ describe("ffmpeg code generation", () => {
     const op = testOperation([], [stmt], "ffmpegFullTest");
     const result = generateOperation(op, ctx);
 
-    expect(result).toContain(
-      "import * as ffmpeg from '../packages/ffmpeg.js';"
-    );
+    expect(result).toContain("import * as ffmpeg from './lib/ffmpeg.js';");
     expect(result).toContain('(arg) => ffmpeg.input(arg, "in.mp4")');
     expect(result).toContain('(arg) => ffmpeg.videoCodec(arg, "libx264")');
     expect(result).toContain('(arg) => ffmpeg.output(arg, "out.mp4")');

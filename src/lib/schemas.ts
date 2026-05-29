@@ -99,6 +99,14 @@ const HttpTriggerSchema = z.object({
     .optional(),
 });
 
+const ProjectFileBaseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
 export const ClipboardSchema = OperationValueSchema.extend({
   trigger: HttpTriggerSchema.optional(),
 });
@@ -235,6 +243,48 @@ const IStatementSchema = z.object({
   },
 });
 
+const ProjectFileSchema = z.discriminatedUnion("type", [
+  ProjectFileBaseSchema.extend({
+    type: z.literal("operation"),
+    content: z.object({
+      type: OperationTypeSchema,
+      value: OperationValueSchema,
+    }),
+    trigger: HttpTriggerSchema.optional(),
+  }),
+  ProjectFileBaseSchema.extend({
+    type: z.literal("globals"),
+    content: z.record(z.string(), IDataSchema),
+  }),
+  ProjectFileBaseSchema.extend({
+    type: z.literal("documentation"),
+    content: z.string(),
+  }),
+  ProjectFileBaseSchema.extend({
+    type: z.literal("json"),
+    content: z.record(z.string(), z.unknown()),
+  }),
+]);
+
+const DependencyBaseSchema = z.object({
+  namespace: z.string().optional(),
+  version: z.string(),
+  types: z.string().optional(),
+  exports: z.array(
+    z.object({
+      name: z.string(),
+      importedBy: z.array(z.object({ operationName: z.string() })),
+    })
+  ),
+});
+
+const DependenciesSchema = z.object({
+  npm: z.array(DependencyBaseSchema.extend({ name: z.string() })).optional(),
+  logicflow: z
+    .array(DependencyBaseSchema.extend({ projectId: z.string() }))
+    .optional(),
+});
+
 /* Agent change schemas for LLM operations */
 const AgentDeleteSchema = z.object({
   action: z.literal("delete"),
@@ -301,3 +351,20 @@ export const DeploymentTargetSchema = z.discriminatedUnion("platform", [
   DeploymentBase.extend({ platform: z.literal("vercel") }),
   DeploymentBase.extend({ platform: z.literal("supabase") }),
 ]);
+
+const DeploymentConfigSchema = z.object({
+  envVariables: z.array(z.object({ key: z.string(), value: z.string() })),
+  platforms: z.array(DeploymentTargetSchema),
+});
+
+export const ProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number().optional(),
+  files: z.array(ProjectFileSchema),
+  description: z.string().optional(),
+  dependencies: DependenciesSchema.optional(),
+  deployment: DeploymentConfigSchema.optional(),
+});
