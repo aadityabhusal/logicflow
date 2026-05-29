@@ -174,7 +174,7 @@ export default function Docs() {
             ))}
           </div>
         </aside>
-        <article className="flex-1 overflow-y-auto scroll bg-editor md:mx-20 mx-4">
+        <article className="min-w-0 flex-1 overflow-y-auto scroll bg-editor md:mx-20 mx-4">
           {docSections.map(({ id, content }) => (
             <section key={id} className="prose prose-invert max-w-none mb-8">
               <ReactMarkdown

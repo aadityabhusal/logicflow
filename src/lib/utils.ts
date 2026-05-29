@@ -106,6 +106,15 @@ function createStatementFromType({
   return createStatement({ data, ...config });
 }
 
+export function createTypeFromStatement(statement: IStatement) {
+  return {
+    name: statement.name,
+    type: statement.data.type,
+    isOptional: statement.isOptional,
+    isRest: statement.isRest,
+  } as OperationType["parameters"][number];
+}
+
 export function createDefaultValue<T extends DataType>(
   type: T,
   options?: { includeOptionalProperties?: boolean }
@@ -1040,8 +1049,14 @@ export function getOperationResultType(
   value: DataValue<OperationType>,
   context: Context
 ): DataType {
-  const resultType = getStatementsResultType(value.statements, context);
-
+  const opContext = createContext(context);
+  const params = value.parameters.map(createTypeFromStatement);
+  for (const param of value.parameters) {
+    const result = getStatementResult(param, opContext);
+    const variable = createContextVariable(param, opContext, result, params);
+    if (variable && param.name) opContext.variables.set(param.name, variable);
+  }
+  const resultType = getStatementsResultType(value.statements, opContext);
   if (value.isAsync) {
     return {
       kind: "instance",
@@ -1050,7 +1065,6 @@ export function getOperationResultType(
       result: resultType,
     };
   }
-
   return resultType;
 }
 
@@ -1163,13 +1177,7 @@ export function inferTypeFromValue<T extends DataType>(
     Array.isArray(value.parameters) &&
     Array.isArray(value.statements)
   ) {
-    const params = value.parameters.map((param) => ({
-      name: param.name,
-      type: param.data.type,
-      isOptional: param.isOptional,
-      isRest: param.isRest,
-    }));
-
+    const params = value.parameters.map(createTypeFromStatement);
     return {
       kind: "operation",
       parameters:

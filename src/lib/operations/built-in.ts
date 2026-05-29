@@ -329,6 +329,9 @@ const specialOperations: OperationListItem[] = [
         if (!opListItem) {
           return createRuntimeError(`"${name}" cannot be called as data`);
         }
+        // Operation refs are validated against their stored function signature by `call`.
+        // Do not re-derive data-dependent parameter types from earlier arguments here.
+        return opListItem.handler(context, sourceData, ...params.slice(1));
       } else if (!opData.value.instanceId && !opData.value.isAsync) {
         opListItem = operationToListItem(opData);
       }
@@ -757,11 +760,14 @@ const builtInOperationsByKind = new Map<string, OperationListItem[]>();
 export const builtInOperationsByName = new Map<string, OperationListItem[]>();
 rebuildIndexes();
 
-export function isReferenceableBuiltInOperation(operation: OperationListItem) {
+export function isReferenceableBuiltInOperation(
+  operation: OperationListItem
+): operation is Extract<OperationListItem, { handler: unknown }> {
   const parameters = Array.isArray(operation.parameters)
     ? operation.parameters
     : operation.parameters(createData());
   return (
+    "handler" in operation &&
     !("lazyHandler" in operation) &&
     parameters[0]?.type.kind !== "instance" &&
     !["call", "await"].includes(operation.name)

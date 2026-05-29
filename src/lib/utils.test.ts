@@ -2891,6 +2891,40 @@ describe("getOperationResultType", () => {
     );
     expect(result.kind).toBe("string");
   });
+
+  it("resolves parameter references in return types", () => {
+    const ctx = createTestContext();
+    const numberArray: DataType = {
+      kind: "array",
+      elementType: { kind: "number" },
+    };
+    const arrParam = createStatement({
+      name: "arr",
+      data: createData({ type: numberArray, value: [] }),
+    });
+
+    const result = getOperationResultType(
+      {
+        parameters: [arrParam],
+        statements: [
+          createStatement({
+            controlFlow: "return",
+            data: createData({
+              type: { kind: "reference", name: "arr" },
+              value: { name: "arr", id: arrParam.id },
+            }),
+          }),
+          createStatement({
+            data: createData({ type: numberArray, value: [] }),
+          }),
+        ],
+        name: "myOp",
+      },
+      ctx
+    );
+
+    expect(result).toEqual(numberArray);
+  });
 });
 
 describe("createContextVariable", () => {
