@@ -5,7 +5,7 @@ import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import {
   inferTypeFromValue,
   isDataOfType,
-  moveArrayItem,
+  moveArrayItemBy,
   getPosition,
 } from "@/lib/utils";
 import { Context } from "@/lib/execution/types";
@@ -52,7 +52,11 @@ const ArrayInputComponent = (
 
   const moveArrayItemHandler = useCallback(
     (id: string, dir: "up" | "down") => {
-      const newValue = moveArrayItem(data.value, id, dir);
+      const newValue = moveArrayItemBy(
+        data.value,
+        (item) => item.id === id,
+        dir
+      );
       if (!newValue) return;
       handleData({
         ...data,

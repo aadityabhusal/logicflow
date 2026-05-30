@@ -1,5 +1,9 @@
 import { handleNavigation } from "@/lib/navigation";
-import { useProjectStore, useNavigationStore } from "@/lib/store";
+import {
+  useProjectStore,
+  useNavigationStore,
+  useContextMenuStore,
+} from "@/lib/store";
 import { NavigationDirection, NavigationModifier } from "@/lib/types";
 import { HotkeyItem } from "@mantine/hooks";
 import { Dispatch, SetStateAction } from "react";
@@ -18,6 +22,7 @@ export function useCustomHotkeys(
 ): HotkeyItem[] {
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
+  const contextMenuOpen = useContextMenuStore((s) => !!s.menu);
 
   const navigation = useNavigationStore((state) =>
     state.navigation
@@ -61,6 +66,7 @@ export function useCustomHotkeys(
       ? (hotKeys.map(({ modifier, direction, key }) => [
           (modifier ? `${modifier}+` : "") + key,
           (event) => {
+            if (contextMenuOpen) return;
             handleNavigation({
               event,
               direction,

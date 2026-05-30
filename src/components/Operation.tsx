@@ -13,13 +13,13 @@ import {
   getIsAsync,
   getPosition,
   inferTypeFromValue,
-  moveArrayItem,
+  moveArrayItemBy,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 import { getReservedNames } from "@/lib/execution/store";
 import { Context } from "@/lib/execution/types";
-import { useProjectStore } from "@/lib/store";
+import { useContextMenuStore, useProjectStore } from "@/lib/store";
 import isEqual from "react-fast-compare";
 import { EntityPath } from "@/lib/types";
 
@@ -31,6 +31,7 @@ interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
   ) => void;
   context: Context;
   path: EntityPath;
+  className?: string;
 }
 
 const OperationComponent = (
@@ -39,6 +40,9 @@ const OperationComponent = (
 ) => {
   const updateStatementByPath = useProjectStore((s) => s.updateStatementByPath);
   const fileId = useProjectStore((s) => s.currentFileId);
+  const isHighlighted = useContextMenuStore(
+    (s) => path.length === 0 && s.highlightedEntityId === operation.id
+  );
   const expectedParameterType = useMemo(
     () =>
       context.expectedType?.kind === "operation"
@@ -253,7 +257,11 @@ const OperationComponent = (
       (key: "statements" | "parameters") =>
       (id: string, dir: "up" | "down") => {
         handleChange((prevOp) => {
-          const arr = moveArrayItem(prevOp.value[key], id, dir);
+          const arr = moveArrayItemBy(
+            prevOp.value[key],
+            (item) => item.id === id,
+            dir
+          );
           if (!arr) return prevOp;
           return { ...prevOp, value: { ...prevOp.value, [key]: arr } };
         });
@@ -262,7 +270,14 @@ const OperationComponent = (
   }, [handleChange]);
 
   return (
-    <div {...props} ref={ref}>
+    <div
+      {...props}
+      ref={ref}
+      className={[
+        props.className,
+        isHighlighted ? "outline outline-border bg-dropdown-hover" : "",
+      ].join(" ")}
+    >
       <div className="flex items-start gap-1">
         <span>{"("}</span>
         {operation.value.parameters.map((parameter, i, paramList) => (

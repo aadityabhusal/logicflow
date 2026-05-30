@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
+import { z } from "zod";
 import { IData, IStatement, OperationType } from "./types";
-import { IStatementSchema, IDataSchema } from "./schemas";
+import { ClipboardSchema, IStatementSchema, IDataSchema } from "./schemas";
 import { isDataOfType } from "./utils";
 import { notifications } from "@mantine/notifications";
 import { walkStatement, walkData, Visitors } from "./walk";
@@ -26,27 +27,16 @@ function remapIds(map: Map<string, string>) {
 
 const walkOptions = { operationCalls: true, nestedOperations: true };
 
-export function cloneStatementWithFreshIds(stmt: IStatement) {
+export function cloneWithNewIds<T extends IStatement | IData>(entity: T): T {
+  const clone = structuredClone(entity);
   const map = new Map<string, string>();
-  walkStatement(stmt, collectIds(map), walkOptions);
-  const clone = structuredClone(stmt);
-  walkStatement(clone, remapIds(map), walkOptions);
-  return clone;
-}
-
-export function cloneDataWithFreshIds(data: IData) {
-  const map = new Map<string, string>();
-  walkData(data, collectIds(map), walkOptions);
-  const clone = structuredClone(data);
-  walkData(clone, remapIds(map), walkOptions);
-  return clone;
-}
-
-export function cloneOperationCallWithFreshIds(op: IData<OperationType>) {
-  const map = new Map<string, string>();
-  walkData(op, collectIds(map), walkOptions);
-  const clone = structuredClone(op);
-  walkData(clone, remapIds(map), walkOptions);
+  if ("type" in clone) {
+    walkData(clone, collectIds(map), walkOptions);
+    walkData(clone, remapIds(map), walkOptions);
+  } else {
+    walkStatement(clone, collectIds(map), walkOptions);
+    walkStatement(clone, remapIds(map), walkOptions);
+  }
   return clone;
 }
 
@@ -55,6 +45,7 @@ export function cloneOperationCallWithFreshIds(op: IData<OperationType>) {
 export type EntityClipboard =
   | { kind: "statement"; value: IStatement }
   | { kind: "operationCall"; value: IData<OperationType> }
+  | { kind: "operation"; value: z.infer<typeof ClipboardSchema> }
   | { kind: "data"; value: IData };
 
 export function writeEntityClipboard(entry: EntityClipboard): void {
@@ -85,6 +76,10 @@ export async function readEntityClipboard(): Promise<EntityClipboard | null> {
         return { kind, value: result.data as IData<OperationType> };
       }
       return null;
+    }
+    if (kind === "operation") {
+      const result = ClipboardSchema.safeParse(value);
+      return result.success ? { kind, value: result.data } : null;
     }
     if (kind === "data") {
       const result = IDataSchema.safeParse(value);

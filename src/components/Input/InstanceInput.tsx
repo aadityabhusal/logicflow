@@ -5,7 +5,7 @@ import { AddStatement } from "../AddStatement";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { forwardRef, memo, useCallback, useMemo } from "react";
-import { inferTypeFromValue, moveArrayItem, getPosition } from "@/lib/utils";
+import { inferTypeFromValue, moveArrayItemBy, getPosition } from "@/lib/utils";
 import { resolveDisplayName } from "@/lib/packages/registry";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
@@ -59,7 +59,11 @@ const InstanceInputComponent = (
   const moveConstructorArg = useCallback(
     (id: string, dir: "up" | "down") => {
       const args = data.value.constructorArgs;
-      const constructorArgs = moveArrayItem(args, id, dir);
+      const constructorArgs = moveArrayItemBy(
+        args,
+        (arg) => arg.id === id,
+        dir
+      );
       if (!constructorArgs) return;
       handleData({ ...data, value: { ...data.value, constructorArgs } });
     },

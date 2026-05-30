@@ -24,6 +24,9 @@ import { IData, OperationType } from "@/lib/types";
 import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { cloneWithNewIds, writeEntityClipboard } from "@/lib/editor-clipboard";
+import { readClipboardOfKind } from "@/hooks/useEntityContextMenu";
+import { ClipboardSchema } from "@/lib/schemas";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import {
   executionWorkerClient,
@@ -39,23 +42,23 @@ export default function Project() {
   const updateFile = useProjectStore((s) => s.updateFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const currentOperation = useMemo(() => {
-    return createOperationFromFile(
-      projectFiles?.find((file) => file.id === currentFileId)
-    );
+  const currentFile = useMemo(() => {
+    return projectFiles?.find((file) => file.id === currentFileId);
   }, [projectFiles, currentFileId]);
+  const currentOperation = useMemo(() => {
+    return createOperationFromFile(currentFile);
+  }, [currentFile]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const rootPath = useMemo(() => [], []);
-  const [activeSidebarTab, setActiveSidebarTab] = useState<string | undefined>(
-    "operations"
-  );
-  useHotkeys(useCustomHotkeys(setActiveSidebarTab), []);
+  const [activeTab, setActiveTab] = useState<string | undefined>("operations");
+  useHotkeys(useCustomHotkeys(setActiveTab), []);
   const operationRef = useClickOutside(() => {
     setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));
   });
 
   const getFile = useProjectStore((s) => s.getFile);
   const contextMenu = useContextMenuStore((s) => s.menu);
+  const openContextMenu = useContextMenuStore((s) => s.openMenu);
   const closeContextMenu = useContextMenuStore((s) => s.closeMenu);
 
   const handleOperationChange = useCallback(
@@ -81,6 +84,63 @@ export default function Project() {
       updateFile(file.id, createFileFromOperation(newOperation));
     },
     [getFile, currentFileId, deleteFile, updateFile]
+  );
+
+  const handleOperationContextMenu = useCallback(
+    (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!currentOperation || currentFile?.type !== "operation") return;
+
+      openContextMenu({
+        items: [
+          {
+            label: "Copy operation",
+            onClick: () => {
+              const { name: _, ...value } = currentOperation.value;
+              const { trigger } = currentFile;
+              writeEntityClipboard({
+                kind: "operation",
+                value: ClipboardSchema.parse({ ...value, trigger }),
+              });
+            },
+          },
+          {
+            label: "Replace operation",
+            onClick: async () => {
+              const entry = await readClipboardOfKind("operation", "replace");
+              if (!entry) return;
+
+              const { trigger, parameters, ...content } = entry.value;
+              const isSameTriggerType = !!trigger === !!currentFile.trigger;
+              const cloned = cloneWithNewIds({
+                ...currentOperation,
+                value: {
+                  ...currentOperation.value,
+                  ...(isSameTriggerType ? { ...content, parameters } : content),
+                },
+              });
+              fileHistoryActions.pushState(currentFile.id, currentFile.content);
+              updateFile(currentFile.id, {
+                type: "operation",
+                content: {
+                  type: cloned.type,
+                  value: { ...cloned.value, name: currentFile.name },
+                },
+                trigger: currentFile.trigger
+                  ? isSameTriggerType
+                    ? trigger
+                    : currentFile.trigger
+                  : undefined,
+              });
+            },
+          },
+        ],
+        position: { x: e.clientX, y: e.clientY },
+        highlightedEntityId: currentOperation.id,
+      });
+    },
+    [currentOperation, currentFile, openContextMenu, updateFile]
   );
 
   const deferredOperation = useDeferredValue(currentOperation);
@@ -161,10 +221,7 @@ export default function Project() {
     <div className="flex flex-col h-dvh">
       <Header />
       <div className="flex flex-col-reverse md:flex-row flex-1 min-h-0 relative">
-        <SidebarTabs
-          activeTab={activeSidebarTab}
-          setActiveTab={setActiveSidebarTab}
-        />
+        <SidebarTabs activeTab={activeTab} setActiveTab={setActiveTab} />
         <div
           className={
             "relative flex-1 overflow-y-auto scroll flex flex-col pr-2"
@@ -186,6 +243,7 @@ export default function Project() {
                 path={rootPath}
                 className="flex-1 min-w-0 min-h-0 overflow-auto p-1"
                 onClick={handleOperationClick}
+                onContextMenu={handleOperationContextMenu}
               />
             ) : (
               <NoteText>Select an operation</NoteText>

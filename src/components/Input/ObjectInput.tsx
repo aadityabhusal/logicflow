@@ -3,7 +3,12 @@ import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
-import { createVariableName, inferTypeFromValue } from "@/lib/utils";
+import {
+  createVariableName,
+  getPosition,
+  inferTypeFromValue,
+  moveArrayItemBy,
+} from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
@@ -52,6 +57,19 @@ const ObjectInputComponent = (
       });
     },
     [data, handleData, context]
+  );
+
+  const moveProperty = useCallback(
+    (id: string, dir: "up" | "down") => {
+      const entries = moveArrayItemBy(
+        data.value.entries,
+        (entry) => entry.value.id === id,
+        dir
+      );
+      if (!entries) return;
+      handleData({ ...data, value: { entries } });
+    },
+    [data, handleData]
   );
 
   const handleKeyUpdate = useCallback(
@@ -213,6 +231,8 @@ const ObjectInputComponent = (
               statement={entry.value}
               path={entryPaths[i]}
               handleStatement={handleUpdate}
+              moveStatement={moveProperty}
+              position={getPosition(i, data.value.entries.length)}
               disableDelete={!!context.expectedType && !isOptional}
             />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}

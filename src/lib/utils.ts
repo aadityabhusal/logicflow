@@ -74,12 +74,12 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
   };
 }
 
-export function moveArrayItem<T extends { id: string }>(
+export function moveArrayItemBy<T>(
   array: T[],
-  id: string,
+  matches: (item: T) => boolean,
   direction: "up" | "down"
 ): T[] | null {
-  const index = array.findIndex((item) => item.id === id);
+  const index = array.findIndex(matches);
   if (index === -1) return null;
   const target = direction === "up" ? index - 1 : index + 1;
   if (target < 0 || target >= array.length) return null;

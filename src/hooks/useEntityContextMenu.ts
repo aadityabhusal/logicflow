@@ -11,19 +11,19 @@ import { notifications } from "@mantine/notifications";
 import {
   writeEntityClipboard,
   readEntityClipboard,
-  cloneStatementWithFreshIds,
-  cloneOperationCallWithFreshIds,
+  cloneWithNewIds,
   EntityClipboard,
 } from "@/lib/editor-clipboard";
-import { moveArrayItem } from "@/lib/utils";
+import { moveArrayItemBy } from "@/lib/utils";
 
 const kindLabels: Record<string, string> = {
   statement: "a statement",
   data: "data",
   operationCall: "an operation call",
+  operation: "an operation",
 };
 
-async function readClipboardOfKind<K extends EntityClipboard["kind"]>(
+export async function readClipboardOfKind<K extends EntityClipboard["kind"]>(
   kind: K,
   action: string
 ) {
@@ -61,7 +61,9 @@ export function useEntityContextMenu({
   path,
   position,
 }: Params) {
-  const highlightedEntityId = useContextMenuStore((s) => s.highlightedEntityId);
+  const isHighlighted = useContextMenuStore(
+    (s) => s.highlightedEntityId === statement.id
+  );
   const openMenu = useContextMenuStore((s) => s.openMenu);
 
   const handleContextMenu = useCallback(
@@ -89,7 +91,7 @@ export function useEntityContextMenu({
             onClick: async () => {
               const entry = await readClipboardOfKind("statement", "replace");
               if (!entry) return;
-              const cloned = cloneStatementWithFreshIds(entry.value);
+              const cloned = cloneWithNewIds(entry.value);
               handleStatement(
                 {
                   ...cloned,
@@ -108,7 +110,7 @@ export function useEntityContextMenu({
               if (!addStatement) return;
               const entry = await readClipboardOfKind("statement", "paste");
               if (!entry) return;
-              const cloned = cloneStatementWithFreshIds(entry.value);
+              const cloned = cloneWithNewIds(entry.value);
               addStatement(cloned, "after", statement.id);
             },
           },
@@ -117,11 +119,7 @@ export function useEntityContextMenu({
             disabled: !addStatement,
             onClick: () => {
               if (!addStatement) return;
-              addStatement(
-                cloneStatementWithFreshIds(statement),
-                "after",
-                statement.id
-              );
+              addStatement(cloneWithNewIds(statement), "after", statement.id);
             },
           },
           {
@@ -184,7 +182,11 @@ export function useEntityContextMenu({
             onClick: async () => {
               const entry = await readClipboardOfKind("data", "replace");
               if (!entry) return;
-              handleStatement({ ...statement, data: entry.value }, false, path);
+              handleStatement(
+                { ...statement, data: cloneWithNewIds(entry.value) },
+                false,
+                path
+              );
             },
           },
           {
@@ -193,12 +195,32 @@ export function useEntityContextMenu({
             disabled: !!disableDelete,
             onClick: () => handleStatement(statement, true, path),
           },
+          {
+            label: "Move before",
+            disabled:
+              !moveStatement || position === "first" || position === "only",
+            onClick: () => moveStatement?.(statement.id, "up"),
+          },
+          {
+            label: "Move after",
+            disabled:
+              !moveStatement || position === "last" || position === "only",
+            onClick: () => moveStatement?.(statement.id, "down"),
+          },
         ],
         position: { x: e.clientX, y: e.clientY },
-        highlightedEntityId: statement.id,
+        highlightedEntityId: statement.data.id,
       });
     },
-    [statement, handleStatement, disableDelete, path, openMenu]
+    [
+      statement,
+      handleStatement,
+      disableDelete,
+      path,
+      openMenu,
+      moveStatement,
+      position,
+    ]
   );
 
   const getOperationMenuItems = useCallback(
@@ -223,7 +245,7 @@ export function useEntityContextMenu({
           const entry = await readClipboardOfKind("operationCall", "replace");
           if (!entry) return;
           const ops = [...statement.operations];
-          ops[opIndex] = cloneOperationCallWithFreshIds(entry.value);
+          ops[opIndex] = cloneWithNewIds(entry.value);
           handleStatement({ ...statement, operations: ops }, false, path);
         },
       },
@@ -233,11 +255,7 @@ export function useEntityContextMenu({
           const entry = await readClipboardOfKind("operationCall", "paste");
           if (!entry) return;
           const ops = [...statement.operations];
-          ops.splice(
-            opIndex + 1,
-            0,
-            cloneOperationCallWithFreshIds(entry.value)
-          );
+          ops.splice(opIndex + 1, 0, cloneWithNewIds(entry.value));
           handleStatement({ ...statement, operations: ops }, false, path);
         },
       },
@@ -245,7 +263,7 @@ export function useEntityContextMenu({
         label: "Duplicate",
         onClick: () => {
           const ops = [...statement.operations];
-          ops.splice(opIndex + 1, 0, cloneOperationCallWithFreshIds(operation));
+          ops.splice(opIndex + 1, 0, cloneWithNewIds(operation));
           handleStatement({ ...statement, operations: ops }, false, path);
         },
       },
@@ -262,7 +280,11 @@ export function useEntityContextMenu({
         label: "Move before",
         disabled: opIndex === 0,
         onClick: () => {
-          const ops = moveArrayItem(statement.operations, operation.id, "up")!;
+          const ops = moveArrayItemBy(
+            statement.operations,
+            (op) => op.id === operation.id,
+            "up"
+          )!;
           handleStatement({ ...statement, operations: ops }, false, path);
         },
       },
@@ -270,9 +292,9 @@ export function useEntityContextMenu({
         label: "Move after",
         disabled: opIndex === statement.operations.length - 1,
         onClick: () => {
-          const ops = moveArrayItem(
+          const ops = moveArrayItemBy(
             statement.operations,
-            operation.id,
+            (op) => op.id === operation.id,
             "down"
           )!;
           handleStatement({ ...statement, operations: ops }, false, path);
@@ -302,6 +324,6 @@ export function useEntityContextMenu({
     handleContextMenu,
     handleDataContextMenu,
     handleOperationContextMenu,
-    isHighlighted: highlightedEntityId === statement.id,
+    isHighlighted,
   } as const;
 }

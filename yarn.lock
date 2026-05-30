@@ -1082,6 +1082,13 @@
   resolved "https://registry.yarnpkg.com/@standard-schema/spec/-/spec-1.1.0.tgz#a79b55dbaf8604812f52d140b2c9ab41bc150bb8"
   integrity sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==
 
+"@szhsin/react-menu@^4.5.1":
+  version "4.5.1"
+  resolved "https://registry.yarnpkg.com/@szhsin/react-menu/-/react-menu-4.5.1.tgz#069e46ef982179996acfd82fc31538dcd408421a"
+  integrity sha512-kRTS7Pq0YdkucQexXVy5HkpzKsJdXbAhpmzve0wPokpsaG+4Ca3cphEn6WkRCWXfn1gZXosxcZCeb34ocmUPDw==
+  dependencies:
+    react-transition-state "^2.3.1"
+
 "@tailwindcss/node@4.1.17":
   version "4.1.17"
   resolved "https://registry.yarnpkg.com/@tailwindcss/node/-/node-4.1.17.tgz#ec40a37293246f4eeab2dac00e4425af9272f600"
@@ -4662,6 +4669,11 @@ react-transition-group@4.4.5:
     dom-helpers "^5.0.1"
     loose-envify "^1.4.0"
     prop-types "^15.6.2"
+
+react-transition-state@^2.3.1:
+  version "2.4.0"
+  resolved "https://registry.yarnpkg.com/react-transition-state/-/react-transition-state-2.4.0.tgz#5123eb8bbd194669c258d82fff4216e852595b37"
+  integrity sha512-d86g/nv4vsDBLBum8KSeb9S3aWDlptDQ4ydFvfCHk98ePFNILXq5Wu3tVgPXJrItxvMLtJ+XPjmGw0RmMyYMBg==
 
 react@^18.2.0:
   version "18.2.0"

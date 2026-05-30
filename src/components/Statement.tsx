@@ -454,9 +454,7 @@ const StatementComponent = ({
                       ? undefined
                       : addOperationCall
                   }
-                  onContextMenu={(e) =>
-                    handleOperationContextMenu(e, operation)
-                  }
+                  onOperationContextMenu={handleOperationContextMenu}
                 />
               </ErrorBoundary>
             </div>

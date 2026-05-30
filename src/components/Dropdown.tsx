@@ -96,8 +96,8 @@ const DropdownComponent = ({
 }) => {
   const [, setSearchParams] = useSearchParams();
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
-  const contextMenuHighlightId = useContextMenuStore(
-    (s) => s.highlightedEntityId
+  const isContextMenuHighlighted = useContextMenuStore(
+    (s) => s.highlightedEntityId === id
   );
 
   const setNavigation = useNavigationStore((s) => s.setNavigation);
@@ -372,7 +372,7 @@ const DropdownComponent = ({
           className={[
             "flex items-start relative p-px",
             isFocused || isHovered ? "outline outline-border" : "",
-            contextMenuHighlightId === id
+            isContextMenuHighlighted
               ? "outline outline-border bg-dropdown-hover"
               : "",
             context.skipExecution && context.skipExecution.kind !== "error"

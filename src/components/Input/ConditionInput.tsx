@@ -4,7 +4,7 @@ import {
   getPosition,
   getStatementsResultType,
   isTypeCompatible,
-  moveArrayItem,
+  moveArrayItemBy,
   resolveUnionType,
 } from "@/lib/utils";
 import { Statement } from "../Statement";
@@ -111,12 +111,20 @@ const ConditionInputComponent = (
   const moveBranchStatement = useMemo(
     () => ({
       trueBranch: (id: string, dir: "up" | "down") => {
-        const arr = moveArrayItem(data.value.trueBranch, id, dir);
+        const arr = moveArrayItemBy(
+          data.value.trueBranch,
+          (stmt) => stmt.id === id,
+          dir
+        );
         if (!arr) return;
         handleChange({ trueBranch: arr });
       },
       falseBranch: (id: string, dir: "up" | "down") => {
-        const arr = moveArrayItem(data.value.falseBranch, id, dir);
+        const arr = moveArrayItemBy(
+          data.value.falseBranch,
+          (stmt) => stmt.id === id,
+          dir
+        );
         if (!arr) return;
         handleChange({ falseBranch: arr });
       },

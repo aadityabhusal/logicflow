@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { clamp, useClickOutside, useWindowEvent } from "@mantine/hooks";
+import { ControlledMenu, MenuItem } from "@szhsin/react-menu";
 import { ContextMenuItem } from "@/lib/types";
+
+const FIRST_MENU_ITEM = { position: "first" } as const;
 
 export function EntityContextMenu({
   items,
@@ -11,50 +12,38 @@ export function EntityContextMenu({
   position: { x: number; y: number };
   onClose: () => void;
 }) {
-  const [clampedPos, setClampedPos] = useState(position);
-  const menuRef = useClickOutside(onClose, ["mousedown"]);
-
-  useWindowEvent("keydown", (e) => {
-    if (e.key === "Escape") onClose();
-  });
-
-  useEffect(() => {
-    const menu = menuRef.current;
-    if (!menu) return;
-    const rect = menu.getBoundingClientRect();
-    const x = clamp(position.x, 4, window.innerWidth - rect.width - 4);
-    const y = clamp(position.y, 4, window.innerHeight - rect.height - 4);
-    if (x !== position.x || y !== position.y) setClampedPos({ x, y });
-  }, [position, menuRef]);
-
   return (
-    <div
-      ref={menuRef}
-      role="menu"
-      className="fixed z-50 min-w-[140px] bg-editor border flex flex-col"
-      style={{ left: clampedPos.x, top: clampedPos.y }}
+    <ControlledMenu
+      state="open"
+      anchorPoint={position}
+      menuItemFocus={FIRST_MENU_ITEM}
+      portal
+      position="auto"
+      onClose={onClose}
+      className="z-50"
+      menuClassName="m-0 list-none min-w-[140px] bg-editor border flex flex-col p-0"
     >
       {items.map((item) => (
-        <button
+        <MenuItem
           key={item.label}
-          role="menuitem"
           disabled={item.disabled}
-          className={[
-            "w-full text-left p-1 hover:bg-dropdown-hover focus:bg-dropdown-hover focus:outline-none",
-            "disabled:text-disabled disabled:cursor-default",
-            item.danger ? "text-error" : "",
-          ].join(" ")}
+          className={({ hover, disabled }) =>
+            [
+              "w-full text-left p-1 outline-none cursor-default",
+              hover && !disabled ? "bg-dropdown-hover" : "",
+              disabled ? "text-disabled" : "",
+              item.danger ? "text-error" : "",
+            ].join(" ")
+          }
           onClick={(e) => {
-            e.stopPropagation();
-            if (!item.disabled) {
-              item.onClick();
-              onClose();
-            }
+            e.syntheticEvent.stopPropagation();
+            item.onClick();
+            onClose();
           }}
         >
-          <span>{item.label}</span>
-        </button>
+          {item.label}
+        </MenuItem>
       ))}
-    </div>
+    </ControlledMenu>
   );
 }
