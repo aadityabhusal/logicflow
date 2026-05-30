@@ -3,7 +3,9 @@ import {
   useProjectStore,
   useNavigationStore,
   fileHistoryActions,
+  useContextMenuStore,
 } from "@/lib/store";
+import { EntityContextMenu } from "@/components/EntityContextMenu";
 import { Header } from "@/ui/Header";
 import { SidebarTabs } from "@/ui/SidebarTabs";
 import { NoteText } from "@/ui/NoteText";
@@ -53,6 +55,8 @@ export default function Project() {
   });
 
   const getFile = useProjectStore((s) => s.getFile);
+  const contextMenu = useContextMenuStore((s) => s.menu);
+  const closeContextMenu = useContextMenuStore((s) => s.closeMenu);
 
   const handleOperationChange = useCallback(
     (
@@ -189,6 +193,13 @@ export default function Project() {
           </ErrorBoundary>
         </div>
       </div>
+      {contextMenu && (
+        <EntityContextMenu
+          items={contextMenu.items}
+          position={contextMenu.position}
+          onClose={closeContextMenu}
+        />
+      )}
     </div>
   );
 }

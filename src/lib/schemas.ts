@@ -222,9 +222,9 @@ const DataVariants = [
     },
   }),
 ] as const;
-const IDataSchema = z.union(DataVariants);
+export const IDataSchema = z.union(DataVariants);
 
-const IStatementSchema = z.object({
+export const IStatementSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   isOptional: z.boolean().optional(),

@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { isDeepEqual } from "remeda";
+import { isDeepEqual, swapIndices } from "remeda";
 import { DataTypes, ErrorTypesData } from "./data";
 import {
   getAllInstanceTypes,
@@ -72,6 +72,28 @@ export function createStatement(props?: Partial<IStatement>): IStatement {
     isRest: props?.isRest,
     controlFlow: props?.controlFlow,
   };
+}
+
+export function moveArrayItem<T extends { id: string }>(
+  array: T[],
+  id: string,
+  direction: "up" | "down"
+): T[] | null {
+  const index = array.findIndex((item) => item.id === id);
+  if (index === -1) return null;
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= array.length) return null;
+  return swapIndices(array, index, target);
+}
+
+export function getPosition(
+  index: number,
+  length: number
+): "first" | "last" | "only" | undefined {
+  if (length <= 1) return "only";
+  if (index === 0) return "first";
+  if (index === length - 1) return "last";
+  return undefined;
 }
 
 export function isValidIdentifier(name: string): boolean {

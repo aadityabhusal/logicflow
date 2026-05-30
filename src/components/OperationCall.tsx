@@ -28,6 +28,7 @@ const OperationCallComponent = ({
   handleOperationCall,
   addOperationCall,
   path,
+  onContextMenu,
 }: {
   data: IData;
   operation: IData<OperationType>;
@@ -37,6 +38,7 @@ const OperationCallComponent = ({
   ) => void;
   addOperationCall?: (data: IData, operationId?: string) => void;
   path: EntityPath;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContextOrAncestor(operation.id, path)
@@ -176,6 +178,7 @@ const OperationCallComponent = ({
       handleDelete={handleDelete}
       isInputTarget
       target={TooltipTarget}
+      onContextMenu={onContextMenu}
     >
       <span>{"("}</span>
       <div

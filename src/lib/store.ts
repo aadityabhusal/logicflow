@@ -10,6 +10,7 @@ import {
   IStatement,
   OperationType,
   ProjectCheckpoint,
+  ContextMenuItem,
 } from "./types";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
@@ -510,5 +511,26 @@ export const useCheckpointStore = createWithEqualityFn(
     }),
     { name: "checkpoints", storage: createIDbStorage("checkpoints") }
   ),
+  shallow
+);
+
+type ContextMenuStore = {
+  menu?: { items: ContextMenuItem[]; position: { x: number; y: number } };
+  highlightedEntityId?: string;
+  openMenu: (
+    payload: ContextMenuStore["menu"] & { highlightedEntityId?: string }
+  ) => void;
+  closeMenu: () => void;
+};
+
+export const useContextMenuStore = createWithEqualityFn<ContextMenuStore>(
+  (set) => ({
+    openMenu: (payload) =>
+      set({
+        menu: { items: payload.items, position: payload.position },
+        highlightedEntityId: payload.highlightedEntityId,
+      }),
+    closeMenu: () => set({ menu: undefined, highlightedEntityId: undefined }),
+  }),
   shallow
 );

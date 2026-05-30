@@ -42,11 +42,13 @@ import { EntityPath } from "@/lib/types";
 import { ReservedNames } from "@/lib/execution/types";
 import { getStatementLayout } from "@/lib/layout";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
+import { useEntityContextMenu } from "@/hooks/useEntityContextMenu";
 
 const StatementComponent = ({
   statement,
   handleStatement,
   addStatement,
+  moveStatement,
   enableVariable,
   isOptional,
   isParameter,
@@ -55,6 +57,7 @@ const StatementComponent = ({
   disableDelete,
   path,
   reservedNames,
+  position,
 }: {
   statement: IStatement;
   handleStatement: (
@@ -67,6 +70,7 @@ const StatementComponent = ({
     position: "before" | "after",
     currentStatementId: string
   ) => void;
+  moveStatement?: (id: string, direction: "up" | "down") => void;
   enableVariable?: boolean;
   isOptional?: boolean;
   isParameter?: boolean;
@@ -75,6 +79,7 @@ const StatementComponent = ({
   disableDelete?: boolean;
   path: EntityPath;
   reservedNames?: ReservedNames;
+  position?: "first" | "last" | "only";
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContextOrAncestor(statement.id, path)
@@ -83,6 +88,21 @@ const StatementComponent = ({
 
   const isReturn = statement.controlFlow === "return";
   const isTopLevelStatement = enableVariable && !isParameter;
+
+  const {
+    handleContextMenu,
+    handleDataContextMenu,
+    handleOperationContextMenu,
+    isHighlighted,
+  } = useEntityContextMenu({
+    statement,
+    handleStatement,
+    addStatement,
+    moveStatement,
+    disableDelete,
+    path,
+    position,
+  });
 
   const normalizeStatement = useCallback((nextStatement: IStatement) => {
     if (!isDataOfType(nextStatement.data, "condition")) return nextStatement;
@@ -243,7 +263,13 @@ const StatementComponent = ({
   }, [path, statement.operations.length]);
 
   return (
-    <div className="flex items-start gap-1">
+    <div
+      className={[
+        "flex items-start gap-1",
+        isHighlighted ? "outline outline-border bg-dropdown-hover" : "",
+      ].join(" ")}
+      onContextMenu={handleContextMenu}
+    >
       {enableVariable ? (
         <div className="flex items-center gap-1 mr-1">
           {hasName ? (
@@ -395,6 +421,7 @@ const StatementComponent = ({
             }
             handleChange={handleDataChange}
             basePath={path}
+            onContextMenu={handleDataContextMenu}
           />
         </ErrorBoundary>
         {statement.operations.map((operation, i) => {
@@ -426,6 +453,9 @@ const StatementComponent = ({
                     isParameter || isDataOfType(statement.data, "condition")
                       ? undefined
                       : addOperationCall
+                  }
+                  onContextMenu={(e) =>
+                    handleOperationContextMenu(e, operation)
                   }
                 />
               </ErrorBoundary>

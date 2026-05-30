@@ -181,6 +181,13 @@ export type INavigation = {
 
 export type EntityPath = (string | number)[];
 
+export interface ContextMenuItem {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
 /* Project Types */
 
 export interface Project {

@@ -5,7 +5,7 @@ import { AddStatement } from "../AddStatement";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { forwardRef, memo, useCallback, useMemo } from "react";
-import { inferTypeFromValue } from "@/lib/utils";
+import { inferTypeFromValue, moveArrayItem, getPosition } from "@/lib/utils";
 import { resolveDisplayName } from "@/lib/packages/registry";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileLayout } from "@/hooks/useMobileLayout";
@@ -56,6 +56,16 @@ const InstanceInputComponent = (
     [data, handleData, context]
   );
 
+  const moveConstructorArg = useCallback(
+    (id: string, dir: "up" | "down") => {
+      const args = data.value.constructorArgs;
+      const constructorArgs = moveArrayItem(args, id, dir);
+      if (!constructorArgs) return;
+      handleData({ ...data, value: { ...data.value, constructorArgs } });
+    },
+    [data, handleData]
+  );
+
   const useMobileThreshold = useMobileLayout();
   const isMultiline = getEntityLayout(data, useMobileThreshold) === "multiline";
 
@@ -91,6 +101,8 @@ const InstanceInputComponent = (
               statement={item}
               path={argPaths[paramIndex]}
               handleStatement={handleConstructorArgs}
+              moveStatement={moveConstructorArg}
+              position={getPosition(paramIndex, arr.length)}
               disableDelete={!item.isOptional}
             />
             {paramIndex < arr.length - 1 ? (

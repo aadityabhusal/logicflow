@@ -20,6 +20,7 @@ import {
   useProjectStore,
   useNavigationStore,
   useUiConfigStore,
+  useContextMenuStore,
 } from "../lib/store";
 import { getHotkeyHandler, HotkeyItem, useHotkeys } from "@mantine/hooks";
 import {
@@ -69,6 +70,7 @@ const DropdownComponent = ({
   target,
   context,
   operation,
+  onContextMenu,
 }: {
   id: string;
   data?: IData;
@@ -90,9 +92,13 @@ const DropdownComponent = ({
   target: (value: IDropdownTargetProps) => ReactNode;
   context: Context;
   operation?: IData<OperationType>;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) => {
   const [, setSearchParams] = useSearchParams();
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
+  const contextMenuHighlightId = useContextMenuStore(
+    (s) => s.highlightedEntityId
+  );
 
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const addFile = useProjectStore((s) => s.addFile);
@@ -366,6 +372,9 @@ const DropdownComponent = ({
           className={[
             "flex items-start relative p-px",
             isFocused || isHovered ? "outline outline-border" : "",
+            contextMenuHighlightId === id
+              ? "outline outline-border bg-dropdown-hover"
+              : "",
             context.skipExecution && context.skipExecution.kind !== "error"
               ? "opacity-50 "
               : "",
@@ -374,6 +383,7 @@ const DropdownComponent = ({
               ? "bg-error/25"
               : "",
           ].join(" ")}
+          onContextMenu={onContextMenu}
           onMouseOver={(e) => {
             e.stopPropagation();
             setHovered(true);
