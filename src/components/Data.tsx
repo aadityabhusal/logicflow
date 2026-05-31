@@ -39,6 +39,7 @@ interface IProps {
   context: Context;
   basePath: EntityPath;
   isTopLevelStatement?: boolean;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 const DataComponent = ({
@@ -49,6 +50,7 @@ const DataComponent = ({
   context,
   basePath,
   isTopLevelStatement,
+  onContextMenu,
 }: IProps) => {
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const getDropdownItems = useCallback(
@@ -281,6 +283,7 @@ const DataComponent = ({
       handleChange={handleChange}
       options={dropdownOptions}
       context={context}
+      onContextMenu={onContextMenu}
       value={
         isDataOfType(data, "reference")
           ? data.value.name

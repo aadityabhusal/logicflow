@@ -2,7 +2,12 @@ import { ArrayType, TupleType, IData, IStatement } from "@/lib/types";
 import { Statement } from "../Statement";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
-import { inferTypeFromValue, isDataOfType } from "@/lib/utils";
+import {
+  inferTypeFromValue,
+  isDataOfType,
+  moveArrayItemBy,
+  getPosition,
+} from "@/lib/utils";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
@@ -37,7 +42,26 @@ const ArrayInputComponent = (
         ...data,
         type: inferTypeFromValue(newValue, {
           ...context,
-          // the data fallback is for preserving tuple type
+          expectedType: context.expectedType ?? data.type,
+        }),
+        value: newValue,
+      });
+    },
+    [data, handleData, context]
+  );
+
+  const moveArrayItemHandler = useCallback(
+    (id: string, dir: "up" | "down") => {
+      const newValue = moveArrayItemBy(
+        data.value,
+        (item) => item.id === id,
+        dir
+      );
+      if (!newValue) return;
+      handleData({
+        ...data,
+        type: inferTypeFromValue(newValue, {
+          ...context,
           expectedType: context.expectedType ?? data.type,
         }),
         value: newValue,
@@ -66,6 +90,8 @@ const ArrayInputComponent = (
             statement={item}
             path={itemPaths[i]}
             handleStatement={handleStatement}
+            moveStatement={moveArrayItemHandler}
+            position={getPosition(i, arr.length)}
             disableDelete={
               isDataOfType(data, "tuple") && !!context.expectedType
             }

@@ -3,7 +3,12 @@ import { Statement } from "../Statement";
 import { BaseInput } from "./BaseInput";
 import { AddStatement } from "../AddStatement";
 import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
-import { createVariableName, inferTypeFromValue } from "@/lib/utils";
+import {
+  createVariableName,
+  getPosition,
+  inferTypeFromValue,
+  moveArrayItemBy,
+} from "@/lib/utils";
 import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
@@ -46,6 +51,19 @@ const DictionaryInputComponent = (
       });
     },
     [data, handleData, context]
+  );
+
+  const moveEntry = useCallback(
+    (id: string, dir: "up" | "down") => {
+      const entries = moveArrayItemBy(
+        data.value.entries,
+        (entry) => entry.value.id === id,
+        dir
+      );
+      if (!entries) return;
+      handleData({ ...data, value: { entries } });
+    },
+    [data, handleData]
   );
 
   function handleKeyUpdate(index: number, newKey: string) {
@@ -101,6 +119,8 @@ const DictionaryInputComponent = (
               statement={entry.value}
               path={entryPaths[i]}
               handleStatement={handleUpdate}
+              moveStatement={moveEntry}
+              position={getPosition(i, data.value.entries.length)}
             />
             {i < data.value.entries.length - 1 ? <span>{","}</span> : null}
           </div>

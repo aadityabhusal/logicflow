@@ -1,8 +1,10 @@
 import { forwardRef, HTMLAttributes, memo, useCallback, useMemo } from "react";
 import { ConditionType, IData, IStatement } from "@/lib/types";
 import {
+  getPosition,
   getStatementsResultType,
   isTypeCompatible,
+  moveArrayItemBy,
   resolveUnionType,
 } from "@/lib/utils";
 import { Statement } from "../Statement";
@@ -106,6 +108,30 @@ const ConditionInputComponent = (
     [data.value, handleChange]
   );
 
+  const moveBranchStatement = useMemo(
+    () => ({
+      trueBranch: (id: string, dir: "up" | "down") => {
+        const arr = moveArrayItemBy(
+          data.value.trueBranch,
+          (stmt) => stmt.id === id,
+          dir
+        );
+        if (!arr) return;
+        handleChange({ trueBranch: arr });
+      },
+      falseBranch: (id: string, dir: "up" | "down") => {
+        const arr = moveArrayItemBy(
+          data.value.falseBranch,
+          (stmt) => stmt.id === id,
+          dir
+        );
+        if (!arr) return;
+        handleChange({ falseBranch: arr });
+      },
+    }),
+    [data.value, handleChange]
+  );
+
   const renderBranch = (branch: BranchName, separator: string) => {
     const statements = data.value[branch];
     const canAddStatement = isTopLevelStatement || statements.length === 0;
@@ -113,7 +139,7 @@ const ConditionInputComponent = (
       <>
         <span>{separator}</span>
         <div className={["border-l ml-2 pl-2 flex flex-col gap-1"].join(" ")}>
-          {statements.map((stmt, i) => (
+          {statements.map((stmt, i, stmtList) => (
             <div key={stmt.id} className="flex items-start gap-1">
               <Statement
                 statement={stmt}
@@ -127,6 +153,10 @@ const ConditionInputComponent = (
                     ? (s, pos, id) => addBranchStatement(branch, s, pos, id)
                     : undefined
                 }
+                moveStatement={
+                  isTopLevelStatement ? moveBranchStatement[branch] : undefined
+                }
+                position={getPosition(i, stmtList.length)}
                 disableNameToggle={!isTopLevelStatement}
                 reservedNames={reservedNames}
               />

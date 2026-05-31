@@ -11,13 +11,15 @@ import { updateStatements } from "@/lib/update";
 import {
   createVariableName,
   getIsAsync,
+  getPosition,
   inferTypeFromValue,
+  moveArrayItemBy,
 } from "../lib/utils";
 import { Statement } from "./Statement";
 import { AddStatement } from "./AddStatement";
 import { getReservedNames } from "@/lib/execution/store";
 import { Context } from "@/lib/execution/types";
-import { useProjectStore } from "@/lib/store";
+import { useContextMenuStore, useProjectStore } from "@/lib/store";
 import isEqual from "react-fast-compare";
 import { EntityPath } from "@/lib/types";
 
@@ -29,6 +31,7 @@ interface OperationInputProps extends HTMLAttributes<HTMLDivElement> {
   ) => void;
   context: Context;
   path: EntityPath;
+  className?: string;
 }
 
 const OperationComponent = (
@@ -37,6 +40,9 @@ const OperationComponent = (
 ) => {
   const updateStatementByPath = useProjectStore((s) => s.updateStatementByPath);
   const fileId = useProjectStore((s) => s.currentFileId);
+  const isHighlighted = useContextMenuStore(
+    (s) => path.length === 0 && s.highlightedEntityId === operation.id
+  );
   const expectedParameterType = useMemo(
     () =>
       context.expectedType?.kind === "operation"
@@ -175,7 +181,13 @@ const OperationComponent = (
         const statements = prevOperation.value.statements;
         const index = statements.findIndex((s) => s.id === id);
         const insertIndex =
-          index === -1 ? (position === "after" ? statements.length : 0) : index;
+          index === -1
+            ? position === "after"
+              ? statements.length
+              : 0
+            : position === "after"
+              ? index + 1
+              : index;
         const newStatements = statements
           .slice(0, insertIndex)
           .concat(statement)
@@ -202,7 +214,13 @@ const OperationComponent = (
         const parameters = prevOp.value.parameters;
         const index = parameters.findIndex((p) => p.id === id);
         const insertIndex =
-          index === -1 ? (position === "after" ? parameters.length : 0) : index;
+          index === -1
+            ? position === "after"
+              ? parameters.length
+              : 0
+            : position === "after"
+              ? index + 1
+              : index;
         const newParameter = {
           ...statement,
           isOptional:
@@ -234,8 +252,32 @@ const OperationComponent = (
     [handleChange, handleStatementUpdate, reservedNames, context]
   );
 
+  const move = useMemo(() => {
+    const _move =
+      (key: "statements" | "parameters") =>
+      (id: string, dir: "up" | "down") => {
+        handleChange((prevOp) => {
+          const arr = moveArrayItemBy(
+            prevOp.value[key],
+            (item) => item.id === id,
+            dir
+          );
+          if (!arr) return prevOp;
+          return { ...prevOp, value: { ...prevOp.value, [key]: arr } };
+        });
+      };
+    return { statement: _move("statements"), parameter: _move("parameters") };
+  }, [handleChange]);
+
   return (
-    <div {...props} ref={ref}>
+    <div
+      {...props}
+      ref={ref}
+      className={[
+        props.className,
+        isHighlighted ? "outline outline-border bg-dropdown-hover" : "",
+      ].join(" ")}
+    >
       <div className="flex items-start gap-1">
         <span>{"("}</span>
         {operation.value.parameters.map((parameter, i, paramList) => (
@@ -263,6 +305,8 @@ const OperationComponent = (
                 return false;
               })()}
               addStatement={addParameter}
+              moveStatement={move.parameter}
+              position={getPosition(i, paramList.length)}
               reservedNames={reservedNames}
             />
             {i + 1 < paramList.length && <span>,</span>}
@@ -283,7 +327,7 @@ const OperationComponent = (
         <span className="self-end">{")"}</span>
       </div>
       <div className="pl-4 [&>div]:mb-1 w-fit">
-        {operation.value.statements.map((statement, i) => (
+        {operation.value.statements.map((statement, i, stmtList) => (
           <Statement
             key={statement.id}
             statement={statement}
@@ -291,6 +335,8 @@ const OperationComponent = (
             enableVariable={true}
             handleStatement={handleStatement}
             addStatement={addStatement}
+            moveStatement={move.statement}
+            position={getPosition(i, stmtList.length)}
             reservedNames={reservedNames}
           />
         ))}

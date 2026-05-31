@@ -14,7 +14,7 @@ import {
 import { resolveParameters } from "../lib/utils";
 import { resolveDisplayName } from "../lib/packages/registry";
 import { BaseInput } from "./Input/BaseInput";
-import { memo, useCallback, useMemo } from "react";
+import { memo, MouseEvent, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 import { useExecutionResultsStore } from "@/lib/execution/store";
@@ -28,6 +28,7 @@ const OperationCallComponent = ({
   handleOperationCall,
   addOperationCall,
   path,
+  onOperationContextMenu,
 }: {
   data: IData;
   operation: IData<OperationType>;
@@ -37,6 +38,7 @@ const OperationCallComponent = ({
   ) => void;
   addOperationCall?: (data: IData, operationId?: string) => void;
   path: EntityPath;
+  onOperationContextMenu?: (e: MouseEvent, op: IData<OperationType>) => void;
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContextOrAncestor(operation.id, path)
@@ -141,6 +143,11 @@ const OperationCallComponent = ({
     [data, context]
   );
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => onOperationContextMenu?.(e, operation),
+    [onOperationContextMenu, operation]
+  );
+
   const parameterPaths = useMemo(() => {
     const arr = Array.from({ length: operation.value.parameters.length });
     return arr.map((_, i) => [...path, "value", "parameters", i]);
@@ -176,6 +183,7 @@ const OperationCallComponent = ({
       handleDelete={handleDelete}
       isInputTarget
       target={TooltipTarget}
+      onContextMenu={handleContextMenu}
     >
       <span>{"("}</span>
       <div
