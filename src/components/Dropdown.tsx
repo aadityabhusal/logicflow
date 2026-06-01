@@ -52,6 +52,7 @@ import { Context } from "@/lib/execution/types";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { createOperationCall } from "@/lib/execution/execution";
 import { resolveDisplayName } from "@/lib/packages/registry";
+import { useDebuggerStore } from "@/lib/debugger/store";
 
 const MAX_DROPDOWN_ITEMS_PER_GROUP = 100;
 
@@ -103,6 +104,13 @@ const DropdownComponent = ({
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const addFile = useProjectStore((s) => s.addFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
+  const projectId = useProjectStore((s) => s.getCurrentProject()?.id);
+  const breakpoint = useDebuggerStore((s) =>
+    s.getBreakpoint(projectId, currentFileId, id)
+  );
+  const isPausedHere = useDebuggerStore(
+    (s) => s.currentLocation?.entityId === id && s.status === "paused"
+  );
   const detailsPanelLockedId = useUiConfigStore((s) => {
     const lockedId = currentFileId && s.sidebar.lockedIds?.[currentFileId];
     if (!lockedId) return undefined;
@@ -372,6 +380,7 @@ const DropdownComponent = ({
           className={[
             "flex items-start relative p-px",
             isFocused || isHovered ? "outline outline-border" : "",
+            isPausedHere ? "outline outline-reserved bg-dropdown-selected" : "",
             isContextMenuHighlighted
               ? "outline outline-border bg-dropdown-hover"
               : "",
@@ -393,6 +402,12 @@ const DropdownComponent = ({
             setHovered(false);
           }}
         >
+          {breakpoint ? (
+            <span
+              title="Breakpoint"
+              className="mt-1.5 mr-1 h-2 w-2 rounded-full bg-error shrink-0"
+            />
+          ) : null}
           <Combobox.EventsTarget
             withKeyboardNavigation={combobox.dropdownOpened && hasOptions}
           >

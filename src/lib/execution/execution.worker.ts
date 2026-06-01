@@ -8,7 +8,6 @@ import {
 import { createLocalContext } from "../utils";
 import {
   Context,
-  WorkerContext,
   ExecutionWorkerRequest,
   ExecutionWorkerRunRequest,
   ExecutionWorkerResponse,
@@ -18,23 +17,12 @@ import {
   syncPackageRegistry,
 } from "../operations/built-in";
 import { getAliasesFromPackages } from "../packages/catalog";
-
-function serializeContext(ctx: Context): WorkerContext {
-  return {
-    scopeId: ctx.scopeId,
-    packageAliases: ctx.packageAliases,
-    expectedType: ctx.expectedType,
-    enforceExpectedType: ctx.enforceExpectedType,
-    skipExecution: ctx.skipExecution,
-    isSync: ctx.isSync,
-    isIsolated: ctx.isIsolated,
-    callDepth: ctx.callDepth,
-    maxCallDepth: ctx.maxCallDepth,
-    controlFlowState: ctx.controlFlowState,
-    variables: [...ctx.variables],
-    narrowedTypes: ctx.narrowedTypes ? [...ctx.narrowedTypes] : undefined,
-  };
-}
+import { getDebugControl } from "../debugger/control-buffer";
+import {
+  createDebuggerController,
+  publicResults,
+  serializeContexts,
+} from "../debugger/debugger-controller";
 
 const persistentInstances = new Map<
   string,
@@ -79,30 +67,49 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
     );
     const { context: localCtx, getContexts } = createLocalContext(rootContext);
 
-    await setOperationResults(req.operation, localCtx);
-
-    const workerContexts: [string, WorkerContext][] = [];
-    for (const [id, ctx] of getContexts()) {
-      if (ctx.isIsolated) continue;
-      workerContexts.push([id, serializeContext(ctx)]);
+    if (req.debug) {
+      const control = getDebugControl(req.debug.controlBuffer);
+      const debuggerController = createDebuggerController({
+        runId: req.runId,
+        control,
+        results,
+        getContexts,
+        pauseOnExceptions: req.debug.pauseOnExceptions,
+        entityFileMap: new Map(req.debug.entityFileIndex),
+      });
+      rootContext.debugger = debuggerController;
+      localCtx.debugger = debuggerController;
+      debuggerController.enterFrame({
+        id: req.operation.id,
+        kind: "root",
+        operationId: req.operation.id,
+        operationName: req.operation.value.name,
+        scopeId: localCtx.scopeId,
+        entityId: req.operation.id,
+        fileId: req.operation.id,
+        callDepth: 0,
+        locationDepth: 0,
+      });
     }
 
+    await setOperationResults(req.operation, localCtx);
+
     const response: ExecutionWorkerResponse = {
+      type: "completed",
       runId: req.runId,
-      results: [...results].filter(
-        ([id, result]) => result.shouldCacheResult || !id.includes(":")
+      results: publicResults(results),
+      workerContexts: serializeContexts(
+        [...getContexts()].filter(([, ctx]) => !ctx.isIsolated)
       ),
-      workerContexts,
     };
 
     self.postMessage(response);
   } catch (error) {
     self.postMessage({
+      type: controller.signal.aborted ? "cancelled" : "error",
       runId: req.runId,
-      results: [],
-      workerContexts: [],
       ...(controller.signal.aborted
-        ? { cancelled: true }
+        ? {}
         : { error: error instanceof Error ? error.message : String(error) }),
     } as ExecutionWorkerResponse);
   } finally {

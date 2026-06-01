@@ -938,6 +938,13 @@ describe("resolveReference", () => {
     expect(result.type.kind).toBe("error");
   });
 
+  it("returns reference as-is for missing variable in partial context", () => {
+    const ref = testReference("missing", "stmt1");
+    const ctx = createTestContext({ scopeId: "nested-scope", isPartial: true });
+    const result = resolveReference(ref, ctx);
+    expect(result.type.kind).toBe("reference");
+  });
+
   it("returns reference as-is for missing variable in root context", () => {
     const ref = testReference("missing", "stmt1");
     const ctx = createTestContext({ scopeId: "_root_" });

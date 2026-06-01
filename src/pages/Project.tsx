@@ -34,6 +34,7 @@ import {
 } from "@/lib/execution/worker-client";
 import { getEnabledPackages } from "@/lib/packages/catalog";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
+import { useDebuggerStore } from "@/lib/debugger/store";
 
 export default function Project() {
   const projectFiles = useProjectStore((s) => s.getCurrentProject()?.files);
@@ -145,6 +146,7 @@ export default function Project() {
 
   const deferredOperation = useDeferredValue(currentOperation);
   const runVersion = useExecutionResultsStore((s) => s.runVersion);
+  const debuggerStatus = useDebuggerStore((s) => s.status);
   useEffect(() => {
     if (deferredOperation?.id !== currentOperation?.id) return;
     if (deferredOperation) {
@@ -166,6 +168,11 @@ export default function Project() {
   useEffect(() => {
     if (!deferredOperation) return;
     if (deferredOperation.id !== currentOperation?.id) return;
+    if (
+      ["starting", "running", "paused", "stopping"].includes(debuggerStatus)
+    ) {
+      return;
+    }
 
     let cancelled = false;
     const { results, instances, rootContext } =
@@ -202,7 +209,7 @@ export default function Project() {
     return () => {
       cancelled = true;
     };
-  }, [deferredOperation, currentOperation?.id, runVersion]);
+  }, [deferredOperation, currentOperation?.id, runVersion, debuggerStatus]);
 
   const handleOperationClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {

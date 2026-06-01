@@ -7,6 +7,7 @@ import {
   FaFileCode,
   FaRocket,
   FaGear,
+  FaBug,
 } from "react-icons/fa6";
 import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
@@ -25,6 +26,9 @@ const Deployment = lazy(() =>
 const SettingsPanel = lazy(() =>
   import("./SettingsPanel").then((m) => ({ default: m.SettingsPanel }))
 );
+const DebuggerPanel = lazy(() =>
+  import("./DebuggerPanel").then((m) => ({ default: m.DebuggerPanel }))
+);
 const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
   ? lazy(() => import("./AgentPanel").then((m) => ({ default: m.AgentPanel })))
   : null;
@@ -32,6 +36,7 @@ const AgentPanel = import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
 const TABS = [
   { value: "operations", label: "Operations", Icon: FaFileCode },
   { value: "details", label: "Details", Icon: FaCircleInfo },
+  { value: "debugger", label: "Debugger", Icon: FaBug },
   ...(import.meta.env.VITE_APP_ENABLE_AGENT_PANEL
     ? [{ value: "agent", label: "Agent", Icon: FaRobot }]
     : []),
@@ -113,6 +118,11 @@ function SidebarTabsComponent({
             <Tabs.Panel value="details" className="h-full w-full">
               <Suspense fallback={<LoadingFallback />}>
                 <DetailsPanel />
+              </Suspense>
+            </Tabs.Panel>
+            <Tabs.Panel value="debugger" className="h-full w-full">
+              <Suspense fallback={<LoadingFallback />}>
+                <DebuggerPanel />
               </Suspense>
             </Tabs.Panel>
             {import.meta.env.VITE_APP_ENABLE_AGENT_PANEL && AgentPanel && (

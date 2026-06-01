@@ -90,6 +90,17 @@ describe("hydrateContexts", () => {
     expect(typeof ctx.executeOperation).toBe("function");
   });
 
+  it("marks hydrated contexts as partial when requested", () => {
+    const rootContext = createHydrationBaseContext();
+    const contexts = hydrateContexts(
+      [["ctx-1", { scopeId: "scope-1", packageAliases: {}, variables: [] }]],
+      rootContext,
+      { isPartial: true }
+    );
+
+    expect(contexts.get("ctx-1")?.isPartial).toBe(true);
+  });
+
   it("hydrates variables as a Map with correct entries", () => {
     const rootContext = createHydrationBaseContext();
     const xData = createData({ value: 42 });
@@ -405,16 +416,20 @@ describe("runExecutionInWorker", () => {
   const respondToWorker = (
     w: MockWorker,
     runId: string,
-    overrides: Partial<ExecutionWorkerResponse> = {}
+    overrides: Partial<ExecutionWorkerResponse> & { cancelled?: boolean } = {}
   ) => {
-    w.onmessage?.({
-      data: {
-        runId,
-        results: [],
-        workerContexts: [],
-        ...overrides,
-      },
-    } as unknown as MessageEvent<ExecutionWorkerResponse>);
+    const data = overrides.cancelled
+      ? { type: "cancelled" as const, runId }
+      : "error" in overrides && overrides.error
+        ? { type: "error" as const, runId, error: overrides.error }
+        : {
+            type: "completed" as const,
+            runId,
+            results: [],
+            workerContexts: [],
+            ...overrides,
+          };
+    w.onmessage?.({ data } as MessageEvent<ExecutionWorkerResponse>);
   };
 
   beforeEach(async () => {

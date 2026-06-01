@@ -26,7 +26,7 @@ import {
   restoreProjectFromCheckpoint,
 } from "./checkpoints";
 
-const IDbStore = openDB("logicflow", 3, {
+const IDbStore = openDB("logicflow", 4, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("projects")) {
       db.createObjectStore("projects");
@@ -40,10 +40,13 @@ const IDbStore = openDB("logicflow", 3, {
     if (!db.objectStoreNames.contains("checkpoints")) {
       db.createObjectStore("checkpoints");
     }
+    if (!db.objectStoreNames.contains("debugger")) {
+      db.createObjectStore("debugger");
+    }
   },
 });
 
-const createIDbStorage = <T>(storeName: string) =>
+export const createIDbStorage = <T>(storeName: string) =>
   createJSONStorage<T>(() => ({
     getItem: async (key) =>
       (await IDbStore)

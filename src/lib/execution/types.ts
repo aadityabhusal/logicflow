@@ -8,6 +8,12 @@ import {
   PackageNamespace,
   ProjectFile,
 } from "../types";
+import {
+  DebugFrame,
+  DebugLocation,
+  DebugPauseReason,
+  DebugRunConfig,
+} from "../debugger/types";
 
 export type Thenable<T> = {
   then<TResult1 = T, TResult2 = never>(
@@ -31,6 +37,24 @@ export type Variable = {
   isEnv?: boolean;
 };
 
+export type DebuggerController = {
+  beforeStatement: (statement: IStatement, context: Context) => void;
+  afterStatement: (statement: IStatement, context: Context) => void;
+  beforeOperationCall: (
+    operation: IData<OperationType>,
+    context: Context
+  ) => void;
+  afterOperationCall: (
+    operation: IData<OperationType>,
+    context: Context
+  ) => void;
+  enterFrame: (frame: Omit<DebugFrame, "id"> & { id?: string }) => string;
+  exitFrame: (frameId: string) => void;
+  registerContext: (entityId: string, context: Context) => void;
+  maybePauseOnError: (result: IData, context: Context) => void;
+  suppressBreakpoints: <T>(fn: () => T) => T;
+};
+
 export type ContextProps = {
   scopeId: string;
   variables: Map<string, Variable>;
@@ -41,11 +65,18 @@ export type ContextProps = {
   skipExecution?: { reason: string; kind: "unreachable" | "error" };
   isSync?: boolean;
   isIsolated?: boolean;
+  // Partial debug snapshots may include ancestor scopes before child scopes run.
+  isPartial?: boolean;
   callDepth?: number;
   maxCallDepth?: number; // Added in Context and not global constant for testing configuration
   operationCache?: Map<string, IData>;
   _memoCacheKey?: string;
   controlFlowState?: { returned?: IData };
+  debugger?: DebuggerController;
+  debugFrame?: Omit<DebugFrame, "id" | "scopeId" | "locationDepth"> & {
+    id?: string;
+  };
+  debugMissingParamIndexes?: Set<number>;
 };
 
 export type Context = ContextProps & {
@@ -105,7 +136,13 @@ export type OperationListItem = {
 /* Worker Types */
 export type WorkerContext = Omit<
   ContextProps,
-  "variables" | "narrowedTypes" | "operationCache" | "_memoCacheKey"
+  | "variables"
+  | "narrowedTypes"
+  | "operationCache"
+  | "_memoCacheKey"
+  | "debugger"
+  | "debugFrame"
+  | "debugMissingParamIndexes"
 > & {
   variables: [string, Variable][];
   narrowedTypes?: [string, Variable][];
@@ -121,6 +158,7 @@ export type ExecutionWorkerRunRequest = {
   cachedResults: [string, ExecutionResult][];
   expectedType?: DataType;
   enforceExpectedType?: boolean;
+  debug?: DebugRunConfig;
 };
 
 export type ExecutionWorkerRequest =
@@ -128,10 +166,25 @@ export type ExecutionWorkerRequest =
   | { type: "cancel" }
   | { type: "reset" };
 
-export type ExecutionWorkerResponse = {
+export type ExecutionWorkerCompletedResponse = {
+  type: "completed";
   runId: string;
   results: [string, ExecutionResult][];
   workerContexts: [string, WorkerContext][];
-  error?: string;
-  cancelled?: boolean;
 };
+
+export type ExecutionWorkerPausedResponse = {
+  type: "debug-paused";
+  runId: string;
+  reason: DebugPauseReason;
+  location: DebugLocation;
+  callStack: DebugFrame[];
+  results: [string, ExecutionResult][];
+  workerContexts: [string, WorkerContext][];
+};
+
+export type ExecutionWorkerResponse =
+  | ExecutionWorkerCompletedResponse
+  | ExecutionWorkerPausedResponse
+  | { type: "error"; runId: string; error: string }
+  | { type: "cancelled"; runId: string };

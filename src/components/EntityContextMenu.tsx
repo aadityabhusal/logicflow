@@ -21,7 +21,7 @@ export function EntityContextMenu({
       position="auto"
       onClose={onClose}
       className="z-50"
-      menuClassName="m-0 list-none min-w-[140px] bg-editor border flex flex-col p-0"
+      menuClassName="m-0 list-none min-w-40 bg-editor border flex flex-col p-0"
     >
       {items.map((item) => (
         <MenuItem

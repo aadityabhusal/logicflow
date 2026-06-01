@@ -7,6 +7,8 @@ import {
   ContextMenuItem,
 } from "@/lib/types";
 import { useContextMenuStore } from "@/lib/store";
+import { useProjectStore } from "@/lib/store";
+import { useDebuggerStore } from "@/lib/debugger/store";
 import { notifications } from "@mantine/notifications";
 import {
   writeEntityClipboard,
@@ -65,6 +67,12 @@ export function useEntityContextMenu({
     (s) => s.highlightedEntityId === statement.id
   );
   const openMenu = useContextMenuStore((s) => s.openMenu);
+  const projectId = useProjectStore((s) => s.getCurrentProject()?.id);
+  const fileId = useProjectStore((s) => s.currentFileId);
+  const toggleBreakpoint = useDebuggerStore((s) => s.toggleBreakpoint);
+  const dataBreakpoint = useDebuggerStore((s) =>
+    s.getBreakpoint(projectId, fileId, statement.data.id)
+  );
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -207,6 +215,19 @@ export function useEntityContextMenu({
               !moveStatement || position === "last" || position === "only",
             onClick: () => moveStatement?.(statement.id, "down"),
           },
+          {
+            label: dataBreakpoint ? "Remove breakpoint" : "Add breakpoint",
+            disabled: !projectId || !fileId,
+            onClick: () => {
+              if (!projectId || !fileId) return;
+              toggleBreakpoint({
+                projectId,
+                fileId,
+                entityId: statement.data.id,
+                kind: "data",
+              });
+            },
+          },
         ],
         position: { x: e.clientX, y: e.clientY },
         highlightedEntityId: statement.data.id,
@@ -220,6 +241,10 @@ export function useEntityContextMenu({
       openMenu,
       moveStatement,
       position,
+      projectId,
+      fileId,
+      dataBreakpoint,
+      toggleBreakpoint,
     ]
   );
 
@@ -300,8 +325,25 @@ export function useEntityContextMenu({
           handleStatement({ ...statement, operations: ops }, false, path);
         },
       },
+      {
+        label: useDebuggerStore
+          .getState()
+          .getBreakpoint(projectId, fileId, operation.id)
+          ? "Remove breakpoint"
+          : "Add breakpoint",
+        disabled: !projectId || !fileId,
+        onClick: () => {
+          if (!projectId || !fileId) return;
+          toggleBreakpoint({
+            projectId,
+            fileId,
+            entityId: operation.id,
+            kind: "operation",
+          });
+        },
+      },
     ],
-    [statement, handleStatement, path]
+    [statement, handleStatement, path, projectId, fileId, toggleBreakpoint]
   );
 
   const handleOperationContextMenu = useCallback(

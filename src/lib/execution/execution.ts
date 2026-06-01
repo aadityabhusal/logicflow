@@ -343,7 +343,13 @@ function executeDataValue(
       );
     });
   } else if (isDataOfType(data, "operation")) {
-    return [setOperationResults(data, context)];
+    return [
+      context.debugger
+        ? context.debugger.suppressBreakpoints(() =>
+            setOperationResults(data, context)
+          )
+        : setOperationResults(data, context),
+    ];
   } else if (isDataOfType(data, "union")) {
     const activeType = getUnionActiveType(data.type, {
       value: data.value,
@@ -442,7 +448,7 @@ function executeStatementCore(
   shouldCacheResult?: boolean;
   persistentResultKey?: string;
 } & (
-  | { result: IData; foundOp?: never; opCallContext?: never }
+  | { result: IData; foundOp?: never; opCallContext: Context }
   | { foundOp: OperationListItem; opCallContext: Context; result?: never }
 ) {
   const opName = operation.value.name;
@@ -479,6 +485,7 @@ function executeStatementCore(
         : `Operation '${opName}' does not exist`;
     return {
       _narrowedTypes,
+      opCallContext,
       result: createData({
         type: { kind: "error", errorType: "type_error" },
         value: { reason },
@@ -498,12 +505,19 @@ function executeStatementCore(
       !result.value.instanceId ||
       opCallContext.getInstance(result.value.instanceId)?.instance
     ) {
-      return { _narrowedTypes, result, shouldCacheResult, persistentResultKey };
+      return {
+        _narrowedTypes,
+        opCallContext,
+        result,
+        shouldCacheResult,
+        persistentResultKey,
+      };
     }
   }
   if (opCallContext.skipExecution) {
     return {
       _narrowedTypes,
+      opCallContext,
       shouldCacheResult,
       result: createData({ type: operation.type.result }),
     };
@@ -633,80 +647,100 @@ export async function executeStatement(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
+  context.debugger?.registerContext(statement.id, context);
+  context.debugger?.beforeStatement(statement, context);
   if (context.isCancelled?.()) throw new Error("Execution cancelled");
 
-  let currentData = resolveReference(statement.data, context);
-  if (isDataOfType(currentData, "condition")) {
-    const condRes = await executeStatement(
-      currentData.value.condition,
-      context
-    );
-    if (isFatalError(condRes)) return condRes;
+  try {
+    let currentData = resolveReference(statement.data, context);
+    if (isDataOfType(currentData, "condition")) {
+      const condRes = await executeStatement(
+        currentData.value.condition,
+        context
+      );
+      if (isFatalError(condRes)) return condRes;
+      if (context.controlFlowState?.returned)
+        return context.controlFlowState.returned;
+      const resolved = resolveConditionBranch(currentData, condRes, context);
+      const branchResult = await executeStatementsAsync(
+        resolved.branch,
+        resolved.context
+      );
+      carryBranchNarrowing(context, resolved);
+      currentData = branchResult;
+    }
+    if (isFatalError(currentData)) {
+      context.debugger?.maybePauseOnError(currentData, context);
+      return currentData;
+    }
     if (context.controlFlowState?.returned)
       return context.controlFlowState.returned;
-    const resolved = resolveConditionBranch(currentData, condRes, context);
-    const branchResult = await executeStatementsAsync(
-      resolved.branch,
-      resolved.context
-    );
-    carryBranchNarrowing(context, resolved);
-    currentData = branchResult;
-  }
-  if (isFatalError(currentData)) return currentData;
-  if (context.controlFlowState?.returned)
-    return context.controlFlowState.returned;
 
-  await Promise.allSettled(executeDataValue(statement.data, context));
+    await Promise.allSettled(executeDataValue(statement.data, context));
 
-  let narrowedTypes = new Map();
-  let resultData = currentData;
+    let narrowedTypes = new Map();
+    let resultData = currentData;
 
-  for (let i = 0; i < statement.operations.length; i++) {
-    const operation = statement.operations[i];
-    const {
-      _narrowedTypes,
-      foundOp,
-      result,
-      opCallContext,
-      shouldCacheResult,
-      persistentResultKey,
-    } = executeStatementCore(
-      context,
-      narrowedTypes,
-      resultData,
-      operation,
-      i === 0 ? statement.data : undefined
-    );
-    narrowedTypes = _narrowedTypes;
+    for (let i = 0; i < statement.operations.length; i++) {
+      const operation = statement.operations[i];
+      const {
+        _narrowedTypes,
+        foundOp,
+        result,
+        opCallContext,
+        shouldCacheResult,
+        persistentResultKey,
+      } = executeStatementCore(
+        context,
+        narrowedTypes,
+        resultData,
+        operation,
+        i === 0 ? statement.data : undefined
+      );
+      narrowedTypes = _narrowedTypes;
 
-    if (result !== undefined) {
-      setResult(context, operation, result);
-      resultData = result;
-      if (isFatalError(resultData)) return resultData;
-      continue;
+      opCallContext.debugger?.beforeOperationCall(operation, opCallContext);
+      try {
+        if (result !== undefined) {
+          setResult(context, operation, result);
+          resultData = result;
+          if (isFatalError(resultData)) {
+            context.debugger?.maybePauseOnError(resultData, opCallContext);
+            return resultData;
+          }
+          continue;
+        }
+        const parameters = operation.value.parameters;
+        const opResult = await executeOperation(
+          foundOp,
+          resultData,
+          parameters,
+          opCallContext
+        );
+        resultData = opResult;
+        setResult(
+          context,
+          operation,
+          opResult,
+          persistentResultKey,
+          shouldCacheResult
+        );
+        if (isFatalError(resultData)) {
+          context.debugger?.maybePauseOnError(resultData, opCallContext);
+          return resultData;
+        }
+      } finally {
+        opCallContext.debugger?.afterOperationCall(operation, opCallContext);
+      }
     }
-    const parameters = operation.value.parameters;
-    const opResult = await executeOperation(
-      foundOp,
-      resultData,
-      parameters,
-      opCallContext
-    );
-    resultData = opResult;
-    setResult(
-      context,
-      operation,
-      opResult,
-      persistentResultKey,
-      shouldCacheResult
-    );
-    if (isFatalError(resultData)) return resultData;
+    const finalResult = resolveReference(resultData, context);
+    if (statement.controlFlow === "return" && context.controlFlowState) {
+      context.controlFlowState.returned = finalResult;
+    }
+    return finalResult;
+  } finally {
+    context.debugger?.afterStatement(statement, context);
   }
-  const finalResult = resolveReference(resultData, context);
-  if (statement.controlFlow === "return" && context.controlFlowState) {
-    context.controlFlowState.returned = finalResult;
-  }
-  return finalResult;
 }
 
 export function executeStatementSync(
@@ -721,74 +755,97 @@ export function executeStatementSync(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
-  let currentData = resolveReference(statement.data, context);
-  if (isDataOfType(currentData, "condition")) {
-    const condRes = executeStatementSync(currentData.value.condition, context);
-    if (isFatalError(condRes)) return condRes;
+  context.debugger?.registerContext(statement.id, context);
+  context.debugger?.beforeStatement(statement, context);
+  try {
+    let currentData = resolveReference(statement.data, context);
+    if (isDataOfType(currentData, "condition")) {
+      const condRes = executeStatementSync(
+        currentData.value.condition,
+        context
+      );
+      if (isFatalError(condRes)) return condRes;
+      if (context.controlFlowState?.returned)
+        return context.controlFlowState.returned;
+      const resolved = resolveConditionBranch(currentData, condRes, context);
+      const branchResult = executeStatements(resolved.branch, resolved.context);
+      carryBranchNarrowing(context, resolved);
+      currentData = branchResult;
+    }
+    if (isFatalError(currentData)) {
+      context.debugger?.maybePauseOnError(currentData, context);
+      return currentData;
+    }
     if (context.controlFlowState?.returned)
       return context.controlFlowState.returned;
-    const resolved = resolveConditionBranch(currentData, condRes, context);
-    const branchResult = executeStatements(resolved.branch, resolved.context);
-    carryBranchNarrowing(context, resolved);
-    currentData = branchResult;
-  }
-  if (isFatalError(currentData)) return currentData;
-  if (context.controlFlowState?.returned)
-    return context.controlFlowState.returned;
 
-  executeDataValue(statement.data, context).forEach((e) => {
-    unwrapThenable(e);
-  });
+    executeDataValue(statement.data, context).forEach((e) => {
+      unwrapThenable(e);
+    });
 
-  let narrowedTypes = new Map();
-  let resultData = currentData;
+    let narrowedTypes = new Map();
+    let resultData = currentData;
 
-  for (let i = 0; i < statement.operations.length; i++) {
-    const operation = statement.operations[i];
-    const {
-      _narrowedTypes,
-      foundOp,
-      result,
-      opCallContext,
-      shouldCacheResult,
-      persistentResultKey,
-    } = executeStatementCore(
-      context,
-      narrowedTypes,
-      resultData,
-      operation,
-      i === 0 ? statement.data : undefined
-    );
-    narrowedTypes = _narrowedTypes;
+    for (let i = 0; i < statement.operations.length; i++) {
+      const operation = statement.operations[i];
+      const {
+        _narrowedTypes,
+        foundOp,
+        result,
+        opCallContext,
+        shouldCacheResult,
+        persistentResultKey,
+      } = executeStatementCore(
+        context,
+        narrowedTypes,
+        resultData,
+        operation,
+        i === 0 ? statement.data : undefined
+      );
+      narrowedTypes = _narrowedTypes;
 
-    if (result !== undefined) {
-      setResult(context, operation, result);
-      resultData = result;
-      if (isFatalError(resultData)) return resultData;
-      continue;
+      opCallContext.debugger?.beforeOperationCall(operation, opCallContext);
+      try {
+        if (result !== undefined) {
+          setResult(context, operation, result);
+          resultData = result;
+          if (isFatalError(resultData)) {
+            context.debugger?.maybePauseOnError(resultData, opCallContext);
+            return resultData;
+          }
+          continue;
+        }
+        const parameters = operation.value.parameters;
+        const opResult = executeOperationSync(
+          foundOp,
+          resultData,
+          parameters,
+          opCallContext
+        );
+        resultData = opResult;
+        setResult(
+          context,
+          operation,
+          opResult,
+          persistentResultKey,
+          shouldCacheResult
+        );
+        if (isFatalError(resultData)) {
+          context.debugger?.maybePauseOnError(resultData, opCallContext);
+          return resultData;
+        }
+      } finally {
+        opCallContext.debugger?.afterOperationCall(operation, opCallContext);
+      }
     }
-    const parameters = operation.value.parameters;
-    const opResult = executeOperationSync(
-      foundOp,
-      resultData,
-      parameters,
-      opCallContext
-    );
-    resultData = opResult;
-    setResult(
-      context,
-      operation,
-      opResult,
-      persistentResultKey,
-      shouldCacheResult
-    );
-    if (isFatalError(resultData)) return resultData;
+    const finalResult = resolveReference(resultData, context);
+    if (statement.controlFlow === "return" && context.controlFlowState) {
+      context.controlFlowState.returned = finalResult;
+    }
+    return finalResult;
+  } finally {
+    context.debugger?.afterStatement(statement, context);
   }
-  const finalResult = resolveReference(resultData, context);
-  if (statement.controlFlow === "return" && context.controlFlowState) {
-    context.controlFlowState.returned = finalResult;
-  }
-  return finalResult;
 }
 
 function executeOperationCore(
@@ -894,15 +951,21 @@ function executeOperationCore(
     const hit = memoCacheKey && context.operationCache?.get(memoCacheKey);
     if (hit) return hit;
 
+    const missingParamIndexes = context.debugMissingParamIndexes;
     const newContext = createContext(context, {
       scopeId: `${operation.id}:${nanoid()}`,
       isIsolated: true,
       callDepth: nextCallDepth,
       controlFlowState: {},
+      debugMissingParamIndexes: undefined,
     });
     const allInputs = [data, ...parameters];
     resolvedParams.forEach((_param, index) => {
-      if (_param.name && allInputs[index]) {
+      if (
+        _param.name &&
+        allInputs[index] &&
+        !(_param.isOptional && missingParamIndexes?.has(index))
+      ) {
         const paramType =
           _param.type.kind === "union"
             ? { ..._param.type, activeIndex: undefined }
@@ -923,6 +986,28 @@ function executeOperationCore(
   });
 }
 
+function enterDebugExecutionFrame(
+  operation: OperationListItem,
+  context: Context
+) {
+  const frame = context.debugFrame ?? {
+    kind: "operation" as const,
+    operationId: operation.id,
+    operationName: operation.name,
+    entityId: operation.id,
+    callDepth: context.callDepth ?? 0,
+  };
+  delete context.debugFrame;
+
+  if (frame.entityId)
+    context.debugger?.registerContext(frame.entityId, context);
+  return context.debugger?.enterFrame({
+    ...frame,
+    scopeId: context.scopeId,
+    locationDepth: 0,
+  });
+}
+
 export async function executeOperation(
   ...args: Parameters<typeof executeOperationCore>
 ): Promise<IData> {
@@ -931,7 +1016,13 @@ export async function executeOperation(
   const result = await executeOperationCore(...args);
   if ("type" in result) return result;
   if (!("statements" in operation)) return createData();
-  const lastResult = await executeStatementsAsync(operation.statements, result);
+  const frameId = enterDebugExecutionFrame(operation, result);
+  const lastResult = await executeStatementsAsync(
+    operation.statements,
+    result
+  ).finally(() => {
+    if (frameId) result.debugger?.exitFrame(frameId);
+  });
 
   const cacheKey = result._memoCacheKey;
   delete result._memoCacheKey;
@@ -947,7 +1038,13 @@ export function executeOperationSync(
   const result = unwrapThenable(executeOperationCore(...args));
   if (result && "type" in result) return result;
   if (!("statements" in operation)) return createData();
-  const lastResult = executeStatements(operation.statements, result);
+  const frameId = enterDebugExecutionFrame(operation, result);
+  let lastResult: IData;
+  try {
+    lastResult = executeStatements(operation.statements, result);
+  } finally {
+    if (frameId) result.debugger?.exitFrame(frameId);
+  }
 
   const cacheKey = result._memoCacheKey;
   delete result._memoCacheKey;

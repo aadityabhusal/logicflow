@@ -389,6 +389,7 @@ export function createLocalContext(
     setContext: (id, ctx) => {
       if (ctx.isIsolated && localContexts.has(id)) return;
       localContexts.set(id, ctx);
+      ctx.debugger?.registerContext(id, ctx);
     },
   };
 
@@ -1095,7 +1096,7 @@ export function resolveReference(data: IData, context: Context): IData {
     const variable = context.variables.get(data.value.name);
     if (!variable) {
       // If context hasn't been set yet return the reference as-is
-      if (context.scopeId === "_root_") return data;
+      if (context.scopeId === "_root_" || context.isPartial) return data;
       return createData({
         id: data.id,
         type: { kind: "error", errorType: "reference_error" },
@@ -1625,6 +1626,19 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       const execute = context.isSync
         ? context.executeOperationSync
         : context.executeOperation;
+      localContext.debugFrame = {
+        kind: "callback",
+        operationId: data.id,
+        operationName: data.value.name,
+        entityId: data.id,
+        callDepth: (localContext.callDepth ?? 0) + 1,
+      };
+      const providedArgCount = Math.min(_args.length, effectiveLength);
+      localContext.debugMissingParamIndexes = new Set(
+        data.type.parameters.flatMap((param, index) =>
+          param.isOptional && index >= providedArgCount ? [index] : []
+        )
+      );
 
       const result = execute(
         operationToListItem(data),

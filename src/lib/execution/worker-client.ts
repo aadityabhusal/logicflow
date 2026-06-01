@@ -1,6 +1,7 @@
 import {
   Context,
   ExecutionResult,
+  ExecutionWorkerPausedResponse,
   ExecutionWorkerResponse,
   ExecutionWorkerRunRequest,
   WorkerContext,
@@ -17,6 +18,7 @@ type PendingRun = {
   request: Omit<ExecutionWorkerRunRequest, "type" | "runId">;
   resolve: (result: WorkerRunResult) => void;
   reject: (error: Error) => void;
+  onPaused?: (event: ExecutionWorkerPausedResponse) => void;
 };
 
 function createExecutionWorkerClient() {
@@ -35,36 +37,71 @@ function createExecutionWorkerClient() {
         type: "module",
       });
       worker.onmessage = (e: MessageEvent<ExecutionWorkerResponse>) => {
-        const { runId, cancelled, workerContexts, results, error } = e.data;
+        const { runId } = e.data;
 
         if (runId !== activeRun?.runId) return;
         const run = activeRun;
+
+        if (e.data.type === "debug-paused") {
+          run.onPaused?.(e.data);
+          return;
+        }
+
         activeRun = undefined;
 
-        if (cancelled) run.reject(new Error("Execution cancelled"));
-        else if (error) run.reject(new Error(error));
-        else run.resolve({ results: new Map(results), workerContexts });
+        if (e.data.type === "cancelled") {
+          run.reject(new Error("Execution cancelled"));
+        } else if (e.data.type === "error") {
+          run.reject(new Error(e.data.error));
+        } else {
+          run.resolve({
+            results: new Map(e.data.results),
+            workerContexts: e.data.workerContexts,
+          });
+        }
 
         const next = pendingRun;
         pendingRun = undefined;
         if (next) startRun(next);
       };
       worker.onerror = (e) => {
-        activeRun?.reject(new Error(e.message || "Worker error"));
+        const details = [e.message, e.filename, e.lineno && `line ${e.lineno}`]
+          .filter(Boolean)
+          .join(" ");
+        activeRun?.reject(new Error(details || "Worker error"));
         activeRun = undefined;
         pendingRun?.reject(new Error("Execution cancelled"));
         pendingRun = undefined;
+        worker?.terminate();
+        worker = undefined;
+      };
+      worker.onmessageerror = () => {
+        activeRun?.reject(new Error("Worker message could not be cloned"));
+        activeRun = undefined;
+        pendingRun?.reject(new Error("Execution cancelled"));
+        pendingRun = undefined;
+        worker?.terminate();
+        worker = undefined;
       };
     }
     return worker;
   };
 
   return {
-    run(request: Omit<ExecutionWorkerRunRequest, "type" | "runId">) {
+    run(
+      request: Omit<ExecutionWorkerRunRequest, "type" | "runId">,
+      options?: { onPaused?: (event: ExecutionWorkerPausedResponse) => void }
+    ) {
       const runId = nanoid();
       getWorker();
       return new Promise<WorkerRunResult>((resolve, reject) => {
-        const run: PendingRun = { runId, request, resolve, reject };
+        const run: PendingRun = {
+          runId,
+          request,
+          resolve,
+          reject,
+          onPaused: options?.onPaused,
+        };
         if (!activeRun) {
           startRun(run);
           return;
@@ -95,7 +132,8 @@ export const executionWorkerClient = createExecutionWorkerClient();
 
 export function hydrateContexts(
   workerContexts: [string, WorkerContext][],
-  rootContext: Context
+  rootContext: Context,
+  options?: { isPartial?: boolean }
 ): Map<string, Context> {
   const contexts = new Map<string, Context>();
   for (const [id, context] of workerContexts) {
@@ -103,6 +141,7 @@ export function hydrateContexts(
     contexts.set(id, {
       ...rootContext,
       ...rest,
+      isPartial: options?.isPartial,
       variables: new Map(variables),
       ...(narrowedTypes ? { narrowedTypes: new Map(narrowedTypes) } : {}),
     });

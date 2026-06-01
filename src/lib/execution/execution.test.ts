@@ -26,6 +26,7 @@ import {
   createExecutionVariables,
 } from "@/lib/operations/built-in";
 import { OperationListItem, Context } from "@/lib/execution/types";
+import { DebugLocation } from "@/lib/debugger/types";
 import {
   createTestContext,
   testString,
@@ -57,6 +58,43 @@ function findBuiltIn(name: string): OperationListItem {
   const op = coreOperations.find((o) => o.name === name);
   if (!op) throw new Error(`Operation "${name}" not found`);
   return op;
+}
+
+function createDebugLocationRecorder() {
+  const locations: DebugLocation[] = [];
+  const locationStack: DebugLocation[] = [];
+  const debuggerController: NonNullable<Context["debugger"]> = {
+    beforeStatement: (statement) => {
+      locationStack.push({
+        kind: "data",
+        entityId: statement.data.id,
+        statementId: statement.id,
+      });
+    },
+    afterStatement: () => {
+      locationStack.pop();
+    },
+    beforeOperationCall: (operation) => {
+      locationStack.push({
+        kind: "operation",
+        entityId: operation.id,
+        operationId: operation.id,
+        operationName: operation.value.name,
+      });
+    },
+    afterOperationCall: () => {
+      locationStack.pop();
+    },
+    enterFrame: () => "frame",
+    exitFrame: () => undefined,
+    registerContext: () => undefined,
+    maybePauseOnError: () => {
+      const location = locationStack.at(-1);
+      if (location) locations.push(location);
+    },
+    suppressBreakpoints: (fn) => fn(),
+  };
+  return { locations, debuggerController };
 }
 
 function testBuiltInOperation(
@@ -320,6 +358,25 @@ describe("executeStatement", () => {
     }
   });
 
+  it("reports data location for exception pauses", async () => {
+    const { locations, debuggerController } = createDebugLocationRecorder();
+    const ctx = createTestContext({
+      isSync: false,
+      debugger: debuggerController,
+    });
+    const errorData = testError("not found", "reference_error");
+    const stmt = createStatement({ data: errorData });
+
+    await executeStatement(stmt, ctx);
+
+    expect(locations[0]).toMatchObject({
+      kind: "data",
+      entityId: stmt.data.id,
+      statementId: stmt.id,
+    });
+    expect(locations[0]?.entityId).toBe(errorData.id);
+  });
+
   it("resolves references asynchronously", async () => {
     const ctx = createTestContext({ isSync: false });
     const resolvedValue = testNumber(99);
@@ -433,6 +490,36 @@ describe("executeStatement", () => {
     if (cached?.data?.type.kind === "error") {
       expect(cached.data.type.errorType).toBe("type_error");
     }
+  });
+
+  it("reports operation-call location for exception pauses", async () => {
+    const { locations, debuggerController } = createDebugLocationRecorder();
+    const ctx = createTestContext({
+      isSync: false,
+      debugger: debuggerController,
+    });
+    const op = createData({
+      id: "unknown-op",
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "undefined" },
+      },
+      value: { name: "nonExistentOp", parameters: [], statements: [] },
+    });
+    const stmt = createStatement({
+      data: testString("hello"),
+      operations: [op],
+    });
+
+    await executeStatement(stmt, ctx);
+
+    expect(locations[0]).toMatchObject({
+      kind: "operation",
+      entityId: op.id,
+      operationId: op.id,
+      operationName: "nonExistentOp",
+    });
   });
 
   it("executes chained operations", async () => {
@@ -702,7 +789,19 @@ describe("executeOperation", () => {
 
   it("only converts callback arguments declared by the operation value", () => {
     const setContext = vi.fn();
-    const ctx = createTestContext({ setContext });
+    const debugContexts = new Map<string, Context>();
+    const debuggerController: NonNullable<Context["debugger"]> = {
+      beforeStatement: () => undefined,
+      afterStatement: () => undefined,
+      beforeOperationCall: () => undefined,
+      afterOperationCall: () => undefined,
+      enterFrame: () => "frame",
+      exitFrame: () => undefined,
+      registerContext: (id, context) => debugContexts.set(id, context),
+      maybePauseOnError: () => undefined,
+      suppressBreakpoints: (fn) => fn(),
+    };
+    const ctx = createTestContext({ setContext, debugger: debuggerController });
     const callback = testOperation(
       [numberStatement(0, "item")],
       [createStatement({ data: testReference("item", "item") })]
@@ -729,6 +828,10 @@ describe("executeOperation", () => {
 
     expect(fn(10, 0, extraArray)).toBe(10);
     expect(setContext).not.toHaveBeenCalled();
+    const callbackContext = debugContexts.get(callback.value.statements[0].id);
+    expect(callbackContext?.variables.has("item")).toBe(true);
+    expect(callbackContext?.variables.has("index")).toBe(false);
+    expect(callbackContext?.variables.has("data")).toBe(false);
   });
 
   it("does not register per-item callback contexts for map", async () => {
