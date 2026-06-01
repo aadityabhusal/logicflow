@@ -6,11 +6,13 @@ import {
   ExecutionWorkerRunRequest,
   WorkerContext,
 } from "./types";
+import { DebugFlowStep } from "../debugger/types";
 import { nanoid } from "nanoid";
 
 type WorkerRunResult = {
   results: Map<string, ExecutionResult>;
   workerContexts: [string, WorkerContext][];
+  flowSteps: DebugFlowStep[];
 };
 
 type PendingRun = {
@@ -57,6 +59,7 @@ function createExecutionWorkerClient() {
           run.resolve({
             results: new Map(e.data.results),
             workerContexts: e.data.workerContexts,
+            flowSteps: e.data.flowSteps,
           });
         }
 

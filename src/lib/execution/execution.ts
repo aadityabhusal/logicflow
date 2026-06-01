@@ -542,6 +542,7 @@ function setStatementsSkipContext(statements: IStatement[], context: Context) {
 function executeStatements(statements: IStatement[], context: Context): IData {
   let lastResult: IData = createData();
   for (const stmt of statements) {
+    context.debugger?.resetFlow();
     lastResult = executeStatementSync(stmt, context);
     if (isFatalError(lastResult)) return lastResult;
     if (!context.controlFlowState?.returned) {
@@ -559,6 +560,7 @@ async function executeStatementsAsync(
   let lastResult: IData = createData();
   for (const stmt of statements) {
     if (context.isCancelled?.()) throw new Error("Execution cancelled");
+    context.debugger?.resetFlow();
     lastResult = await executeStatement(stmt, context);
     if (isFatalError(lastResult)) return lastResult;
     if (!context.controlFlowState?.returned) {
@@ -647,8 +649,7 @@ export async function executeStatement(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
-  context.debugger?.registerContext(statement.id, context);
-  context.debugger?.beforeStatement(statement, context);
+  context.debugger?.beforeData(statement.data, context);
   if (context.isCancelled?.()) throw new Error("Execution cancelled");
 
   try {
@@ -699,11 +700,17 @@ export async function executeStatement(
       );
       narrowedTypes = _narrowedTypes;
 
-      opCallContext.debugger?.beforeOperationCall(operation, opCallContext);
+      let operationOutput: IData | undefined;
+      opCallContext.debugger?.beforeOperationCall(
+        operation,
+        opCallContext,
+        resultData
+      );
       try {
         if (result !== undefined) {
           setResult(context, operation, result);
           resultData = result;
+          operationOutput = resultData;
           if (isFatalError(resultData)) {
             context.debugger?.maybePauseOnError(resultData, opCallContext);
             return resultData;
@@ -718,6 +725,7 @@ export async function executeStatement(
           opCallContext
         );
         resultData = opResult;
+        operationOutput = resultData;
         setResult(
           context,
           operation,
@@ -730,7 +738,11 @@ export async function executeStatement(
           return resultData;
         }
       } finally {
-        opCallContext.debugger?.afterOperationCall(operation, opCallContext);
+        opCallContext.debugger?.afterOperationCall(
+          operation,
+          opCallContext,
+          operationOutput
+        );
       }
     }
     const finalResult = resolveReference(resultData, context);
@@ -739,7 +751,7 @@ export async function executeStatement(
     }
     return finalResult;
   } finally {
-    context.debugger?.afterStatement(statement, context);
+    context.debugger?.exitData();
   }
 }
 
@@ -755,8 +767,7 @@ export function executeStatementSync(
     return context.controlFlowState.returned;
   }
   context.setContext(statement.id, context);
-  context.debugger?.registerContext(statement.id, context);
-  context.debugger?.beforeStatement(statement, context);
+  context.debugger?.beforeData(statement.data, context);
   try {
     let currentData = resolveReference(statement.data, context);
     if (isDataOfType(currentData, "condition")) {
@@ -804,11 +815,17 @@ export function executeStatementSync(
       );
       narrowedTypes = _narrowedTypes;
 
-      opCallContext.debugger?.beforeOperationCall(operation, opCallContext);
+      let operationOutput: IData | undefined;
+      opCallContext.debugger?.beforeOperationCall(
+        operation,
+        opCallContext,
+        resultData
+      );
       try {
         if (result !== undefined) {
           setResult(context, operation, result);
           resultData = result;
+          operationOutput = resultData;
           if (isFatalError(resultData)) {
             context.debugger?.maybePauseOnError(resultData, opCallContext);
             return resultData;
@@ -823,6 +840,7 @@ export function executeStatementSync(
           opCallContext
         );
         resultData = opResult;
+        operationOutput = resultData;
         setResult(
           context,
           operation,
@@ -835,7 +853,11 @@ export function executeStatementSync(
           return resultData;
         }
       } finally {
-        opCallContext.debugger?.afterOperationCall(operation, opCallContext);
+        opCallContext.debugger?.afterOperationCall(
+          operation,
+          opCallContext,
+          operationOutput
+        );
       }
     }
     const finalResult = resolveReference(resultData, context);
@@ -844,7 +866,7 @@ export function executeStatementSync(
     }
     return finalResult;
   } finally {
-    context.debugger?.afterStatement(statement, context);
+    context.debugger?.exitData();
   }
 }
 
@@ -1004,7 +1026,6 @@ function enterDebugExecutionFrame(
   return context.debugger?.enterFrame({
     ...frame,
     scopeId: context.scopeId,
-    locationDepth: 0,
   });
 }
 

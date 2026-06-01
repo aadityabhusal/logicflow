@@ -7,6 +7,7 @@ import { createIDbStorage } from "@/lib/store";
 import { setDebugBreakpoints } from "./control-buffer";
 import {
   DebugBreakpoint,
+  DebugFlowStep,
   DebugFrame,
   DebugLocation,
   DebuggerStatus,
@@ -20,11 +21,11 @@ type BreakpointInput = Omit<DebugBreakpoint, "id" | "enabled"> & {
 type RuntimeState = {
   status: DebuggerStatus;
   currentLocation?: DebugLocation;
+  flowSteps: DebugFlowStep[];
   callStack: DebugFrame[];
   selectedFrameId?: string;
   activeControl?: Int32Array;
   activeEntityIds?: string[];
-  error?: string;
 };
 
 type DebuggerStore = RuntimeState & {
@@ -36,6 +37,7 @@ type DebuggerStore = RuntimeState & {
   resetRuntime: (status?: DebuggerStatus) => void;
   toggleBreakpoint: (input: BreakpointInput) => void;
   removeBreakpoint: (id: string) => void;
+  setBreakpointEnabled: (id: string, enabled: boolean) => void;
   getBreakpoint: (
     projectId: string | undefined,
     fileId: string | undefined,
@@ -50,11 +52,11 @@ type DebuggerStore = RuntimeState & {
 const initialRuntime: RuntimeState = {
   status: "idle",
   currentLocation: undefined,
+  flowSteps: [],
   callStack: [],
   selectedFrameId: undefined,
   activeControl: undefined,
   activeEntityIds: undefined,
-  error: undefined,
 };
 
 function syncActiveBreakpoints(state: DebuggerStore) {
@@ -100,6 +102,14 @@ export const useDebuggerStore = createWithEqualityFn<DebuggerStore>()(
       removeBreakpoint: (id) =>
         set((state) => {
           const breakpoints = state.breakpoints.filter((bp) => bp.id !== id);
+          syncActiveBreakpoints({ ...state, breakpoints });
+          return { breakpoints };
+        }),
+      setBreakpointEnabled: (id, enabled) =>
+        set((state) => {
+          const breakpoints = state.breakpoints.map((bp) =>
+            bp.id === id ? { ...bp, enabled } : bp
+          );
           syncActiveBreakpoints({ ...state, breakpoints });
           return { breakpoints };
         }),

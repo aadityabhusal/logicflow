@@ -9,6 +9,7 @@ import {
 import { createData, createStatement } from "../utils";
 import { ProjectFile } from "../types";
 import { createExecutionVariables } from "../operations/built-in";
+import { DebugFlowStep } from "../debugger/types";
 
 function createHydrationBaseContext(): Context {
   const variables = new Map();
@@ -374,6 +375,7 @@ describe("runExecutionInWorker", () => {
     run: (request: ReturnType<typeof makeRequest>) => Promise<{
       results: Map<string, ExecutionResult>;
       workerContexts: [string, WorkerContext][];
+      flowSteps: DebugFlowStep[];
     }>;
     cancel: () => void;
     reset: () => void;
@@ -427,6 +429,7 @@ describe("runExecutionInWorker", () => {
             runId,
             results: [],
             workerContexts: [],
+            flowSteps: [],
             ...overrides,
           };
     w.onmessage?.({ data } as MessageEvent<ExecutionWorkerResponse>);

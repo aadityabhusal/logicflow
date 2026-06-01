@@ -14,7 +14,6 @@ function indexStatement(
   fileId: string,
   index: Map<string, string>
 ) {
-  index.set(statement.id, fileId);
   index.set(statement.data.id, fileId);
   statement.operations.forEach((operation) => {
     index.set(operation.id, fileId);

@@ -404,8 +404,13 @@ const DropdownComponent = ({
         >
           {breakpoint ? (
             <span
-              title="Breakpoint"
-              className="mt-1.5 mr-1 h-2 w-2 rounded-full bg-error shrink-0"
+              title={
+                breakpoint.enabled ? "Breakpoint" : "Breakpoint (disabled)"
+              }
+              className={[
+                "mt-1.5 mr-1 h-2 w-2 rounded-full shrink-0",
+                breakpoint.enabled ? "bg-error" : "bg-disabled",
+              ].join(" ")}
             />
           ) : null}
           <Combobox.EventsTarget

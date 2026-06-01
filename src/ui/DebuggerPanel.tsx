@@ -1,5 +1,7 @@
 import {
   FaArrowRightLong,
+  FaChevronDown,
+  FaChevronRight,
   FaForward,
   FaPause,
   FaPlay,
@@ -7,6 +9,8 @@ import {
   FaStop,
   FaTrash,
 } from "react-icons/fa6";
+import { Tooltip } from "@mantine/core";
+import { useState } from "react";
 import { IconButton } from "./IconButton";
 import { useDebuggerStore } from "@/lib/debugger/store";
 import {
@@ -22,48 +26,71 @@ import {
 } from "@/lib/execution/worker-client";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { useNavigationStore, useProjectStore } from "@/lib/store";
-import {
-  createOperationFromFile,
-  getTypeSignature,
-  isDataOfType,
-} from "@/lib/utils";
+import { createOperationFromFile, getTypeSignature } from "@/lib/utils";
 import { createCodeGenContext, generateData } from "@/lib/format-code";
 import { getEnabledPackages } from "@/lib/packages/catalog";
 import { createProjectEntityFileIndex } from "@/lib/debugger/utils";
-import { Context, Variable } from "@/lib/execution/types";
+import { Context } from "@/lib/execution/types";
+import { IData } from "@/lib/types";
+import { CodeHighlight } from "./CodeHighlight";
 
-const MAX_SCOPE_VALUE_LENGTH = 160;
-
-function isBuiltInScopeVariable(variable: Variable) {
-  return variable.data.id.startsWith("builtin:");
-}
-
-function formatScopeVariableValue(variable: Variable, context: Context) {
-  let value: string;
+function getCode(data: IData, context: Context): string {
   try {
-    value = generateData(
-      variable.data,
+    return generateData(
+      data,
       createCodeGenContext(context, { showResult: true })
     );
   } catch {
-    const rawValue = variable.data.value;
-    if (rawValue === undefined) value = "undefined";
-    else {
-      try {
-        value = JSON.stringify(rawValue) ?? String(rawValue);
-      } catch {
-        value = String(rawValue);
-      }
-    }
+    return String(data.value ?? "undefined");
   }
+}
 
-  return {
-    full: value,
-    preview:
-      value.length > MAX_SCOPE_VALUE_LENGTH
-        ? `${value.slice(0, MAX_SCOPE_VALUE_LENGTH)}...`
-        : value,
-  };
+const Collapsible = ({
+  header,
+  children,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        className="flex items-center gap-1 w-full text-left text-sm py-0.5 hover:bg-dropdown-hover"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {open ? (
+          <FaChevronDown size={10} className="shrink-0 text-gray-500" />
+        ) : (
+          <FaChevronRight size={10} className="shrink-0 text-gray-500" />
+        )}
+        <span className="min-w-0 truncate">{header}</span>
+      </button>
+      {open && (
+        <div className="ml-4 p-1 bg-dropdown-hover/30 flex flex-col gap-1">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const flowPhaseClass = {
+  running: "text-blue-300 shrink-0",
+  completed: "text-green-300 shrink-0",
+  errored: "text-error shrink-0",
+  skipped: "text-disabled shrink-0",
+};
+
+function Result({ label, code }: { label?: string; code: string }) {
+  return (
+    <div>
+      {label && <div className="text-sm text-gray-400 mb-0.5">{label}</div>}
+      <div className="text-sm">
+        <CodeHighlight code={code} showLineNumbers={false} wrap />
+      </div>
+    </div>
+  );
 }
 
 export function DebuggerPanel() {
@@ -78,11 +105,13 @@ export function DebuggerPanel() {
   const setRuntimeState = useDebuggerStore((s) => s.setRuntimeState);
   const resetRuntime = useDebuggerStore((s) => s.resetRuntime);
   const currentLocation = useDebuggerStore((s) => s.currentLocation);
+  const flowSteps = useDebuggerStore((s) => s.flowSteps);
   const callStack = useDebuggerStore((s) => s.callStack);
   const selectedFrameId = useDebuggerStore((s) => s.selectedFrameId);
   const setSelectedFrame = useDebuggerStore((s) => s.setSelectedFrame);
   const activeControl = useDebuggerStore((s) => s.activeControl);
   const removeBreakpoint = useDebuggerStore((s) => s.removeBreakpoint);
+  const setBreakpointEnabled = useDebuggerStore((s) => s.setBreakpointEnabled);
 
   const canDebug = canUseSharedDebugger();
   const isActive = ["starting", "running", "paused", "stopping"].includes(
@@ -101,8 +130,9 @@ export function DebuggerPanel() {
       ? s.getContext(selectedFrame.entityId)
       : s.rootContext
   );
+  const getContext = useExecutionResultsStore((s) => s.getContext);
   const scopeVariables = [...selectedContext.variables]
-    .filter(([, variable]) => !isBuiltInScopeVariable(variable))
+    .filter(([, variable]) => !variable.data.id.startsWith("builtin:"))
     .reverse();
 
   const startDebug = () => {
@@ -120,9 +150,9 @@ export function DebuggerPanel() {
       activeControl: control,
       activeEntityIds: [...entityIndex.keys()],
       currentLocation: undefined,
+      flowSteps: [],
       callStack: [],
       selectedFrameId: undefined,
-      error: undefined,
     });
     useExecutionResultsStore.getState().setIsExecuting(true);
 
@@ -179,6 +209,7 @@ export function DebuggerPanel() {
             setRuntimeState({
               status: "paused",
               currentLocation: event.location,
+              flowSteps: event.flowSteps,
               callStack: event.callStack,
               selectedFrameId: event.callStack[0]?.id,
             });
@@ -192,7 +223,11 @@ export function DebuggerPanel() {
           contexts,
           isExecuting: false,
         });
-        setRuntimeState({ status: "completed", activeControl: undefined });
+        setRuntimeState({
+          status: "completed",
+          activeControl: undefined,
+          flowSteps: result.flowSteps,
+        });
       })
       .catch((error) => {
         const currentStatus = useDebuggerStore.getState().status;
@@ -201,8 +236,8 @@ export function DebuggerPanel() {
         setRuntimeState({
           status: currentStatus === "stopping" ? "idle" : "error",
           activeControl: undefined,
-          error: message,
         });
+        console.error("Debug execution error:", message);
       });
   };
 
@@ -247,7 +282,7 @@ export function DebuggerPanel() {
     <div className="flex flex-col h-full">
       <div className="p-1 flex gap-2 justify-between items-center border-b bg-dropdown-default">
         <p className="font-bold">Debugger</p>
-        <span className="text-xs text-gray-300">{status}</span>
+        <span className="text-sm text-gray-300">{status}</span>
       </div>
       <div className="flex flex-col gap-2 p-1 border-b ">
         <div className="flex gap-2 flex-wrap items-center">
@@ -290,7 +325,7 @@ export function DebuggerPanel() {
             onClick={stop}
           />
         </div>
-        <label className="flex items-center gap-1 text-xs text-gray-200 select-none">
+        <label className="flex items-center gap-1 text-sm text-gray-200 select-none">
           <input
             type="checkbox"
             className="accent-blue-500"
@@ -311,18 +346,56 @@ export function DebuggerPanel() {
           {currentLocation ? (
             <button
               className="text-sm text-gray-300 text-left hover:bg-dropdown-hover p-0.5 w-full"
-              onClick={() =>
+              onClick={() => {
                 navigateToEntity(
                   currentLocation.fileId,
                   currentLocation.entityId
-                )
-              }
+                );
+              }}
             >
               {currentLocation.kind}:{" "}
               {currentLocation.operationName ?? currentLocation.entityId}
             </button>
           ) : (
             <div className="text-sm text-gray-300">Not paused</div>
+          )}
+        </section>
+        <section className="border-b p-1">
+          <p className="font-bold mb-1">Flow</p>
+          {flowSteps.length ? (
+            <div className="flex flex-col gap-1">
+              {flowSteps.map((step) => {
+                const ctx = getContext(step.entityId);
+                return (
+                  <Collapsible
+                    key={step.id}
+                    header={
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <span>
+                          operation: {step.operationName ?? step.entityId}
+                        </span>
+                        <span className={flowPhaseClass[step.phase]}>
+                          {step.phase}
+                        </span>
+                      </div>
+                    }
+                  >
+                    {step.input && (
+                      <Result label="Input" code={getCode(step.input, ctx)} />
+                    )}
+                    {step.output ? (
+                      <Result label="Output" code={getCode(step.output, ctx)} />
+                    ) : (
+                      <div className="text-sm text-gray-500">
+                        {step.phase === "running" ? "running..." : "pending"}
+                      </div>
+                    )}
+                  </Collapsible>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-300">No flow steps</div>
           )}
         </section>
         <section className="border-b p-1">
@@ -348,28 +421,23 @@ export function DebuggerPanel() {
         <section className="border-b p-1">
           <p className="font-bold mb-1">Scope Variables</p>
           {scopeVariables.length ? (
-            scopeVariables.map(([name, variable]) => {
-              const isOperation = isDataOfType(variable.data, "operation");
-              const value = isOperation
-                ? undefined
-                : formatScopeVariableValue(variable, selectedContext);
+            scopeVariables.map(([name, { data }]) => {
+              const typeSig = getTypeSignature(data.type, selectedContext);
               return (
-                <div key={name} className="text-sm py-0.5">
-                  <span className="text-variable">{name}</span>
-                  <span className="text-gray-400">: </span>
-                  {isOperation ? (
-                    <span className="text-gray-300">
-                      {getTypeSignature(variable.data.type, selectedContext)}
-                    </span>
-                  ) : (
-                    <span
-                      className="text-gray-200 wrap-break-word"
-                      title={value?.full}
-                    >
-                      {value?.preview}
-                    </span>
-                  )}
-                </div>
+                <Collapsible
+                  key={name}
+                  header={
+                    <>
+                      <span className="text-variable">{name}</span>
+                      <span className="text-gray-400">: </span>
+                      <Tooltip label={typeSig} position="top-start">
+                        <span className="text-gray-300">{typeSig}</span>
+                      </Tooltip>
+                    </>
+                  }
+                >
+                  <Result code={getCode(data, selectedContext)} />
+                </Collapsible>
               );
             })
           ) : (
@@ -380,13 +448,22 @@ export function DebuggerPanel() {
           <p className="font-bold mb-1">Breakpoints</p>
           {projectBreakpoints.length ? (
             projectBreakpoints.map((bp) => (
-              <div key={bp.id} className="flex items-center gap-1 text-sm">
-                <span className="h-2 w-2 rounded-full bg-error" />
+              <div
+                key={bp.id}
+                className={[
+                  "flex items-center gap-1 text-sm",
+                  !bp.enabled ? "opacity-50" : "",
+                ].join(" ")}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-blue-500 shrink-0"
+                  checked={bp.enabled}
+                  onChange={() => setBreakpointEnabled(bp.id, !bp.enabled)}
+                />
                 <button
                   className="text-left flex-1 hover:bg-dropdown-hover p-0.5"
-                  onClick={() => {
-                    navigateToEntity(bp.fileId, bp.entityId);
-                  }}
+                  onClick={() => navigateToEntity(bp.fileId, bp.entityId)}
                 >
                   {bp.kind}: {bp.entityId}
                 </button>

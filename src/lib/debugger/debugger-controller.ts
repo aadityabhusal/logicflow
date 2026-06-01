@@ -6,7 +6,12 @@ import {
   codeToCommand,
   hasDebugBreakpoint,
 } from "./control-buffer";
-import { DebugFrame, DebugLocation, DebugPauseReason } from "./types";
+import {
+  DebugFlowStep,
+  DebugFrame,
+  DebugLocation,
+  DebugPauseReason,
+} from "./types";
 import { IData } from "../types";
 import {
   Context,
@@ -74,16 +79,17 @@ export function createDebuggerController({
   let stepMode: StepMode = "continue";
   let pausedFrameDepth = 0;
   let pausedLocationDepth = 0;
-  let activeLocationDepth = 0;
   const frames: DebugFrame[] = [];
-  const operationCallFrames: string[] = [];
   const locations: DebugLocation[] = [];
+  const flowSteps: DebugFlowStep[] = [];
+  const operationCalls: { frameId: string; stepId: string }[] = [];
+  const callbackFlowSteps = new Map<string, DebugFlowStep>();
   const debugContexts = new Map<string, Context>();
   const entityIndexes = new Map(
     [...entityFileMap.keys()].map((entityId, index) => [entityId, index])
   );
 
-  const getLocationDepth = () => frames.length + activeLocationDepth;
+  const getLocationDepth = () => frames.length + locations.length;
 
   const fileIdFor = (entityId?: string, fallback?: string) =>
     fallback ?? (entityId ? entityFileMap.get(entityId) : undefined);
@@ -113,10 +119,62 @@ export function createDebuggerController({
     if (index >= 0) frames.splice(index, 1);
   };
 
-  const pushLocation = (location: DebugLocation) => {
+  const pauseAt = (location: DebugLocation) => {
     const resolved = withFile(location);
     locations.push(resolved);
-    maybePause(resolved);
+    maybePause(resolved, frames.length + Math.max(0, locations.length - 1));
+  };
+
+  const activeCallbackFrame = () =>
+    [...frames].reverse().find((frame) => frame.kind === "callback");
+
+  const callbackFlowKey = (location: DebugLocation) => {
+    const callback = activeCallbackFrame();
+    if (!callback?.entityId) return undefined;
+    return `${callback.entityId}:${location.entityId}`;
+  };
+
+  const flowStepUpdate = (props: {
+    location: DebugLocation;
+    context: Context;
+    input?: IData;
+  }) => ({
+    phase: "running" as const,
+    entityId: props.location.entityId,
+    fileId: fileIdFor(props.location.entityId, props.location.fileId),
+    operationName: props.location.operationName,
+    scopeId: props.context.scopeId,
+    input: props.input,
+    output: undefined,
+  });
+
+  const startFlowStep = (props: Parameters<typeof flowStepUpdate>[0]) => {
+    const key = callbackFlowKey(props.location);
+    const existing = key ? callbackFlowSteps.get(key) : undefined;
+    if (existing) {
+      Object.assign(existing, flowStepUpdate(props));
+      return existing.id;
+    }
+    const nextStep = { id: nanoid(), ...flowStepUpdate(props) };
+    flowSteps.push(nextStep);
+    if (key) callbackFlowSteps.set(key, nextStep);
+    return nextStep.id;
+  };
+
+  const finishFlowStep = (
+    stepId: string | undefined,
+    context: Context,
+    output: IData
+  ) => {
+    if (!stepId) return;
+    const step = flowSteps.find((item) => item.id === stepId);
+    if (!step) return;
+    step.output = output;
+    step.phase = context.skipExecution
+      ? "skipped"
+      : output.type.kind === "error"
+        ? "errored"
+        : "completed";
   };
 
   function throwIfStopped() {
@@ -168,6 +226,7 @@ export function createDebuggerController({
       reason,
       location: withFile(location),
       callStack: [...frames].reverse(),
+      flowSteps: [...flowSteps],
       results: publicResults(results),
       workerContexts: serializeDebugContexts(getContexts, debugContexts),
     });
@@ -181,62 +240,58 @@ export function createDebuggerController({
     stepMode = command ?? "continue";
   }
 
-  function maybePause(location: DebugLocation) {
+  function maybePause(location: DebugLocation, depth: number) {
     throwIfStopped();
     sequence += 1;
     Atomics.store(control, DEBUG_CONTROL.sequence, sequence);
-    const depth = getLocationDepth();
     const reason = shouldPause(location, depth);
     if (reason) pause(reason, location, depth);
   }
 
   return {
-    beforeStatement: (statement, context) => {
-      registerContext(statement.id, context);
-      registerContext(statement.data.id, context);
-      pushLocation({
-        kind: "data",
-        entityId: statement.data.id,
-        statementId: statement.id,
-        fileId: entityFileMap.get(statement.id),
-      });
-      activeLocationDepth += 1;
+    resetFlow: () => {
+      flowSteps.length = 0;
+      callbackFlowSteps.clear();
     },
-    afterStatement: () => {
-      activeLocationDepth = Math.max(0, activeLocationDepth - 1);
+    beforeData: (data, context) => {
+      registerContext(data.id, context);
+      pauseAt({ kind: "data", entityId: data.id });
+    },
+    exitData: () => {
       locations.pop();
     },
-    beforeOperationCall: (operation, context) => {
+    beforeOperationCall: (operation, context, input) => {
       registerContext(operation.id, context);
-      operationCallFrames.push(
-        pushFrame({
+      const _location = {
+        kind: "operation",
+        entityId: operation.id,
+        operationName: operation.value.name,
+      } satisfies DebugLocation;
+      operationCalls.push({
+        stepId: startFlowStep({ location: _location, context, input }),
+        frameId: pushFrame({
           kind: "operationCall",
           operationId: operation.id,
           operationName: operation.value.name,
           scopeId: context.scopeId,
           entityId: operation.id,
           callDepth: context.callDepth ?? 0,
-          locationDepth: getLocationDepth(),
-        })
-      );
-      pushLocation({
-        kind: "operation",
-        entityId: operation.id,
-        operationId: operation.id,
-        operationName: operation.value.name,
+        }),
       });
-      activeLocationDepth += 1;
+      pauseAt(_location);
     },
-    afterOperationCall: () => {
-      activeLocationDepth = Math.max(0, activeLocationDepth - 1);
+    afterOperationCall: (_operation, context, result) => {
+      const call = operationCalls.pop();
+      if (result) finishFlowStep(call?.stepId, context, result);
       locations.pop();
-      removeFrame(operationCallFrames.pop());
+      removeFrame(call?.frameId);
     },
     enterFrame: pushFrame,
     exitFrame: removeFrame,
     registerContext,
     maybePauseOnError: (result: IData, context: Context) => {
       if (!pauseOnExceptions || suppressed > 0) return;
+      finishFlowStep(operationCalls.at(-1)?.stepId, context, result);
       const location = withFile(
         locations.at(-1) ?? { kind: "data", entityId: result.id }
       );
@@ -260,5 +315,6 @@ export function createDebuggerController({
         throw error;
       }
     },
+    getFlowSteps: () => [...flowSteps],
   };
 }

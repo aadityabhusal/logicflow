@@ -67,9 +67,10 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
     );
     const { context: localCtx, getContexts } = createLocalContext(rootContext);
 
+    let debuggerController: Context["debugger"] | undefined;
     if (req.debug) {
       const control = getDebugControl(req.debug.controlBuffer);
-      const debuggerController = createDebuggerController({
+      debuggerController = createDebuggerController({
         runId: req.runId,
         control,
         results,
@@ -88,7 +89,6 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
         entityId: req.operation.id,
         fileId: req.operation.id,
         callDepth: 0,
-        locationDepth: 0,
       });
     }
 
@@ -98,6 +98,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
       type: "completed",
       runId: req.runId,
       results: publicResults(results),
+      flowSteps: debuggerController?.getFlowSteps() ?? [],
       workerContexts: serializeContexts(
         [...getContexts()].filter(([, ctx]) => !ctx.isIsolated)
       ),

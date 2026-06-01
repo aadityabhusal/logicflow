@@ -64,21 +64,20 @@ function createDebugLocationRecorder() {
   const locations: DebugLocation[] = [];
   const locationStack: DebugLocation[] = [];
   const debuggerController: NonNullable<Context["debugger"]> = {
-    beforeStatement: (statement) => {
+    resetFlow: () => undefined,
+    beforeData: (data) => {
       locationStack.push({
         kind: "data",
-        entityId: statement.data.id,
-        statementId: statement.id,
+        entityId: data.id,
       });
     },
-    afterStatement: () => {
+    exitData: () => {
       locationStack.pop();
     },
     beforeOperationCall: (operation) => {
       locationStack.push({
         kind: "operation",
         entityId: operation.id,
-        operationId: operation.id,
         operationName: operation.value.name,
       });
     },
@@ -93,6 +92,7 @@ function createDebugLocationRecorder() {
       if (location) locations.push(location);
     },
     suppressBreakpoints: (fn) => fn(),
+    getFlowSteps: () => [],
   };
   return { locations, debuggerController };
 }
@@ -372,7 +372,6 @@ describe("executeStatement", () => {
     expect(locations[0]).toMatchObject({
       kind: "data",
       entityId: stmt.data.id,
-      statementId: stmt.id,
     });
     expect(locations[0]?.entityId).toBe(errorData.id);
   });
@@ -517,7 +516,6 @@ describe("executeStatement", () => {
     expect(locations[0]).toMatchObject({
       kind: "operation",
       entityId: op.id,
-      operationId: op.id,
       operationName: "nonExistentOp",
     });
   });
@@ -552,6 +550,61 @@ describe("executeStatement", () => {
     const result = await executeStatement(stmt, ctx);
     expect(result.type.kind).toBe("number");
     expect(result.value).toBe(6);
+  });
+
+  it("reports operation flow values to debugger", async () => {
+    const operationInputs: IData[] = [];
+    const operationOutputs: IData[] = [];
+    const debuggerController: NonNullable<Context["debugger"]> = {
+      resetFlow: () => undefined,
+      beforeData: () => undefined,
+      exitData: () => undefined,
+      beforeOperationCall: (_operation, _context, input) =>
+        operationInputs.push(input),
+      afterOperationCall: (_operation, _context, result) => {
+        if (result) operationOutputs.push(result);
+      },
+      enterFrame: () => "frame",
+      exitFrame: () => undefined,
+      registerContext: () => undefined,
+      maybePauseOnError: () => undefined,
+      suppressBreakpoints: (fn) => fn(),
+      getFlowSteps: () => [],
+    };
+    const ctx = createTestContext({
+      isSync: false,
+      debugger: debuggerController,
+    });
+    const lengthOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "number" },
+      },
+      value: { name: "length", parameters: [], statements: [] },
+    });
+    const addOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "number" } },
+          { type: { kind: "number" } },
+        ],
+        result: { kind: "number" },
+      },
+      value: { name: "add", parameters: [numberStatement(1)], statements: [] },
+    });
+
+    await executeStatement(
+      createStatement({
+        data: testString("hello"),
+        operations: [lengthOp, addOp],
+      }),
+      ctx
+    );
+
+    expect(operationInputs.map((data) => data.value)).toEqual(["hello", 5]);
+    expect(operationOutputs.map((data) => data.value)).toEqual([5, 6]);
   });
 });
 
@@ -791,8 +844,9 @@ describe("executeOperation", () => {
     const setContext = vi.fn();
     const debugContexts = new Map<string, Context>();
     const debuggerController: NonNullable<Context["debugger"]> = {
-      beforeStatement: () => undefined,
-      afterStatement: () => undefined,
+      resetFlow: () => undefined,
+      beforeData: () => undefined,
+      exitData: () => undefined,
       beforeOperationCall: () => undefined,
       afterOperationCall: () => undefined,
       enterFrame: () => "frame",
@@ -800,6 +854,7 @@ describe("executeOperation", () => {
       registerContext: (id, context) => debugContexts.set(id, context),
       maybePauseOnError: () => undefined,
       suppressBreakpoints: (fn) => fn(),
+      getFlowSteps: () => [],
     };
     const ctx = createTestContext({ setContext, debugger: debuggerController });
     const callback = testOperation(

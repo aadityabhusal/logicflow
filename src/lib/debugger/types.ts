@@ -1,4 +1,4 @@
-import { IStatement } from "@/lib/types";
+import { IData, IStatement } from "@/lib/types";
 
 export type DebuggerStatus =
   | "idle"
@@ -13,8 +13,6 @@ export type DebugLocation = {
   kind: "data" | "operation";
   entityId: string;
   fileId?: string;
-  operationId?: string;
-  statementId?: string;
   operationName?: string;
 };
 
@@ -27,12 +25,17 @@ export type DebugFrame = {
   entityId?: string;
   fileId?: string;
   callDepth: number;
-  locationDepth: number;
-  callback?: {
-    invocation: number;
-    createdAtOperationName?: string;
-    createdAtOperationCallId?: string;
-  };
+};
+
+export type DebugFlowStep = {
+  id: string;
+  phase: "running" | "completed" | "errored" | "skipped";
+  entityId: string;
+  fileId?: string;
+  operationName?: string;
+  scopeId: string;
+  input?: IData;
+  output?: IData;
 };
 
 export type DebugBreakpoint = {

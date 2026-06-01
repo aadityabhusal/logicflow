@@ -10,6 +10,7 @@ import {
 } from "../types";
 import {
   DebugFrame,
+  DebugFlowStep,
   DebugLocation,
   DebugPauseReason,
   DebugRunConfig,
@@ -38,21 +39,25 @@ export type Variable = {
 };
 
 export type DebuggerController = {
-  beforeStatement: (statement: IStatement, context: Context) => void;
-  afterStatement: (statement: IStatement, context: Context) => void;
+  resetFlow: () => void;
+  beforeData: (data: IData, context: Context) => void;
+  exitData: () => void;
   beforeOperationCall: (
     operation: IData<OperationType>,
-    context: Context
+    context: Context,
+    input: IData
   ) => void;
   afterOperationCall: (
     operation: IData<OperationType>,
-    context: Context
+    context: Context,
+    result?: IData
   ) => void;
   enterFrame: (frame: Omit<DebugFrame, "id"> & { id?: string }) => string;
   exitFrame: (frameId: string) => void;
   registerContext: (entityId: string, context: Context) => void;
   maybePauseOnError: (result: IData, context: Context) => void;
   suppressBreakpoints: <T>(fn: () => T) => T;
+  getFlowSteps: () => DebugFlowStep[];
 };
 
 export type ContextProps = {
@@ -73,7 +78,7 @@ export type ContextProps = {
   _memoCacheKey?: string;
   controlFlowState?: { returned?: IData };
   debugger?: DebuggerController;
-  debugFrame?: Omit<DebugFrame, "id" | "scopeId" | "locationDepth"> & {
+  debugFrame?: Omit<DebugFrame, "id" | "scopeId"> & {
     id?: string;
   };
   debugMissingParamIndexes?: Set<number>;
@@ -171,6 +176,7 @@ export type ExecutionWorkerCompletedResponse = {
   runId: string;
   results: [string, ExecutionResult][];
   workerContexts: [string, WorkerContext][];
+  flowSteps: DebugFlowStep[];
 };
 
 export type ExecutionWorkerPausedResponse = {
@@ -179,6 +185,7 @@ export type ExecutionWorkerPausedResponse = {
   reason: DebugPauseReason;
   location: DebugLocation;
   callStack: DebugFrame[];
+  flowSteps: DebugFlowStep[];
   results: [string, ExecutionResult][];
   workerContexts: [string, WorkerContext][];
 };
