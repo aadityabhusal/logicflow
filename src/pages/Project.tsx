@@ -21,7 +21,11 @@ import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
-import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
+import {
+  createFileFromOperation,
+  createOperationFromFile,
+  isEditableElement,
+} from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { cloneWithNewIds, writeEntityClipboard } from "@/lib/editor-clipboard";
@@ -88,6 +92,10 @@ export default function Project() {
 
   const handleOperationContextMenu = useCallback(
     (e: MouseEvent) => {
+      if (isEditableElement(e.target)) {
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       if (!currentOperation || currentFile?.type !== "operation") return;

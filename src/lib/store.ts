@@ -26,7 +26,7 @@ import {
   restoreProjectFromCheckpoint,
 } from "./checkpoints";
 
-const IDbStore = openDB("logicflow", 3, {
+const IDbStore = openDB("logicflow", 4, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("projects")) {
       db.createObjectStore("projects");

@@ -1831,6 +1831,15 @@ export function isTextInput(element: Element | null) {
   }
 }
 
+export function isEditableElement(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.closest('[contenteditable="true"]') !== null
+  );
+}
+
 export function handleSearchParams(
   params: Record<string, string | number | null | undefined>,
   replace?: boolean

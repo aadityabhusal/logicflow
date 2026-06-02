@@ -393,6 +393,82 @@ describe("generateOperation", () => {
     const result = generateOperation(op, ctx);
     expect(result).toContain("async");
     expect(result).toContain("_.pipeAsync");
+    expect(result).toContain("_.await");
+  });
+
+  it("keeps promises unresolved until an explicit await operation", () => {
+    const ctx = createTestContext();
+    const fetchOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+        },
+      },
+      value: { name: "fetch", parameters: [], statements: [] },
+    });
+    const thenOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Promise",
+              constructorArgs: [],
+            },
+          },
+          {
+            type: {
+              kind: "operation",
+              parameters: [{ name: "value", type: { kind: "unknown" } }],
+              result: { kind: "unknown" },
+            },
+          },
+        ],
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+        },
+      },
+      value: {
+        name: "then",
+        parameters: [
+          createStatement({
+            data: testOperation(
+              [createStatement({ name: "value", data: createData() })],
+              [createStatement({ data: testReference("value", "value") })],
+              "identity"
+            ),
+          }),
+        ],
+        statements: [],
+      },
+    });
+    const awaitOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "undefined" },
+      },
+      value: { name: "await", parameters: [], statements: [] },
+    });
+    const stmt = createStatement({
+      data: testString("https://api.example.com"),
+      operations: [fetchOp, thenOp, awaitOp],
+    });
+    const op = testOperation([], [stmt], "promiseThen");
+    op.value.isAsync = true;
+
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("_.fetch");
+    expect(result).toContain("arg.then");
+    expect(result).toContain("_.await");
   });
 
   it("generates with showResult option resolving values", () => {

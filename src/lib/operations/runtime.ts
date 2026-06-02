@@ -3,13 +3,16 @@ import { produce } from "immer";
 
 // ===== Pipe Operations =====
 
+const await_ = async <T>(value: T | Promise<T>): Promise<T> => value;
+export { await_ as await };
+
 export const pipeAsync = async <T>(
   value: T,
-  ...fns: ((arg: unknown) => Promise<unknown>)[]
+  ...fns: ((arg: unknown) => unknown)[]
 ): Promise<unknown> => {
   let result: unknown = value;
   for (const fn of fns) {
-    result = await fn(result);
+    result = fn === await_ ? await result : fn(result);
   }
   return result;
 };

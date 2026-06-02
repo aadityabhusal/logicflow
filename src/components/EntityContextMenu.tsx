@@ -32,7 +32,7 @@ export function EntityContextMenu({
               "w-full text-left p-1 outline-none cursor-default",
               hover && !disabled ? "bg-dropdown-hover" : "",
               disabled ? "text-disabled" : "",
-              item.danger ? "text-error" : "",
+              item.danger && !disabled ? "text-error" : "",
             ].join(" ")
           }
           onClick={(e) => {

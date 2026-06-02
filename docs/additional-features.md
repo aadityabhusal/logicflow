@@ -27,6 +27,7 @@ Checkpoints are managed in the **Settings** tab of the sidebar, under the projec
 3. Click the save button
 
 A checkpoint captures:
+
 - All operation files and their contents
 - Project settings (name, dependencies)
 - Deployment configuration (platforms, environment variables)
@@ -49,19 +50,15 @@ All checkpoints for a project are also cleaned up when the project itself is del
 
 Checkpoints are stored locally in your browser's IndexedDB. They are not synced across devices or to any cloud service.
 
-## Copy and Paste
+## Context Menu
 
-The editor header provides copy and paste buttons for working with operations:
+Right-click an entity in the editor to open its context menu. On touch devices, use the browser's long-press gesture where available.
 
-### Copy
+![Context menu placeholder](/docs-images/additional-features-06.png)
 
-Copies the current operation as JSON to the clipboard. This includes all statements, data, operations, and parameters—but excludes the operation name.
+The context menu provides actions such as copy, cut, replace, duplicate, delete, and move. Available actions depend on what you open the menu on: statements, data, operation calls, or the current operation.
 
-### Paste
-
-Pastes an operation from the clipboard. The pasted content is validated against the operation schema before being merged into the current operation. Invalid content is rejected silently.
-
-This is useful for duplicating operations or sharing them between projects.
+Clipboard actions are validated before they are applied. For example, data can only replace data, and an operation call can only replace another operation call.
 
 ## Type Narrowing
 

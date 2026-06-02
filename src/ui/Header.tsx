@@ -5,7 +5,11 @@ import {
   FaHouse,
   FaSpinner,
 } from "react-icons/fa6";
-import { fileHistoryActions, useProjectStore } from "@/lib/store";
+import {
+  fileHistoryActions,
+  useProjectStore,
+  useUiConfigStore,
+} from "@/lib/store";
 import { IconButton } from "./IconButton";
 import { useMediaQuery } from "@mantine/hooks";
 import { memo } from "react";
@@ -15,6 +19,7 @@ import { useExecutionResultsStore } from "@/lib/execution/store";
 import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { MdCached } from "react-icons/md";
+import { TbKeyboardOff } from "react-icons/tb";
 
 function HeaderComponent() {
   const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
@@ -24,6 +29,8 @@ function HeaderComponent() {
   const canRedo = fileHistoryActions.canRedo(currentFileId);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const isExecuting = useExecutionResultsStore((s) => s.isExecuting);
+  const disableKeyboard = useUiConfigStore((s) => s.disableKeyboard);
+  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
 
   return (
     <div className="border-b p-2 flex items-center justify-between gap-4">
@@ -44,6 +51,15 @@ function HeaderComponent() {
               <FaSpinner className="animate-spin text-green-400" />
             </div>
           </Tooltip>
+        )}
+        {smallScreen && (
+          <IconButton
+            title={`${disableKeyboard ? "Enable" : "Disable"} keyboard focus`}
+            icon={TbKeyboardOff}
+            size={20}
+            onClick={() => setUiConfig({ disableKeyboard: !disableKeyboard })}
+            className={disableKeyboard ? "text-reserved" : ""}
+          />
         )}
         <IconButton
           title="Clear cache and run"

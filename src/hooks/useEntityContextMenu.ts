@@ -14,7 +14,7 @@ import {
   cloneWithNewIds,
   EntityClipboard,
 } from "@/lib/editor-clipboard";
-import { moveArrayItemBy } from "@/lib/utils";
+import { isEditableElement, moveArrayItemBy } from "@/lib/utils";
 
 const kindLabels: Record<string, string> = {
   statement: "a statement",
@@ -68,6 +68,10 @@ export function useEntityContextMenu({
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
+      if (isEditableElement(e.target)) {
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       openMenu({
@@ -159,6 +163,10 @@ export function useEntityContextMenu({
 
   const handleDataContextMenu = useCallback(
     (e: React.MouseEvent) => {
+      if (isEditableElement(e.target)) {
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       openMenu({
@@ -306,6 +314,10 @@ export function useEntityContextMenu({
 
   const handleOperationContextMenu = useCallback(
     (e: React.MouseEvent, operation: IData<OperationType>) => {
+      if (isEditableElement(e.target)) {
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       const opIndex = statement.operations.findIndex(

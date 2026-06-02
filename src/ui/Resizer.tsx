@@ -28,6 +28,11 @@ export function Resizer({
 
   function onMouseMove(e: MouseEvent | TouchEvent) {
     if (dragging) {
+      if ("touches" in e) {
+        e.preventDefault();
+        if (!e.touches[0]) return;
+      }
+
       const clientX =
         e instanceof MouseEvent ? e.clientX : e.touches[0].clientX;
       const clientY =
@@ -46,7 +51,7 @@ export function Resizer({
 
   useEffect(() => {
     document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("touchmove", onMouseMove, { passive: true });
+    document.addEventListener("touchmove", onMouseMove, { passive: false });
     document.addEventListener("mouseup", onMouseUp);
     document.addEventListener("touchend", onMouseUp, { passive: true });
 
@@ -71,17 +76,19 @@ export function Resizer({
   return (
     <div
       className={[
-        "relative bg-dropdown-hover",
+        "relative touch-none bg-dropdown-hover",
         containerStyles,
         className,
       ].join(" ")}
       onMouseDown={(e) => {
         setDragging(true);
-        onMouseMove(e as unknown as MouseEvent);
+        handleSize(type === "width" ? e.clientX : e.clientY);
       }}
       onTouchStart={(e) => {
+        e.preventDefault();
         setDragging(true);
-        onMouseMove(e as unknown as MouseEvent);
+        const touch = e.touches[0];
+        if (touch) handleSize(type === "width" ? touch.clientX : touch.clientY);
       }}
       onDoubleClick={() => {
         const dimension =
@@ -91,7 +98,7 @@ export function Resizer({
       role="separator"
     >
       <div
-        className={`absolute z-50 hover:bg-dropdown-hover ${
+        className={`absolute z-50 touch-none hover:bg-dropdown-hover ${
           dragging ? "bg-dropdown-hover" : "bg-transparent"
         } ${innerStyles}`}
       />

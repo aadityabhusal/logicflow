@@ -25,7 +25,6 @@ import {
 import { createDownloadName, downloadBlob } from "@/lib/deployment/export";
 
 export function SettingsPanel() {
-  const disableKeyboard = useUiConfigStore((s) => s.disableKeyboard);
   const disableMobileWrapping = useUiConfigStore(
     (s) => s.disableMobileWrapping
   );
@@ -147,17 +146,6 @@ export function SettingsPanel() {
               }}
             />
           </div>
-        )}
-        {smallScreen && (
-          <label className="flex items-center justify-between gap-2 border-b p-2">
-            <span className="text-sm">Disable keyboard focus</span>
-            <BooleanInput
-              data={createData({ value: disableKeyboard ?? false })}
-              handleData={(data) =>
-                setUiConfig({ disableKeyboard: data.value })
-              }
-            />
-          </label>
         )}
         {smallScreen && (
           <label className="flex items-center justify-between gap-2 border-b p-2">

@@ -266,7 +266,7 @@ function generateOperationCall(
   const paramStr = operation.value.parameters.length ? `(${params})` : "";
   const actualName = getActualOperationName(operation.value.name ?? "");
 
-  if (operation.value.name === "await") return "";
+  if (operation.value.name === "await") return ", _.await";
   if (operation.value.name === "call") return `, (arg) => arg(${params})`;
 
   switch (source.type) {
