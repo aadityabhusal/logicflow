@@ -1,6 +1,6 @@
 import { IconButton } from "@/ui/IconButton";
 import { Button, Popover } from "@mantine/core";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { FaBookOpen, FaGithub, FaPlus, FaTrash } from "react-icons/fa6";
 import { Link, useNavigate } from "react-router";
 import { formatDistanceToNow } from "date-fns";
@@ -18,6 +18,7 @@ import { createOperationCall } from "@/lib/execution/execution";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { ProjectFile, DataType } from "@/lib/types";
 import { InstanceTypes } from "@/lib/packages/registry";
+import { AppIcon } from "@/ui/AppIcon";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -143,10 +144,17 @@ export default function Dashboard() {
     navigate(`/project/${created.id}?file=${mainTriggerFile.name}`);
   };
 
+  useEffect(() => {
+    document.title = "Logicflow - Programming through chained operations";
+  }, []);
+
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
       <div className="border-b pb-2 flex items-center justify-between gap-4">
-        <h2 className="text-2xl mr-auto">Projects</h2>
+        <div className="mr-auto flex items-center gap-3">
+          <AppIcon className="size-10 shadow-lg shadow-black/20" />
+          <h1 className="hidden text-2xl leading-tight sm:block">Logicflow</h1>
+        </div>
         <Button
           component="a"
           href="https://github.com/aadityabhusal/logicflow"
@@ -155,7 +163,7 @@ export default function Dashboard() {
           className="outline-none"
           leftSection={<FaGithub />}
         >
-          Source
+          <span className="hidden sm:inline">Source</span>
         </Button>
         <Button
           component={Link}
@@ -169,6 +177,7 @@ export default function Dashboard() {
           Create project
         </Button>
       </div>
+      <h2 className="text-xl">Projects</h2>
       {sortedProjects.length === 0 ? (
         <div className="text-center py-8 text-disabled">
           <p className="text-lg mb-2">No projects</p>

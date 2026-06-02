@@ -15,6 +15,7 @@ import codeGeneration from "@/../docs/code-generation.md?raw";
 import deployment from "@/../docs/deployment.md?raw";
 import { Fragment, ReactNode, useEffect, useState } from "react";
 import { CodeHighlight } from "@/ui/CodeHighlight";
+import { AppIcon } from "@/ui/AppIcon";
 
 function createSubHeadingSlug(text: string): string {
   return text
@@ -110,7 +111,6 @@ export default function Docs() {
   const location = useLocation();
 
   useEffect(() => {
-    document.title = "Logicflow Docs";
     if (location.hash) {
       const timeoutId = setTimeout(() => {
         const id = location.hash.slice(1);
@@ -120,6 +120,10 @@ export default function Docs() {
       return () => clearTimeout(timeoutId);
     }
   }, [location.hash]);
+
+  useEffect(() => {
+    document.title = "Logicflow Docs";
+  }, []);
 
   return (
     <div className="flex flex-col">
@@ -131,7 +135,12 @@ export default function Docs() {
           >
             {isSidebarOpen ? <FaXmark size={20} /> : <FaBars size={20} />}
           </Button>
-          <h2 className="text-xl md:text-2xl">Logicflow Docs</h2>
+          <div className="flex items-center gap-3">
+            <AppIcon className="size-8 shadow-md shadow-black/20" />
+            <h2 className="text-xl md:text-2xl">
+              <span className="hidden sm:inline">Logicflow </span>Docs
+            </h2>
+          </div>
         </div>
         <Button
           component={Link}
