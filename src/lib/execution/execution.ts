@@ -123,6 +123,7 @@ export function getFilteredOperations<T extends boolean = false>(
     .entries()
     .reduce((acc, [name, variable]) => {
       if (!name || !isDataOfType(variable.data, "operation")) return acc;
+      if (variable.data.id?.startsWith("builtin:")) return acc;
       if (
         dataSupportsOperation(
           data,

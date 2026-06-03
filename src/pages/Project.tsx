@@ -24,12 +24,12 @@ import { IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
   createOperationFromFile,
-  isEditableElement,
+  shouldUseNativeContextMenu,
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { cloneWithNewIds, writeEntityClipboard } from "@/lib/editor-clipboard";
-import { readClipboardOfKind } from "@/hooks/useEntityContextMenu";
+import { readClipboardAs } from "@/hooks/useEntityContextMenu";
 import { ClipboardSchema } from "@/lib/schemas";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import {
@@ -92,7 +92,7 @@ export default function Project() {
 
   const handleOperationContextMenu = useCallback(
     (e: MouseEvent) => {
-      if (isEditableElement(e.target)) {
+      if (shouldUseNativeContextMenu(e.target)) {
         e.stopPropagation();
         return;
       }
@@ -114,9 +114,9 @@ export default function Project() {
             },
           },
           {
-            label: "Replace operation",
+            label: "Paste over operation",
             onClick: async () => {
-              const entry = await readClipboardOfKind("operation", "replace");
+              const entry = await readClipboardAs("operation", "paste over");
               if (!entry) return;
 
               const { trigger, parameters, ...content } = entry.value;

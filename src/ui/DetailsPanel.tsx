@@ -238,8 +238,8 @@ export function DetailsPanel() {
           </div>
         )}
         {formattedValue ? (
-          <div className="flex-1 min-h-0 flex flex-col">
-            <div className="flex items-center justify-between mb-1.5 p-1">
+          <div className="p-1 flex-1 min-h-0 flex flex-col">
+            <div className="flex items-center justify-between mb-1.5">
               <div className="text-gray-300">Result</div>
               <div className="flex items-center gap-1.5">
                 <IconButton

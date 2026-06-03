@@ -1831,13 +1831,16 @@ export function isTextInput(element: Element | null) {
   }
 }
 
-export function isEditableElement(target: EventTarget | null) {
+export function getEditableElement(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target.closest('[contenteditable="true"]') !== null
-  );
+  if (target instanceof HTMLInputElement) return target;
+  if (target instanceof HTMLTextAreaElement) return target;
+  return target.closest<HTMLElement>('[contenteditable="true"]');
+}
+
+export function shouldUseNativeContextMenu(target: EventTarget | null) {
+  const editable = getEditableElement(target);
+  return !!editable && document.activeElement === editable;
 }
 
 export function handleSearchParams(

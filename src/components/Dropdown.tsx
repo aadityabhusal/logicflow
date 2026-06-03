@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { BaseInput } from "./Input/BaseInput";
@@ -46,6 +47,7 @@ import {
   resolveReference,
   fuzzySearch,
   getCacheKey,
+  getEditableElement,
 } from "../lib/utils";
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 import { Context } from "@/lib/execution/types";
@@ -136,6 +138,7 @@ const DropdownComponent = ({
 
   const [isHovered, setHovered] = useState(false);
   const [search, setSearch] = useState("");
+  const editableFocus = useRef<{ element: Element; wasFocused: boolean }>();
 
   const displayValue = useMemo(
     () => resolveDisplayName(value ?? "", context.packageAliases),
@@ -185,6 +188,26 @@ const DropdownComponent = ({
   function handleSearch(val: string) {
     if (!combobox.dropdownOpened) combobox.openDropdown();
     setSearch(val);
+  }
+
+  function trackEditableFocus(target: EventTarget | null) {
+    const editable = getEditableElement(target);
+    editableFocus.current = editable
+      ? { element: editable, wasFocused: document.activeElement === editable }
+      : undefined;
+  }
+
+  function handleTargetContextMenu(e: React.MouseEvent<HTMLElement>) {
+    const editable = getEditableElement(e.target);
+    if (editable) {
+      const pressStart = editableFocus.current;
+      editableFocus.current = undefined;
+      if (pressStart?.element === editable && pressStart.wasFocused) {
+        e.stopPropagation();
+        return;
+      }
+    }
+    onContextMenu?.(e);
   }
 
   // TODO: Fix this when creating single attachable dropdown component
@@ -383,7 +406,7 @@ const DropdownComponent = ({
               ? "bg-error/25"
               : "",
           ].join(" ")}
-          onContextMenu={onContextMenu}
+          onContextMenu={children ? undefined : onContextMenu}
           onMouseOver={(e) => {
             e.stopPropagation();
             setHovered(true);
@@ -416,6 +439,9 @@ const DropdownComponent = ({
                   }
                 } else combobox?.openDropdown();
               },
+              onPointerDownCapture: (e) => trackEditableFocus(e.target),
+              onTouchStartCapture: (e) => trackEditableFocus(e.target),
+              onContextMenu: handleTargetContextMenu,
               onFocus: () => setNavigation({ navigation: { id } }),
             })}
           </Combobox.EventsTarget>

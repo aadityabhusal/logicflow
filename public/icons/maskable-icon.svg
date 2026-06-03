@@ -25,19 +25,21 @@
     </filter>
   </defs>
   <rect width="512" height="512" fill="url(#bg)" />
-  <path d="M140 53l70 139q12 24-15 24H61q-27 0-15-24l70-139q12-25 24 0z" fill="url(#triangle)" filter="url(#soft-shadow)" />
-  <rect x="300" y="44" width="168" height="168" rx="18" fill="url(#square)" filter="url(#soft-shadow)" />
-  <path d="M384 288l78 43q8 5 8 14v78q0 9-8 14l-78 43-78-43q-8-5-8-14v-78q0-9 8-14z" fill="url(#hexagon)" filter="url(#soft-shadow)" />
-  <circle cx="128" cy="384" r="94" fill="url(#circle)" filter="url(#soft-shadow)" />
-  <g fill="#fff7df" opacity="0.9">
-    <path d="M230 118q0-6 6-6h28v-7q0-8 6-3l22 22q4 4 0 8l-22 22q-6 5-6-3v-7h-28q-6 0-6-6z" />
-    <path d="M372 228q0-6 6-6h12q6 0 6 6v24h10q8 0 3 6l-21 24q-4 5-8 0l-21-24q-5-6 3-6h10z" />
-    <path d="M288 374q0-6-6-6h-18v-7q0-8-6-3l-24 22q-4 4 0 8l24 22q6 5 6-3v-7h18q6 0 6-6z" />
-  </g>
-  <g fill="#ffffff" opacity="0.18">
-    <path d="M126 70l42 82H84z" />
-    <rect x="318" y="62" width="54" height="54" rx="8" />
-    <path d="M384 318l42 23-42 24-42-24z" />
-    <circle cx="100" cy="348" r="28" />
+  <g transform="translate(71.68 71.68) scale(0.72)">
+    <path d="M140 53l70 139q12 24-15 24H61q-27 0-15-24l70-139q12-25 24 0z" fill="url(#triangle)" filter="url(#soft-shadow)" />
+    <rect x="300" y="44" width="168" height="168" rx="18" fill="url(#square)" filter="url(#soft-shadow)" />
+    <path d="M384 288l78 43q8 5 8 14v78q0 9-8 14l-78 43-78-43q-8-5-8-14v-78q0-9 8-14z" fill="url(#hexagon)" filter="url(#soft-shadow)" />
+    <circle cx="128" cy="384" r="94" fill="url(#circle)" filter="url(#soft-shadow)" />
+    <g fill="#fff7df" opacity="0.9">
+      <path d="M230 118q0-6 6-6h28v-7q0-8 6-3l22 22q4 4 0 8l-22 22q-6 5-6-3v-7h-28q-6 0-6-6z" />
+      <path d="M372 228q0-6 6-6h12q6 0 6 6v24h10q8 0 3 6l-21 24q-4 5-8 0l-21-24q-5-6 3-6h10z" />
+      <path d="M288 374q0-6-6-6h-18v-7q0-8-6-3l-24 22q-4 4 0 8l24 22q6 5 6-3v-7h18q6 0 6-6z" />
+    </g>
+    <g fill="#ffffff" opacity="0.18">
+      <path d="M126 70l42 82H84z" />
+      <rect x="318" y="62" width="54" height="54" rx="8" />
+      <path d="M384 318l42 23-42 24-42-24z" />
+      <circle cx="100" cy="348" r="28" />
+    </g>
   </g>
 </svg>

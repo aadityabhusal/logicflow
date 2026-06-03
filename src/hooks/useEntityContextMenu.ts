@@ -14,7 +14,7 @@ import {
   cloneWithNewIds,
   EntityClipboard,
 } from "@/lib/editor-clipboard";
-import { isEditableElement, moveArrayItemBy } from "@/lib/utils";
+import { moveArrayItemBy, shouldUseNativeContextMenu } from "@/lib/utils";
 
 const kindLabels: Record<string, string> = {
   statement: "a statement",
@@ -23,7 +23,7 @@ const kindLabels: Record<string, string> = {
   operation: "an operation",
 };
 
-export async function readClipboardOfKind<K extends EntityClipboard["kind"]>(
+export async function readClipboardAs<K extends EntityClipboard["kind"]>(
   kind: K,
   action: string
 ) {
@@ -68,7 +68,7 @@ export function useEntityContextMenu({
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      if (isEditableElement(e.target)) {
+      if (shouldUseNativeContextMenu(e.target)) {
         e.stopPropagation();
         return;
       }
@@ -90,10 +90,10 @@ export function useEntityContextMenu({
             },
           },
           {
-            label: "Replace",
+            label: "Paste over",
             disabled: !!disableDelete,
             onClick: async () => {
-              const entry = await readClipboardOfKind("statement", "replace");
+              const entry = await readClipboardAs("statement", "paste over");
               if (!entry) return;
               const cloned = cloneWithNewIds(entry.value);
               handleStatement(
@@ -112,7 +112,7 @@ export function useEntityContextMenu({
             disabled: !addStatement,
             onClick: async () => {
               if (!addStatement) return;
-              const entry = await readClipboardOfKind("statement", "paste");
+              const entry = await readClipboardAs("statement", "paste");
               if (!entry) return;
               const cloned = cloneWithNewIds(entry.value);
               addStatement(cloned, "after", statement.id);
@@ -163,10 +163,6 @@ export function useEntityContextMenu({
 
   const handleDataContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      if (isEditableElement(e.target)) {
-        e.stopPropagation();
-        return;
-      }
       e.preventDefault();
       e.stopPropagation();
       openMenu({
@@ -185,10 +181,10 @@ export function useEntityContextMenu({
             },
           },
           {
-            label: "Replace",
+            label: "Paste over",
             disabled: !!disableDelete,
             onClick: async () => {
-              const entry = await readClipboardOfKind("data", "replace");
+              const entry = await readClipboardAs("data", "paste over");
               if (!entry) return;
               handleStatement(
                 { ...statement, data: cloneWithNewIds(entry.value) },
@@ -248,9 +244,9 @@ export function useEntityContextMenu({
         },
       },
       {
-        label: "Replace",
+        label: "Paste over",
         onClick: async () => {
-          const entry = await readClipboardOfKind("operationCall", "replace");
+          const entry = await readClipboardAs("operationCall", "paste over");
           if (!entry) return;
           const ops = [...statement.operations];
           ops[opIndex] = cloneWithNewIds(entry.value);
@@ -260,7 +256,7 @@ export function useEntityContextMenu({
       {
         label: "Paste after",
         onClick: async () => {
-          const entry = await readClipboardOfKind("operationCall", "paste");
+          const entry = await readClipboardAs("operationCall", "paste");
           if (!entry) return;
           const ops = [...statement.operations];
           ops.splice(opIndex + 1, 0, cloneWithNewIds(entry.value));
@@ -314,10 +310,6 @@ export function useEntityContextMenu({
 
   const handleOperationContextMenu = useCallback(
     (e: React.MouseEvent, operation: IData<OperationType>) => {
-      if (isEditableElement(e.target)) {
-        e.stopPropagation();
-        return;
-      }
       e.preventDefault();
       e.stopPropagation();
       const opIndex = statement.operations.findIndex(

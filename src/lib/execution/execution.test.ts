@@ -166,6 +166,26 @@ describe("getFilteredOperations", () => {
     expect(names).toContain("myOp");
   });
 
+  it("excludes referenceable built-ins from user-defined grouped operations", () => {
+    const ctx = createTestContext();
+    ctx.variables = createExecutionVariables(ctx);
+    ctx.variables.set("myOp", {
+      data: testOperation(
+        [stringStatement("input")],
+        [stringStatement("output")],
+        "myOp"
+      ),
+    });
+
+    const grouped = getFilteredOperations(testString("hello"), ctx, true);
+    const builtInNames = grouped[0][1].map((op) => op.name);
+    const userDefinedNames = grouped[1][1].map((op) => op.name);
+
+    expect(builtInNames).toContain("length");
+    expect(userDefinedNames).toContain("myOp");
+    expect(userDefinedNames).not.toContain("length");
+  });
+
   it("resolves references before filtering", () => {
     const ctx = createTestContext();
     ctx.variables.set("myVar", { data: testString("hello") });
