@@ -198,14 +198,11 @@ const DropdownComponent = ({
   }
 
   function handleTargetContextMenu(e: React.MouseEvent<HTMLElement>) {
-    const editable = getEditableElement(e.target);
-    if (editable) {
-      const pressStart = editableFocus.current;
-      editableFocus.current = undefined;
-      if (pressStart?.element === editable && pressStart.wasFocused) {
-        e.stopPropagation();
-        return;
-      }
+    const pressStart = editableFocus.current;
+    editableFocus.current = undefined;
+    if (pressStart?.wasFocused) {
+      e.stopPropagation();
+      return;
     }
     onContextMenu?.(e);
   }

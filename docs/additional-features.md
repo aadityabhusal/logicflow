@@ -54,7 +54,7 @@ Checkpoints are stored locally in your browser's IndexedDB. They are not synced 
 
 Right-click an entity in the editor to open its context menu. On touch devices, use the browser's long-press gesture where available.
 
-![Context menu placeholder](/docs-images/additional-features-06.png)
+![Context menu actions](/docs-images/additional-features-06.png)
 
 The context menu provides actions such as copy, cut, replace, duplicate, delete, and move. Available actions depend on what you open the menu on: statements, data, operation calls, or the current operation.
 

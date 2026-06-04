@@ -1,38 +1,71 @@
 # Introduction
 
-Logicflow is a live, block-based visual programming environment built around data transformation through chained operations.
+Logicflow is a visual programming editor built around one idea: **programming is data transformation**.
 
-Put simply, Logicflow is built on a core principle: **programming is operations performed on data**. You create data and chain operations to transform it.
+You start with data, chain operations to transform it, and see how the data changes at each step.
 
-In Logicflow, you can see live execution results for every chained operation and visualize how data flows and transforms through each step.
+## Intro Video
+
+```youtube
+cRjEcBACr6U
+```
+
+## The Core Idea
+
+Most programs can be understood as a chain of transformations:
+
+- Start with data.
+- Apply an operation to it.
+- Get new data back.
+- Keep going.
+
+That simple structure is the center of Logicflow. A string can become an uppercase string. A list can be filtered. A request can become a response. The shape of the data changes, but the mental model stays the same.
+
+More advanced ideas, like unions, promises, recursion, and error values, are still available. They appear when you need them, not before.
+
+![Logicflow program with advanced data types like arrays, operations, and errors](/docs-images/introduction-02.png)
+
+## Why Logicflow Exists
+
+Many visual programming tools look friendly, but become either too rigid for developers or still too complex for beginners.
+
+Logicflow keeps the surface simple without hiding what matters: data, operations, and the result of each step.
+
+## Feedback While You Build
+
+Logicflow runs your program as you build it. You do not only see the final output. You can click through the chain and inspect how the data changed after each operation.
+
+This makes debugging more direct. If something breaks, you can usually see where the data stopped matching your expectation.
 
 ![Data transforms and flows through operations](/docs-images/introduction-01.gif)
 
-## Video Overview
+## Accessible By Design
 
-Watch a short introduction to see how Logicflow works in practice.
+Logicflow does not require a programming setup, an account, or a constant internet connection. Install it once as a progressive web app, and it can run locally on your device.
+
+It is also designed to be usable on a phone, using buttons, dropdowns, and structured controls. That matters when a shared smartphone may be the only computing device available.
+
+## A Bridge To Code
+
+Logicflow is not meant to replace traditional programming. It helps early developers build a stronger foundation by understanding data shapes, following how values change, and staying close to JavaScript semantics.
+
+The generated TypeScript/JavaScript code closely matches the visual program, so the code is not hidden behind the interface.
+
+## Technical Overview
+
+For a deeper look at the type system, execution model, code generation, deployment, and package support, watch the technical overview.
 
 ```youtube
 qzS_zw1iwS0
 ```
 
-## The Problem
+## Features You Can Grow Into
 
-Traditional visual programming tools either sacrifice capability for simplicity or become too complex for non-developers. Writing code requires understanding syntax, managing dependencies, and debugging errors that are often unclear. Logicflow bridges this gap by making programming more accessible without compromising on power.
-
-## Core Principles
-
-- **Operations transform data**: Each operation takes data as input and produces new data as output.
-- **Real-time execution**: See results inline at each step as you build, making debugging immediate.
-- **Type safety first**: A complete type system ensures operations are valid and catches errors before they happen.
-- **Functional composition**: Build programs by composing operations rather than writing imperative control flow.
-
-## Key Features
-
-- **Structure editor** with keyboard navigation for an efficient workflow.
-- **First-class operations**: Operations themselves are data that can be passed around.
-- **[Type narrowing](#type-narrowing)**: Automatically skip unreachable branches based on type checks.
-- **[Code generation](#code-generation)**: Live preview of generated TypeScript/JavaScript code.
-- **[Error handling](#error-handling)**: First-class error data type that can be passed around and handled like any other data.
-
-![Logicflow program with advanced data types like arrays, operations, and errors](/docs-images/introduction-02.png)
+- **Live execution**: Inspect intermediate results, not just the final result.
+- **Static typing**: Catch invalid operations before they run, with operations filtered by the data they can accept.
+- **Type narrowing**: Automatically skip unreachable branches based on type checks.
+- **First-class operations**: Pass operations around as data.
+- **Recursion and error handling**: Build more serious programs, with errors represented as data you can pass around and handle.
+- **Keyboard navigation**: Work efficiently without depending only on the mouse.
+- **Code generation**: Read the TypeScript/JavaScript behind your visual program.
+- **Deployment and npm packages**: Turn Logicflow programs into serverless endpoints and use packages from the JavaScript ecosystem.
