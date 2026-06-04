@@ -138,7 +138,7 @@ const DropdownComponent = ({
 
   const [isHovered, setHovered] = useState(false);
   const [search, setSearch] = useState("");
-  const editableFocus = useRef<{ element: Element; wasFocused: boolean }>();
+  const wasFocusedAtPressStart = useRef<boolean>();
 
   const displayValue = useMemo(
     () => resolveDisplayName(value ?? "", context.packageAliases),
@@ -192,15 +192,13 @@ const DropdownComponent = ({
 
   function trackEditableFocus(target: EventTarget | null) {
     const editable = getEditableElement(target);
-    editableFocus.current = editable
-      ? { element: editable, wasFocused: document.activeElement === editable }
+    wasFocusedAtPressStart.current = editable
+      ? document.activeElement === editable
       : undefined;
   }
 
   function handleTargetContextMenu(e: React.MouseEvent<HTMLElement>) {
-    const pressStart = editableFocus.current;
-    editableFocus.current = undefined;
-    if (pressStart?.wasFocused) {
+    if (wasFocusedAtPressStart.current) {
       e.stopPropagation();
       return;
     }
