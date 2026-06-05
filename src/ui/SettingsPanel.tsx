@@ -25,9 +25,7 @@ import {
 import { createDownloadName, downloadBlob } from "@/lib/deployment/export";
 
 export function SettingsPanel() {
-  const disableMobileWrapping = useUiConfigStore(
-    (s) => s.disableMobileWrapping
-  );
+  const enableMobileWrapping = useUiConfigStore((s) => s.enableMobileWrapping);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const project = useProjectStore((s) => s.getCurrentProject());
@@ -149,11 +147,11 @@ export function SettingsPanel() {
         )}
         {smallScreen && (
           <label className="flex items-center justify-between gap-2 border-b p-2">
-            <span className="text-sm">Disable code wrapping</span>
+            <span className="text-sm">Enable code wrapping</span>
             <BooleanInput
-              data={createData({ value: disableMobileWrapping ?? false })}
+              data={createData({ value: enableMobileWrapping ?? false })}
               handleData={(data) =>
-                setUiConfig({ disableMobileWrapping: data.value })
+                setUiConfig({ enableMobileWrapping: data.value })
               }
             />
           </label>

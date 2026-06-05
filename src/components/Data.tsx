@@ -107,10 +107,10 @@ const DataComponent = ({
         handleChange(data, true);
         return;
       }
-      const newOperation = updater(data as IData<OperationType>);
-      if (newOperation) {
-        handleChange(newOperation);
-      }
+      if (!isDataOfType(data, "operation")) return;
+      const updatedOperation = updater(data);
+      if (!updatedOperation) return;
+      handleChange(updatedOperation);
     },
     [data, handleChange]
   );

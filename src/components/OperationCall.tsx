@@ -20,7 +20,7 @@ import { AddStatement } from "./AddStatement";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { EntityPath } from "@/lib/types";
 import { getOperationCallLayout } from "@/lib/layout";
-import { useMobileLayout } from "@/hooks/useMobileLayout";
+import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
 
 const OperationCallComponent = ({
   data,
@@ -160,9 +160,9 @@ const OperationCallComponent = ({
     []
   );
 
-  const useMobileThreshold = useMobileLayout();
+  const enableWrapping = useMobileCodeWrapping();
   const isMultiline =
-    getOperationCallLayout(operation, useMobileThreshold) === "multiline";
+    getOperationCallLayout(operation, enableWrapping) === "multiline";
 
   return (
     <Dropdown

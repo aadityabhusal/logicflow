@@ -30,7 +30,7 @@ import { BaseInput } from "./Input/BaseInput";
 import { OperationCall } from "./OperationCall";
 import { IconButton } from "../ui/IconButton";
 import { AddStatement } from "./AddStatement";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { memo, useCallback, useMemo, useState } from "react";
 import { useNavigationStore } from "@/lib/store";
@@ -41,8 +41,9 @@ import { useRestrictedName } from "@/lib/useRestrictedName";
 import { EntityPath } from "@/lib/types";
 import { ReservedNames } from "@/lib/execution/types";
 import { getStatementLayout } from "@/lib/layout";
-import { useMobileLayout } from "@/hooks/useMobileLayout";
+import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
 import { useEntityContextMenu } from "@/hooks/useEntityContextMenu";
+import { MAX_SCREEN_WIDTH } from "@/lib/data";
 
 const StatementComponent = ({
   statement,
@@ -162,9 +163,10 @@ const StatementComponent = ({
     openDelay: 0,
     closeDelay: 150,
   });
-  const isMobileLayout = useMobileLayout();
+  const isMobileLayout = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
+  const enableWrapping = useMobileCodeWrapping();
   const isMultiline =
-    getStatementLayout(statement, isMobileLayout) === "multiline";
+    getStatementLayout(statement, enableWrapping) === "multiline";
   const PipeArrow = isMultiline ? FaArrowTurnUp : FaArrowRightLong;
   const equalsIcon = isReturn
     ? FaArrowTurnDown

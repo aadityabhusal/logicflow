@@ -13,7 +13,7 @@ import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
-import { useMobileLayout } from "@/hooks/useMobileLayout";
+import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
 
 interface DictionaryInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<DictionaryType>;
@@ -26,8 +26,8 @@ const DictionaryInputComponent = (
   { data, handleData, context, basePath, ...props }: DictionaryInputProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
-  const useMobileThreshold = useMobileLayout();
-  const isMultiline = getEntityLayout(data, useMobileThreshold) === "multiline";
+  const enableWrapping = useMobileCodeWrapping();
+  const isMultiline = getEntityLayout(data, enableWrapping) === "multiline";
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const isDisabled = useNavigationStore((s) => s.navigation?.disable);
   const setNavigation = useNavigationStore((s) => s.setNavigation);

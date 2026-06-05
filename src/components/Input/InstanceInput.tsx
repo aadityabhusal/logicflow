@@ -8,7 +8,7 @@ import { forwardRef, memo, useCallback, useMemo } from "react";
 import { inferTypeFromValue, moveArrayItemBy, getPosition } from "@/lib/utils";
 import { resolveDisplayName } from "@/lib/packages/registry";
 import { getEntityLayout } from "@/lib/layout";
-import { useMobileLayout } from "@/hooks/useMobileLayout";
+import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
 
 interface InstanceInputProps {
   data: IData<InstanceDataType>;
@@ -70,8 +70,8 @@ const InstanceInputComponent = (
     [data, handleData]
   );
 
-  const useMobileThreshold = useMobileLayout();
-  const isMultiline = getEntityLayout(data, useMobileThreshold) === "multiline";
+  const enableWrapping = useMobileCodeWrapping();
+  const isMultiline = getEntityLayout(data, enableWrapping) === "multiline";
 
   return (
     <div

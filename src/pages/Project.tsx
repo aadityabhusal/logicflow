@@ -72,20 +72,17 @@ export default function Project() {
     ) => {
       const file = getFile(currentFileId);
       if (!file || file.type !== "operation") return;
-
       if (remove) {
         deleteFile(file.id);
         return;
       }
 
-      const prevOperation = createOperationFromFile(file);
-      if (!prevOperation) return;
-
-      const newOperation = updater(prevOperation);
-      if (!newOperation) return;
+      const operation = createOperationFromFile(file);
+      const updatedOperation = operation && updater(operation);
+      if (!updatedOperation) return;
 
       fileHistoryActions.pushState(file.id, file.content);
-      updateFile(file.id, createFileFromOperation(newOperation));
+      updateFile(file.id, createFileFromOperation(updatedOperation));
     },
     [getFile, currentFileId, deleteFile, updateFile]
   );

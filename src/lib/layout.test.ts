@@ -11,7 +11,7 @@ import {
   getOperationCallLayout,
   getOperationNameWidth,
   THRESHOLD,
-  MOBILE_THRESHOLD,
+  WRAP_THRESHOLD,
   SEPARATOR_WIDTH,
   MAX_STRING_DISPLAY_LENGTH,
 } from "@/lib/layout";
@@ -104,7 +104,7 @@ describe("isComplexData", () => {
 
 describe("constants", () => {
   it("THRESHOLD is 12", () => expect(THRESHOLD).toBe(12));
-  it("MOBILE_THRESHOLD is 6", () => expect(MOBILE_THRESHOLD).toBe(6));
+  it("WRAP_THRESHOLD is 6", () => expect(WRAP_THRESHOLD).toBe(6));
   it("SEPARATOR_WIDTH is 1", () => expect(SEPARATOR_WIDTH).toBe(1));
   it("MAX_STRING_DISPLAY_LENGTH is 28", () =>
     expect(MAX_STRING_DISPLAY_LENGTH).toBe(28));
@@ -562,15 +562,15 @@ describe("getEntityLayout", () => {
   });
 });
 
-describe("getEntityLayout with mobile threshold", () => {
-  it("returns inline when complex data width is between mobile and desktop thresholds", () => {
+describe("getEntityLayout with wrapping threshold", () => {
+  it("returns multiline when complex data width is between wrap and default thresholds", () => {
     const items = Array.from({ length: 4 }, () => numberStatement(1));
     expect(getEntityWidth(testArray(items))).toBe(8);
     expect(getEntityLayout(testArray(items))).toBe("inline");
     expect(getEntityLayout(testArray(items), true)).toBe("multiline");
   });
 
-  it("returns inline for simple data even with mobile threshold", () => {
+  it("returns inline for simple data even with wrapping threshold", () => {
     expect(getEntityLayout(testString("hello"), true)).toBe("inline");
   });
 });
@@ -619,8 +619,8 @@ describe("getStatementLayout", () => {
   });
 });
 
-describe("getStatementLayout with mobile threshold", () => {
-  it("returns multiline when statement width is between mobile and desktop thresholds", () => {
+describe("getStatementLayout with wrapping threshold", () => {
+  it("returns multiline when statement width is between wrap and default thresholds", () => {
     const items = Array.from({ length: 4 }, () => numberStatement(1));
     const stmt = createStatement({ data: testArray(items) });
     expect(getStatementWidth(stmt)).toBe(8);
@@ -656,8 +656,8 @@ describe("getOperationCallLayout", () => {
   });
 });
 
-describe("getOperationCallLayout with mobile threshold", () => {
-  it("returns multiline when operation call width is between mobile and desktop thresholds", () => {
+describe("getOperationCallLayout with wrapping threshold", () => {
+  it("returns multiline when operation call width is between wrap and default thresholds", () => {
     const params = Array.from({ length: 4 }, () => numberStatement(1));
     const op = createData({
       type: {

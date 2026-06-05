@@ -13,7 +13,7 @@ import { Context } from "@/lib/execution/types";
 import { useRestrictedName } from "@/lib/useRestrictedName";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
-import { useMobileLayout } from "@/hooks/useMobileLayout";
+import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
 
 interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
@@ -49,8 +49,8 @@ const ConditionInputComponent = (
     }),
     [basePath, data.value.trueBranch, data.value.falseBranch]
   );
-  const useMobileThreshold = useMobileLayout();
-  const multiline = getEntityLayout(data, useMobileThreshold) === "multiline";
+  const enableWrapping = useMobileCodeWrapping();
+  const multiline = getEntityLayout(data, enableWrapping) === "multiline";
 
   const { reservedNames } = useRestrictedName({ context });
 

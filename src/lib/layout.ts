@@ -3,7 +3,7 @@ import { DataType, IData, IStatement, OperationType } from "./types";
 export type LayoutMode = "inline" | "multiline";
 
 const THRESHOLD = 12;
-const MOBILE_THRESHOLD = 6;
+const WRAP_THRESHOLD = 6;
 const SEPARATOR_WIDTH = 1;
 const MAX_STRING_DISPLAY_LENGTH = 28;
 
@@ -163,28 +163,28 @@ export function isSimpleStatement(statement: IStatement): boolean {
   return getStatementWidth(statement) <= 1;
 }
 
-export function getEntityLayout(data: IData, smallScreen?: boolean) {
+export function getEntityLayout(data: IData, wrap?: boolean) {
   if (isSimpleData(data.type)) return "inline";
-  const threshold = smallScreen ? MOBILE_THRESHOLD : THRESHOLD;
+  const threshold = wrap ? WRAP_THRESHOLD : THRESHOLD;
   return getEntityWidth(data) >= threshold ? "multiline" : "inline";
 }
 
-export function getStatementLayout(stmt: IStatement, smallScreen?: boolean) {
-  const threshold = smallScreen ? MOBILE_THRESHOLD : THRESHOLD;
+export function getStatementLayout(stmt: IStatement, wrap?: boolean) {
+  const threshold = wrap ? WRAP_THRESHOLD : THRESHOLD;
   return getStatementWidth(stmt) >= threshold ? "multiline" : "inline";
 }
 
 export function getOperationCallLayout(
   operation: IData<OperationType>,
-  smallScreen?: boolean
+  wrap?: boolean
 ) {
-  const threshold = smallScreen ? MOBILE_THRESHOLD : THRESHOLD;
+  const threshold = wrap ? WRAP_THRESHOLD : THRESHOLD;
   return getOperationCallWidth(operation) >= threshold ? "multiline" : "inline";
 }
 
 export {
   THRESHOLD,
-  MOBILE_THRESHOLD,
+  WRAP_THRESHOLD,
   SEPARATOR_WIDTH,
   MAX_STRING_DISPLAY_LENGTH,
 };
