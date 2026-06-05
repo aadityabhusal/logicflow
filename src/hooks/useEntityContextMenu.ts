@@ -182,7 +182,6 @@ export function useEntityContextMenu({
           },
           {
             label: "Paste over",
-            disabled: !!disableDelete,
             onClick: async () => {
               const entry = await readClipboardAs("data", "paste over");
               if (!entry) return;
