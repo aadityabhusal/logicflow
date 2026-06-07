@@ -11,6 +11,7 @@ import {
 import { slice } from "@/lib/operations/runtime";
 import {
   createData,
+  createDataFromRawValue,
   createStatement,
   getStatementResult,
   isDataOfType,
@@ -2481,6 +2482,53 @@ describe("manual Promise instances", () => {
 
     expect(result.type.kind).toBe("string");
     expect(result.value).toBe("hello");
+  });
+
+  it("allows await on any data and resolves thenable values", async () => {
+    class TestThenable {
+      then(resolve: (value: string) => void) {
+        resolve("hello");
+      }
+    }
+
+    InstanceTypes.TestThenable = {
+      name: "TestThenable",
+      Constructor: TestThenable,
+      constructorArgs: [],
+    };
+
+    try {
+      const ctx = createTestContext({ isSync: false });
+      const plainData = testNumber(5);
+      const plainOperations = getFilteredOperations(plainData, ctx);
+
+      expect(plainOperations.some((op) => op.name === "await")).toBe(true);
+      const plainResult = await executeOperation(
+        findBuiltIn("await"),
+        plainData,
+        [],
+        ctx
+      );
+      expect(plainResult.type.kind).toBe("number");
+      expect(plainResult.value).toBe(5);
+
+      const data = createDataFromRawValue(new TestThenable(), ctx);
+      const operations = getFilteredOperations(data, ctx);
+
+      expect(operations.some((op) => op.name === "await")).toBe(true);
+      expect(operations.some((op) => op.name === "catch")).toBe(false);
+
+      const result = await executeOperation(
+        findBuiltIn("await"),
+        data,
+        [],
+        ctx
+      );
+      expect(result.type.kind).toBe("string");
+      expect(result.value).toBe("hello");
+    } finally {
+      delete InstanceTypes.TestThenable;
+    }
   });
 });
 

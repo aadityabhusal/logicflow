@@ -418,6 +418,79 @@ describe("ffmpeg virtual package", () => {
   });
 });
 
+describe("supabase package", () => {
+  beforeEach(() => {
+    resetPackageRegistry();
+  });
+
+  it("PACKAGE_CATALOG entry exists with npm packageType", () => {
+    expect(PACKAGE_CATALOG["supabase"]).toBeDefined();
+    expect(PACKAGE_CATALOG["supabase"].packageType).toBeUndefined();
+    expect(PACKAGE_CATALOG["supabase"].packageName).toBe(
+      "@supabase/supabase-js"
+    );
+    expect(PACKAGE_CATALOG["supabase"].importKind).toBe("namespace");
+  });
+
+  it("PACKAGE_REGISTRY has namespace importKind", () => {
+    expect(PACKAGE_REGISTRY["supabase"]).toBeDefined();
+    expect(PACKAGE_REGISTRY["supabase"].importKind).toBe("namespace");
+    expect(PACKAGE_REGISTRY["supabase"].importName).toBe("supabase");
+  });
+
+  it("SOURCE_PACKAGE_MAP maps supabase source names", () => {
+    expect(SOURCE_PACKAGE_MAP["supabase"]).toBe("supabase");
+    expect(SOURCE_PACKAGE_MAP["supabaseClient"]).toBe("supabase");
+    expect(SOURCE_PACKAGE_MAP["supabaseQueryBuilder"]).toBe("supabase");
+    expect(SOURCE_PACKAGE_MAP["supabaseBuilder"]).toBe("supabase");
+    expect(SOURCE_PACKAGE_MAP["supabaseFunctions"]).toBe("supabase");
+  });
+
+  it("loads supabase operations and instance types", async () => {
+    await loadPackage("supabase");
+
+    const ops = loadedPackageOperations.get("supabase");
+    expect(ops).toBeDefined();
+    expect(ops!.length).toBeGreaterThan(0);
+
+    const instanceTypes = getAllInstanceTypes();
+    expect(instanceTypes["supabase.Client"]).toBeDefined();
+    expect(instanceTypes["supabase.QueryBuilder"]).toBeDefined();
+    expect(instanceTypes["supabase.Builder"]).toBeDefined();
+  });
+
+  it("prefixes createClient as a package member operation", async () => {
+    await loadPackage("supabase");
+    const ops = loadedPackageOperations.get("supabase")!;
+    const createClientOp = ops.find(
+      (op) => op.name === "supabase.createClient"
+    );
+    expect(createClientOp).toBeDefined();
+    expect(createClientOp?.source?.packageCallTarget).toBeUndefined();
+  });
+
+  it("prefixes builder operations with package name", async () => {
+    await loadPackage("supabase");
+    const ops = loadedPackageOperations.get("supabase")!;
+    const fromOp = ops.find((op) => op.name === "supabase.from");
+    expect(fromOp).toBeDefined();
+    const eqOp = ops.find((op) => op.name === "supabase.eq");
+    expect(eqOp).toBeDefined();
+    const invokeOp = ops.find((op) => op.name === "supabase.functions.invoke");
+    expect(invokeOp).toBeDefined();
+  });
+
+  it("unloads supabase operations and instance types", async () => {
+    await loadPackage("supabase");
+    expect(loadedPackageOperations.has("supabase")).toBe(true);
+    expect(getAllInstanceTypes()["supabase.Client"]).toBeDefined();
+
+    await unloadPackage("supabase");
+    expect(loadedPackageOperations.has("supabase")).toBe(false);
+    expect(getAllInstanceTypes()["supabase.Client"]).toBeUndefined();
+  });
+});
+
 describe("getEnabledPackages", () => {
   it("returns an empty array for undefined project", () => {
     expect(getEnabledPackages(undefined)).toEqual([]);

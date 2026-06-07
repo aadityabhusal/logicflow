@@ -1,14 +1,19 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { executeOperation } from "@/lib/execution/execution";
+import {
+  executeOperation,
+  getFilteredOperations,
+} from "@/lib/execution/execution";
 import { coreOperations } from "@/lib/operations/built-in";
 import { operations as rowguardOperations } from "@/lib/operations/rowguard";
 import { operations as fakerOperations } from "@/lib/operations/faker";
 import { operations as dateFnsOperations } from "@/lib/operations/date-fns";
+import { operations as supabaseOperations } from "@/lib/operations/supabase";
 import {
   createData,
   getRawValueFromData,
   isDataOfType,
   createDataFromRawValue,
+  createStatement,
 } from "@/lib/utils";
 import { Context, OperationListItem } from "@/lib/execution/types";
 import { InstanceDataType } from "../types";
@@ -16,6 +21,7 @@ import {
   createTestContext,
   testString,
   stringStatement,
+  testBoolean,
 } from "@/tests/helpers";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 
@@ -292,6 +298,304 @@ describe("faker operations", () => {
     const result = await executeOperation(op, createData(), [], ctx);
 
     expect(isDataOfType(result, "string")).toBe(true);
+  });
+});
+
+describe("supabase operations", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "supabase" }]);
+  });
+
+  function findOp(name: string): OperationListItem {
+    const op = supabaseOperations.find((o) => o.name === name);
+    if (!op) throw new Error(`Supabase operation "${name}" not found`);
+    return op;
+  }
+
+  function findOpForInput(name: string, className: string): OperationListItem {
+    const op = supabaseOperations.find((o) => {
+      if (o.name !== name) return false;
+      const params =
+        typeof o.parameters === "function"
+          ? o.parameters(createData())
+          : o.parameters;
+      const firstType = params[0]?.type;
+      return firstType.kind === "instance" && firstType.className === className;
+    });
+    if (!op)
+      throw new Error(
+        `Supabase operation "${name}" for "${className}" not found`
+      );
+    return op;
+  }
+
+  it("createClient returns a Supabase client instance", async () => {
+    const ctx = createTestContext();
+    const op = findOp("createClient");
+    const urlData = testString("https://example.supabase.co");
+    const keyData = testString("dummy-key");
+    const result = await executeOperation(
+      op,
+      urlData,
+      [createStatement({ data: keyData, operations: [] })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("supabase.Client");
+    }
+    const raw = getRawValueFromData(result, ctx);
+    expect(raw).toBeDefined();
+    expect(typeof (raw as { from: unknown }).from).toBe("function");
+    expect(typeof (raw as { functions: unknown }).functions).toBe("object");
+  });
+
+  it("from returns a query builder instance", async () => {
+    const ctx = createTestContext();
+    const createOp = findOp("createClient");
+    const clientResult = await executeOperation(
+      createOp,
+      testString("https://example.supabase.co"),
+      [createStatement({ data: testString("dummy-key"), operations: [] })],
+      ctx
+    );
+
+    const fromOp = findOp("from");
+    const result = await executeOperation(
+      fromOp,
+      clientResult,
+      [stringStatement("todos")],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("supabase.QueryBuilder");
+    }
+  });
+
+  it("select returns a builder instance", async () => {
+    const ctx = createTestContext();
+    const createOp = findOp("createClient");
+    const clientResult = await executeOperation(
+      createOp,
+      testString("https://example.supabase.co"),
+      [createStatement({ data: testString("dummy-key"), operations: [] })],
+      ctx
+    );
+
+    const fromResult = await executeOperation(
+      findOp("from"),
+      clientResult,
+      [stringStatement("todos")],
+      ctx
+    );
+
+    const selectOp = findOp("select");
+    const result = await executeOperation(
+      selectOp,
+      fromResult,
+      [stringStatement("*")],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("supabase.Builder");
+    }
+  });
+
+  it("eq returns a builder instance", async () => {
+    const ctx = createTestContext();
+    const clientResult = await executeOperation(
+      findOp("createClient"),
+      testString("https://example.supabase.co"),
+      [createStatement({ data: testString("dummy-key"), operations: [] })],
+      ctx
+    );
+
+    const fromResult = await executeOperation(
+      findOp("from"),
+      clientResult,
+      [stringStatement("todos")],
+      ctx
+    );
+
+    const selectResult = await executeOperation(
+      findOp("select"),
+      fromResult,
+      [stringStatement("*")],
+      ctx
+    );
+
+    const eqOp = findOp("eq");
+    const result = await executeOperation(
+      eqOp,
+      selectResult,
+      [
+        stringStatement("done"),
+        createStatement({ data: testBoolean(false), operations: [] }),
+      ],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("supabase.Builder");
+    }
+  });
+
+  it("single returns a builder instance", async () => {
+    const ctx = createTestContext();
+    const clientResult = await executeOperation(
+      findOp("createClient"),
+      testString("https://example.supabase.co"),
+      [createStatement({ data: testString("dummy-key"), operations: [] })],
+      ctx
+    );
+
+    const fromResult = await executeOperation(
+      findOp("from"),
+      clientResult,
+      [stringStatement("todos")],
+      ctx
+    );
+
+    const selectResult = await executeOperation(
+      findOp("select"),
+      fromResult,
+      [],
+      ctx
+    );
+
+    const singleOp = findOp("single");
+    const result = await executeOperation(singleOp, selectResult, [], ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("supabase.Builder");
+    }
+    expect(
+      getFilteredOperations(result, ctx).some((op) => op.name === "await")
+    ).toBe(true);
+  });
+
+  it("includes the missing PostgREST builder operations", () => {
+    const expectedNames = [
+      "select",
+      "likeAllOf",
+      "likeAnyOf",
+      "ilikeAllOf",
+      "ilikeAnyOf",
+      "regexMatch",
+      "regexIMatch",
+      "isDistinct",
+      "notIn",
+      "rangeGt",
+      "rangeGte",
+      "rangeLt",
+      "rangeLte",
+      "rangeAdjacent",
+      "textSearch",
+      "geojson",
+      "explain",
+      "rollback",
+      "maxAffected",
+      "stripNulls",
+      "retry",
+      "then",
+    ];
+
+    for (const name of expectedNames) {
+      expect(findOpForInput(name, "supabase.Builder")).toBeDefined();
+    }
+  });
+
+  it("select after insert returns a builder instance", async () => {
+    const ctx = createTestContext();
+    const clientResult = await executeOperation(
+      findOp("createClient"),
+      testString("https://example.supabase.co"),
+      [createStatement({ data: testString("dummy-key"), operations: [] })],
+      ctx
+    );
+    const fromResult = await executeOperation(
+      findOp("from"),
+      clientResult,
+      [stringStatement("todos")],
+      ctx
+    );
+    const insertResult = await executeOperation(
+      findOp("insert"),
+      fromResult,
+      [
+        createStatement({
+          data: createData({ value: { title: "new todo" } }),
+          operations: [],
+        }),
+      ],
+      ctx
+    );
+
+    const result = await executeOperation(
+      findOpForInput("select", "supabase.Builder"),
+      insertResult,
+      [stringStatement("*")],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("supabase.Builder");
+    }
+  });
+
+  it("then returns a Promise instance for Supabase builders", async () => {
+    const ctx = createTestContext();
+    const builder = {
+      url: new URL("https://example.supabase.co/rest/v1/todos"),
+      then(callback: (value: unknown) => unknown) {
+        return Promise.resolve(callback({ data: [{ id: 1 }], error: null }));
+      },
+    };
+    const builderData = createDataFromRawValue(builder, {
+      ...ctx,
+      expectedType: {
+        kind: "instance",
+        className: "supabase.Builder",
+        constructorArgs: [],
+      },
+    });
+    const callback = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ name: "value", type: { kind: "unknown" } }],
+        result: { kind: "unknown" },
+      },
+    });
+    callback.value.statements = [
+      createStatement({ data: testString("resolved") }),
+    ];
+
+    const result = await executeOperation(
+      findOpForInput("then", "supabase.Builder"),
+      builderData,
+      [createStatement({ data: callback })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("Promise");
+    }
+    await expect(getRawValueFromData(result, ctx)).resolves.toBe("resolved");
+  });
+
+  it("functions.invoke operation exists as a method", () => {
+    const invokeOp = findOp("functions.invoke");
+    expect(invokeOp.source?.name).toBe("supabaseFunctions");
+    expect(invokeOp.source?.callStyle).toBe("method");
   });
 });
 

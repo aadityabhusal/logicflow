@@ -533,9 +533,7 @@ const promiseOperations: OperationListItem[] = [
   },
   {
     name: "await",
-    parameters: [
-      { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
-    ],
+    parameters: [{ type: { kind: "unknown" } }],
     handler: async (context, promiseData) => {
       try {
         const promiseValue = getRawValueFromData(

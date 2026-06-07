@@ -756,6 +756,53 @@ describe("wretch code generation", () => {
   });
 });
 
+describe("external method code generation", () => {
+  it("generates nested member call from dotted operation name", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const invokeOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "supabase.Client",
+              constructorArgs: [],
+            },
+          },
+          { type: { kind: "string" as const } },
+          {
+            type: {
+              kind: "dictionary",
+              elementType: { kind: "unknown" as const },
+            },
+            isOptional: true,
+          },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "functions.invoke",
+        parameters: [stringStatement("hello")],
+        statements: [],
+        source: {
+          name: "supabaseFunctions",
+          callStyle: "method",
+        },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("client"),
+      operations: [invokeOp],
+    });
+    const op = testOperation([], [stmt], "invokeTest");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain(
+      'R.pipe("client", (arg) => arg.functions.invoke("hello"))'
+    );
+  });
+});
+
 describe("rowguard code generation", () => {
   beforeAll(async () => {
     await syncPackageRegistry([{ name: "rowguard" }]);

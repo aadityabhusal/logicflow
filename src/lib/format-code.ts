@@ -264,7 +264,8 @@ function generateOperationCall(
     .map((p) => generateStatement(p, context, true))
     .join(", ");
   const paramStr = operation.value.parameters.length ? `(${params})` : "";
-  const actualName = getActualOperationName(operation.value.name ?? "");
+  const operationName = operation.value.name ?? "";
+  const actualName = getActualOperationName(operationName);
 
   if (operation.value.name === "await") return ", _.await";
   if (operation.value.name === "call") return `, (arg) => arg(${params})`;
@@ -274,7 +275,10 @@ function generateOperationCall(
       return `, (arg) => arg.${actualName}(${params})`;
     case "external": {
       if (source.callStyle !== "function") {
-        return `, (arg) => arg.${actualName}(${params})`;
+        const member = source.packageName
+          ? stripPackagePrefix(operationName ?? actualName, source.packageName)
+          : actualName;
+        return `, (arg) => arg.${member}(${params})`;
       }
       const fnName = getPackageFuncName(
         source.packageName ?? "",
