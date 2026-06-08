@@ -2484,7 +2484,7 @@ describe("manual Promise instances", () => {
     expect(result.value).toBe("hello");
   });
 
-  it("allows await on any data and resolves thenable values", async () => {
+  it("only exposes await for Promise instances", async () => {
     class TestThenable {
       then(resolve: (value: string) => void) {
         resolve("hello");
@@ -2502,30 +2502,13 @@ describe("manual Promise instances", () => {
       const plainData = testNumber(5);
       const plainOperations = getFilteredOperations(plainData, ctx);
 
-      expect(plainOperations.some((op) => op.name === "await")).toBe(true);
-      const plainResult = await executeOperation(
-        findBuiltIn("await"),
-        plainData,
-        [],
-        ctx
-      );
-      expect(plainResult.type.kind).toBe("number");
-      expect(plainResult.value).toBe(5);
+      expect(plainOperations.some((op) => op.name === "await")).toBe(false);
 
       const data = createDataFromRawValue(new TestThenable(), ctx);
       const operations = getFilteredOperations(data, ctx);
 
-      expect(operations.some((op) => op.name === "await")).toBe(true);
+      expect(operations.some((op) => op.name === "await")).toBe(false);
       expect(operations.some((op) => op.name === "catch")).toBe(false);
-
-      const result = await executeOperation(
-        findBuiltIn("await"),
-        data,
-        [],
-        ctx
-      );
-      expect(result.type.kind).toBe("string");
-      expect(result.value).toBe("hello");
     } finally {
       delete InstanceTypes.TestThenable;
     }

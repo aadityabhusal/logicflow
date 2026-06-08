@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import {
   executeOperation,
   getFilteredOperations,
@@ -16,7 +16,7 @@ import {
   createStatement,
 } from "@/lib/utils";
 import { Context, OperationListItem } from "@/lib/execution/types";
-import { InstanceDataType } from "../types";
+import { IData, InstanceDataType } from "../types";
 import {
   createTestContext,
   testString,
@@ -329,6 +329,12 @@ describe("supabase operations", () => {
     return op;
   }
 
+  function operationContext(ctx: Context, id: string) {
+    const opContext = { ...ctx };
+    opContext._currentOperationId = id;
+    return opContext;
+  }
+
   it("createClient returns a Supabase client instance", async () => {
     const ctx = createTestContext();
     const op = findOp("createClient");
@@ -478,7 +484,7 @@ describe("supabase operations", () => {
     }
     expect(
       getFilteredOperations(result, ctx).some((op) => op.name === "await")
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("includes the missing PostgREST builder operations", () => {
@@ -555,8 +561,9 @@ describe("supabase operations", () => {
     const ctx = createTestContext();
     const builder = {
       url: new URL("https://example.supabase.co/rest/v1/todos"),
-      then(callback: (value: unknown) => unknown) {
-        return Promise.resolve(callback({ data: [{ id: 1 }], error: null }));
+      then(callback?: (value: unknown) => unknown) {
+        const request = Promise.resolve({ data: [{ id: 1 }], error: null });
+        return callback ? request.then(callback) : request;
       },
     };
     const builderData = createDataFromRawValue(builder, {
@@ -590,6 +597,158 @@ describe("supabase operations", () => {
       expect(result.type.className).toBe("Promise");
     }
     await expect(getRawValueFromData(result, ctx)).resolves.toBe("resolved");
+  });
+
+  it("then accepts no callback and returns the base request Promise", async () => {
+    const ctx = createTestContext();
+    const builder = {
+      url: new URL("https://example.supabase.co/rest/v1/todos"),
+      then() {
+        return Promise.resolve({ data: [{ id: 1 }], error: null });
+      },
+    };
+    const builderData = createDataFromRawValue(builder, {
+      ...ctx,
+      expectedType: {
+        kind: "instance",
+        className: "supabase.Builder",
+        constructorArgs: [],
+      },
+    });
+
+    const thenResult = await executeOperation(
+      findOpForInput("then", "supabase.Builder"),
+      builderData,
+      [],
+      ctx
+    );
+
+    expect(isDataOfType(thenResult, "instance")).toBe(true);
+    if (thenResult.type.kind === "instance") {
+      expect(thenResult.type.className).toBe("Promise");
+    }
+
+    const awaitOp = coreOperations.find((op) => op.name === "await")!;
+    const awaited = await executeOperation(awaitOp, thenResult, [], ctx);
+    expect(getRawValueFromData(awaited, ctx)).toEqual({
+      data: [{ id: 1 }],
+      error: undefined,
+    });
+  });
+
+  it("caches Supabase then network execution by builder dependency", async () => {
+    const ctx = createTestContext();
+    const request = vi.fn(() => Promise.resolve({ data: [{ id: 1 }] }));
+    const callback = vi.fn((value: unknown) => value);
+    const client = {
+      from: () => ({
+        url: new URL("https://example.supabase.co/rest/v1/todos"),
+        insert: () => undefined,
+        select: (columns: string) => ({
+          url: new URL(
+            `https://example.supabase.co/rest/v1/todos?select=${columns}`
+          ),
+          then: request,
+        }),
+      }),
+      rpc: () => undefined,
+      functions: {},
+    };
+    const clientData = createDataFromRawValue(client, {
+      ...ctx,
+      expectedType: {
+        kind: "instance",
+        className: "supabase.Client",
+        constructorArgs: [],
+      },
+    });
+    const queryData = await executeOperation(
+      findOpForInput("from", "supabase.Client"),
+      clientData,
+      [stringStatement("todos")],
+      ctx
+    );
+    const builderData = await executeOperation(
+      findOpForInput("select", "supabase.QueryBuilder"),
+      queryData,
+      [stringStatement("*")],
+      ctx
+    );
+    const callbackData = createDataFromRawValue(callback, {
+      ...ctx,
+      expectedType: {
+        kind: "operation",
+        parameters: [{ name: "value", type: { kind: "unknown" } }],
+        result: { kind: "unknown" },
+      },
+    });
+    const thenOp = findOpForInput("then", "supabase.Builder");
+    const executeThen = () =>
+      executeOperation(
+        thenOp,
+        builderData,
+        [createStatement({ data: callbackData })],
+        operationContext(ctx, "then-request")
+      );
+
+    const first = await executeThen();
+    const second = await executeThen();
+
+    await getRawValueFromData(first, ctx);
+    await getRawValueFromData(second, ctx);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reuse Supabase then cache after a changed request", async () => {
+    const ctx = createTestContext();
+    const request = vi.fn(() => Promise.resolve({ data: [] }));
+    const queryData = createDataFromRawValue(
+      {
+        url: new URL("https://example.supabase.co/rest/v1/todos"),
+        insert: () => undefined,
+        select: (columns: string) => ({
+          url: new URL(
+            `https://example.supabase.co/rest/v1/todos?select=${columns}`
+          ),
+          then: request,
+        }),
+      },
+      {
+        ...ctx,
+        expectedType: {
+          kind: "instance",
+          className: "supabase.QueryBuilder",
+          constructorArgs: [],
+        },
+      }
+    );
+    const createBuilderData = (dependencyKey: string) =>
+      executeOperation(
+        findOpForInput("select", "supabase.QueryBuilder"),
+        queryData,
+        [stringStatement(dependencyKey)],
+        ctx
+      );
+    const thenOp = findOpForInput("then", "supabase.Builder");
+    const executeThen = (data: IData) =>
+      executeOperation(thenOp, data, [], operationContext(ctx, "then-request"));
+    const firstBuilder = await createBuilderData("select-1");
+    const secondBuilder = await createBuilderData("select-2");
+    const firstRequest = getRawValueFromData(firstBuilder, ctx) as {
+      url: URL;
+    };
+    const secondRequest = getRawValueFromData(secondBuilder, ctx) as {
+      url: URL;
+    };
+    expect(String(firstRequest.url)).toContain("select-1");
+    expect(String(secondRequest.url)).toContain("select-2");
+
+    await executeThen(firstBuilder);
+    await executeThen(secondBuilder);
+    await executeThen(await createBuilderData("select-1"));
+
+    expect(request).toHaveBeenCalledTimes(3);
   });
 
   it("functions.invoke operation exists as a method", () => {

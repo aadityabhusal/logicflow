@@ -5,12 +5,13 @@ import {
   getRawValueFromData,
   isObject,
   createRuntimeError,
+  isDataOfType,
 } from "@/lib/utils";
 import { customInstances, InstanceTypeConfig } from "@/lib/packages/registry";
 import { Context, OperationListItem } from "@/lib/execution/types";
 
 class SupabaseClientClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
+  static [Symbol.hasInstance](instance: unknown) {
     return (
       typeof instance === "object" &&
       instance !== null &&
@@ -21,7 +22,7 @@ class SupabaseClientClass {
 }
 
 class SupabaseQueryBuilderClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
+  static [Symbol.hasInstance](instance: unknown) {
     return (
       typeof instance === "object" &&
       instance !== null &&
@@ -32,7 +33,7 @@ class SupabaseQueryBuilderClass {
 }
 
 class SupabaseBuilderClass {
-  static [Symbol.hasInstance](instance: unknown): boolean {
+  static [Symbol.hasInstance](instance: unknown) {
     return (
       typeof instance === "object" &&
       instance !== null &&
@@ -70,11 +71,62 @@ const BuilderType: DataType = {
   constructorArgs: [],
 };
 
+const PromiseType: DataType = {
+  kind: "instance",
+  className: "Promise",
+  constructorArgs: [],
+  result: TUnknown,
+};
+
+function getRequestSignature(request: Record<string, unknown>) {
+  if (request.signal) return;
+  try {
+    return JSON.stringify([
+      request.method,
+      request.url,
+      request.body,
+      request.headers instanceof Headers
+        ? [...request.headers.entries()].toSorted()
+        : isObject(request.headers)
+          ? Object.entries(request.headers).toSorted()
+          : undefined,
+      request.schema,
+      request.shouldThrowOnError,
+      request.isMaybeSingle,
+      request.shouldStripNulls,
+      request.retryEnabled,
+    ]);
+  } catch {
+    return;
+  }
+}
+
+function getRequestCacheKey(signature: string, context: Context) {
+  const operationId = context._currentOperationId;
+  if (!operationId) return;
+
+  const stateKey = `supabase:request-state:${operationId}`;
+  const state = context.getResult(stateKey)?.data;
+  const [lastRev, lastSig] = state
+    ? (getRawValueFromData(state, context) as [number, string])
+    : [0, ""];
+  const rev = lastSig === signature ? lastRev : lastRev + 1;
+
+  if (lastSig !== signature) {
+    context.setResult(stateKey, {
+      data: createDataFromRawValue([rev, signature], context),
+      shouldCacheResult: true,
+    });
+  }
+
+  return `supabase:request:${operationId}:${rev}:${signature}`;
+}
+
 function wrapBuilder(
   value: unknown,
   context: Context,
   expectedType?: DataType
-): IData {
+) {
   if (isObject(value) && !customInstances.has(value)) {
     if ("select" in value && "insert" in value && "url" in value) {
       customInstances.set(value, SupabaseQueryBuilderClass);
@@ -491,6 +543,7 @@ const builderOperationList: MethodOperationSpec[] = [
 
 const builderThenOp: OperationListItem = {
   name: "then",
+  expectedType: PromiseType,
   parameters: [
     { type: BuilderType },
     {
@@ -500,6 +553,7 @@ const builderThenOp: OperationListItem = {
         result: TUnknown,
       },
       name: "callback",
+      isOptional: true,
     },
   ],
   source: {
@@ -511,14 +565,30 @@ const builderThenOp: OperationListItem = {
     if (!isObject(builder)) {
       return createRuntimeError("Supabase builder not found");
     }
-
     try {
-      const result = callMethod(builder, "then", [
-        getRawValueFromData(callbackData, context),
-      ]);
+      const signature = getRequestSignature(builder);
+      const cacheKey = signature && getRequestCacheKey(signature, context);
+      let data = cacheKey && context.getResult(cacheKey)?.data;
+      if (!data) {
+        data = createDataFromRawValue(callMethod(builder, "then", []), {
+          ...context,
+          expectedType: PromiseType,
+        });
+        if (cacheKey) {
+          context.setResult(cacheKey, { data, shouldCacheResult: true });
+        }
+      }
+      if (!callbackData || isDataOfType(callbackData, "undefined")) return data;
+
+      const result = (
+        getRawValueFromData(data, context) as PromiseLike<unknown>
+      ).then(getRawValueFromData(callbackData, context) as () => unknown);
       return createDataFromRawValue(result, {
         ...context,
-        expectedType: (callbackData.type as OperationType).result,
+        expectedType: {
+          ...PromiseType,
+          result: (callbackData.type as OperationType).result,
+        },
       });
     } catch (error) {
       return createRuntimeError(error);

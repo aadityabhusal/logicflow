@@ -457,6 +457,7 @@ function executeStatementCore(
     ...context,
     narrowedTypes: _narrowedTypes,
     skipExecution: getSkipExecution({ context, data, operationName: opName }),
+    _currentOperationId: operation.id,
   };
   const foundOp = findOperationByName(data, context, opName);
   opCallContext.setContext(operation.id, opCallContext);
