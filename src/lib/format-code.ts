@@ -255,10 +255,17 @@ function generatePackageOperationRef(name: string, context: CodeGenContext) {
   return getPackageFuncName(packageName, name, "member", context);
 }
 
+function generateMemberAccess(path: string) {
+  return path
+    .split(".")
+    .map((p) => (isValidIdentifier(p) ? `.${p}` : `[${JSON.stringify(p)}]`))
+    .join("");
+}
+
 function generateOperationCall(
   operation: IData<OperationType>,
   context: CodeGenContext
-): string {
+): { type: "pipe" | "method"; code: string; hasAwait?: boolean } {
   const source = getOperationSource(operation, context);
   const params = operation.value.parameters
     .map((p) => generateStatement(p, context, true))
@@ -267,18 +274,26 @@ function generateOperationCall(
   const operationName = operation.value.name ?? "";
   const actualName = getActualOperationName(operationName);
 
-  if (operation.value.name === "await") return ", _.await";
-  if (operation.value.name === "call") return `, (arg) => arg(${params})`;
+  if (operation.value.name === "await")
+    return { type: "pipe", code: ", _.await", hasAwait: true };
+  if (operation.value.name === "call")
+    return { type: "pipe", code: `, (arg) => arg(${params})` };
 
   switch (source.type) {
     case "instance":
-      return `, (arg) => arg.${actualName}(${params})`;
+      return {
+        type: "method",
+        code: `${generateMemberAccess(actualName)}(${params})`,
+      };
     case "external": {
       if (source.callStyle !== "function") {
         const member = source.packageName
           ? stripPackagePrefix(operationName ?? actualName, source.packageName)
           : actualName;
-        return `, (arg) => arg.${member}(${params})`;
+        return {
+          type: "method",
+          code: `${generateMemberAccess(member)}(${params})`,
+        };
       }
       const fnName = getPackageFuncName(
         source.packageName ?? "",
@@ -286,14 +301,14 @@ function generateOperationCall(
         source.packageCallTarget ?? "member",
         context
       );
-      if (!params) return `, ${fnName}`;
-      return `, (arg) => ${fnName}(arg, ${params})`;
+      if (!params) return { type: "pipe", code: `, ${fnName}` };
+      return { type: "pipe", code: `, (arg) => ${fnName}(arg, ${params})` };
     }
     case "remeda":
-      return `, R.${actualName}${paramStr}`;
+      return { type: "pipe", code: `, R.${actualName}${paramStr}` };
     case "builtin": {
       const name = `_.${actualName}`;
-      return `, ${name}${paramStr}`;
+      return { type: "pipe", code: `, ${name}${paramStr}` };
     }
     case "userDefined": {
       if (
@@ -303,9 +318,41 @@ function generateOperationCall(
       ) {
         context.importedOperations.add(actualName);
       }
-      return `, ${paramStr ? `(arg) => ${actualName}${paramStr}` : actualName}`;
+      const code = `, ${paramStr ? `(arg) => ${actualName}${paramStr}` : actualName}`;
+      return { type: "pipe", code };
     }
   }
+}
+
+function generateOperationChain(
+  data: string,
+  operations: IData<OperationType>[],
+  context: CodeGenContext
+) {
+  let result = data;
+  let pipeCalls: ReturnType<typeof generateOperationCall>[] = [];
+
+  const flushPipe = () => {
+    if (pipeCalls.length === 0) return false;
+    const pipeHasAwait = pipeCalls.some((call) => call.hasAwait);
+    const pipeFunc = pipeHasAwait ? "await _.pipeAsync" : "R.pipe";
+    result = `${pipeFunc}(${result}${pipeCalls.map((call) => call.code).join("")})`;
+    pipeCalls = [];
+    return pipeHasAwait;
+  };
+
+  for (const operation of operations) {
+    const call = generateOperationCall(operation, context);
+    if (call.type === "method") {
+      if (flushPipe()) result = `(${result})`;
+      result += call.code;
+    } else {
+      pipeCalls.push(call);
+    }
+  }
+
+  flushPipe();
+  return result;
 }
 
 function generateStatement(
@@ -327,16 +374,7 @@ function generateStatement(
   const result =
     statement.operations.length === 0
       ? `${name}${data}`
-      : (() => {
-          const operations = statement.operations
-            .map((op) => generateOperationCall(op, context))
-            .join("");
-          const hasAwait = statement.operations.some(
-            (op) => op.value.name === "await"
-          );
-          const pipeFunc = hasAwait ? "await _.pipeAsync" : "R.pipe";
-          return `${name}${pipeFunc}(${data}${operations})`;
-        })();
+      : `${name}${generateOperationChain(data, statement.operations, context)}`;
 
   if (statement.controlFlow === "return") {
     return toReturnStatement(result);

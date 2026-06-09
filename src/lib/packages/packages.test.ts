@@ -349,7 +349,7 @@ describe("supabase operations", () => {
 
     expect(isDataOfType(result, "instance")).toBe(true);
     if (result.type.kind === "instance") {
-      expect(result.type.className).toBe("supabase.Client");
+      expect(result.type.className).toBe("supabase.SupabaseClient");
     }
     const raw = getRawValueFromData(result, ctx);
     expect(raw).toBeDefined();
@@ -377,7 +377,7 @@ describe("supabase operations", () => {
 
     expect(isDataOfType(result, "instance")).toBe(true);
     if (result.type.kind === "instance") {
-      expect(result.type.className).toBe("supabase.QueryBuilder");
+      expect(result.type.className).toBe("supabase.PostgrestQueryBuilder");
     }
   });
 
@@ -408,7 +408,7 @@ describe("supabase operations", () => {
 
     expect(isDataOfType(result, "instance")).toBe(true);
     if (result.type.kind === "instance") {
-      expect(result.type.className).toBe("supabase.Builder");
+      expect(result.type.className).toBe("supabase.PostgrestFilterBuilder");
     }
   });
 
@@ -448,7 +448,7 @@ describe("supabase operations", () => {
 
     expect(isDataOfType(result, "instance")).toBe(true);
     if (result.type.kind === "instance") {
-      expect(result.type.className).toBe("supabase.Builder");
+      expect(result.type.className).toBe("supabase.PostgrestFilterBuilder");
     }
   });
 
@@ -480,7 +480,7 @@ describe("supabase operations", () => {
 
     expect(isDataOfType(result, "instance")).toBe(true);
     if (result.type.kind === "instance") {
-      expect(result.type.className).toBe("supabase.Builder");
+      expect(result.type.className).toBe("supabase.PostgrestFilterBuilder");
     }
     expect(
       getFilteredOperations(result, ctx).some((op) => op.name === "await")
@@ -514,7 +514,9 @@ describe("supabase operations", () => {
     ];
 
     for (const name of expectedNames) {
-      expect(findOpForInput(name, "supabase.Builder")).toBeDefined();
+      expect(
+        findOpForInput(name, "supabase.PostgrestFilterBuilder")
+      ).toBeDefined();
     }
   });
 
@@ -545,7 +547,7 @@ describe("supabase operations", () => {
     );
 
     const result = await executeOperation(
-      findOpForInput("select", "supabase.Builder"),
+      findOpForInput("select", "supabase.PostgrestFilterBuilder"),
       insertResult,
       [stringStatement("*")],
       ctx
@@ -553,7 +555,7 @@ describe("supabase operations", () => {
 
     expect(isDataOfType(result, "instance")).toBe(true);
     if (result.type.kind === "instance") {
-      expect(result.type.className).toBe("supabase.Builder");
+      expect(result.type.className).toBe("supabase.PostgrestFilterBuilder");
     }
   });
 
@@ -570,7 +572,7 @@ describe("supabase operations", () => {
       ...ctx,
       expectedType: {
         kind: "instance",
-        className: "supabase.Builder",
+        className: "supabase.PostgrestFilterBuilder",
         constructorArgs: [],
       },
     });
@@ -586,7 +588,7 @@ describe("supabase operations", () => {
     ];
 
     const result = await executeOperation(
-      findOpForInput("then", "supabase.Builder"),
+      findOpForInput("then", "supabase.PostgrestFilterBuilder"),
       builderData,
       [createStatement({ data: callback })],
       ctx
@@ -611,13 +613,13 @@ describe("supabase operations", () => {
       ...ctx,
       expectedType: {
         kind: "instance",
-        className: "supabase.Builder",
+        className: "supabase.PostgrestFilterBuilder",
         constructorArgs: [],
       },
     });
 
     const thenResult = await executeOperation(
-      findOpForInput("then", "supabase.Builder"),
+      findOpForInput("then", "supabase.PostgrestFilterBuilder"),
       builderData,
       [],
       ctx
@@ -658,18 +660,18 @@ describe("supabase operations", () => {
       ...ctx,
       expectedType: {
         kind: "instance",
-        className: "supabase.Client",
+        className: "supabase.SupabaseClient",
         constructorArgs: [],
       },
     });
     const queryData = await executeOperation(
-      findOpForInput("from", "supabase.Client"),
+      findOpForInput("from", "supabase.SupabaseClient"),
       clientData,
       [stringStatement("todos")],
       ctx
     );
     const builderData = await executeOperation(
-      findOpForInput("select", "supabase.QueryBuilder"),
+      findOpForInput("select", "supabase.PostgrestQueryBuilder"),
       queryData,
       [stringStatement("*")],
       ctx
@@ -682,7 +684,7 @@ describe("supabase operations", () => {
         result: { kind: "unknown" },
       },
     });
-    const thenOp = findOpForInput("then", "supabase.Builder");
+    const thenOp = findOpForInput("then", "supabase.PostgrestFilterBuilder");
     const executeThen = () =>
       executeOperation(
         thenOp,
@@ -718,19 +720,19 @@ describe("supabase operations", () => {
         ...ctx,
         expectedType: {
           kind: "instance",
-          className: "supabase.QueryBuilder",
+          className: "supabase.PostgrestQueryBuilder",
           constructorArgs: [],
         },
       }
     );
     const createBuilderData = (dependencyKey: string) =>
       executeOperation(
-        findOpForInput("select", "supabase.QueryBuilder"),
+        findOpForInput("select", "supabase.PostgrestQueryBuilder"),
         queryData,
         [stringStatement(dependencyKey)],
         ctx
       );
-    const thenOp = findOpForInput("then", "supabase.Builder");
+    const thenOp = findOpForInput("then", "supabase.PostgrestFilterBuilder");
     const executeThen = (data: IData) =>
       executeOperation(thenOp, data, [], operationContext(ctx, "then-request"));
     const firstBuilder = await createBuilderData("select-1");

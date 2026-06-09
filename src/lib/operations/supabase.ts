@@ -10,34 +10,34 @@ import {
 import { customInstances, InstanceTypeConfig } from "@/lib/packages/registry";
 import { Context, OperationListItem } from "@/lib/execution/types";
 
-class SupabaseClientClass {
+class SupabaseClient {
   static [Symbol.hasInstance](instance: unknown) {
     return (
       typeof instance === "object" &&
       instance !== null &&
-      (customInstances.get(instance) === SupabaseClientClass ||
+      (customInstances.get(instance) === SupabaseClient ||
         ("from" in instance && "rpc" in instance && "functions" in instance))
     );
   }
 }
 
-class SupabaseQueryBuilderClass {
+class PostgrestQueryBuilder {
   static [Symbol.hasInstance](instance: unknown) {
     return (
       typeof instance === "object" &&
       instance !== null &&
-      (customInstances.get(instance) === SupabaseQueryBuilderClass ||
+      (customInstances.get(instance) === PostgrestQueryBuilder ||
         ("select" in instance && "insert" in instance && "url" in instance))
     );
   }
 }
 
-class SupabaseBuilderClass {
+class PostgrestFilterBuilder {
   static [Symbol.hasInstance](instance: unknown) {
     return (
       typeof instance === "object" &&
       instance !== null &&
-      (customInstances.get(instance) === SupabaseBuilderClass ||
+      (customInstances.get(instance) === PostgrestFilterBuilder ||
         ("then" in instance && "url" in instance))
     );
   }
@@ -55,19 +55,19 @@ const TUnknownArray: DataType = { kind: "array", elementType: TUnknown };
 
 const ClientType: DataType = {
   kind: "instance",
-  className: "supabase.Client",
+  className: "supabase.SupabaseClient",
   constructorArgs: [],
 };
 
 const QueryBuilderType: DataType = {
   kind: "instance",
-  className: "supabase.QueryBuilder",
+  className: "supabase.PostgrestQueryBuilder",
   constructorArgs: [],
 };
 
 const BuilderType: DataType = {
   kind: "instance",
-  className: "supabase.Builder",
+  className: "supabase.PostgrestFilterBuilder",
   constructorArgs: [],
 };
 
@@ -129,9 +129,9 @@ function wrapBuilder(
 ) {
   if (isObject(value) && !customInstances.has(value)) {
     if ("select" in value && "insert" in value && "url" in value) {
-      customInstances.set(value, SupabaseQueryBuilderClass);
+      customInstances.set(value, PostgrestQueryBuilder);
     } else if ("then" in value && "url" in value) {
-      customInstances.set(value, SupabaseBuilderClass);
+      customInstances.set(value, PostgrestFilterBuilder);
     }
   }
 
@@ -237,7 +237,7 @@ const createClientOp: OperationListItem = {
       const result = createClient(url, key, options);
 
       if (isObject(result) && !customInstances.has(result)) {
-        customInstances.set(result, SupabaseClientClass);
+        customInstances.set(result, SupabaseClient);
       }
 
       return createDataFromRawValue(result, {
@@ -617,23 +617,23 @@ export const operations: OperationListItem[] = [
 ];
 
 export const instanceTypes: Record<string, InstanceTypeConfig> = {
-  "supabase.Client": {
-    name: "supabase.Client",
-    Constructor: SupabaseClientClass,
+  "supabase.SupabaseClient": {
+    name: "supabase.SupabaseClient",
+    Constructor: SupabaseClient,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "supabase" },
   },
-  "supabase.QueryBuilder": {
-    name: "supabase.QueryBuilder",
-    Constructor: SupabaseQueryBuilderClass,
+  "supabase.PostgrestQueryBuilder": {
+    name: "supabase.PostgrestQueryBuilder",
+    Constructor: PostgrestQueryBuilder,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "supabase" },
   },
-  "supabase.Builder": {
-    name: "supabase.Builder",
-    Constructor: SupabaseBuilderClass,
+  "supabase.PostgrestFilterBuilder": {
+    name: "supabase.PostgrestFilterBuilder",
+    Constructor: PostgrestFilterBuilder,
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "supabase" },

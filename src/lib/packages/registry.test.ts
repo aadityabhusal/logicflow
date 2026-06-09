@@ -454,9 +454,9 @@ describe("supabase package", () => {
     expect(ops!.length).toBeGreaterThan(0);
 
     const instanceTypes = getAllInstanceTypes();
-    expect(instanceTypes["supabase.Client"]).toBeDefined();
-    expect(instanceTypes["supabase.QueryBuilder"]).toBeDefined();
-    expect(instanceTypes["supabase.Builder"]).toBeDefined();
+    expect(instanceTypes["supabase.SupabaseClient"]).toBeDefined();
+    expect(instanceTypes["supabase.PostgrestQueryBuilder"]).toBeDefined();
+    expect(instanceTypes["supabase.PostgrestFilterBuilder"]).toBeDefined();
   });
 
   it("prefixes createClient as a package member operation", async () => {
@@ -483,11 +483,11 @@ describe("supabase package", () => {
   it("unloads supabase operations and instance types", async () => {
     await loadPackage("supabase");
     expect(loadedPackageOperations.has("supabase")).toBe(true);
-    expect(getAllInstanceTypes()["supabase.Client"]).toBeDefined();
+    expect(getAllInstanceTypes()["supabase.SupabaseClient"]).toBeDefined();
 
     await unloadPackage("supabase");
     expect(loadedPackageOperations.has("supabase")).toBe(false);
-    expect(getAllInstanceTypes()["supabase.Client"]).toBeUndefined();
+    expect(getAllInstanceTypes()["supabase.SupabaseClient"]).toBeUndefined();
   });
 });
 
