@@ -106,7 +106,7 @@ const DictionaryInputComponent = (
               ref={(elem) => isKeyInputFocused && !isDisabled && elem?.focus()}
               className={[
                 "text-property",
-                isKeyInputFocused ? "outline outline-border" : "",
+                isKeyInputFocused ? "editor-focus" : "",
               ].join(" ")}
               value={entry.key}
               onChange={(value) => handleKeyUpdate(i, value)}

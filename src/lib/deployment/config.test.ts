@@ -199,6 +199,38 @@ describe("resolveNpmDependencies", () => {
     expect(result.find((d) => d.name === "remeda")!.version).toBe("2.0.0");
   });
 
+  it("includes @supabase/supabase-js by its real npm package name", () => {
+    const project = createTestProject();
+    const files = [
+      {
+        path: "src/db.js",
+        content: "import * as supabase from '@supabase/supabase-js';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
+    expect(result).toEqual([
+      { name: "@supabase/supabase-js", version: "latest" },
+    ]);
+  });
+
+  it("uses configured supabase version from catalog dependency name", () => {
+    const project = createTestProject({
+      dependencies: {
+        npm: [{ name: "supabase", version: "2.0.0", exports: [] }],
+      },
+    });
+    const files = [
+      {
+        path: "src/db.js",
+        content: "import * as supabase from '@supabase/supabase-js';",
+      },
+    ];
+    const result = resolveNpmDependencies(project, files);
+    expect(result).toEqual([
+      { name: "@supabase/supabase-js", version: "2.0.0" },
+    ]);
+  });
+
   it.each([
     ['import { purry } from "remeda";'],
     ["import * as R from 'remeda';"],
@@ -333,9 +365,9 @@ describe("generatePackageJson", () => {
     });
   });
 
-  it("includes engines field requiring node >=18", () => {
+  it("includes engines field requiring node >=20", () => {
     const result = JSON.parse(generatePackageJson(createTestProject(), []));
-    expect(result.engines).toEqual({ node: ">=18" });
+    expect(result.engines).toEqual({ node: ">=20" });
   });
 
   it("sets main to api/handler.js", () => {

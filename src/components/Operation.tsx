@@ -273,10 +273,9 @@ const OperationComponent = (
     <div
       {...props}
       ref={ref}
-      className={[
-        props.className,
-        isHighlighted ? "outline outline-border bg-dropdown-hover" : "",
-      ].join(" ")}
+      className={[props.className, isHighlighted ? "editor-focus" : ""].join(
+        " "
+      )}
     >
       <div className="flex items-start gap-1">
         <span>{"("}</span>

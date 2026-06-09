@@ -86,6 +86,28 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     description: "Build FFmpeg command strings through chainable operations.",
     load: () => import("../operations/ffmpeg").then((m) => m.default),
   },
+  supabase: {
+    displayName: "Supabase",
+    packageName: "@supabase/supabase-js",
+    importKind: "namespace",
+    sourceNames: [
+      "supabase",
+      "supabaseClient",
+      "supabaseQueryBuilder",
+      "supabaseBuilder",
+      "supabaseFunctions",
+    ],
+    description:
+      "Supabase client for database access and Edge Function invocation.",
+    links: [
+      {
+        label: "npm",
+        url: "https://www.npmjs.com/package/@supabase/supabase-js",
+      },
+      { label: "GitHub", url: "https://github.com/supabase/supabase-js" },
+    ],
+    load: () => import("../operations/supabase").then((m) => m.default),
+  },
 };
 
 export function getEnabledPackages(project?: Project): PackageNamespace[] {

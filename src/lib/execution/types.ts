@@ -45,6 +45,7 @@ export type ContextProps = {
   maxCallDepth?: number; // Added in Context and not global constant for testing configuration
   operationCache?: Map<string, IData>;
   _memoCacheKey?: string;
+  _currentOperationId?: string;
   controlFlowState?: { returned?: IData };
 };
 

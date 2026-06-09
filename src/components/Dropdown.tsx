@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { BaseInput } from "./Input/BaseInput";
 import { IconButton } from "../ui/IconButton";
 import {
   FaCircleChevronDown,
@@ -389,10 +388,12 @@ const DropdownComponent = ({
         <div
           className={[
             "flex items-start relative p-px",
-            isFocused || isHovered ? "outline outline-border" : "",
-            isContextMenuHighlighted
-              ? "outline outline-border bg-dropdown-hover"
-              : "",
+            isFocused || combobox.dropdownOpened
+              ? "editor-focus"
+              : isHovered
+                ? "editor-hover"
+                : "",
+            isContextMenuHighlighted ? "editor-focus" : "",
             context.skipExecution && context.skipExecution.kind !== "error"
               ? "opacity-50 "
               : "",
@@ -445,7 +446,7 @@ const DropdownComponent = ({
               <IconButton
                 tabIndex={-1}
                 size={10}
-                className="absolute -top-1.5 right-3 text-white bg-border rounded-full z-10 p-0.5"
+                className="editor-affordance absolute -top-1.5 right-3 z-10 p-0.5"
                 icon={FaSquareArrowUpRight}
                 onClick={() =>
                   setSearchParams(...handleSearchParams({ file: value }, true))
@@ -458,7 +459,7 @@ const DropdownComponent = ({
             <IconButton
               tabIndex={-1}
               size={10}
-              className="absolute -top-1.5 right-3 text-white bg-border rounded-full z-10 p-0.5"
+              className="editor-affordance absolute -top-1.5 right-3 z-10 p-0.5"
               icon={FaObjectUngroup}
               onClick={() => handleExtractToFile(data)}
               hidden={!isFocused && !isHovered}
@@ -469,7 +470,7 @@ const DropdownComponent = ({
             <IconButton
               tabIndex={-1}
               size={13}
-              className="absolute -top-1.5 -right-0.5 text-border bg-white rounded-full z-10"
+              className="editor-affordance absolute -top-1.5 -right-0.5 z-10"
               icon={FaCircleXmark}
               onClick={() => {
                 combobox?.closeDropdown();
@@ -483,7 +484,7 @@ const DropdownComponent = ({
             <IconButton
               size={13}
               title="Add operation call"
-              className="absolute top-1.5 -right-2 text-border bg-white rounded-full z-10"
+              className="editor-affordance absolute top-1.5 -right-2 z-10"
               icon={FaCirclePlus}
               onClick={() => {
                 combobox?.closeDropdown();
@@ -494,7 +495,7 @@ const DropdownComponent = ({
           {options?.withDropdownIcon && (
             <IconButton
               size={13}
-              className="absolute -bottom-1.5 -right-0.5 text-border bg-white rounded-full z-10"
+              className="editor-affordance absolute -bottom-1.5 -right-0.5 z-10"
               icon={FaCircleChevronDown}
               onClick={(e) => {
                 e.stopPropagation();
@@ -514,17 +515,16 @@ const DropdownComponent = ({
             dropdown:
               "absolute min-w-max" +
               (!!dropdownOptions?.length || options?.withSearch
-                ? " bg-editor border"
+                ? " bg-dropdown-default border border-border rounded-sm overflow-hidden"
                 : ""),
           }}
         >
           {options?.withSearch ? (
             <Combobox.Search
-              component={BaseInput}
               value={search}
-              onChange={(value) => handleSearch(value as unknown as string)}
+              onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search..."
-              classNames={{ input: "min-w-full" }}
+              classNames={{ input: "min-w-full p-1" }}
             />
           ) : null}
           {dropdownOptions?.length === 0 ? null : (
@@ -534,7 +534,8 @@ const DropdownComponent = ({
                   key={groupName}
                   label={groupName}
                   classNames={{
-                    groupLabel: "text-[11px] bg-dropdown-scrollbar",
+                    groupLabel:
+                      "text-[11px] text-gray-400 bg-dropdown-default p-0.5",
                   }}
                 >
                   {groupItems.map((option) => (

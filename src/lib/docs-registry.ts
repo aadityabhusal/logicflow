@@ -79,6 +79,31 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     displayName: "FFmpeg",
     useRawName: true,
   },
+  supabase: {
+    urlPattern: (name) =>
+      `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
+    displayName: "Supabase",
+  },
+  supabaseClient: {
+    urlPattern: (name) =>
+      `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
+    displayName: "Supabase Client",
+  },
+  supabaseQueryBuilder: {
+    urlPattern: (name) =>
+      `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
+    displayName: "Supabase QueryBuilder",
+  },
+  supabaseBuilder: {
+    urlPattern: (name) =>
+      `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
+    displayName: "Supabase Builder",
+  },
+  supabaseFunctions: {
+    urlPattern: (name) =>
+      `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
+    displayName: "Supabase Functions",
+  },
 };
 
 export function getDocsUrl(source?: OperationSource, operationName?: string) {

@@ -200,9 +200,7 @@ export function generatePackageJson(
           : "node .",
     },
     dependencies: depMap,
-    engines: {
-      node: ">=18",
-    },
+    engines: { node: ">=20" },
   };
 
   return JSON.stringify(pkg, null, 2);

@@ -33,7 +33,7 @@ const AddStatementComponent = ({
         size={14}
         ref={(elem) => isFocused && elem?.focus()}
         className={[
-          "mt-1 hover:outline hover:outline-border",
+          "mt-1 editor-inline-control",
           isFocused ? "outline outline-border" : "",
           className || "",
         ].join(" ")}

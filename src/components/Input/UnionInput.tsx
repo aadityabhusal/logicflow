@@ -195,7 +195,7 @@ const UnionInputComponent = (
             icon={FaChevronDown}
             size={14}
             className={[
-              "mt-1 hover:outline hover:outline-border",
+              "mt-1 editor-inline-control",
               isIconFocused ? "outline outline-border" : "",
             ].join(" ")}
             title="Show union types"
@@ -215,7 +215,7 @@ const UnionInputComponent = (
                     data.type.types.length > 1 && !context.expectedType ? (
                       <FaX
                         size={16}
-                        className="p-1 hover:outline hover:outline-border"
+                        className="p-1 editor-inline-control"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleTypeRemove(i);

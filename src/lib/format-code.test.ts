@@ -467,8 +467,60 @@ describe("generateOperation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("_.fetch");
-    expect(result).toContain("arg.then");
+    expect(result).toContain(".then");
     expect(result).toContain("_.await");
+  });
+
+  it("wraps awaited pipe chunks before fluent method access", () => {
+    const ctx = createTestContext();
+    const fetchOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+        },
+      },
+      value: { name: "fetch", parameters: [], statements: [] },
+    });
+    const awaitOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "undefined" },
+      },
+      value: { name: "await", parameters: [], statements: [] },
+    });
+    const thenOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "Promise",
+              constructorArgs: [],
+            },
+          },
+        ],
+        result: { kind: "unknown" },
+      },
+      value: { name: "then", parameters: [], statements: [] },
+    });
+    const stmt = createStatement({
+      data: testString("https://api.example.com"),
+      operations: [fetchOp, awaitOp, thenOp],
+    });
+    const op = testOperation([], [stmt], "awaitThen");
+    op.value.isAsync = true;
+
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain(
+      '(await _.pipeAsync("https://api.example.com", _.fetch, _.await)).then()'
+    );
   });
 
   it("generates with showResult option resolving values", () => {
@@ -608,7 +660,7 @@ describe("wretch code generation", () => {
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe("https://api.example.com", wretch, (arg) => arg.url("/users"))'
+      'R.pipe("https://api.example.com", wretch).url("/users")'
     );
   });
 
@@ -642,7 +694,7 @@ describe("wretch code generation", () => {
     const op = testOperation([], [stmt], "chainTest");
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
-    expect(result).toContain('R.pipe("ignored", (arg) => arg.json())');
+    expect(result).toContain('"ignored".json()');
   });
 
   it("includes wretch import when wretch operation is used", () => {
@@ -751,8 +803,84 @@ describe("wretch code generation", () => {
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe("https://api.example.com", wretch, (arg) => arg.url("/users"), (arg) => arg.get(), (arg) => arg.json())'
+      'R.pipe("https://api.example.com", wretch).url("/users").get().json()'
     );
+  });
+});
+
+describe("external method code generation", () => {
+  it("generates nested member call from dotted operation name", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const invokeOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: {
+              kind: "instance",
+              className: "supabase.SupabaseClient",
+              constructorArgs: [],
+            },
+          },
+          { type: { kind: "string" as const } },
+          {
+            type: {
+              kind: "dictionary",
+              elementType: { kind: "unknown" as const },
+            },
+            isOptional: true,
+          },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "functions.invoke",
+        parameters: [stringStatement("hello")],
+        statements: [],
+        source: {
+          name: "supabaseFunctions",
+          callStyle: "method",
+        },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("client"),
+      operations: [invokeOp],
+    });
+    const op = testOperation([], [stmt], "invokeTest");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain('"client".functions.invoke("hello")');
+  });
+
+  it("generates bracket access for method names that are not identifiers", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const methodOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "unknown" as const } },
+          { type: { kind: "string" as const } },
+        ],
+        result: { kind: "unknown" as const },
+      },
+      value: {
+        name: "bad-name",
+        parameters: [stringStatement("hello")],
+        statements: [],
+        source: {
+          name: "supabaseFunctions",
+          callStyle: "method",
+        },
+      },
+    });
+    const stmt = createStatement({
+      data: testString("client"),
+      operations: [methodOp],
+    });
+    const op = testOperation([], [stmt], "invalidMethodTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain('"client"["bad-name"]("hello")');
   });
 });
 
@@ -1143,7 +1271,7 @@ describe("toSQL codegen for structural conditions", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
-    expect(result).toContain("(arg) => arg.toSQL()");
+    expect(result).toContain(".toSQL()");
   });
 
   it("generates _.get for property access after session.get", () => {
@@ -2077,6 +2205,6 @@ describe("ffmpeg code generation", () => {
     const op = testOperation([], [stmt], "ffmpegMethodOverrideTest");
     const result = generateOperation(op, ctx);
 
-    expect(result).toContain('(arg) => arg.normalize("fast")');
+    expect(result).toContain('.normalize("fast")');
   });
 });
