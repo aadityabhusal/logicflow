@@ -268,7 +268,7 @@ const StatementComponent = ({
     <div
       className={[
         "flex items-start gap-1",
-        isHighlighted ? "outline outline-border bg-dropdown-hover" : "",
+        isHighlighted ? "editor-focus" : "",
       ].join(" ")}
       onContextMenu={handleContextMenu}
     >
@@ -282,7 +282,7 @@ const StatementComponent = ({
               onChange={setLocalName}
               className={[
                 "text-variable",
-                isNameFocused ? "outline outline-border" : "",
+                isNameFocused ? "editor-focus" : "",
               ].join(" ")}
               onBlur={() => {
                 if (!localName || localName === statement.name) {
@@ -330,9 +330,9 @@ const StatementComponent = ({
                 icon={equalsIcon}
                 position="right"
                 className={[
-                  "hover:outline hover:outline-border",
+                  "editor-inline-control",
                   isOptional || isRest ? "" : "mt-1",
-                  isEqualsFocused ? "outline outline-border" : "",
+                  isEqualsFocused ? "editor-focus" : "",
                   disableNameToggle || isConditionBlock ? "text-disabled" : "",
                   isReturn ? "transform rotate-90" : "",
                 ].join(" ")}
@@ -369,7 +369,7 @@ const StatementComponent = ({
                   position="right"
                   title={!isMobileLayout ? "Return here" : undefined}
                   aria-label="Return here"
-                  className="hover:outline hover:outline-border transform rotate-90"
+                  className="editor-inline-control transform rotate-90"
                   onClick={() => {
                     handleStatement(
                       { ...statement, controlFlow: "return", name: undefined },
@@ -435,13 +435,13 @@ const StatementComponent = ({
 
           return (
             <div key={operation.id} className="flex items-start gap-1 ml-2">
-              <PipeArrow
-                size={10}
-                className="text-disabled mt-1.5"
-                style={{
-                  transform: isMultiline ? "rotate(90deg)" : "",
-                }}
-              />
+              <span className="pipe-flow relative mt-0.5 inline-flex items-center justify-center text-disabled">
+                <PipeArrow
+                  className="pipe-flow-icon"
+                  style={{ transform: isMultiline ? "rotate(90deg)" : "" }}
+                />
+                <span className="pipe-flow-dot" />
+              </span>
               <ErrorBoundary
                 displayError={true}
                 onRemove={() => handleOperationCall(operation, true)}

@@ -177,7 +177,7 @@ const ObjectInputComponent = (
                 }
                 className={[
                   "text-property",
-                  isKeyInputFocused ? "outline outline-border" : "",
+                  isKeyInputFocused ? "editor-focus" : "",
                 ].join(" ")}
                 value={entry.key}
                 onChange={(value) => handleKeyUpdate(i, value)}
@@ -201,9 +201,9 @@ const ObjectInputComponent = (
                 isOptional ? FaQuestion : () => <span className="px-1">:</span>
               }
               className={[
-                "mt-0.5 hover:outline hover:outline-border",
+                "mt-0.5 editor-inline-control",
                 navigationId === `${data.id}_key_${i}_colon`
-                  ? "outline outline-border"
+                  ? "editor-focus"
                   : "",
                 expectedType ? "text-disabled" : "",
               ].join(" ")}

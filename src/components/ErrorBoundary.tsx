@@ -19,11 +19,11 @@ export class ErrorBoundary extends React.Component<{
       return this.props.fallback ? (
         this.props.fallback
       ) : this.props.displayError ? (
-        <div className="flex items-start gap-1 outline outline-border relative">
+        <div className="editor-focus flex items-start gap-1 relative">
           <span className="text-error">{this.state.errorMessage}</span>
           {this.props.onRemove && (
             <IconButton
-              className="absolute -top-1.5 -right-1 text-border bg-white rounded-full"
+              className="editor-affordance absolute -top-1.5 -right-1"
               icon={FaCircleXmark}
               title="Remove"
               size={12}

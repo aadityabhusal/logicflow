@@ -69,3 +69,69 @@ pre {
 .number-input[type="number"] {
   appearance: textfield;
 }
+
+.editor-focus {
+  @apply outline outline-gray-300 rounded-xs bg-dropdown-hover/40;
+}
+
+.editor-hover {
+  @apply outline outline-border rounded-xs;
+}
+
+.editor-inline-control {
+  @apply rounded-xs hover:outline hover:outline-border;
+}
+
+.editor-affordance {
+  @apply text-gray-300 bg-dropdown-default rounded-full hover:text-white;
+}
+
+.pipe-flow {
+  @apply size-5;
+}
+
+.pipe-flow-icon {
+  animation: pipe-flow-glow 1.5s ease-in-out infinite;
+}
+
+.pipe-flow-dot {
+  @apply absolute left-0.5 top-1/2 h-0.5 w-[5px] rounded-full bg-white pointer-events-none;
+  box-shadow: 0 0 6px var(--color-white);
+  animation: pipe-flow 1.5s ease-in-out infinite;
+}
+
+@keyframes pipe-flow {
+  0% {
+    transform: translate(0, -50%);
+    opacity: 0;
+  }
+  20%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(12px, -50%);
+    opacity: 0;
+  }
+}
+
+@keyframes pipe-flow-glow {
+  0%,
+  100% {
+    color: var(--color-white);
+  }
+  50% {
+    color: var(--color-gray-400);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipe-flow-icon,
+  .pipe-flow-dot {
+    animation: none;
+  }
+
+  .pipe-flow-dot {
+    @apply hidden;
+  }
+}
