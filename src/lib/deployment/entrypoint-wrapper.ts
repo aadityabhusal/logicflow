@@ -5,6 +5,12 @@ export interface GeneratedHandler {
   content: string;
 }
 
+const corsHeaders = `const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};`;
+
 export function generatePlatformHandlers(
   platform: DeploymentTarget["platform"],
   triggeredOps: ProjectFile[],
@@ -39,18 +45,24 @@ function generateVercelEdgeHandler(name: string): string {
 
 export const config = { runtime: 'edge' };
 
+${corsHeaders}
+
 export default async function handler(request) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
   try {
     const result = await ${name}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 }
@@ -60,7 +72,18 @@ export default async function handler(request) {
 function generateVercelNodeHandler(name: string): string {
   return `import ${name} from '../src/${name}.js';
 
+${corsHeaders}
+
 export default async function handler(req, res) {
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    res.setHeader(key, value);
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+
   try {
     const result = await ${name}(req);
 
@@ -80,18 +103,24 @@ function generateSupabaseHandlers(
   return triggeredOps.map((op) => {
     const handlerContent = `import ${op.name} from '../../../src/${op.name}.js';
 
+${corsHeaders}
+
 Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
   try {
     const result = await ${op.name}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 });

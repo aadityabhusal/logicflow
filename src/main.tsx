@@ -32,34 +32,34 @@ const theme = createTheme({
   components: {
     Tooltip: Tooltip.extend({
       classNames: {
-        tooltip: "absolute bg-dropdown-default px-2 py-1 rounded-md text-xs",
+        tooltip: "absolute bg-dropdown-default px-2 py-1 rounded-xs text-xs",
       },
     }),
     ActionIcon: ActionIcon.extend({
       classNames: {
-        root: "focus:outline focus:outline-white hover:opacity-90 disabled:text-disabled",
+        root: "rounded-xs focus:outline focus:outline-white hover:opacity-90 disabled:text-disabled",
       },
     }),
     Button: Button.extend({
       classNames: {
-        root: "outline outline-white p-1 hover:bg-dropdown-hover truncate disabled:bg-disabled/75",
+        root: "rounded-xs outline outline-white p-1 hover:bg-dropdown-hover truncate disabled:bg-disabled/75",
         inner: "flex items-center gap-1 outline-white",
         label: "truncate",
       },
     }),
     Popover: Popover.extend({
-      classNames: { dropdown: "absolute bg-editor" },
+      classNames: { dropdown: "absolute rounded-xs bg-editor" },
     }),
     Input: Input.extend({
       classNames: {
         wrapper: "flex gap-1 items-center",
-        input: "outline-0 bg-inherit border-none p-0 resize-none",
+        input: "rounded-xs outline-0 bg-inherit border-none p-0 resize-none",
       },
     }),
     Textarea: Textarea.extend({
       classNames: {
         wrapper: "flex gap-1 items-center",
-        input: "outline-0 bg-inherit border-none p-0 flex-1",
+        input: "rounded-xs outline-0 bg-inherit border-none p-0 flex-1",
       },
     }),
     Menu: Menu.extend({

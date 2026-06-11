@@ -116,7 +116,7 @@ function OperationListItemComponent({
       {editingId === item.id ? (
         <input
           ref={inputRef}
-          className="focus:outline outline-white flex-1 w-full p-0.5"
+          className="rounded-xs focus:outline outline-white flex-1 w-full p-0.5"
           defaultValue={item.name}
           onBlur={({ target }) => {
             const name = target.value.trim();

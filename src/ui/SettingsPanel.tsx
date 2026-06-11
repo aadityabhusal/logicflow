@@ -136,7 +136,7 @@ export function SettingsPanel() {
             </div>
             <input
               type="text"
-              className="focus:outline outline-white border border-border w-full p-0.5 text-sm"
+              className="rounded-xs focus:outline outline-white border border-border w-full p-0.5 text-sm"
               placeholder={"Project name"}
               value={projectName}
               onChange={(e) => {
@@ -233,7 +233,7 @@ export function SettingsPanel() {
                         <span className="text-sm text-gray-300">Alias</span>
                         <input
                           type="text"
-                          className="focus:outline outline-white border w-full p-0.5 text-sm"
+                          className="rounded-xs focus:outline outline-white border w-full p-0.5 text-sm"
                           placeholder="Global alias for the package"
                           value={
                             aliasInputs[name] ?? dependency?.namespace ?? ""

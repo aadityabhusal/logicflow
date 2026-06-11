@@ -188,7 +188,7 @@ export default function Dashboard() {
           {sortedProjects.map((project) => (
             <div
               key={project.id}
-              className="border p-4 flex items-start justify-between"
+              className="rounded-xs border p-4 flex items-start justify-between"
             >
               <div className="flex-1 flex flex-col gap-2">
                 <Link

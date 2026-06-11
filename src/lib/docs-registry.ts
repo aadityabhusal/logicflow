@@ -7,6 +7,54 @@ interface DocsConfig {
   useRawName?: boolean;
 }
 
+const supabaseModifierOperations = [
+  "limit",
+  "range",
+  "order",
+  "single",
+  "maybeSingle",
+  "csv",
+  "geojson",
+  "explain",
+  "throwOnError",
+  "stripNulls",
+  "rollback",
+  "maxAffected",
+  "retry",
+  "setHeader",
+  "abortSignal",
+];
+
+const supabaseFilterOperations = [
+  "containedBy",
+  "contains",
+  "eq",
+  "filter",
+  "gt",
+  "gte",
+  "ilike",
+  "ilikeAllOf",
+  "ilikeAnyOf",
+  "in",
+  "is",
+  "like",
+  "likeAllOf",
+  "likeAnyOf",
+  "lt",
+  "lte",
+  "match",
+  "neq",
+  "not",
+  "or",
+  "overlaps",
+  "rangeAdjacent",
+  "rangeGt",
+  "rangeGte",
+  "rangeLt",
+  "rangeLte",
+  "textSearch",
+];
+
 export const DOCS_REGISTRY: Record<string, DocsConfig> = {
   remeda: {
     urlPattern: (name) => `https://remedajs.com/docs#${name}`,
@@ -95,8 +143,14 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     displayName: "Supabase QueryBuilder",
   },
   supabaseBuilder: {
-    urlPattern: (name) =>
-      `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
+    urlPattern: (name) => {
+      const normalizedName = name.toLowerCase();
+      return supabaseFilterOperations.includes(name)
+        ? `https://supabase.com/docs/reference/javascript/using-filters-${normalizedName}`
+        : supabaseModifierOperations.includes(name)
+          ? `https://supabase.com/docs/reference/javascript/using-modifiers-${normalizedName}`
+          : `https://supabase.com/docs/reference/javascript/${normalizedName}`;
+    },
     displayName: "Supabase Builder",
   },
   supabaseFunctions: {

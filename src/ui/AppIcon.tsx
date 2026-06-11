@@ -3,7 +3,7 @@ export function AppIcon({ className = "size-8" }: { className?: string }) {
     <img
       src="/icons/icon.svg"
       alt="Logicflow"
-      className={`rounded-md ${className}`}
+      className={`rounded-xs ${className}`}
       draggable={false}
     />
   );

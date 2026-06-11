@@ -348,7 +348,7 @@ function DeploymentPanelComponent() {
                           </div>
                           <input
                             type="password"
-                            className="focus:outline outline-white border w-full p-0.5 text-sm"
+                            className="rounded-xs focus:outline outline-white border w-full p-0.5 text-sm"
                             placeholder={PLATFORMS[target.platform].token.label}
                             value={target.credentials?.token}
                             onChange={({ target: { value: token } }) => {
@@ -377,7 +377,7 @@ function DeploymentPanelComponent() {
                             </div>
                             <input
                               type="text"
-                              className="focus:outline outline-white border w-full p-0.5 text-sm"
+                              className="rounded-xs focus:outline outline-white border w-full p-0.5 text-sm"
                               placeholder={platform.projectId.label}
                               value={target.projectId || ""}
                               onChange={(e) => {
@@ -522,7 +522,7 @@ function DeploymentPanelComponent() {
             {deployment.envVariables.map((envVar, index) => (
               <div key={index} className="flex items-center gap-2">
                 <input
-                  className="focus:outline outline-white border border-border w-full p-0.5"
+                  className="rounded-xs focus:outline outline-white border border-border w-full p-0.5"
                   placeholder="Key"
                   value={envVar.key}
                   onChange={(e) =>
@@ -530,7 +530,7 @@ function DeploymentPanelComponent() {
                   }
                 />
                 <input
-                  className="focus:outline outline-white border border-border w-full p-0.5"
+                  className="rounded-xs focus:outline outline-white border border-border w-full p-0.5"
                   placeholder="Value"
                   value={envVar.value}
                   onChange={(e) =>

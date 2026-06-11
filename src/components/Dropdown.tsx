@@ -381,7 +381,7 @@ const DropdownComponent = ({
       }}
       store={combobox}
       keepMounted={false}
-      offset={{ mainAxis: 0, alignmentAxis: -1 }}
+      offset={{ mainAxis: 1, alignmentAxis: -1 }}
       position="bottom-start"
     >
       <Combobox.DropdownTarget>

@@ -605,6 +605,7 @@ const functionsInvokeOp = createMethodOperation({
     { type: TDict, name: "options", isOptional: true },
   ],
   wrapResult: false,
+  shouldCacheResult: true,
 });
 
 export const operations: OperationListItem[] = [

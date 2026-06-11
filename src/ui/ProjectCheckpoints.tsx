@@ -64,7 +64,7 @@ export function ProjectCheckpoints() {
       <div className="flex gap-1">
         <input
           type="text"
-          className="focus:outline outline-white border border-border w-full p-0.5 text-sm flex-1"
+          className="rounded-xs focus:outline outline-white border border-border w-full p-0.5 text-sm flex-1"
           placeholder="Checkpoint name (optional)"
           value={checkpointName}
           onChange={(e) => setCheckpointName(e.target.value)}

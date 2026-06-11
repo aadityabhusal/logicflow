@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import {
   executeOperation,
+  executeStatement,
   getFilteredOperations,
 } from "@/lib/execution/execution";
 import { coreOperations } from "@/lib/operations/built-in";
@@ -22,6 +23,7 @@ import {
   testString,
   stringStatement,
   testBoolean,
+  testOperation,
 } from "@/tests/helpers";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 
@@ -757,6 +759,103 @@ describe("supabase operations", () => {
     const invokeOp = findOp("functions.invoke");
     expect(invokeOp.source?.name).toBe("supabaseFunctions");
     expect(invokeOp.source?.callStyle).toBe("method");
+  });
+
+  it("functions.invoke caches result for same inputs", async () => {
+    const ctx = createTestContext();
+    const invokeMock = vi.fn(() =>
+      Promise.resolve({ data: { message: "hello" }, error: null })
+    );
+    const client = {
+      functions: { invoke: invokeMock },
+      from: vi.fn(),
+      rpc: vi.fn(),
+    };
+
+    const clientData = createDataFromRawValue(client, {
+      ...ctx,
+      expectedType: {
+        kind: "instance",
+        className: "supabase.SupabaseClient",
+        constructorArgs: [],
+      },
+    });
+    const functionName = stringStatement("hello");
+    const options = createDataFromRawValue({ body: { name: "world" } }, ctx);
+    const optionsStmt = createStatement({ data: options });
+
+    const op1 = testOperation(
+      [functionName, optionsStmt],
+      [],
+      "supabase.functions.invoke"
+    );
+    op1.id = "invoke-cache-1";
+
+    const result1 = await executeStatement(
+      createStatement({ data: clientData, operations: [op1] }),
+      ctx
+    );
+    const result2 = await executeStatement(
+      createStatement({ data: clientData, operations: [op1] }),
+      ctx
+    );
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("hello", {
+      body: { name: "world" },
+    });
+    expect(result1).toBe(result2);
+  });
+
+  it("functions.invoke does not reuse cache after input changes", async () => {
+    const ctx = createTestContext();
+    const invokeMock = vi.fn(() =>
+      Promise.resolve({ data: { message: "hello" }, error: null })
+    );
+    const client = {
+      functions: { invoke: invokeMock },
+      from: vi.fn(),
+      rpc: vi.fn(),
+    };
+
+    const clientData = createDataFromRawValue(client, {
+      ...ctx,
+      expectedType: {
+        kind: "instance",
+        className: "supabase.SupabaseClient",
+        constructorArgs: [],
+      },
+    });
+
+    const helloParam = stringStatement("hello");
+    const op1 = testOperation([helloParam], [], "supabase.functions.invoke");
+    op1.id = "invoke-cache-2";
+    const op2 = testOperation(
+      [stringStatement("world")],
+      [],
+      "supabase.functions.invoke"
+    );
+    op2.id = "invoke-cache-3";
+    const op3 = testOperation([helloParam], [], "supabase.functions.invoke");
+    op3.id = "invoke-cache-2";
+
+    const result1 = await executeStatement(
+      createStatement({ data: clientData, operations: [op1] }),
+      ctx
+    );
+    const _result2 = await executeStatement(
+      createStatement({ data: clientData, operations: [op2] }),
+      ctx
+    );
+    const result3 = await executeStatement(
+      createStatement({ data: clientData, operations: [op3] }),
+      ctx
+    );
+
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock).toHaveBeenNthCalledWith(1, "hello", undefined);
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "world", undefined);
+    expect(result1).toBe(result3);
   });
 });
 

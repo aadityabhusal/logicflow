@@ -18,7 +18,7 @@ export function AgentChat() {
         <div
           key={msg.id}
           className={[
-            "rounded-md p-2 mb-2",
+            "rounded-xs p-2 mb-2",
             msg.role === "user" ? "bg-dropdown-scrollbar" : "",
           ].join(" ")}
         >

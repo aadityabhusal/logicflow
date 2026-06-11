@@ -62,6 +62,14 @@ describe("generatePlatformHandlers", () => {
       expect(result[0].content).toContain("new Response(JSON.stringify");
       expect(result[0].content).not.toContain("res.status");
     });
+
+    it("handles CORS preflight requests", () => {
+      const result = generatePlatformHandlers("vercel", ops);
+      expect(result[0].content).toContain("Access-Control-Allow-Origin");
+      expect(result[0].content).toContain("request.method === 'OPTIONS'");
+      expect(result[0].content).toContain("status: 204");
+      expect(result[0].content).toContain("...corsHeaders");
+    });
   });
 
   describe("Vercel handlers (Node.js — opt-in)", () => {
@@ -76,6 +84,14 @@ describe("generatePlatformHandlers", () => {
         "export default async function handler(req, res)"
       );
       expect(result[0].content).toContain("res.status(200).json(result)");
+    });
+
+    it("sets CORS headers and handles preflight requests", () => {
+      const result = generatePlatformHandlers("vercel", ops, { nodejs: true });
+      expect(result[0].content).toContain("Access-Control-Allow-Origin");
+      expect(result[0].content).toContain("res.setHeader(key, value)");
+      expect(result[0].content).toContain("req.method === 'OPTIONS'");
+      expect(result[0].content).toContain("res.status(204).end()");
     });
 
     it("passes operation name through as-is even for names with special characters", () => {
@@ -111,6 +127,14 @@ describe("generatePlatformHandlers", () => {
     it("does not contain edge runtime config", () => {
       const result = generatePlatformHandlers("supabase", ops);
       expect(result[0].content).not.toContain("runtime");
+    });
+
+    it("handles CORS preflight requests", () => {
+      const result = generatePlatformHandlers("supabase", ops);
+      expect(result[0].content).toContain("Access-Control-Allow-Origin");
+      expect(result[0].content).toContain("request.method === 'OPTIONS'");
+      expect(result[0].content).toContain("status: 204");
+      expect(result[0].content).toContain("...corsHeaders");
     });
   });
 
