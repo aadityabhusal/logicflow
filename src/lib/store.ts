@@ -101,7 +101,9 @@ export const fileHistoryActions = {
 
 interface IProjectsStore {
   projects: Record<string, Project>;
-  createProject: (name: string, initialFiles?: ProjectFile[]) => Project;
+  createProject: (
+    init: Partial<Omit<Project, "id" | "createdAt" | "updatedAt">>
+  ) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   getProject: (id: string) => Project | undefined;
@@ -137,15 +139,16 @@ const createProjectsSlice: StateCreator<
   IProjectsStore
 > = (set, get) => ({
   projects: {},
-  createProject: (name, initialFiles = []) => {
+  createProject: (initialProject) => {
     const createdAt = Date.now();
     const newProject: Project = {
       id: nanoid(),
-      name,
+      name: "New Project",
       version: "0.0.1",
       createdAt,
-      files: initialFiles,
+      files: [],
       deployment: { envVariables: [], platforms: [] },
+      ...initialProject,
     };
     set((state) => ({
       projects: { ...state.projects, [newProject.id]: newProject },
@@ -371,6 +374,7 @@ type UiConfigStore = {
   disableKeyboard?: boolean;
   enableMobileWrapping?: boolean;
   wrapResult?: boolean;
+  examplesCollapsed?: boolean;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;

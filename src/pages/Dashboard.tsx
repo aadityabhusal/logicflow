@@ -1,10 +1,18 @@
 import { IconButton } from "@/ui/IconButton";
 import { Button, Popover } from "@mantine/core";
 import { useEffect, useMemo } from "react";
-import { FaBookOpen, FaGithub, FaPlus, FaTrash } from "react-icons/fa6";
+import {
+  FaBookOpen,
+  FaChevronDown,
+  FaFolderOpen,
+  FaGithub,
+  FaPlus,
+  FaTrash,
+} from "react-icons/fa6";
 import { Link, useNavigate } from "react-router";
 import { formatDistanceToNow } from "date-fns";
-import { useProjectStore } from "@/lib/store";
+import { useProjectStore, useUiConfigStore } from "@/lib/store";
+import { examples, createExampleProjectMetadata } from "@/examples";
 import {
   createContextVariable,
   createData,
@@ -16,12 +24,20 @@ import {
 } from "@/lib/utils";
 import { createOperationCall } from "@/lib/execution/execution";
 import { useExecutionResultsStore } from "@/lib/execution/store";
-import { ProjectFile, DataType } from "@/lib/types";
+import { Project, ProjectFile, DataType } from "@/lib/types";
 import { InstanceTypes } from "@/lib/packages/registry";
 import { AppIcon } from "@/ui/AppIcon";
 
+function getProjectUrl(project: Pick<Project, "id" | "files">) {
+  return project.files[0]
+    ? `/project/${project.id}?file=${project.files[0].name}`
+    : `/project/${project.id}`;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
+  const examplesCollapsed = useUiConfigStore((s) => s.examplesCollapsed);
+  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const projects = useProjectStore((s) => s.projects);
   const createProject = useProjectStore((s) => s.createProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
@@ -134,14 +150,20 @@ export default function Dashboard() {
       trigger: { type: "http", methods: ["GET"] as const },
     } as ProjectFile;
 
-    const created = createProject(
-      createVariableName({
+    const created = createProject({
+      name: createVariableName({
         prefix: "New Project ",
         prev: Object.values(projects).map((p) => p.name),
       }),
-      [mainTriggerFile, greetOpFile]
-    );
-    navigate(`/project/${created.id}?file=${mainTriggerFile.name}`);
+      files: [mainTriggerFile, greetOpFile],
+    });
+    navigate(getProjectUrl(created));
+  };
+
+  const handleCreateExample = (example: (typeof examples)[number]) => {
+    const projectMetadata = createExampleProjectMetadata(example.project);
+    const created = createProject(projectMetadata);
+    navigate(getProjectUrl(created));
   };
 
   useEffect(() => {
@@ -177,7 +199,49 @@ export default function Dashboard() {
           Create project
         </Button>
       </div>
-      <h2 className="text-xl">Projects</h2>
+      <section className={"space-y-2 border-b pb-3"}>
+        <Button
+          variant="subtle"
+          className="outline-none"
+          classNames={{ inner: "gap-2" }}
+          leftSection={
+            <FaChevronDown
+              className={!examplesCollapsed ? undefined : "-rotate-90"}
+            />
+          }
+          aria-expanded={!examplesCollapsed}
+          onClick={() => setUiConfig({ examplesCollapsed: !examplesCollapsed })}
+        >
+          <span className="text-xl">Examples</span>
+        </Button>
+        {!examplesCollapsed && (
+          <div className="grid gap-4 sm:grid-cols-3">
+            {examples.map((example) => (
+              <button
+                key={example.id}
+                type="button"
+                className="flex flex-col gap-2 rounded-xs border p-3 text-left transition hover:bg-dropdown-hover"
+                onClick={() => handleCreateExample(example)}
+              >
+                <span className="text-lg font-semibold">
+                  {example.project.name}
+                </span>
+                <span className="text-sm text-gray-300">
+                  {example.project.description}
+                </span>
+                <span className="text-xs text-gray-300">
+                  {example.project.files.length} file
+                  {example.project.files.length > 1 ? "s" : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+      <h2 className="flex items-center gap-2 text-xl pl-1">
+        <FaFolderOpen size={16} />
+        Projects
+      </h2>
       {sortedProjects.length === 0 ? (
         <div className="text-center py-8 text-disabled">
           <p className="text-lg mb-2">No projects</p>
@@ -188,15 +252,11 @@ export default function Dashboard() {
           {sortedProjects.map((project) => (
             <div
               key={project.id}
-              className="rounded-xs border p-4 flex items-start justify-between"
+              className="rounded-xs border p-3 flex items-start justify-between"
             >
               <div className="flex-1 flex flex-col gap-2">
                 <Link
-                  to={
-                    project.files[0]
-                      ? `/project/${project.id}?file=${project.files[0].name}`
-                      : `/project/${project.id}`
-                  }
+                  to={getProjectUrl(project)}
                   className="hover:underline text-lg font-semibold"
                 >
                   {project.name}

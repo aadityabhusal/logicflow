@@ -111,7 +111,7 @@ export default function Project() {
             },
           },
           {
-            label: "Paste over",
+            label: "Paste operation",
             onClick: async () => {
               const entry = await readClipboardAs("operation", "paste over");
               if (!entry) return;
