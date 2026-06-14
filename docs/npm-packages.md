@@ -1,6 +1,10 @@
 # NPM Packages
 
-Logicflow supports several npm packages that extend its capabilities with HTTP clients, row-level security, and data generation.
+Logicflow supports several npm packages that extend its capabilities with HTTP clients, database access, row-level security, and data generation.
+
+## Managing Packages
+
+Open the **Settings** tab to enable or disable packages for a project. Enabled packages appear in the operation dropdown and are included when generating or exporting code.
 
 ## Wretch
 
@@ -104,6 +108,34 @@ date-fns operations chain from a Date instance (or string for parsing functions)
 - **`eachDayOfInterval`** — Generate an array of dates within an interval (Date array)
 
 For the complete list of all 243 operations, see the [date-fns API documentation](https://date-fns.org/v4.1.0/docs/Getting-Started).
+
+## Supabase
+
+The [Supabase](https://supabase.com/docs/reference/javascript/introduction) package provides database queries and Edge Function calls through the Supabase JavaScript client.
+
+### SupabaseClient
+
+Create a client with `createClient`, then chain database or function operations from it.
+
+**Operations**: `from`, `schema`, `rpc`, `functions.invoke`
+
+### Query Builders
+
+Calling `from` creates a query builder for a table. Use it to select, insert, update, upsert, or delete rows.
+
+**Operations**: `select`, `insert`, `upsert`, `update`, `delete`
+
+### Filters and Modifiers
+
+Supabase query builders support common filters and result modifiers.
+
+**Filters**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `contains`, `containedBy`, `overlaps`, `match`, `not`, `or`, `textSearch`
+
+**Modifiers**: `order`, `limit`, `range`, `single`, `maybeSingle`, `csv`, `throwOnError`
+
+Use `then` to execute a query and receive the result as a Promise.
+
+For the full API, see the [Supabase JavaScript documentation](https://supabase.com/docs/reference/javascript/introduction).
 
 ## Package Aliases
 

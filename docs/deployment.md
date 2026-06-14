@@ -118,3 +118,15 @@ Click a live endpoint link to open it in a new tab. For Vercel, endpoints are av
 ### Removing a Platform
 
 You can remove a platform from your project at any time. This only removes the configuration from Logicflow and does not delete the project or deployments from the platform's dashboard.
+
+## Exporting Code
+
+If you want to run or inspect the generated project outside Logicflow, use the **Export code** button in the Deploy panel.
+
+The export downloads a ZIP file containing:
+
+- Generated JavaScript files for your operations
+- A `package.json` with the required dependencies
+- A `.env.example` file with environment variable keys, but not their values
+
+This export is separate from platform deployment. It does not create or update any Vercel or Supabase project.

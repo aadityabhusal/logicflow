@@ -50,6 +50,10 @@ All checkpoints for a project are also cleaned up when the project itself is del
 
 Checkpoints are stored locally in your browser's IndexedDB. They are not synced across devices or to any cloud service.
 
+## Project Import and Export
+
+The Settings tab lets you export the current project as a `.logicflow.json` file or import a previously exported project file. Use this to back up a project, move it between browsers, or share it manually.
+
 ## Context Menu
 
 Right-click an entity in the editor to open its context menu. On touch devices, use the browser's long-press gesture where available.
@@ -175,6 +179,8 @@ All real-time execution runs on a background thread, keeping the UI responsive e
 
 Logicflow caches operation results to avoid redundant computation. When an operation is called with the same inputs it has seen before, the cached result is returned immediately without re-executing the operation.
 
+Caching is most useful for operations that touch external state, such as HTTP requests. For example, native `fetch` and package-based HTTP operations cache results so repeated live execution does not make the same request unnecessarily.
+
 ### Clearing the Cache
 
 The **"Clear cache and run"** button (circular arrow icon) in the editor header clears cached results and forces a full re-execution of all statements. Use this when you want to start fresh after making changes that depend on external state or side effects.
@@ -200,9 +206,11 @@ Two additional settings appear in the Settings panel on mobile devices:
 
 ## External Documentation Links
 
-When you select an operation from a library (Remeda, Wretch, Rowguard, or Faker) in the Details panel, Logicflow shows a link to the operation's official documentation.
+When you select an operation from a library in the Details panel, Logicflow shows a link to the operation's official documentation when one is available.
 
 - **Remeda operations**: [remedajs.com/docs](https://remedajs.com/docs)
 - **Wretch operations**: [Wretch API documentation](https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html)
 - **Rowguard operations**: [Rowguard documentation](https://supabase-community.github.io/rowguard/)
 - **Faker operations**: [Faker API documentation](https://fakerjs.dev/api/)
+- **date-fns operations**: [date-fns documentation](https://date-fns.org/v4.1.0/docs/Getting-Started)
+- **Supabase operations**: [Supabase JavaScript documentation](https://supabase.com/docs/reference/javascript/introduction)

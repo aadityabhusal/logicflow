@@ -6,9 +6,10 @@ Logicflow makes building programs visual and intuitive. This guide will walk you
 
 When you first open Logicflow, you'll see the Dashboard where all your projects are managed.
 
+The Dashboard also includes example projects you can open to explore larger programs and common patterns.
+
 1. Click the **Create project** button
 2. Your new project is created with a **starter template** containing two operation files:
-
    - **`greet`** — A simple operation that takes a `name` string and returns `"Hello! [name]"`
    - **`main`** — An HTTP trigger (GET method) that extracts a `name` query parameter from an incoming request and calls the `greet` operation with it
 

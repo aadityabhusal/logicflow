@@ -6,6 +6,7 @@
 - Always follow existing project patterns and match the coding style of the existing codebase. For example, Do not add return types to functions unless they are useful or already match the existing style.
 - Never stage changes unless explicitly asked, and avoid destructive git commands.
 - Inspect the codebase before making configuration or tooling changes. For example, use the existing package manager instead of assuming `npm`.
+- Use subagents whenever possible for focused research, exploration, or parallelizable work.
 - Always ask before making broad architectural or configuration changes. Mention risks or follow-ups clearly.
 - When working on a substantial feature, create a Markdown file in `/local` with the necessary details, tasks, and progress notes, and keep it updated as work progresses.
 - When working on a feature, ask clarifying questions when requirements, tradeoffs, or implementation details are unclear, and be open to discussing the approach with the user.
