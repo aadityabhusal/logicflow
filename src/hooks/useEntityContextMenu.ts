@@ -38,6 +38,16 @@ export async function readClipboardAs<K extends EntityClipboard["kind"]>(
   return entry as Extract<EntityClipboard, { kind: K }>;
 }
 
+function cloneStatementForPasteOver(source: IStatement, target: IStatement) {
+  const cloned = cloneWithNewIds(source);
+  return {
+    ...cloned,
+    id: target.id,
+    ...(target.isRest ? { isRest: true } : {}),
+    ...(target.isOptional ? { isOptional: true } : {}),
+  };
+}
+
 interface Params {
   statement: IStatement;
   handleStatement: (s: IStatement, remove?: boolean, path?: EntityPath) => void;
@@ -95,13 +105,8 @@ export function useEntityContextMenu({
             onClick: async () => {
               const entry = await readClipboardAs("statement", "paste over");
               if (!entry) return;
-              const cloned = cloneWithNewIds(entry.value);
               handleStatement(
-                {
-                  ...cloned,
-                  ...(statement.isRest ? { isRest: true } : {}),
-                  ...(statement.isOptional ? { isOptional: true } : {}),
-                },
+                cloneStatementForPasteOver(entry.value, statement),
                 false,
                 path
               );
@@ -183,13 +188,28 @@ export function useEntityContextMenu({
           {
             label: "Paste over",
             onClick: async () => {
-              const entry = await readClipboardAs("data", "paste over");
+              const entry = await readEntityClipboard();
               if (!entry) return;
-              handleStatement(
-                { ...statement, data: cloneWithNewIds(entry.value) },
-                false,
-                path
-              );
+              if (entry.kind === "data") {
+                handleStatement(
+                  { ...statement, data: cloneWithNewIds(entry.value) },
+                  false,
+                  path
+                );
+                return;
+              }
+              if (entry.kind === "statement") {
+                handleStatement(
+                  cloneStatementForPasteOver(entry.value, statement),
+                  false,
+                  path
+                );
+                return;
+              }
+              notifications.show({
+                message: "Cannot paste over: invalid data or statement",
+                color: "red",
+              });
             },
           },
           {
