@@ -18,12 +18,13 @@ import {
   useState,
 } from "react";
 import { useHotkeys, useClickOutside } from "@mantine/hooks";
-import { Navigate } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
   createOperationFromFile,
+  handleSearchParams,
   shouldUseNativeContextMenu,
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
@@ -54,7 +55,20 @@ export default function Project() {
   }, [currentFile]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const rootPath = useMemo(() => [], []);
-  const [activeTab, setActiveTab] = useState<string | undefined>("operations");
+  const [, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<string | undefined>(
+    () => new URLSearchParams(location.search).get("tab") ?? "operations"
+  );
+  const setActiveTab = useCallback(
+    (value?: string | ((prev?: string) => string | undefined)) => {
+      setActiveTabState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value;
+        setSearchParams(...handleSearchParams({ tab: next }, true));
+        return next;
+      });
+    },
+    [setSearchParams]
+  );
   useHotkeys(useCustomHotkeys(setActiveTab), []);
   const operationRef = useClickOutside(() => {
     setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));

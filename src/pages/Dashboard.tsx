@@ -229,10 +229,6 @@ export default function Dashboard() {
                 <span className="text-sm text-gray-300">
                   {example.project.description}
                 </span>
-                <span className="text-xs text-gray-300">
-                  {example.project.files.length} file
-                  {example.project.files.length > 1 ? "s" : ""}
-                </span>
               </button>
             ))}
           </div>
