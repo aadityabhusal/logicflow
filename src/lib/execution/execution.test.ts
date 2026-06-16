@@ -250,6 +250,41 @@ describe("createOperationCall", () => {
     expect(result.id).toBe("custom-op-id");
   });
 
+  it("previews simple Remeda operations to infer result type", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const data = testNumber(6);
+    const result = await createOperationCall({
+      data,
+      name: "multiply",
+      parameters: [numberStatement(7)],
+      context: ctx,
+    });
+
+    expect(result.type.result).toEqual({ kind: "number" });
+  });
+
+  it("allows chaining after a previewed operation call", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const multiply = await createOperationCall({
+      data: testNumber(6),
+      name: "multiply",
+      parameters: [numberStatement(7)],
+      context: ctx,
+    });
+    const chained = await createOperationCall({
+      data: getStatementResult(
+        createStatement({ data: testNumber(6), operations: [multiply] }),
+        ctx
+      ),
+      name: "add",
+      parameters: [numberStatement(1)],
+      context: ctx,
+    });
+
+    expect(chained.value.name).toBe("add");
+    expect(chained.type.result).toEqual({ kind: "number" });
+  });
+
   it("preserves compatible parameter values from input", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testNumber(10);
@@ -278,7 +313,7 @@ describe("createOperationCall", () => {
     expect(cached?.data?.value).toBe(5);
   });
 
-  it("does not eagerly execute operation previews when disabled", async () => {
+  it("does not eagerly preview callback operations", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testArray(
       Array.from({ length: 1000 }, (_, index) => numberStatement(index)),
@@ -290,13 +325,35 @@ describe("createOperationCall", () => {
       name: "map",
       operationId: "large-map",
       context: ctx,
-      executePreview: false,
     });
 
     const cached = ctx.getResult("large-map")?.data;
     expect(result.type.result).toEqual({ kind: "unknown" });
     expect(cached?.type).toEqual(result.type.result);
     expect(cached?.value).toBeUndefined();
+  });
+
+  it("does not eagerly preview call operations but preserves callee result type", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const operation = testOperation(
+      [stringStatement("", "input")],
+      [stringStatement("result")],
+      "stringOp"
+    );
+    operation.type.result = { kind: "string" };
+
+    const call = await createOperationCall({
+      data: operation,
+      name: "call",
+      parameters: [stringStatement("hello")],
+      operationId: "call-preview",
+      context: ctx,
+    });
+    const cached = ctx.getResult("call-preview")?.data;
+
+    expect(call.type.result).toEqual({ kind: "string" });
+    expect(cached?.type).toEqual({ kind: "string" });
+    expect(cached?.value).toBe("");
   });
 });
 

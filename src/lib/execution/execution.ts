@@ -208,6 +208,30 @@ function getPersistentResultKey(
   ])}`;
 }
 
+function shouldExecutePreview(
+  operation: OperationListItem,
+  parameters: OperationType["parameters"]
+) {
+  if (operation.name === "call") return false;
+  if ("statements" in operation) return false;
+  if (operation.shouldCacheResult) return false;
+  if (parameters.slice(1).some((param) => param.type.kind === "operation"))
+    return false;
+  return true;
+}
+
+function getPreviewFallbackType(operation: OperationListItem, data: IData) {
+  if (operation.name === "call" && isDataOfType(data, "operation")) {
+    return data.type.result;
+  }
+  if (operation.expectedType) {
+    return typeof operation.expectedType === "function"
+      ? operation.expectedType(data)
+      : operation.expectedType;
+  }
+  return { kind: "unknown" } as DataType;
+}
+
 function setResult(
   context: Context,
   operation: IData<OperationType>,
@@ -251,14 +275,12 @@ export async function createOperationCall({
   parameters,
   context,
   operationId,
-  executePreview = true,
 }: {
   data: IData;
   name?: string;
   parameters?: IStatement[];
   context: Context;
   operationId?: string;
-  executePreview?: boolean;
 }): Promise<IData<OperationType>> {
   const data = resolveReference(_data, context);
   const operations = getFilteredOperations(data, context);
@@ -294,14 +316,11 @@ export async function createOperationCall({
       return newParam;
     });
 
-  const expectedType: DataType = newOperation.expectedType
-    ? typeof newOperation.expectedType === "function"
-      ? newOperation.expectedType(data)
-      : newOperation.expectedType
-    : { kind: "unknown" };
-  const result = executePreview
+  const shouldPreview = shouldExecutePreview(newOperation, operationParameters);
+  const fallbackType = getPreviewFallbackType(newOperation, data);
+  const result = shouldPreview
     ? await executeOperation(newOperation, data, newParameters, context)
-    : createData({ id: _operationId, type: expectedType });
+    : createData({ id: _operationId, type: fallbackType });
 
   const operationResult = { ...result, id: _operationId };
   context.setResult(_operationId, {

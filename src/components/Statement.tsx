@@ -235,7 +235,6 @@ const StatementComponent = ({
       const operation = await createOperationCall({
         data,
         context,
-        executePreview: false,
       });
       const operations = [...statement.operations];
       const index = operationId
