@@ -38,11 +38,19 @@ export async function readClipboardAs<K extends EntityClipboard["kind"]>(
   return entry as Extract<EntityClipboard, { kind: K }>;
 }
 
-function cloneStatementForPasteOver(source: IStatement, target: IStatement) {
+function cloneStatementForPasteOver(
+  source: IStatement,
+  target: IStatement,
+  path: EntityPath
+) {
   const cloned = cloneWithNewIds(source);
+  const removeName = path.some(
+    (part, index) => part === "value" && path[index + 1] === "parameters"
+  );
   return {
     ...cloned,
     id: target.id,
+    ...(removeName ? { name: undefined } : {}),
     ...(target.isRest ? { isRest: true } : {}),
     ...(target.isOptional ? { isOptional: true } : {}),
   };
@@ -106,7 +114,7 @@ export function useEntityContextMenu({
               const entry = await readClipboardAs("statement", "paste over");
               if (!entry) return;
               handleStatement(
-                cloneStatementForPasteOver(entry.value, statement),
+                cloneStatementForPasteOver(entry.value, statement, path),
                 false,
                 path
               );
@@ -200,7 +208,7 @@ export function useEntityContextMenu({
               }
               if (entry.kind === "statement") {
                 handleStatement(
-                  cloneStatementForPasteOver(entry.value, statement),
+                  cloneStatementForPasteOver(entry.value, statement, path),
                   false,
                   path
                 );

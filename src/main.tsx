@@ -94,6 +94,16 @@ const router = createBrowserRouter([
       useNavigationStore.getState().setNavigation({ result: undefined });
       return null;
     },
+    shouldRevalidate: ({ currentUrl, nextUrl, defaultShouldRevalidate }) => {
+      const removeTab = (url: URL) => {
+        const searchParams = new URLSearchParams(url.search);
+        searchParams.delete("tab");
+        return `${url.pathname}?${searchParams.toString()}`;
+      };
+      return (
+        removeTab(currentUrl) !== removeTab(nextUrl) && defaultShouldRevalidate
+      );
+    },
     HydrateFallback: LoadingFallback,
   },
   {
