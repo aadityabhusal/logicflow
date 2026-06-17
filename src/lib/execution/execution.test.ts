@@ -333,6 +333,39 @@ describe("createOperationCall", () => {
     expect(cached?.value).toBeUndefined();
   });
 
+  it("creates map callback item parameters with dictionary entries", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const itemType = {
+      kind: "dictionary" as const,
+      elementType: { kind: "string" as const },
+    };
+    const data = testArray([], itemType);
+
+    const result = await createOperationCall({
+      data,
+      name: "map",
+      context: ctx,
+    });
+
+    const callback = result.value.parameters[0].data;
+    expect(callback.type.kind).toBe("operation");
+    if (!isDataOfType(callback, "operation"))
+      throw new Error("Expected callback");
+    const itemParam = callback.value.parameters[0].data;
+    expect(itemParam.type).toEqual(itemType);
+    expect(itemParam.value).toEqual({
+      entries: [
+        {
+          key: "key",
+          value: expect.objectContaining({
+            name: undefined,
+            data: expect.objectContaining({ type: { kind: "string" } }),
+          }),
+        },
+      ],
+    });
+  });
+
   it("does not eagerly preview call operations but preserves callee result type", async () => {
     const ctx = createTestContext({ isSync: false });
     const operation = testOperation(

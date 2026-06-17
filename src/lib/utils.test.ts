@@ -1745,7 +1745,10 @@ describe("getTypeSignature", () => {
       },
       ctx
     );
-    expect(sig).toBeTruthy();
+    expect(sig).toBe('Error<"reference_error">');
+    expect(
+      getTypeSignature({ kind: "error", errorType: "runtime_error" }, ctx)
+    ).toBe('Error<"runtime_error">');
   });
 
   it("respects maxDepth", () => {

@@ -14,7 +14,7 @@ import {
   useUiConfigStore,
 } from "../lib/store";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { Button, Tooltip } from "@mantine/core";
+import { Button } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
 import { useMemo, useState, useEffect } from "react";
 import {
@@ -208,12 +208,27 @@ export function DetailsPanel() {
           </div>
         ) : null}
         <div className="p-1 border-b gap-1">
-          <div className="text-gray-300 mb-1.5">Type</div>
-          <Tooltip label={typeSignature}>
-            <div className="overflow-x-auto dropdown-scrollbar whitespace-nowrap">
-              {typeSignature}
-            </div>
-          </Tooltip>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-gray-300">Type</div>
+            <IconButton
+              icon={FaTextWidth}
+              title={wrapResult ? "Disable wrapping" : "Wrap type"}
+              size={14}
+              className={wrapResult ? "text-reserved" : ""}
+              aria-pressed={wrapResult}
+              onClick={() =>
+                setUiConfig((s) => ({ wrapResult: !s.wrapResult }))
+              }
+            />
+          </div>
+          <div className="overflow-x-auto dropdown-scrollbar">
+            <CodeHighlight
+              code={typeSignature}
+              language="typescript"
+              showLineNumbers={false}
+              wrap={wrapResult}
+            />
+          </div>
         </div>
         {detailsId && skipExecution && (
           <div className="p-1 border-b gap-1">

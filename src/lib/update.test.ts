@@ -141,6 +141,25 @@ describe("updateStatements", () => {
     }
   });
 
+  it("preserves object data when expected type is dictionary", () => {
+    const ctx = createTestContext({
+      expectedType: { kind: "dictionary", elementType: { kind: "string" } },
+    });
+    const original = stringStatement("old");
+    const changed = createStatement({
+      data: testObject([{ key: "name", value: stringStatement("updated") }]),
+    });
+    changed.id = original.id;
+
+    const result = updateStatements({
+      statements: [original],
+      context: ctx,
+      changedStatement: changed,
+    });
+
+    expect(isDataOfType(result[0].data, "object")).toBe(true);
+  });
+
   it("updates statement with condition data recursively", () => {
     const ctx = createTestContext();
     const condData = testCondition(

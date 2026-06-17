@@ -1325,7 +1325,7 @@ export function getTypeSignature(
       return type.kind;
 
     case "error":
-      return ErrorTypesData[type.errorType]?.name ?? "Unknown Error";
+      return `Error<${JSON.stringify(type.errorType)}>`;
 
     case "array":
       return `array<${getTypeSignature(type.elementType, context, maxDepth - 1)}>`;

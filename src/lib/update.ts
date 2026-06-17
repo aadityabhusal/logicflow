@@ -206,6 +206,10 @@ function updateStatement(
     options,
   });
   const currentType = currentStatement.data.type;
+  const expectedType =
+    currentType.kind === "object" || currentType.kind === "dictionary"
+      ? currentType
+      : (context.expectedType ?? currentType);
   const newType =
     currentType.kind === "union"
       ? {
@@ -215,10 +219,7 @@ function updateStatement(
             context,
           }),
         }
-      : inferTypeFromValue(updatedValue, {
-          ...context,
-          expectedType: context.expectedType ?? currentType,
-        });
+      : inferTypeFromValue(updatedValue, { ...context, expectedType });
   const newStatement = {
     ...currentStatement,
     data: {
