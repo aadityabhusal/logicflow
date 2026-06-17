@@ -17,6 +17,7 @@
     "@mantine/core": "^8.3.10",
     "@mantine/hooks": "^8.3.10",
     "@mantine/notifications": "^8.3.11",
+    "@saintno/comfyui-sdk": "^0.3.1",
     "@supabase/supabase-js": "^2.107.0",
     "@szhsin/react-menu": "^4.5.1",
     "ai": "^6.0.86",

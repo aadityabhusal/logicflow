@@ -2208,3 +2208,154 @@ describe("ffmpeg code generation", () => {
     expect(result).toContain('.normalize("fast")');
   });
 });
+
+describe("comfyui code generation", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "comfyui" }]);
+  });
+
+  const ApiType = {
+    kind: "instance" as const,
+    className: "comfyui.ComfyApi",
+    constructorArgs: [
+      { type: { kind: "string" as const }, name: "host" },
+    ] as OperationType["parameters"],
+  };
+
+  const PromptBuilderType = {
+    kind: "instance" as const,
+    className: "comfyui.PromptBuilder",
+    constructorArgs: [
+      {
+        type: {
+          kind: "dictionary" as const,
+          elementType: { kind: "unknown" as const },
+        },
+        name: "workflow",
+      },
+      {
+        type: {
+          kind: "array" as const,
+          elementType: { kind: "string" as const },
+        },
+        name: "inputKeys",
+      },
+      {
+        type: {
+          kind: "array" as const,
+          elementType: { kind: "string" as const },
+        },
+        name: "outputKeys",
+      },
+    ] as OperationType["parameters"],
+  };
+
+  it("generates namespace import for comfyui instance data", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    generateData(createData({ type: ApiType }), ctx);
+
+    expect(ctx.usedPackages.has("comfyui")).toBe(true);
+  });
+
+  it("generates method chaining for ComfyApi instance methods", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const initOp = createData({
+      type: {
+        kind: "operation" as const,
+        parameters: [{ type: ApiType }],
+        result: ApiType,
+      },
+      value: {
+        name: "init",
+        parameters: [],
+        statements: [],
+        source: { name: "comfyuiApi", callStyle: "method" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: ApiType }),
+      operations: [initOp],
+    });
+    const op = testOperation([], [stmt], "comfyInitTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as comfyui from '@saintno/comfyui-sdk'");
+    expect(result).toContain("new comfyui.ComfyApi(");
+    expect(result).toContain(".init()");
+  });
+
+  it("generates PromptBuilder instance data as package class constructor", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    const data = createData({ type: PromptBuilderType });
+
+    expect(generateData(data, ctx)).toContain("new comfyui.PromptBuilder(");
+    expect(ctx.usedPackages.has("comfyui")).toBe(true);
+  });
+
+  it("includes comfyui import when comfyui instance data is used", () => {
+    const ctx = createTestContext();
+    const stmt = createStatement({
+      data: createData({ type: ApiType }),
+    });
+    const op = testOperation([], [stmt], "usesComfy");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import * as comfyui from '@saintno/comfyui-sdk'");
+  });
+
+  it("omits comfyui import when no comfyui usage", () => {
+    const ctx = createTestContext();
+    const stmt = createStatement({ data: testString("hello") });
+    const op = testOperation([], [stmt], "noComfy");
+    const result = generateOperation(op, ctx);
+    expect(result).not.toContain("from '@saintno/comfyui-sdk'");
+  });
+
+  it("generates WorkflowBuilder instance data as package class constructor", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    const workflowBuilderType = {
+      kind: "instance" as const,
+      className: "comfyui.WorkflowBuilder",
+      constructorArgs: [] as OperationType["parameters"],
+    };
+    const data = createData({ type: workflowBuilderType });
+
+    expect(generateData(data, ctx)).toContain("new comfyui.WorkflowBuilder()");
+    expect(ctx.usedPackages.has("comfyui")).toBe(true);
+  });
+
+  it("generates build method chaining on WorkflowBuilder", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const workflowBuilderType = {
+      kind: "instance" as const,
+      className: "comfyui.WorkflowBuilder",
+      constructorArgs: [] as OperationType["parameters"],
+    };
+    const promptBuilderType = {
+      kind: "instance" as const,
+      className: "comfyui.PromptBuilder",
+      constructorArgs: [] as OperationType["parameters"],
+    };
+    const buildOp = createData({
+      type: {
+        kind: "operation" as const,
+        parameters: [{ type: workflowBuilderType }],
+        result: promptBuilderType,
+      },
+      value: {
+        name: "build",
+        parameters: [],
+        statements: [],
+        source: { name: "comfyuiWorkflowBuilder", callStyle: "method" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: workflowBuilderType }),
+      operations: [buildOp],
+    });
+    const op = testOperation([], [stmt], "comfyBuildTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("new comfyui.WorkflowBuilder()");
+    expect(result).toContain(".build()");
+  });
+});

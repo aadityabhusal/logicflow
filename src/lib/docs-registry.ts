@@ -158,6 +158,22 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
       `https://supabase.com/docs/reference/javascript/${name.toLowerCase()}`,
     displayName: "Supabase Functions",
   },
+  comfyuiApi: {
+    urlPattern: () => `https://github.com/tctien342/comfyui-sdk#comfyapi`,
+    displayName: "ComfyUI API",
+  },
+  comfyuiPool: {
+    urlPattern: () => `https://github.com/tctien342/comfyui-sdk#comfypool`,
+    displayName: "ComfyUI Pool",
+  },
+  comfyuiPromptBuilder: {
+    urlPattern: () => `https://github.com/tctien342/comfyui-sdk#promptbuilder`,
+    displayName: "ComfyUI PromptBuilder",
+  },
+  comfyuiCallWrapper: {
+    urlPattern: () => `https://github.com/tctien342/comfyui-sdk#callwrapper`,
+    displayName: "ComfyUI CallWrapper",
+  },
 };
 
 export function getDocsUrl(source?: OperationSource, operationName?: string) {

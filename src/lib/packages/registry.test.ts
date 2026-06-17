@@ -577,3 +577,95 @@ describe("getEnabledPackages", () => {
     ]);
   });
 });
+
+describe("comfyui namespace-import package", () => {
+  beforeEach(() => {
+    resetPackageRegistry();
+  });
+
+  it("PACKAGE_REGISTRY has namespace importKind", () => {
+    expect(PACKAGE_REGISTRY["comfyui"]).toBeDefined();
+    expect(PACKAGE_REGISTRY["comfyui"].importKind).toBe("namespace");
+    expect(PACKAGE_REGISTRY["comfyui"].importName).toBe("comfyui");
+  });
+
+  it("SOURCE_PACKAGE_MAP maps all comfyui source names", () => {
+    expect(SOURCE_PACKAGE_MAP["comfyuiApi"]).toBe("comfyui");
+    expect(SOURCE_PACKAGE_MAP["comfyuiPool"]).toBe("comfyui");
+    expect(SOURCE_PACKAGE_MAP["comfyuiPromptBuilder"]).toBe("comfyui");
+    expect(SOURCE_PACKAGE_MAP["comfyuiCallWrapper"]).toBe("comfyui");
+    expect(SOURCE_PACKAGE_MAP["comfyuiWorkflowBuilder"]).toBe("comfyui");
+  });
+
+  it("loads comfyui operations", async () => {
+    await loadPackage("comfyui");
+
+    const ops = loadedPackageOperations.get("comfyui");
+    expect(ops).toBeDefined();
+    expect(ops!.length).toBeGreaterThan(0);
+
+    const apiOp = ops!.find((op) => op.name === "comfyui.ComfyApi");
+    expect(apiOp).toBeUndefined();
+
+    const initOp = ops!.find((op) => op.name === "comfyui.init");
+    expect(initOp).toBeDefined();
+
+    const buildOp = ops!.find((op) => op.name === "comfyui.build");
+    expect(buildOp).toBeDefined();
+
+    const inputOp = ops!.find((op) => op.name === "comfyui.input");
+    expect(inputOp).toBeDefined();
+
+    const runOp = ops!.find((op) => op.name === "comfyui.run");
+    expect(runOp).toBeDefined();
+  });
+
+  it("registers instance types on load", async () => {
+    await loadPackage("comfyui");
+
+    const instanceTypes = getAllInstanceTypes();
+    expect(instanceTypes["comfyui.ComfyApi"]).toBeDefined();
+    expect(instanceTypes["comfyui.ComfyPool"]).toBeDefined();
+    expect(instanceTypes["comfyui.PromptBuilder"]).toBeDefined();
+    expect(instanceTypes["comfyui.CallWrapper"]).toBeDefined();
+    expect(instanceTypes["comfyui.WorkflowBuilder"]).toBeDefined();
+  });
+
+  it("unloads operations and instance types", async () => {
+    await loadPackage("comfyui");
+    expect(loadedPackageOperations.has("comfyui")).toBe(true);
+
+    await unloadPackage("comfyui");
+    expect(loadedPackageOperations.has("comfyui")).toBe(false);
+    expect(getAllInstanceTypes()["comfyui.ComfyApi"]).toBeUndefined();
+  });
+
+  it("does not reload an already-loaded package", async () => {
+    await loadPackage("comfyui");
+    const opsFirst = loadedPackageOperations.get("comfyui");
+
+    await loadPackage("comfyui");
+    const opsSecond = loadedPackageOperations.get("comfyui");
+
+    expect(opsSecond).toBe(opsFirst);
+  });
+
+  it("registers constructor parameters on instance types", async () => {
+    await loadPackage("comfyui");
+    const instanceTypes = getAllInstanceTypes();
+
+    expect(instanceTypes["comfyui.ComfyApi"].constructorArgs).toMatchObject([
+      { name: "host", type: { kind: "string" } },
+      { name: "clientId", isOptional: true, type: { kind: "string" } },
+      { name: "opts", isOptional: true, type: { kind: "dictionary" } },
+    ]);
+
+    expect(
+      instanceTypes["comfyui.PromptBuilder"].constructorArgs
+    ).toMatchObject([
+      { name: "workflow", type: { kind: "dictionary" } },
+      { name: "inputKeys", type: { kind: "array" } },
+      { name: "outputKeys", type: { kind: "array" } },
+    ]);
+  });
+});
