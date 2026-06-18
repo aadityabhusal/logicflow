@@ -345,8 +345,36 @@ describe("generateOperation", () => {
     });
     const op = testOperation([], [stmt], "withPipe");
     const result = generateOperation(op, ctx);
-    expect(result).toContain("R.pipe");
+    expect(result).toContain("_.pipe");
     expect(result).toContain("_.length");
+  });
+
+  it("generates remeda operations through built-in namespace", () => {
+    const ctx = createTestContext();
+    const addOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "number" } },
+          { type: { kind: "number" } },
+        ],
+        result: { kind: "number" },
+      },
+      value: {
+        name: "add",
+        parameters: [numberStatement(1)],
+        statements: [],
+        source: { name: "remeda" },
+      },
+    });
+    const stmt = createStatement({
+      data: testNumber(2),
+      operations: [addOp],
+    });
+    const op = testOperation([], [stmt], "withRemedaPipe");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("_.pipe(2, _.add(1))");
+    expect(result).not.toContain("from 'remeda'");
   });
 
   it("generates isTypeOf with an example value parameter", () => {
@@ -383,7 +411,7 @@ describe("generateOperation", () => {
     expect(result).toContain("_.isTypeOf(0)");
   });
 
-  it("generates await R.pipeAsync for async operations", () => {
+  it("generates await _.pipeAsync for async operations", () => {
     const ctx = createTestContext();
     const awaitOp = createData({
       type: {
@@ -611,7 +639,7 @@ describe("wretch code generation", () => {
     const op = testOperation([], [stmt], "wretchTest");
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
-    expect(result).toContain('R.pipe("https://api.example.com", wretch)');
+    expect(result).toContain('_.pipe("https://api.example.com", wretch)');
   });
 
   it("generates same-named package member operations without treating them as imports", () => {
@@ -641,7 +669,7 @@ describe("wretch code generation", () => {
 
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe("https://api.example.com", wretch.wretch)'
+      '_.pipe("https://api.example.com", wretch.wretch)'
     );
   });
 
@@ -704,7 +732,7 @@ describe("wretch code generation", () => {
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe("https://api.example.com", wretch).url("/users")'
+      '_.pipe("https://api.example.com", wretch).url("/users")'
     );
   });
 
@@ -847,7 +875,7 @@ describe("wretch code generation", () => {
     const result = generateOperation(op, ctx);
     expect(result).toContain("import wretch from 'wretch'");
     expect(result).toContain(
-      'R.pipe("https://api.example.com", wretch).url("/users").get().json()'
+      '_.pipe("https://api.example.com", wretch).url("/users").get().json()'
     );
   });
 });
@@ -991,7 +1019,7 @@ describe("rowguard code generation", () => {
     const result = generateOperation(op, ctxWithAlias);
 
     expect(result).toContain("import * as Rg from 'rowguard'");
-    expect(result).toContain('R.pipe("myTable", Rg.policies.userOwned)');
+    expect(result).toContain('_.pipe("myTable", Rg.policies.userOwned)');
   });
 
   it("generates dotted package function call for policies.userOwned with no extra args", () => {
@@ -1021,7 +1049,7 @@ describe("rowguard code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
-    expect(result).toContain('R.pipe("myTable", rowguard.policies.userOwned)');
+    expect(result).toContain('_.pipe("myTable", rowguard.policies.userOwned)');
   });
 
   it("generates dotted package function with arguments for policies.userOwned", () => {
@@ -1052,7 +1080,7 @@ describe("rowguard code generation", () => {
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
     expect(result).toContain(
-      'R.pipe("myTable", (arg) => rowguard.policies.userOwned(arg, "SELECT"))'
+      '_.pipe("myTable", (arg) => rowguard.policies.userOwned(arg, "SELECT"))'
     );
   });
 
@@ -1084,7 +1112,7 @@ describe("rowguard code generation", () => {
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
     expect(result).toContain(
-      'R.pipe("myTable", (arg) => rowguard.policies.tenantIsolation(arg, "tenant_col"))'
+      '_.pipe("myTable", (arg) => rowguard.policies.tenantIsolation(arg, "tenant_col"))'
     );
   });
 
@@ -1115,7 +1143,7 @@ describe("rowguard code generation", () => {
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
     expect(result).toContain(
-      'R.pipe("myTable", rowguard.policies.publicAccess)'
+      '_.pipe("myTable", rowguard.policies.publicAccess)'
     );
   });
 
@@ -1147,7 +1175,7 @@ describe("rowguard code generation", () => {
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
     expect(result).toContain(
-      'R.pipe("myTable", (arg) => rowguard.policies.roleAccess(arg, "admin"))'
+      '_.pipe("myTable", (arg) => rowguard.policies.roleAccess(arg, "admin"))'
     );
   });
 
@@ -1174,7 +1202,7 @@ describe("rowguard code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
-    expect(result).toContain('R.pipe("myTable", rowguard.policies.userOwned)');
+    expect(result).toContain('_.pipe("myTable", rowguard.policies.userOwned)');
   });
 
   it("generates zero-arg package call for auth.uid", () => {
@@ -1200,7 +1228,7 @@ describe("rowguard code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
-    expect(result).toContain("R.pipe(undefined, rowguard.auth.uid)");
+    expect(result).toContain("_.pipe(undefined, rowguard.auth.uid)");
   });
 
   it("generates package call with arg for session.get", () => {
@@ -1230,7 +1258,7 @@ describe("rowguard code generation", () => {
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
     expect(result).toContain(
-      'R.pipe("app.current_tenant_id", (arg) => rowguard.session.get(arg, "app.tenant_id"))'
+      '_.pipe("app.current_tenant_id", (arg) => rowguard.session.get(arg, "app.tenant_id"))'
     );
   });
 
@@ -1261,7 +1289,7 @@ describe("rowguard code generation", () => {
 
     expect(result).toContain("import * as rowguard from 'rowguard'");
     expect(result).toContain(
-      'R.pipe("app.current_tenant_id", rowguard.session.get)'
+      '_.pipe("app.current_tenant_id", rowguard.session.get)'
     );
   });
 });
@@ -1685,7 +1713,7 @@ describe("condition code generation", () => {
     const stmt = createStatement({ data: condData });
     const op = testOperation([], [stmt], "pipeCondOp");
     const result = generateOperation(op, ctx);
-    expect(result).toContain("R.pipe");
+    expect(result).toContain("_.pipe");
     expect(result).toContain("_.lessThan");
     expect(result).toContain("?");
   });
@@ -1888,7 +1916,7 @@ describe("faker code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import { faker } from '@faker-js/faker';");
-    expect(result).toContain("R.pipe(undefined, faker.person.firstName)");
+    expect(result).toContain("_.pipe(undefined, faker.person.firstName)");
   });
 
   it("generates faker function call with arguments", () => {
@@ -1915,7 +1943,7 @@ describe("faker code generation", () => {
 
     expect(result).toContain("import { faker } from '@faker-js/faker';");
     expect(result).toContain(
-      "R.pipe(undefined, (arg) => faker.number.int(arg, 0))"
+      "_.pipe(undefined, (arg) => faker.number.int(arg, 0))"
     );
   });
 
@@ -1942,7 +1970,7 @@ describe("faker code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import { faker } from '@faker-js/faker';");
-    expect(result).toContain("R.pipe(undefined, faker.string.uuid)");
+    expect(result).toContain("_.pipe(undefined, faker.string.uuid)");
   });
 
   it("omits faker import when no faker usage", () => {
@@ -2007,7 +2035,7 @@ describe("faker code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain("import { faker as f } from '@faker-js/faker';");
-    expect(result).toContain("R.pipe(undefined, f.person.firstName)");
+    expect(result).toContain("_.pipe(undefined, f.person.firstName)");
   });
 
   it("generates aliased package name for built-in operation references before package sync", async () => {
@@ -2041,7 +2069,7 @@ describe("faker code generation", () => {
       const result = generateOperation(op, ctx);
 
       expect(result).toContain("import { faker as f } from '@faker-js/faker';");
-      expect(result).toContain("R.pipe(f.word.words, (arg) => arg())");
+      expect(result).toContain("_.pipe(f.word.words, (arg) => arg())");
       expect(result).not.toContain("./faker.word.words.js");
     } finally {
       await syncPackageRegistry([{ name: "faker" }]);
@@ -2179,7 +2207,7 @@ describe("ffmpeg code generation", () => {
     const op = testOperation([], [stmt], "ffmpegToCommandTest");
     const result = generateOperation(op, ctx);
 
-    expect(result).toContain("R.pipe(ffmpeg.command, ffmpeg.toCommand)");
+    expect(result).toContain("_.pipe(ffmpeg.command, ffmpeg.toCommand)");
   });
 
   it("generates full ffmpeg pipeline with function-style chain calls", () => {

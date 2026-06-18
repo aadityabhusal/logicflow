@@ -1,6 +1,6 @@
 import { IData, OperationType } from "../types";
 import { OperationListItem } from "../execution/types";
-import { createOperationHandler, getObjectParam } from "./remeda";
+import { createOperationHandler, FunctionKeys, getObjectParam } from "./remeda";
 import * as _ from "./runtime";
 import { resolveUnionType } from "../utils";
 
@@ -45,7 +45,7 @@ function getContainerParam(): OperationType["parameters"][number] {
 const sameType = (data: IData) => data.type;
 
 const immerOperationList: (Omit<OperationListItem, "handler" | "source"> & {
-  name: keyof typeof _;
+  name: FunctionKeys<typeof _>;
 })[] = [
   {
     name: "setIn",

@@ -275,13 +275,11 @@ describe("resolveNpmDependencies", () => {
     const files = [
       {
         path: "src/myOp.js",
-        content:
-          "import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';",
+        content: "import * as _ from './lib/built-in.js';",
       },
     ];
     const result = resolveNpmDependencies(project, files);
     const names = result.map((d) => d.name);
-    expect(names).toContain("remeda");
     expect(names).not.toContain("built-in.js");
   });
 });
