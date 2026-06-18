@@ -31,6 +31,17 @@ export async function deployToPlatform(
     };
   }
 
+  if (target.platform !== "vercel" && target.platform !== "supabase") {
+    return {
+      success: false,
+      error: `Unknown platform: ${(target as DeploymentTarget).platform}`,
+    };
+  }
+
+  if (target.platform === "supabase" && !target.projectId) {
+    return { success: false, error: "Supabase project reference is required" };
+  }
+
   onProgress?.({ stage: "generating", message: "Generating project files" });
 
   const { files, errors } = await generateDeployableProject(
@@ -62,10 +73,5 @@ export async function deployToPlatform(
         { projectId: target.projectId, triggerNames, envVars },
         onProgress
       );
-    default:
-      return {
-        success: false,
-        error: `Unknown platform: ${(target as DeploymentTarget).platform}`,
-      };
   }
 }

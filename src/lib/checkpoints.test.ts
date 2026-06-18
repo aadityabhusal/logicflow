@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProjectCheckpoint,
   restoreProjectFromCheckpoint,
@@ -6,11 +6,17 @@ import {
 import { createTestProject, createOperationFile } from "@/tests/helpers";
 import { Project } from "./types";
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("createProjectCheckpoint", () => {
   it("creates a checkpoint with a deep-cloned snapshot", () => {
     const project = createTestProject({ name: "Original" });
     const checkpoint = createProjectCheckpoint(project, "My Checkpoint");
 
+    expect(checkpoint.id).toBeDefined();
+    expect(checkpoint.id).not.toBe(project.id);
     expect(checkpoint.projectId).toBe(project.id);
     expect(checkpoint.name).toBe("My Checkpoint");
     expect(checkpoint.snapshot.name).toBe("Original");
@@ -18,7 +24,7 @@ describe("createProjectCheckpoint", () => {
   });
 
   it("excludes id, createdAt, and updatedAt from snapshot", () => {
-    const project = createTestProject({ name: "Test" });
+    const project = { ...createTestProject({ name: "Test" }), updatedAt: 123 };
     const checkpoint = createProjectCheckpoint(project);
 
     expect(checkpoint.snapshot).not.toHaveProperty("id");
@@ -27,10 +33,22 @@ describe("createProjectCheckpoint", () => {
   });
 
   it("generates a default name from timestamp when no name provided", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 4, 12, 0));
     const project = createTestProject();
     const checkpoint = createProjectCheckpoint(project);
 
-    expect(checkpoint.name).toMatch(/^Checkpoint /);
+    expect(checkpoint.name).toBe("Checkpoint May 4, 12:00 PM");
+    expect(checkpoint.createdAt).toBe(Date.now());
+  });
+
+  it("falls back to the default name when given a blank name", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 4, 12, 0));
+
+    expect(createProjectCheckpoint(createTestProject(), "").name).toBe(
+      "Checkpoint May 4, 12:00 PM"
+    );
   });
 
   it("does not mutate when project changes after checkpoint creation", () => {
@@ -67,13 +85,15 @@ describe("restoreProjectFromCheckpoint", () => {
   });
 
   it("sets updatedAt to current time on restore", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 4, 12, 0));
     const project = createTestProject();
     const checkpoint = createProjectCheckpoint(project);
 
-    const beforeRestore = Date.now();
+    vi.setSystemTime(new Date(2026, 4, 4, 12, 5));
     const restored = restoreProjectFromCheckpoint(project, checkpoint);
 
-    expect(restored.updatedAt).toBeGreaterThanOrEqual(beforeRestore);
+    expect(restored.updatedAt).toBe(Date.now());
   });
 
   it("applies checkpoint snapshot files", () => {
@@ -96,16 +116,16 @@ describe("restoreProjectFromCheckpoint", () => {
   });
 
   it("does not mutate the checkpoint snapshot during restore", () => {
-    const project = createTestProject({ name: "Original" });
+    const file = createOperationFile("greet");
+    const project = createTestProject({ name: "Original", files: [file] });
     const checkpoint = createProjectCheckpoint(project);
 
-    const snapshotName = checkpoint.snapshot.name;
-    const snapshotFiles = checkpoint.snapshot.files;
+    const restored = restoreProjectFromCheckpoint(project, checkpoint);
+    restored.name = "Changed";
+    restored.files[0].name = "renamed";
 
-    restoreProjectFromCheckpoint(project, checkpoint);
-
-    expect(checkpoint.snapshot.name).toBe(snapshotName);
-    expect(checkpoint.snapshot.files).toBe(snapshotFiles);
+    expect(checkpoint.snapshot.name).toBe("Original");
+    expect(checkpoint.snapshot.files[0].name).toBe("greet");
   });
 
   it("preserves deployment config in restored project", () => {

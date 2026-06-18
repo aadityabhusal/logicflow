@@ -152,6 +152,19 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
 
     const wretchOp = ops.find((op) => op.name === "wretch");
     expect(wretchOp).toBeDefined();
+    expect(wretchOp?.source).toMatchObject({
+      name: "wretch",
+      packageCallTarget: "import",
+    });
+  });
+
+  it("preserves package source metadata on loaded operations", async () => {
+    await loadPackage("rowguard");
+    const ops = loadedPackageOperations.get("rowguard")!;
+
+    expect(ops.find((op) => op.name === "rowguard.on")?.source).toMatchObject({
+      name: "rowguardPolicyBuilder",
+    });
   });
 
   it("does not reload an already-loaded package", async () => {

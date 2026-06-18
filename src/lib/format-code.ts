@@ -500,6 +500,9 @@ export function generateOperation(
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
   const packageImports = generateImports(codeGenContext);
-  const imports = `import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
+  const optionalImports = [packageImports, userImports]
+    .filter(Boolean)
+    .join("\n");
+  const imports = `import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';\n${optionalImports ? `${optionalImports}\n` : ""}`;
   return `${imports}\nconst ${currentOperationName} = ${callback};\nexport default ${currentOperationName};`;
 }

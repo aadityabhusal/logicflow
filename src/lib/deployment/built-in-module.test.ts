@@ -39,6 +39,12 @@ describe("generateBuiltInModule", () => {
     expect(generateBuiltInModule()).toContain('import { purry } from "remeda"');
   });
 
+  it("imports immer produce because mutation helpers depend on it", () => {
+    expect(generateBuiltInModule()).toContain(
+      'import { produce } from "immer"'
+    );
+  });
+
   it("clones Request/Response instances before reading body content", () => {
     const code = generateBuiltInModule();
     expect(code).toContain("instance.clone().json()");

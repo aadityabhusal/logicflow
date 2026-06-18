@@ -373,8 +373,10 @@ describe("runExecutionInWorker", () => {
     onerror?: (e: ErrorEvent) => void;
     messages: unknown[] = [];
     terminated = false;
+    constructorArgs: unknown[];
 
-    constructor() {
+    constructor(...args: unknown[]) {
+      this.constructorArgs = args;
       workerCount++;
       workers.push(this);
     }
@@ -442,6 +444,18 @@ describe("runExecutionInWorker", () => {
     expect(workers[0].messages[0]).toEqual(
       expect.objectContaining({ type: "run" })
     );
+
+    void promise.catch(() => undefined);
+  });
+
+  it("constructs a module worker for the execution worker script", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    expect(String(workers[0].constructorArgs[0])).toContain(
+      "execution.worker.ts"
+    );
+    expect(workers[0].constructorArgs[1]).toEqual({ type: "module" });
 
     void promise.catch(() => undefined);
   });
@@ -643,6 +657,46 @@ describe("runExecutionInWorker", () => {
     respondToWorker(workers[0], firstRunId, { results: [] });
 
     await expect(promise).rejects.toThrow("Execution cancelled");
+  });
+
+  it("ignores stale runId responses while the active run is pending", async () => {
+    const promise = executionWorkerClient.run(makeRequest());
+    let settled = false;
+    promise.finally(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    const worker = workers[0];
+    const activeRunId = (worker.messages[0] as { runId: string }).runId;
+    respondToWorker(worker, "stale-run-id");
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    respondToWorker(worker, activeRunId, {
+      workerContexts: [
+        ["ctx", { scopeId: "done", packageAliases: {}, variables: [] }],
+      ],
+    });
+
+    await expect(promise).resolves.toMatchObject({
+      workerContexts: [
+        ["ctx", { scopeId: "done", packageAliases: {}, variables: [] }],
+      ],
+    });
+  });
+
+  it("worker errors reject active and pending runs", async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    workers[0].onerror?.({ message: "Worker exploded" } as ErrorEvent);
+
+    await expect(first).rejects.toThrow("Worker exploded");
+    await expect(second).rejects.toThrow("Execution cancelled");
   });
 
   it("rejects when the worker completes with an error", async () => {

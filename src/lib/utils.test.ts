@@ -35,8 +35,14 @@ import {
   getStatementResult,
   getCacheKey,
   createContext,
+  createInstance,
+  createRuntimeError,
+  getFreeVariableNames,
   getContextExpectedTypes,
+  getPosition,
+  getStatementsResultType,
   createLocalContext,
+  moveArrayItemBy,
   operationToListItem,
   isPendingContext,
   getConditionResult,
@@ -236,6 +242,48 @@ describe("createStatement", () => {
   it("creates statement with isOptional flag", () => {
     const stmt = createStatement({ isOptional: true });
     expect(stmt.isOptional).toBe(true);
+  });
+});
+
+describe("moveArrayItemBy", () => {
+  it("moves the matched item up or down without mutating the input", () => {
+    const items = ["a", "b", "c"];
+
+    expect(moveArrayItemBy(items, (item) => item === "b", "up")).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+    expect(moveArrayItemBy(items, (item) => item === "b", "down")).toEqual([
+      "a",
+      "c",
+      "b",
+    ]);
+    expect(items).toEqual(["a", "b", "c"]);
+  });
+
+  it("returns null when no move is possible", () => {
+    expect(
+      moveArrayItemBy(["a", "b"], (item) => item === "a", "up")
+    ).toBeNull();
+    expect(
+      moveArrayItemBy(["a", "b"], (item) => item === "b", "down")
+    ).toBeNull();
+    expect(
+      moveArrayItemBy(["a", "b"], (item) => item === "x", "down")
+    ).toBeNull();
+  });
+});
+
+describe("getPosition", () => {
+  it.each([
+    ["only", 0, 0],
+    ["only", 0, 1],
+    ["first", 0, 3],
+    ["last", 2, 3],
+    [undefined, 1, 3],
+  ] as const)("returns %s for index %i of %i", (expected, index, length) => {
+    expect(getPosition(index, length)).toBe(expected);
   });
 });
 
@@ -458,7 +506,7 @@ describe("isTypeCompatible", () => {
     ).toBe(true);
   });
 
-  it("never is compatible with anything as source", () => {
+  it("never is not compatible as source", () => {
     expect(isTypeCompatible({ kind: "never" }, { kind: "string" }, ctx)).toBe(
       false
     );
@@ -580,6 +628,39 @@ describe("isTypeCompatible", () => {
     ).toBe(true);
   });
 
+  it("operation types are incompatible when target requires extra params", () => {
+    const source: DataType = {
+      kind: "operation",
+      parameters: [{ type: { kind: "string" } }],
+      result: { kind: "number" },
+    };
+    const target: DataType = {
+      kind: "operation",
+      parameters: [{ type: { kind: "string" } }, { type: { kind: "number" } }],
+      result: { kind: "number" },
+    };
+
+    expect(isTypeCompatible(source, target, ctx)).toBe(false);
+  });
+
+  it("operation types allow missing optional target params", () => {
+    const source: DataType = {
+      kind: "operation",
+      parameters: [{ type: { kind: "string" } }],
+      result: { kind: "number" },
+    };
+    const target: DataType = {
+      kind: "operation",
+      parameters: [
+        { type: { kind: "string" } },
+        { type: { kind: "number" }, isOptional: true },
+      ],
+      result: { kind: "number" },
+    };
+
+    expect(isTypeCompatible(source, target, ctx)).toBe(true);
+  });
+
   it("operation with rest parameter is compatible", () => {
     expect(
       isTypeCompatible(
@@ -659,6 +740,19 @@ describe("isTypeCompatible", () => {
         ctx
       )
     ).toBe(true);
+  });
+
+  it("union compatibility is order independent", () => {
+    const u1: UnionType = {
+      kind: "union",
+      types: [{ kind: "string" }, { kind: "number" }, { kind: "boolean" }],
+    };
+    const u2: UnionType = {
+      kind: "union",
+      types: [{ kind: "boolean" }, { kind: "string" }, { kind: "number" }],
+    };
+
+    expect(isTypeCompatible(u1, u2, ctx)).toBe(true);
   });
 
   it("union types are incompatible with different type counts", () => {
@@ -2066,6 +2160,44 @@ describe("createDataFromRawValue", () => {
   });
 });
 
+describe("createInstance", () => {
+  it("constructs registered instance types from raw constructor argument data", () => {
+    const ctx = createTestContext();
+    const instance = createInstance(
+      "Date",
+      [
+        createData({
+          type: { kind: "string" },
+          value: "2024-06-15T00:00:00.000Z",
+        }),
+      ],
+      ctx
+    );
+
+    expect(instance).toBeInstanceOf(Date);
+    expect((instance as Date).toISOString()).toBe("2024-06-15T00:00:00.000Z");
+  });
+
+  it("throws for unknown instance types", () => {
+    expect(() => createInstance("Missing", [], createTestContext())).toThrow(
+      'Instance type "Missing" not found'
+    );
+  });
+});
+
+describe("createRuntimeError", () => {
+  it("wraps Error instances as runtime_error data", () => {
+    const result = createRuntimeError(new Error("boom"));
+
+    expect(result.type).toEqual({ kind: "error", errorType: "runtime_error" });
+    expect(result.value.reason).toBe("boom");
+  });
+
+  it("stringifies non-Error thrown values", () => {
+    expect(createRuntimeError("boom").value.reason).toBe("boom");
+  });
+});
+
 describe("getRawValueFromData", () => {
   const ctx = createTestContext();
 
@@ -2185,6 +2317,32 @@ describe("getRawValueFromData", () => {
     const op = testOperation([], [stringStatement("hello")], "myOp");
     const result = getRawValueFromData(op, ctx);
     expect(typeof result).toBe("function");
+  });
+
+  it("operation functions execute with positional raw arguments", async () => {
+    const executeOperationMock = vi
+      .fn()
+      .mockResolvedValue(testString("called"));
+    const ctxWithExecutor = createTestContext({
+      isSync: false,
+      executeOperation: executeOperationMock,
+    });
+    const op = testOperation(
+      [stringStatement("", "input"), numberStatement(0, "count")],
+      [],
+      "myOp"
+    );
+
+    const fn = getRawValueFromData(op, ctxWithExecutor) as (
+      input: string,
+      count: number
+    ) => Promise<unknown>;
+
+    await expect(fn("hello", 3)).resolves.toBe("called");
+    expect(executeOperationMock).toHaveBeenCalledTimes(1);
+    const [, firstArg, restArgs] = executeOperationMock.mock.calls[0];
+    expect(firstArg.value).toBe("hello");
+    expect(restArgs[0].data.value).toBe(3);
   });
 });
 
@@ -2811,7 +2969,7 @@ describe("updateContextWithNarrowedTypes", () => {
     expect(falseResult.variables.get("x")?.data.type.kind).toBe("number");
   });
 
-  it("does not remove variable from true branch when narrowed type was never due to missing narrowType", () => {
+  it("removes variable from true branch when narrowed type is never", () => {
     const original = new Map([["x", { data: testNumber(10) }]]);
     const narrowedWithNever = new Map([
       ["x", { data: createData({ type: { kind: "never" } }) }],
@@ -2837,6 +2995,38 @@ describe("updateContextWithNarrowedTypes", () => {
     );
     expect(falseResult.variables.has("x")).toBe(true);
     expect(falseResult.variables.get("x")?.data.type.kind).toBe("number");
+  });
+});
+
+describe("getStatementsResultType", () => {
+  it("returns the last fallthrough statement type when there are no returns", () => {
+    const ctx = createTestContext();
+
+    expect(
+      getStatementsResultType([stringStatement("a"), numberStatement(1)], ctx)
+    ).toEqual({ kind: "number" });
+  });
+
+  it("unions explicit return types with fallthrough type", () => {
+    const ctx = createTestContext();
+    const result = getStatementsResultType(
+      [
+        createStatement({ data: testString("early"), controlFlow: "return" }),
+        numberStatement(1),
+      ],
+      ctx
+    );
+
+    expect(result.kind).toBe("union");
+    if (result.kind === "union") {
+      expect(result.types).toEqual([{ kind: "string" }, { kind: "number" }]);
+    }
+  });
+
+  it("returns undefined for empty statements", () => {
+    expect(getStatementsResultType([], createTestContext())).toEqual({
+      kind: "undefined",
+    });
   });
 });
 
@@ -3130,6 +3320,39 @@ describe("createFileVariables", () => {
   });
 });
 
+describe("getFreeVariableNames", () => {
+  it("returns non-env, non-operation referenced variables", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("external", { data: testNumber(1) });
+    ctx.variables.set("API_KEY", { data: testString("secret"), isEnv: true });
+    ctx.variables.set("helper", { data: testOperation([], [], "helper") });
+    const operation = testOperation(
+      [],
+      [
+        createStatement({ data: testReference("external", "external-id") }),
+        createStatement({ data: testReference("API_KEY", "env-id") }),
+        createStatement({ data: testReference("helper", "helper-id") }),
+      ],
+      "usesExternal"
+    );
+
+    expect(getFreeVariableNames(operation, ctx)).toEqual(new Set(["external"]));
+  });
+
+  it("finds references inside nested operation values", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("external", { data: testNumber(1) });
+    const nested = testOperation(
+      [],
+      [createStatement({ data: testReference("external", "external-id") })],
+      "nested"
+    );
+    const operation = testOperation([], [createStatement({ data: nested })]);
+
+    expect(getFreeVariableNames(operation, ctx)).toEqual(new Set(["external"]));
+  });
+});
+
 describe("getIsAsync", () => {
   it("returns false for statements with no operations", () => {
     const stmts = [stringStatement("a"), numberStatement(1)];
@@ -3197,7 +3420,7 @@ describe("getIsAsync", () => {
     expect(getIsAsync([])).toBe(false);
   });
 
-  it("checks nested operations inside operation value statements", () => {
+  it("does not inspect nested operations inside operation value statements", () => {
     const awaitOp = createData({
       type: {
         kind: "operation",
@@ -3658,6 +3881,89 @@ describe("getDataDropdownList", () => {
       .find((item) => item.value === "faker.word.words");
 
     expect(option?.label).toBe("f.word.words");
+  });
+
+  it("hides built-in variables until there is a search query", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("length", {
+      data: createData<OperationType>({
+        id: "builtin:length",
+        type: {
+          kind: "operation",
+          parameters: [{ type: { kind: "string" } }],
+          result: { kind: "number" },
+        },
+        value: { name: "length", parameters: [], statements: [] },
+      }),
+    });
+
+    const withoutSearch = getDataDropdownList({
+      data: createData(),
+      onSelect: vi.fn(),
+      context: ctx,
+    });
+    const withSearch = getDataDropdownList({
+      data: createData(),
+      onSelect: vi.fn(),
+      context: ctx,
+      search: "len",
+    });
+
+    expect(withoutSearch.find(([group]) => group === "Built-in")?.[1]).toEqual(
+      []
+    );
+    expect(
+      withSearch
+        .find(([group]) => group === "Built-in")?.[1]
+        .some((item) => item.value === "length")
+    ).toBe(true);
+  });
+
+  it("excludes incompatible variables when expected type is enforced", () => {
+    const ctx = createTestContext({
+      expectedType: { kind: "number" },
+      enforceExpectedType: true,
+    });
+    ctx.variables.set("name", { data: testString("Ada") });
+
+    const groups = getDataDropdownList({
+      data: createData({ type: { kind: "string" }, value: "" }),
+      onSelect: vi.fn(),
+      context: ctx,
+    });
+
+    expect(
+      groups
+        .flatMap(([, options]) => options)
+        .some((item) => item.value === "name")
+    ).toBe(false);
+    expect(
+      groups
+        .find(([group]) => group === "Allowed")?.[1]
+        .some((item) => item.type?.kind === "number")
+    ).toBe(true);
+  });
+
+  it("selects env variables as env references", () => {
+    const onSelect = vi.fn();
+    const ctx = createTestContext();
+    ctx.variables.set("API_KEY", { data: testString("secret"), isEnv: true });
+    const data = createData();
+
+    const option = getDataDropdownList({ data, onSelect, context: ctx })
+      .flatMap(([, options]) => options)
+      .find((item) => item.value === "API_KEY");
+
+    expect(option?.onClick).toBeDefined();
+    option!.onClick!();
+
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: data.id,
+        type: { kind: "reference", name: "API_KEY", isEnv: true },
+        value: { name: "API_KEY", id: expect.any(String) },
+      })
+    );
   });
 });
 

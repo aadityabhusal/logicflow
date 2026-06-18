@@ -36,7 +36,7 @@ vi.mock("../store", () => ({
 }));
 
 import { createData } from "../utils";
-import { useExecutionResultsStore } from "./store";
+import { getReservedNames, useExecutionResultsStore } from "./store";
 import type { Context, Variable } from "./types";
 
 describe("execution store cache invalidation", () => {
@@ -204,5 +204,63 @@ describe("getContext merges rootContext.packageAliases", () => {
 
     const ctx = useExecutionResultsStore.getState().getContext("nonexistent");
     expect(ctx.packageAliases).toEqual({ custom: "val" });
+  });
+});
+
+describe("execution store mutation helpers", () => {
+  beforeEach(() => {
+    useExecutionResultsStore.getState().removeAll();
+  });
+
+  it("does not overwrite an existing context with an isolated replacement", () => {
+    const state = useExecutionResultsStore.getState();
+    const original: Context = { ...state.rootContext, scopeId: "original" };
+    const isolated: Context = {
+      ...state.rootContext,
+      scopeId: "isolated",
+      isIsolated: true,
+    };
+
+    state.setContext("entity", original);
+    state.setContext("entity", isolated);
+
+    expect(
+      useExecutionResultsStore.getState().getContext("entity").scopeId
+    ).toBe("original");
+  });
+
+  it("removeResult removes result data and associated instance", () => {
+    const data = createData({ value: 42 });
+    useExecutionResultsStore.setState({
+      results: new Map([["entity", { data }]]),
+      instances: new Map([["entity", { instance: {}, type: data.type }]]),
+    });
+
+    useExecutionResultsStore.getState().removeResult("entity");
+
+    expect(
+      useExecutionResultsStore.getState().getResult("entity")
+    ).toBeUndefined();
+    expect(
+      useExecutionResultsStore.getState().getInstance("entity")
+    ).toBeUndefined();
+  });
+});
+
+describe("getReservedNames", () => {
+  it("includes operations, reserved keywords, data types, and variables", () => {
+    const variables = new Map<string, Variable>([
+      ["customVar", { data: createData({ value: 1 }) }],
+    ]);
+    const names = getReservedNames(variables);
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        { kind: "operation", name: "length" },
+        { kind: "reserved", name: "return" },
+        { kind: "data-type", name: "string" },
+        { kind: "variable", name: "customVar" },
+      ])
+    );
   });
 });

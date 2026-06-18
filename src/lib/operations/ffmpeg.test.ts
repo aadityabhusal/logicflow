@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { executeOperation } from "@/lib/execution/execution";
 import { operations as ffmpegOperations } from "@/lib/operations/ffmpeg";
-import { createData, getRawValueFromData, isDataOfType } from "@/lib/utils";
+import {
+  createData,
+  createDataFromRawValue,
+  createStatement,
+  getRawValueFromData,
+  isDataOfType,
+} from "@/lib/utils";
 import { OperationListItem } from "@/lib/execution/types";
 import { createTestContext, stringStatement } from "@/tests/helpers";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
@@ -15,6 +21,37 @@ describe("ffmpeg operations", () => {
     const op = ffmpegOperations.find((o) => o.name === name);
     if (!op) throw new Error(`ffmpeg operation "${name}" not found`);
     return op;
+  }
+
+  async function commandString(
+    steps: Array<{ name: string; args?: unknown[] }>
+  ) {
+    const ctx = createTestContext();
+    let result = await executeOperation(
+      findOp("command"),
+      createData(),
+      [],
+      ctx
+    );
+
+    for (const step of steps) {
+      result = await executeOperation(
+        findOp(step.name),
+        result,
+        (step.args ?? []).map((arg) =>
+          createStatement({ data: createDataFromRawValue(arg, ctx) })
+        ),
+        ctx
+      );
+    }
+
+    const command = await executeOperation(
+      findOp("toCommand"),
+      result,
+      [],
+      ctx
+    );
+    return getRawValueFromData(command, ctx);
   }
 
   it("command creates an ffmpeg.Command instance", async () => {
@@ -221,6 +258,114 @@ describe("ffmpeg operations", () => {
     expect(getRawValueFromData(result, ctx)).toBe(
       "ffmpeg -i 'my video.mp4' 'out file.mp4'"
     );
+  });
+
+  it.each([
+    [[{ name: "input", args: [""] }], "ffmpeg -i ''"],
+    [[{ name: "input", args: ["my;rm.mp4"] }], "ffmpeg -i 'my;rm.mp4'"],
+    [
+      [{ name: "input", args: ["Bob's video.mp4"] }],
+      "ffmpeg -i 'Bob'\\''s video.mp4'",
+    ],
+  ])("shell-quotes unsafe argument %#", async (steps, expected) => {
+    await expect(commandString(steps)).resolves.toBe(expected);
+  });
+
+  it("returns a new command when chaining and leaves the previous command unchanged", async () => {
+    const ctx = createTestContext();
+    const cmd = await executeOperation(
+      findOp("command"),
+      createData(),
+      [],
+      ctx
+    );
+    const next = await executeOperation(
+      findOp("input"),
+      cmd,
+      [stringStatement("video.mp4")],
+      ctx
+    );
+
+    expect(
+      (getRawValueFromData(cmd, ctx) as { _tokens: string[] })._tokens
+    ).toEqual([]);
+    expect(
+      (getRawValueFromData(next, ctx) as { _tokens: string[] })._tokens
+    ).toEqual(["-i", "video.mp4"]);
+  });
+
+  it.each([
+    [
+      "executable",
+      [{ name: "executable", args: ["ffmpeg-static"] }],
+      "ffmpeg-static",
+    ],
+    [
+      "raw",
+      [{ name: "raw", args: ["-nostdin -v error"] }],
+      "ffmpeg '-nostdin -v error'",
+    ],
+    ["inputOption", [{ name: "inputOption", args: ["-re"] }], "ffmpeg -re"],
+    [
+      "inputOptionValue",
+      [{ name: "inputOptionValue", args: ["-stream_loop", "-1"] }],
+      "ffmpeg -stream_loop -1",
+    ],
+    [
+      "outputOption",
+      [{ name: "outputOption", args: ["-movflags"] }],
+      "ffmpeg -movflags",
+    ],
+    [
+      "outputOptionValue",
+      [{ name: "outputOptionValue", args: ["-movflags", "+faststart"] }],
+      "ffmpeg -movflags +faststart",
+    ],
+    [
+      "subtitleCodec",
+      [{ name: "subtitleCodec", args: ["copy"] }],
+      "ffmpeg -c:s copy",
+    ],
+    [
+      "videoBitrate",
+      [{ name: "videoBitrate", args: ["1M"] }],
+      "ffmpeg -b:v 1M",
+    ],
+    [
+      "audioBitrate",
+      [{ name: "audioBitrate", args: ["128k"] }],
+      "ffmpeg -b:a 128k",
+    ],
+    [
+      "audioSampleRate",
+      [{ name: "audioSampleRate", args: [44100] }],
+      "ffmpeg -ar 44100",
+    ],
+    ["audioChannels", [{ name: "audioChannels", args: [2] }], "ffmpeg -ac 2"],
+    ["format", [{ name: "format", args: ["mp4"] }], "ffmpeg -f mp4"],
+    ["threads", [{ name: "threads", args: [4] }], "ffmpeg -threads 4"],
+    [
+      "duration",
+      [{ name: "duration", args: ["00:00:10"] }],
+      "ffmpeg -t 00:00:10",
+    ],
+    [
+      "startTime",
+      [{ name: "startTime", args: ["00:00:05"] }],
+      "ffmpeg -ss 00:00:05",
+    ],
+    [
+      "conform",
+      [
+        {
+          name: "conform",
+          args: [{ movflags: "+faststart", y: true, vn: null }],
+        },
+      ],
+      "ffmpeg -movflags +faststart -y -vn",
+    ],
+  ])("%s renders the expected command", async (_, steps, expected) => {
+    await expect(commandString(steps)).resolves.toBe(expected);
   });
 
   it("videoCodec sets -c:v", async () => {
@@ -487,13 +632,51 @@ describe("ffmpeg operations", () => {
     expect(getRawValueFromData(result, ctx)).toBe("ffmpeg -loglevel debug");
   });
 
-  it("tag: instance type operations list all ffmpeg ops correctly", async () => {
-    expect(ffmpegOperations.length).toBeGreaterThan(30);
+  it("exposes the complete ffmpeg operation surface", async () => {
+    expect(ffmpegOperations.map((op) => op.name)).toEqual([
+      "command",
+      "executable",
+      "input",
+      "option",
+      "optionValue",
+      "raw",
+      "inputOption",
+      "inputOptionValue",
+      "output",
+      "outputOption",
+      "outputOptionValue",
+      "map",
+      "videoCodec",
+      "audioCodec",
+      "subtitleCodec",
+      "videoBitrate",
+      "audioBitrate",
+      "videoFilter",
+      "audioFilter",
+      "filterComplex",
+      "resolution",
+      "frameRate",
+      "pixelFormat",
+      "audioSampleRate",
+      "audioChannels",
+      "format",
+      "overwrite",
+      "noOverwrite",
+      "hideBanner",
+      "logLevel",
+      "threads",
+      "duration",
+      "startTime",
+      "disableVideo",
+      "disableAudio",
+      "disableSubtitles",
+      "conform",
+      "toArgs",
+      "toCommand",
+    ]);
 
-    for (const op of ffmpegOperations) {
-      expect(op.name).toBeDefined();
-      expect(op.name.length).toBeGreaterThan(0);
-      expect("handler" in op || "lazyHandler" in op).toBe(true);
-    }
+    expect(
+      ffmpegOperations.every((op) => "handler" in op || "lazyHandler" in op)
+    ).toBe(true);
   });
 });

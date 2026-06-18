@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import {
+  formatCode,
   generateData,
   generateOperation,
   createCodeGenContext,
@@ -26,6 +27,14 @@ import {
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 import { operations as wretchOperations } from "@/lib/operations/wretch";
 import type { DataType, OperationType } from "@/lib/types";
+
+describe("formatCode", () => {
+  it("formats code with the configured Prettier parser and options", async () => {
+    await expect(
+      formatCode("const value={answer:42}", { semi: false })
+    ).resolves.toBe("const value = { answer: 42 }\n");
+  });
+});
 
 describe("generateData", () => {
   it("generates string literal", () => {
@@ -271,7 +280,7 @@ describe("generateOperation", () => {
     const op = testOperation([], [], "asyncOp");
     op.value.isAsync = true;
     const result = generateOperation(op, ctx);
-    expect(result).toContain("async");
+    expect(result).toContain("const asyncOp = async () =>");
   });
 
   it("generates correct return value from last statement", () => {
@@ -307,7 +316,7 @@ describe("generateOperation", () => {
     });
     const op = testOperation([], [refStmt], "usesOtherOp");
     const result = generateOperation(op, ctx);
-    expect(result).toContain("otherOp");
+    expect(result).toContain("import otherOp from './otherOp.js';");
   });
 
   it("generates multi-statement operation with named intermediate variables", () => {
@@ -391,9 +400,44 @@ describe("generateOperation", () => {
     const op = testOperation([], [stmt], "asyncPipe");
     op.value.isAsync = true;
     const result = generateOperation(op, ctx);
-    expect(result).toContain("async");
-    expect(result).toContain("_.pipeAsync");
+    expect(result).toContain("const asyncPipe = async () =>");
+    expect(result).toContain("await _.pipeAsync");
     expect(result).toContain("_.await");
+  });
+
+  it("separates package imports from user-defined operation imports", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("otherOp", { data: testOperation([], [], "otherOp") });
+    const fakerOp = createData({
+      type: {
+        kind: "operation",
+        parameters: [],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "faker.person.firstName",
+        parameters: [],
+        statements: [],
+        source: { name: "faker" },
+      },
+    });
+    const op = testOperation(
+      [],
+      [
+        createStatement({
+          data: createData({ type: { kind: "undefined" } }),
+          operations: [fakerOp],
+        }),
+        createStatement({ data: testReference("otherOp", "other-op-ref") }),
+      ],
+      "usesPackageAndUserOp"
+    );
+
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain(
+      "import { faker } from '@faker-js/faker';\nimport otherOp from './otherOp.js';"
+    );
   });
 
   it("keeps promises unresolved until an explicit await operation", () => {
@@ -1968,65 +2012,74 @@ describe("faker code generation", () => {
 
   it("generates aliased package name for built-in operation references before package sync", async () => {
     await syncPackageRegistry([]);
-    const ctx = createCodeGenContext(
-      createTestContext({ packageAliases: { faker: "f" } })
-    );
-    const callOp = createData<OperationType>({
-      type: {
-        kind: "operation",
-        parameters: [
-          {
-            type: {
-              kind: "operation",
-              parameters: [],
-              result: { kind: "string" },
+    try {
+      const ctx = createCodeGenContext(
+        createTestContext({ packageAliases: { faker: "f" } })
+      );
+      const callOp = createData<OperationType>({
+        type: {
+          kind: "operation",
+          parameters: [
+            {
+              type: {
+                kind: "operation",
+                parameters: [],
+                result: { kind: "string" },
+              },
             },
-          },
-        ],
-        result: { kind: "string" },
-      },
-      value: { name: "call", parameters: [], statements: [] },
-    });
-    const stmt = createStatement({
-      data: testReference("faker.word.words", "ref1"),
-      operations: [callOp],
-    });
-    const op = testOperation([], [stmt], "fakerRefAliasTest");
+          ],
+          result: { kind: "string" },
+        },
+        value: { name: "call", parameters: [], statements: [] },
+      });
+      const stmt = createStatement({
+        data: testReference("faker.word.words", "ref1"),
+        operations: [callOp],
+      });
+      const op = testOperation([], [stmt], "fakerRefAliasTest");
 
-    const result = generateOperation(op, ctx);
+      const result = generateOperation(op, ctx);
 
-    expect(result).toContain("import { faker as f } from '@faker-js/faker';");
-    expect(result).toContain("R.pipe(f.word.words, (arg) => arg())");
-    expect(result).not.toContain("./faker.word.words.js");
-    await syncPackageRegistry([{ name: "faker" }]);
+      expect(result).toContain("import { faker as f } from '@faker-js/faker';");
+      expect(result).toContain("R.pipe(f.word.words, (arg) => arg())");
+      expect(result).not.toContain("./faker.word.words.js");
+    } finally {
+      await syncPackageRegistry([{ name: "faker" }]);
+    }
   });
 
   it("generates aliased package name for built-in variable data before package sync", async () => {
     await syncPackageRegistry([]);
-    const ctx = createCodeGenContext(
-      createTestContext({ packageAliases: { faker: "f" } })
-    );
-    ctx.variables.set("faker.word.words", {
-      data: createData<OperationType>({
-        id: "builtin:faker.word.words",
-        type: {
-          kind: "operation",
-          parameters: [],
-          result: { kind: "string" },
-        },
-        value: {
-          name: "faker.word.words",
-          parameters: [],
-          statements: [],
-        },
-      }),
-    });
+    try {
+      const ctx = createCodeGenContext(
+        createTestContext({ packageAliases: { faker: "f" } })
+      );
+      ctx.variables.set("faker.word.words", {
+        data: createData<OperationType>({
+          id: "builtin:faker.word.words",
+          type: {
+            kind: "operation",
+            parameters: [],
+            result: { kind: "string" },
+          },
+          value: {
+            name: "faker.word.words",
+            parameters: [],
+            statements: [],
+          },
+        }),
+      });
 
-    const result = generateData(testReference("faker.word.words", "ref1"), ctx);
+      const result = generateData(
+        testReference("faker.word.words", "ref1"),
+        ctx
+      );
 
-    expect(result).toBe("f.word.words");
-    expect(ctx.importedOperations.has("faker.word.words")).toBe(false);
-    await syncPackageRegistry([{ name: "faker" }]);
+      expect(result).toBe("f.word.words");
+      expect(ctx.importedOperations.has("faker.word.words")).toBe(false);
+    } finally {
+      await syncPackageRegistry([{ name: "faker" }]);
+    }
   });
 });
 

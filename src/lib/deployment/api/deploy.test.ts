@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deployToPlatform } from "@/lib/deployment/api/deploy";
 import { Project, DeploymentTarget } from "@/lib/types";
 import {
@@ -61,6 +61,10 @@ describe("deployToPlatform", () => {
     (deployToSupabase as ReturnType<typeof vi.fn>).mockResolvedValue({
       success: true,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("returns failure when no triggered operations", async () => {
@@ -203,7 +207,23 @@ describe("deployToPlatform", () => {
     });
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unknown platform");
+    expect(generateDeployableProject).not.toHaveBeenCalled();
     expect(deployToVercel).not.toHaveBeenCalled();
+    expect(deployToSupabase).not.toHaveBeenCalled();
+  });
+
+  it("returns error for Supabase targets without projectId before generation", async () => {
+    const result = await deployToPlatform(baseProject, ctx, {
+      platform: "supabase",
+      credentials: { token: "test-token" },
+      deployments: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Supabase project reference is required",
+    });
+    expect(generateDeployableProject).not.toHaveBeenCalled();
     expect(deployToSupabase).not.toHaveBeenCalled();
   });
 
@@ -321,6 +341,7 @@ describe("deployToPlatform", () => {
     const result = await deployToPlatform(baseProject, ctx, {
       platform: "supabase",
       credentials: { token: "test-token" },
+      projectId: "my-ref",
       deployments: [],
     });
     expect(result.success).toBe(false);
@@ -329,6 +350,10 @@ describe("deployToPlatform", () => {
 });
 
 describe("deployToSupabase", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("uploads virtual package modules with Supabase functions", async () => {
     const { deployToSupabase } = await vi.importActual<{
       deployToSupabase: typeof realDeployToSupabase;
@@ -370,7 +395,5 @@ describe("deployToSupabase", () => {
       .map(([, value]) => (value as File).name);
 
     expect(uploadedFileNames).toContain("src/lib/ffmpeg.js");
-
-    vi.unstubAllGlobals();
   });
 });

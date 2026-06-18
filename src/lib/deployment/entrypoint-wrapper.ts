@@ -11,6 +11,12 @@ const corsHeaders = `const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };`;
 
+function toImportAlias(name: string) {
+  const alias = name.replace(/[^a-zA-Z0-9_$]/g, "_");
+  if (!alias) return "operation";
+  return /^[a-zA-Z_$]/.test(alias) ? alias : `op_${alias}`;
+}
+
 export function generatePlatformHandlers(
   platform: DeploymentTarget["platform"],
   triggeredOps: ProjectFile[],
@@ -41,7 +47,8 @@ function generateVercelHandlers(
 }
 
 function generateVercelEdgeHandler(name: string): string {
-  return `import ${name} from '../src/${name}.js';
+  const alias = toImportAlias(name);
+  return `import ${alias} from '../src/${name}.js';
 
 export const config = { runtime: 'edge' };
 
@@ -53,7 +60,7 @@ export default async function handler(request) {
   }
 
   try {
-    const result = await ${name}(request);
+    const result = await ${alias}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -70,7 +77,8 @@ export default async function handler(request) {
 }
 
 function generateVercelNodeHandler(name: string): string {
-  return `import ${name} from '../src/${name}.js';
+  const alias = toImportAlias(name);
+  return `import ${alias} from '../src/${name}.js';
 
 ${corsHeaders}
 
@@ -85,7 +93,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = await ${name}(req);
+    const result = await ${alias}(req);
 
     res.status(200).json(result);
   } catch (error) {
@@ -101,7 +109,8 @@ function generateSupabaseHandlers(
   triggeredOps: ProjectFile[]
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => {
-    const handlerContent = `import ${op.name} from '../../../src/${op.name}.js';
+    const alias = toImportAlias(op.name);
+    const handlerContent = `import ${alias} from '../../../src/${op.name}.js';
 
 ${corsHeaders}
 
@@ -111,7 +120,7 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const result = await ${op.name}(request);
+    const result = await ${alias}(request);
 
     return new Response(JSON.stringify(result), {
       status: 200,

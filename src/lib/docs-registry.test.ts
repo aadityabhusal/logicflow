@@ -47,6 +47,47 @@ describe("getDocsUrl", () => {
     );
   });
 
+  it.each([
+    ["remeda", "remeda.pipe", "https://remedajs.com/docs#pipe"],
+    [
+      "wretch",
+      "wretch.get",
+      "https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html#get",
+    ],
+    [
+      "wretchResponseChain",
+      "wretchResponseChain.json",
+      "https://elbywan.github.io/wretch/api/interfaces/index.WretchResponseChain.html#json",
+    ],
+    [
+      "rowguard",
+      "rowguard.createPolicy",
+      "https://supabase-community.github.io/rowguard/modules.html#createpolicy",
+    ],
+  ])("strips package prefixes for %s docs", (source, operation, expected) => {
+    expect(getDocsUrl({ name: source }, operation)).toBe(expected);
+  });
+
+  it.each([
+    [
+      "faker",
+      "faker.person.firstName",
+      "https://fakerjs.dev/api/person.html#firstname",
+    ],
+    [
+      "dateFns",
+      "dateFns.startOfMonth",
+      "https://date-fns.org/v4.1.0/docs/startOfMonth",
+    ],
+    [
+      "ffmpeg",
+      "ffmpeg.toCommand",
+      "https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md#toCommand",
+    ],
+  ])("uses raw operation names for %s docs", (source, operation, expected) => {
+    expect(getDocsUrl({ name: source }, operation)).toBe(expected);
+  });
+
   it("strips package prefix from operation name", () => {
     expect(getDocsUrl({ name: "supabaseBuilder" }, "supabase.limit")).toBe(
       "https://supabase.com/docs/reference/javascript/using-modifiers-limit"

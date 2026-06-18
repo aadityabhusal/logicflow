@@ -98,12 +98,34 @@ describe("prefixNpmImports", () => {
     expect(result[0].content).toContain('from "./local"');
   });
 
-  it("does not match imports with extra whitespace between from and quote", () => {
+  it("prefixes imports with extra whitespace between from and quote", () => {
     const files = [
       { path: "src/ops.js", content: 'import { pipe } from   "remeda" ;' },
     ];
     const result = prefixNpmImports(files);
-    expect(result[0].content).toBe('import { pipe } from   "remeda" ;');
+    expect(result[0].content).toBe('import { pipe } from "npm:remeda" ;');
+  });
+
+  it("leaves non-npm protocol and built-in specifiers unchanged", () => {
+    const content = [
+      'import fs from "node:fs";',
+      'import remote from "https://example.com/mod.js";',
+      'import data from "data:text/javascript,export default 1";',
+    ].join("\n");
+
+    expect(prefixNpmImports([{ path: "src/ops.js", content }])[0].content).toBe(
+      content
+    );
+  });
+
+  it("prefixes package subpath imports", () => {
+    const files = [
+      { path: "src/ops.js", content: 'import format from "date-fns/format";' },
+    ];
+
+    expect(prefixNpmImports(files)[0].content).toContain(
+      'from "npm:date-fns/format"'
+    );
   });
 
   it("returns empty array for empty input", () => {
@@ -150,6 +172,12 @@ describe("parseError", () => {
   it.each([
     ["extracts message field", { message: "Not found" }, 404, "Not found"],
     ["falls back to error field", { error: "Bad request" }, 400, "Bad request"],
+    [
+      "falls back to nested error message",
+      { error: { message: "Nested bad request" } },
+      400,
+      "Nested bad request",
+    ],
     ["falls back to msg field", { msg: "Too large" }, 413, "Too large"],
     ["falls back to HTTP status", { details: "info" }, 422, "HTTP 422"],
     ["handles empty JSON object", {}, 418, "HTTP 418"],
@@ -308,6 +336,38 @@ describe("createPlatformFetch", () => {
     expect(callArgs[1].headers).toMatchObject({
       Authorization: "Bearer token",
       "Content-Type": "application/x-www-form-urlencoded",
+    });
+  });
+
+  it("merges Headers instances from options", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const fetchFn = createPlatformFetch("/test");
+    await fetchFn("/path", "token", {
+      headers: new Headers({ "X-Custom": "value" }),
+    });
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers).toMatchObject({
+      Authorization: "Bearer token",
+      "x-custom": "value",
+    });
+  });
+
+  it("merges tuple header arrays from options", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const fetchFn = createPlatformFetch("/test");
+    await fetchFn("/path", "token", {
+      headers: [["X-Custom", "value"]],
+    });
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers).toMatchObject({
+      Authorization: "Bearer token",
+      "X-Custom": "value",
     });
   });
 

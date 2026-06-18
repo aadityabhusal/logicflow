@@ -19,17 +19,39 @@ export function createPlatformFetch(platformPath: string) {
     token: string,
     options: RequestInit = {}
   ): Promise<Response> => {
+    const defaultHeaders = {
+      Authorization: `Bearer ${token}`,
+      ...(!(options.body instanceof FormData) && {
+        "Content-Type": "application/json",
+      }),
+    };
     return fetch(`${proxyBase}${path}`, {
       ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(!(options.body instanceof FormData) && {
-          "Content-Type": "application/json",
-        }),
-        ...options.headers,
-      },
+      headers: mergeHeaders(defaultHeaders, options.headers),
     });
   };
+}
+
+function headerEntries(headers?: HeadersInit): [string, string][] {
+  if (!headers) return [];
+  if (headers instanceof Headers) return [...headers.entries()];
+  if (Array.isArray(headers)) return headers;
+  return Object.entries(headers);
+}
+
+function mergeHeaders(
+  defaults: Record<string, string>,
+  headers?: HeadersInit
+): Record<string, string> {
+  const result = { ...defaults };
+  for (const [key, value] of headerEntries(headers)) {
+    const existingKey = Object.keys(result).find(
+      (existing) => existing.toLowerCase() === key.toLowerCase()
+    );
+    if (existingKey) delete result[existingKey];
+    result[key] = value;
+  }
+  return result;
 }
 
 export async function parseError(response: Response): Promise<string> {
@@ -57,7 +79,8 @@ export function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-const npmImportPattern = /from ['"]([a-z@][^'"]+)['"]/g;
+const npmImportPattern =
+  /\bfrom\s+['"]((?!npm:|node:|https?:|data:|\.{1,2}\/|\/)[a-z@][^'"]*)['"]/g;
 
 export function prefixNpmImports<T extends DeploymentFile>(files: T[]): T[] {
   return files.map((file) => ({

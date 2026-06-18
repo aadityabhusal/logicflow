@@ -105,6 +105,19 @@ describe("generatePlatformHandlers", () => {
       );
       expect(result[0].content).toContain("await my_op$(req)");
     });
+
+    it("uses a safe import alias for invalid operation identifiers", () => {
+      const weirdOp = [createTriggeredOperationFile("123-my op")];
+      const result = generatePlatformHandlers("vercel", weirdOp, {
+        nodejs: true,
+      });
+
+      expect(result[0].filename).toBe("api/123-my op.js");
+      expect(result[0].content).toContain(
+        "import op_123_my_op from '../src/123-my op.js'"
+      );
+      expect(result[0].content).toContain("await op_123_my_op(req)");
+    });
   });
 
   describe("Supabase handlers", () => {
@@ -135,6 +148,17 @@ describe("generatePlatformHandlers", () => {
       expect(result[0].content).toContain("request.method === 'OPTIONS'");
       expect(result[0].content).toContain("status: 204");
       expect(result[0].content).toContain("...corsHeaders");
+    });
+
+    it("uses a safe import alias for invalid operation identifiers", () => {
+      const weirdOp = [createTriggeredOperationFile("my-op")];
+      const result = generatePlatformHandlers("supabase", weirdOp);
+
+      expect(result[0].filename).toBe("supabase/functions/my-op/index.js");
+      expect(result[0].content).toContain(
+        "import my_op from '../../../src/my-op.js'"
+      );
+      expect(result[0].content).toContain("await my_op(request)");
     });
   });
 
@@ -191,6 +215,17 @@ describe("generatePlatformHandlers", () => {
         "import my_op$ from '../src/my_op$.js'"
       );
       expect(result[0].content).toContain("await my_op$(request)");
+    });
+
+    it("uses a safe import alias for invalid operation identifiers (Edge)", () => {
+      const weirdOp = [createTriggeredOperationFile("my-op")];
+      const result = generatePlatformHandlers("vercel", weirdOp);
+
+      expect(result[0].filename).toBe("api/my-op.js");
+      expect(result[0].content).toContain(
+        "import my_op from '../src/my-op.js'"
+      );
+      expect(result[0].content).toContain("await my_op(request)");
     });
   });
 });

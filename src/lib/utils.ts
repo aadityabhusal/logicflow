@@ -763,6 +763,13 @@ export function isTypeCompatible(
       );
     }
     // TODO: Might change this to contravariant check
+    if (
+      second.parameters
+        .slice(first.parameters.length)
+        .some((param) => !param.isOptional && !param.isRest)
+    ) {
+      return false;
+    }
     return first.parameters.every((firstParam, index) => {
       if (firstParam.isOptional && !second.parameters[index]) return true;
       if (!second.parameters[index]) return false;
