@@ -4,31 +4,29 @@ Logicflow can generate executable TypeScript/JavaScript code from your visual op
 
 ## How It Works
 
-Each operation file is converted into an exported function. Statements become chained operations using Remeda's `pipe` (or `pipeAsync` for async) functions, where data flows through a series of transformations:
+Each operation file is converted into an exported function. Statements become chained operations using the built-in `pipe` (or `pipeAsync` for async) functions, where data flows through a series of transformations:
 
 ```typescript
-import * as R from "remeda";
 import * as _ from "../built-in";
 
-export default (name: string) => R.pipe(name, _.concat("Hello! "));
+export default (name: string) => _.pipe(name, _.concat("Hello! "));
 ```
 
 ### Operation Sources
 
 Generated code pulls operations from different sources depending on their origin:
 
-- **Built-in** (`import * as _ from "../built-in"`) — Custom runtime helpers (type guards, polymorphic operations). Used as `_.operationName`.
-- **Remeda** (`import * as R from "remeda"`) — Functional utility library for data transformation. Used as `R.operationName`.
+- **Built-in** (`import * as _ from "../built-in"`) — Custom runtime helpers, pipe helpers, and bundled data transformation utilities. Used as `_.operationName`.
 - **Instance** — Operations on instance types (Date, URL, Wretch, etc.) are generated as arrow functions: `(arg) => arg.methodName()`.
 - **User-defined** (`import { operationName } from "./operationName"`) — Your other operation files in the same project.
 
 ### Async Operations
 
-When a statement contains an `await` operation, the generated code uses `await R.pipeAsync` instead of `R.pipe`:
+When a statement contains an `await` operation, the generated code uses `await _.pipeAsync` instead of `_.pipe`:
 
 ```typescript
 export default async () =>
-  await R.pipeAsync("https://api.example.com/data", _.fetch, R.json);
+  await _.pipeAsync("https://api.example.com/data", _.fetch, _.json);
 ```
 
 The `await` operation itself is not emitted as a function call — it triggers the switch to `pipeAsync` and the `await` prefix on the statement.
@@ -38,7 +36,7 @@ The `await` operation itself is not emitted as a function call — it triggers t
 The `call` operation invokes a user-defined operation with arguments. It's generated as an arrow function inside the pipe:
 
 ```typescript
-R.pipe(data, (arg) => myOperation(arg, extraArg));
+_.pipe(data, (arg) => myOperation(arg, extraArg));
 ```
 
 ## Code Panel

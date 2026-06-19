@@ -1,6 +1,6 @@
 import { purry } from "remeda";
 import { produce } from "immer";
-export * as remeda from "remeda";
+export * from "remeda";
 
 // ===== Pipe Operations =====
 
@@ -233,13 +233,10 @@ export const isTypeOf =
   };
 
 export function fetch(...args: readonly unknown[]) {
-  if (args.length === 2)
+  if (args.length > 1 || typeof args[0] === "string") {
     return globalThis.fetch(args[0] as string, args[1] as RequestInit);
-  if (args.length === 1 && typeof args[0] === "string")
-    return globalThis.fetch(args[0]);
-  if (args.length === 1)
-    return (url: string) => globalThis.fetch(url, args[0] as RequestInit);
-  return (url: string) => globalThis.fetch(url);
+  }
+  return (url: string) => globalThis.fetch(url, args[0] as RequestInit);
 }
 
 // ===== Request Instance Operations =====

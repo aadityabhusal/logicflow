@@ -5,6 +5,7 @@ import {
   executeOperation,
   executeOperationSync,
 } from "./execution";
+import "../operations/dev-proxy-fetch";
 import { createLocalContext } from "../utils";
 import {
   Context,

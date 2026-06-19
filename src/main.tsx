@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import "./lib/operations/dev-proxy-fetch";
 import "./pwa";
 import {
   createBrowserRouter,

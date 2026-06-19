@@ -208,7 +208,7 @@ Two additional settings appear in the Settings panel on mobile devices:
 
 When you select an operation from a library in the Details panel, Logicflow shows a link to the operation's official documentation when one is available.
 
-- **Remeda operations**: [remedajs.com/docs](https://remedajs.com/docs)
+- **Built-in utility operation semantics**: [remedajs.com/docs](https://remedajs.com/docs)
 - **Wretch operations**: [Wretch API documentation](https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html)
 - **Rowguard operations**: [Rowguard documentation](https://supabase-community.github.io/rowguard/)
 - **Faker operations**: [Faker API documentation](https://fakerjs.dev/api/)

@@ -250,7 +250,7 @@ describe("createOperationCall", () => {
     expect(result.id).toBe("custom-op-id");
   });
 
-  it("previews simple Remeda operations to infer result type", async () => {
+  it("previews simple utility operations to infer result type", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testNumber(6);
     const result = await createOperationCall({

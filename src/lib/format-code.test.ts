@@ -349,7 +349,7 @@ describe("generateOperation", () => {
     expect(result).toContain("_.length");
   });
 
-  it("generates remeda operations through built-in namespace", () => {
+  it("generates utility operations through built-in namespace", () => {
     const ctx = createTestContext();
     const addOp = createData({
       type: {

@@ -29,7 +29,7 @@ Operations transform data from one type to another. They're filtered based on wh
 ### Operation Types
 
 - **Built-in operations**: Provided by Logicflow (concat, add, map, etc.)
-- **Remeda operations**: Functional utility operations from the [Remeda](https://remedajs.com/docs) library (toUpperCase, filter, sortBy, etc.)
+- **Built-in utility operations**: Functional data transformation operations, including Remeda-powered utilities like `toUpperCase`, `filter`, and `sortBy`.
 - **User-defined operations**: Operations you create become available as chainable functions
 
 When you create an operation (file) and give it a name, it appears in the operations list and can be chained like any built-in operation.
@@ -92,4 +92,4 @@ In the generated TypeScript/JavaScript code, return statements render as actual 
 
 Some operations accept a **rest parameter**, which collects any extra arguments into an array. This works like JavaScript's `...rest` syntax — after the non-rest parameters are matched, all remaining arguments are bundled together and passed to the operation.
 
-Rest parameters are used by operations like `pipe` (takes any number of operations to chain), `conform` (applies multiple options at once), and `push` (adds variadic elements to a tuple), as well as several Remeda operations.
+Rest parameters are used by operations like `pipe` (takes any number of operations to chain), `conform` (applies multiple options at once), and `push` (adds variadic elements to a tuple), as well as several built-in utility operations.
