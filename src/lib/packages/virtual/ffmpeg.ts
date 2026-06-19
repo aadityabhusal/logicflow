@@ -4,6 +4,7 @@ export interface FfmpegCommand {
 }
 
 function shellQuote(arg: string): string {
+  if (arg === "") return "''";
   if (!/[^a-zA-Z0-9_\-.\\/:,@+=%^]/.test(arg)) return arg;
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }

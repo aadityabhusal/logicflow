@@ -1033,10 +1033,13 @@ describe("executeOperation", () => {
   it("user-defined operation sets named variables in context", async () => {
     const ctx = createTestContext({ isSync: false });
     const namedResult = stringStatement("computed", "resultVar");
+    const refResult = createStatement({
+      data: testReference("resultVar", namedResult.id),
+    });
     const userOp: OperationListItem = {
       name: "namedVarOp",
       parameters: [{ type: { kind: "string" }, name: "input" }],
-      statements: [namedResult],
+      statements: [namedResult, refResult],
     };
     const data = testString("hello");
     const contextResult = await executeOperation(userOp, data, [], ctx);
@@ -2609,6 +2612,43 @@ describe("recursion support", () => {
   it("supports user-defined operation that calls another user-defined operation", async () => {
     const ctx = createTestContext({ isSync: false });
 
+    const doubleParam = numberStatement(0, "n");
+    const doubleOperation = testOperation(
+      [doubleParam],
+      [
+        createStatement({
+          data: testReference("n", doubleParam.id),
+          operations: [
+            testOperation(
+              [createStatement({ data: testReference("n", doubleParam.id) })],
+              [],
+              "add"
+            ),
+          ],
+        }),
+      ],
+      "double"
+    );
+    ctx.variables.set("double", { data: doubleOperation });
+
+    const outerOp: OperationListItem = {
+      name: "useDouble",
+      parameters: [],
+      statements: [
+        createStatement({
+          data: testReference("double", doubleOperation.id),
+          operations: [testOperation([numberStatement(5)], [], "call")],
+        }),
+      ],
+    };
+
+    const result = await executeOperation(outerOp, createData(), [], ctx);
+    expect(result.type.kind).toBe("number");
+    expect(result.value).toBe(10);
+  });
+
+  it("executes a user-defined operation body directly", async () => {
+    const ctx = createTestContext({ isSync: false });
     const innerOp: OperationListItem = {
       name: "double",
       parameters: [{ type: { kind: "number" }, name: "n" }],
@@ -2854,22 +2894,37 @@ describe("recursion support", () => {
   it("allows recursion up to maxCallDepth without error", async () => {
     const ctx = createTestContext({ isSync: false, maxCallDepth: 3 });
 
-    const echoOp: OperationListItem = {
-      name: "echo",
-      parameters: [{ type: { kind: "string" }, name: "s" }],
-      statements: [createStatement({ data: testString("done") })],
-    };
+    const inner = testOperation([], [stringStatement("done")], "inner");
+    const middle = testOperation(
+      [],
+      [
+        createStatement({
+          data: testReference("inner", inner.id),
+          operations: [testOperation([], [], "call")],
+        }),
+      ],
+      "middle"
+    );
+    const outer = testOperation(
+      [],
+      [
+        createStatement({
+          data: testReference("middle", middle.id),
+          operations: [testOperation([], [], "call")],
+        }),
+      ],
+      "outer"
+    );
+    ctx.variables.set("inner", { data: inner });
+    ctx.variables.set("middle", { data: middle });
+    ctx.variables.set("outer", { data: outer });
 
-    ctx.variables.set("echo", {
-      data: testOperation(
-        [stringStatement("s", "s")],
-        echoOp.statements!,
-        "echo"
-      ),
-    });
-
-    const data = testString("hello");
-    const result = await executeOperation(echoOp, data, [], ctx);
+    const result = await executeOperation(
+      operationToListItem(outer, "outer"),
+      createData(),
+      [],
+      ctx
+    );
     expect(result.type.kind).toBe("string");
     expect(result.value).toBe("done");
   });
@@ -2898,53 +2953,70 @@ describe("recursion support", () => {
   });
 
   it("increments callDepth in nested user-defined operations", async () => {
-    const ctx = createTestContext({ isSync: false, maxCallDepth: 2 });
+    function createNestedContext(maxCallDepth: number) {
+      const ctx = createTestContext({ isSync: false, maxCallDepth });
 
-    const innerOp: OperationListItem = {
-      name: "inner",
-      parameters: [{ type: { kind: "number" }, name: "x" }],
-      statements: [createStatement({ data: testNumber(99) })],
-    };
+      const innerOp: OperationListItem = {
+        name: "inner",
+        parameters: [{ type: { kind: "number" }, name: "x" }],
+        statements: [createStatement({ data: testNumber(99) })],
+      };
 
-    const outerOp: OperationListItem = {
-      name: "outer",
-      parameters: [{ type: { kind: "number" }, name: "x" }],
-      statements: [
-        createStatement({
-          data: testNumber(1),
-          operations: [
-            createData({
-              type: {
-                kind: "operation",
-                parameters: [{ type: { kind: "number" } }],
-                result: { kind: "number" },
-              },
-              value: { name: "inner", parameters: [], statements: [] },
-            }),
-          ],
-        }),
-      ],
-    };
+      const outerOp: OperationListItem = {
+        name: "outer",
+        parameters: [{ type: { kind: "number" }, name: "x" }],
+        statements: [
+          createStatement({
+            data: testNumber(1),
+            operations: [
+              createData({
+                type: {
+                  kind: "operation",
+                  parameters: [{ type: { kind: "number" } }],
+                  result: { kind: "number" },
+                },
+                value: { name: "inner", parameters: [], statements: [] },
+              }),
+            ],
+          }),
+        ],
+      };
 
-    ctx.variables.set("inner", {
-      data: testOperation(
-        [numberStatement(0, "x")],
-        innerOp.statements!,
-        "inner"
-      ),
-    });
-    ctx.variables.set("outer", {
-      data: testOperation(
-        [numberStatement(0, "x")],
-        outerOp.statements!,
-        "outer"
-      ),
-    });
+      ctx.variables.set("inner", {
+        data: testOperation(
+          [numberStatement(0, "x")],
+          innerOp.statements!,
+          "inner"
+        ),
+      });
+      ctx.variables.set("outer", {
+        data: testOperation(
+          [numberStatement(0, "x")],
+          outerOp.statements!,
+          "outer"
+        ),
+      });
+      return { ctx, outerOp };
+    }
 
-    const data = testNumber(1);
-    const result = await executeOperation(outerOp, data, [], ctx);
+    const { ctx, outerOp } = createNestedContext(2);
+    const result = await executeOperation(outerOp, testNumber(1), [], ctx);
     expect(result.type.kind).toBe("number");
     expect(result.value).toBe(99);
+
+    const limited = createNestedContext(1);
+    const error = await executeOperation(
+      limited.outerOp,
+      testNumber(1),
+      [],
+      limited.ctx
+    );
+    expect(isDataOfType(error, "error")).toBe(true);
+    if (isDataOfType(error, "error")) {
+      expect(error.value.reason).toContain(
+        "Maximum recursion depth (1) exceeded"
+      );
+    }
   });
 
   it("short-circuits chain when operation returns fatal error (async)", async () => {
@@ -3702,12 +3774,16 @@ describe("buffered setResult/getResult", () => {
       data: testReference("var1", "ref1"),
     });
 
-    const op = testOperation([], [stmt1, stmt2]);
-    await setOperationResults(op, ctx);
+    const op = testOperation([], [stmt1, stmt2], "usesPreviousResult");
+    const result = await executeOperation(
+      operationToListItem(op, "usesPreviousResult"),
+      createData(),
+      [],
+      ctx
+    );
 
-    const stmtCtx = ctx.getContext(stmt1.id);
-    expect(stmtCtx.variables.has("var1")).toBe(true);
-    expect(stmtCtx.variables.get("var1")?.data.type.kind).toBe("string");
+    expect(result.type.kind).toBe("string");
+    expect(getRawValueFromData(result, ctx)).toBe("value1");
   });
 });
 
@@ -4088,6 +4164,7 @@ describe("block condition execution", () => {
     const stmt = createStatement({ data: condData });
     const result = await executeStatement(stmt, ctx);
     expect(result.value).toBe("val");
+    expect(ctx.variables.has("inner")).toBe(false);
   });
 
   it("outer variables are visible inside branch", async () => {

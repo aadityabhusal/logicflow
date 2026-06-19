@@ -87,7 +87,24 @@ describe("updateStatements", () => {
       changedStatement: changed,
     });
     expect(result).toHaveLength(3);
+    expect(result[0]).toBe(stmt1);
     expect(result[0].data.value).toBe("first");
+    expect(result[1].data.value).toBe("new-second");
+    expect(result[2].data.value).toBe("third");
+  });
+
+  it("leaves statements unchanged when changedStatement id is not found", () => {
+    const ctx = createTestContext();
+    const stmt1 = stringStatement("first");
+    const stmt2 = stringStatement("second");
+
+    const result = updateStatements({
+      statements: [stmt1, stmt2],
+      context: ctx,
+      changedStatement: stringStatement("missing"),
+    });
+
+    expect(result).toEqual([stmt1, stmt2]);
   });
 
   it("updates statement with array data recursively", () => {
@@ -182,6 +199,11 @@ describe("updateStatements", () => {
     });
     expect(result).toHaveLength(1);
     expect(isDataOfType(result[0].data, "condition")).toBe(true);
+    if (isDataOfType(result[0].data, "condition")) {
+      expect(result[0].data.value.condition.data.value).toBe(false);
+      expect(result[0].data.value.trueBranch[0].data.value).toBe("no");
+      expect(result[0].data.value.falseBranch[0].data.value).toBe("yes");
+    }
   });
 
   it("updates reference data to point to correct variable", () => {
@@ -206,6 +228,13 @@ describe("updateStatements", () => {
     const stmt = createStatement({ data: opData });
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
+    expect(isDataOfType(result[0].data, "operation")).toBe(true);
+    if (isDataOfType(result[0].data, "operation")) {
+      expect(result[0].data.value.parameters[0].name).toBe("myParam");
+      expect(result[0].data.value.parameters[0].data.value).toBe("input");
+      expect(result[0].data.value.statements[0].data.value).toBe("result");
+      expect(result[0].data.value.isAsync).toBe(false);
+    }
   });
 
   it("handles union data by resolving active type", () => {
@@ -218,6 +247,9 @@ describe("updateStatements", () => {
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
     expect(result[0].data.type.kind).toBe("union");
+    if (result[0].data.type.kind === "union") {
+      expect(result[0].data.type.activeIndex).toBe(0);
+    }
   });
 
   it("handles error data in statement", () => {
@@ -227,6 +259,9 @@ describe("updateStatements", () => {
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
     expect(isDataOfType(result[0].data, "error")).toBe(true);
+    if (isDataOfType(result[0].data, "error")) {
+      expect(result[0].data.value.reason).toBe("something broke");
+    }
   });
 
   it("handles dictionary data recursively", () => {
@@ -239,6 +274,10 @@ describe("updateStatements", () => {
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
     expect(isDataOfType(result[0].data, "dictionary")).toBe(true);
+    if (isDataOfType(result[0].data, "dictionary")) {
+      expect(result[0].data.value.entries[0].key).toBe("name");
+      expect(result[0].data.value.entries[0].value.data.value).toBe("test");
+    }
   });
 
   it("handles tuple data recursively", () => {
@@ -248,6 +287,10 @@ describe("updateStatements", () => {
     const result = updateStatements({ statements: [stmt], context: ctx });
     expect(result).toHaveLength(1);
     expect(isDataOfType(result[0].data, "tuple")).toBe(true);
+    if (isDataOfType(result[0].data, "tuple")) {
+      expect(result[0].data.value[0].data.value).toBe("a");
+      expect(result[0].data.value[1].data.value).toBe(1);
+    }
   });
 
   it("preserves statement name when changed statement includes it", () => {
@@ -265,7 +308,7 @@ describe("updateStatements", () => {
 });
 
 describe("updateStatement - operation call updates", () => {
-  it("updates operation calls when data type changes", () => {
+  it("preserves operation calls when changed data has no matching replacement", () => {
     const ctx = createTestContext();
     const lengthOp = createData({
       type: {
@@ -292,6 +335,9 @@ describe("updateStatement - operation call updates", () => {
       changedStatement: changed,
     });
     expect(result).toHaveLength(1);
+    expect(result[0].data.value).toBe(42);
+    expect(result[0].operations).toHaveLength(1);
+    expect(result[0].operations[0].value.name).toBe("length");
   });
 
   it("preserves operation call when compatible", () => {
@@ -384,6 +430,7 @@ describe("updateFiles", () => {
     expect(result[0].name).toBe("op1_updated");
     expect(history).toHaveLength(1);
     expect(history[0].fileId).toBe(file1.id);
+    expect(history[0].content).toBe(file1.content);
   });
 
   it("updates dependent files when operation signature changes", () => {
@@ -424,14 +471,17 @@ describe("updateFiles", () => {
   it("pushes history for the changed file before updating", () => {
     const ctx = createTestContext();
     const file1 = createProjectFile({ type: "operation", name: "op1" });
-    const historyCalls: string[] = [];
-    const pushHistory = (fileId: string) => {
-      historyCalls.push(fileId);
+    const historyCalls: Array<{ fileId: string; content: unknown }> = [];
+    const pushHistory = (fileId: string, content: unknown) => {
+      historyCalls.push({ fileId, content });
     };
     const changedFile = { ...file1, name: "op1_new" };
     updateFiles([file1], pushHistory, ctx, changedFile);
     expect(historyCalls).toHaveLength(1);
-    expect(historyCalls[0]).toBe(file1.id);
+    expect(historyCalls[0]).toEqual({
+      fileId: file1.id,
+      content: file1.content,
+    });
   });
 
   it("handles globals file without error", () => {
@@ -492,14 +542,17 @@ describe("updateFiles", () => {
     const ctx = createTestContext();
     const file1 = createProjectFile({ type: "operation", name: "op1" });
     const file2 = createProjectFile({ type: "operation", name: "op2" });
-    const historyCalls: string[] = [];
-    const pushHistory = (fileId: string) => {
-      historyCalls.push(fileId);
+    const historyCalls: Array<{ fileId: string; content: unknown }> = [];
+    const pushHistory = (fileId: string, content: unknown) => {
+      historyCalls.push({ fileId, content });
     };
     const changedFile = { ...file1, name: "op1_new" };
     updateFiles([file1, file2], pushHistory, ctx, changedFile);
     expect(historyCalls).toHaveLength(1);
-    expect(historyCalls[0]).toBe(file1.id);
+    expect(historyCalls[0]).toEqual({
+      fileId: file1.id,
+      content: file1.content,
+    });
   });
 
   it("preserves operation content in unchanged files", () => {

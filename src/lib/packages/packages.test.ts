@@ -304,6 +304,15 @@ describe("faker operations", () => {
 
     expect(isDataOfType(result, "string")).toBe(true);
   });
+
+  it("number.bigInt converts bigint results to number data", async () => {
+    const ctx = createTestContext();
+    const op = findFakerOp("number.bigInt");
+    const result = await executeOperation(op, createData(), [], ctx);
+
+    expect(isDataOfType(result, "number")).toBe(true);
+    expect(typeof getRawValueFromData(result, ctx)).toBe("number");
+  });
 });
 
 describe("supabase operations", () => {
@@ -976,8 +985,11 @@ describe("date-fns operations", () => {
     expect(isDataOfType(result, "instance")).toBe(true);
     const value = getRawValueFromData(result, ctx);
     expect(value).toBeInstanceOf(Date);
-    // startOfMonth should be on or before the input date
-    expect((value as Date).getTime()).toBeLessThanOrEqual(testDate.getTime());
+    expect((value as Date).getFullYear()).toBe(2024);
+    expect((value as Date).getMonth()).toBe(5);
+    expect((value as Date).getDate()).toBe(1);
+    expect((value as Date).getHours()).toBe(0);
+    expect((value as Date).getMinutes()).toBe(0);
   });
 
   it("parseISO creates a Date from string", async () => {
@@ -989,6 +1001,7 @@ describe("date-fns operations", () => {
     expect(isDataOfType(result, "instance")).toBe(true);
     const value = getRawValueFromData(result, ctx);
     expect(value).toBeInstanceOf(Date);
+    expect((value as Date).toISOString()).toBe("2024-06-15T12:00:00.000Z");
   });
 
   it("isPast returns true for past dates", async () => {

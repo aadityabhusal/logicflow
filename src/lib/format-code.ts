@@ -41,7 +41,7 @@ export async function formatCode(code: string, options?: Options) {
 }
 
 type OperationSource = {
-  type: "instance" | "remeda" | "external" | "builtin" | "userDefined";
+  type: "instance" | "external" | "builtin" | "userDefined";
   packageName?: string;
   packageCallTarget?: "import" | "member";
   callStyle?: "method" | "function";
@@ -189,7 +189,6 @@ function getOperationSource(
   const opItem = context.getOperation(opName);
   const source = { ...opItem?.source, ...operation.value.source };
   const sourceName = source.name;
-  if (sourceName === "remeda") return { type: "remeda" };
   if (sourceName && sourceName in SOURCE_PACKAGE_MAP) {
     const pkgName = SOURCE_PACKAGE_MAP[sourceName];
     context.usedPackages.add(pkgName);
@@ -238,9 +237,6 @@ function generateBuiltInOperationRef(
   if (packageRef) return packageRef;
 
   const actualName = getActualOperationName(name);
-  const sourceName =
-    operation.value.source?.name ?? context.getOperation(name)?.source?.name;
-  if (sourceName === "remeda") return `R.${actualName}`;
   return `_.${actualName}`;
 }
 
@@ -304,8 +300,6 @@ function generateOperationCall(
       if (!params) return { type: "pipe", code: `, ${fnName}` };
       return { type: "pipe", code: `, (arg) => ${fnName}(arg, ${params})` };
     }
-    case "remeda":
-      return { type: "pipe", code: `, R.${actualName}${paramStr}` };
     case "builtin": {
       const name = `_.${actualName}`;
       return { type: "pipe", code: `, ${name}${paramStr}` };
@@ -335,7 +329,7 @@ function generateOperationChain(
   const flushPipe = () => {
     if (pipeCalls.length === 0) return false;
     const pipeHasAwait = pipeCalls.some((call) => call.hasAwait);
-    const pipeFunc = pipeHasAwait ? "await _.pipeAsync" : "R.pipe";
+    const pipeFunc = pipeHasAwait ? "await _.pipeAsync" : "_.pipe";
     result = `${pipeFunc}(${result}${pipeCalls.map((call) => call.code).join("")})`;
     pipeCalls = [];
     return pipeHasAwait;
@@ -500,6 +494,9 @@ export function generateOperation(
     .map((name) => `import ${name} from './${name}.js';`)
     .join("\n");
   const packageImports = generateImports(codeGenContext);
-  const imports = `import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';\n${packageImports}${userImports}\n`;
+  const optionalImports = [packageImports, userImports]
+    .filter(Boolean)
+    .join("\n");
+  const imports = `import * as _ from './lib/built-in.js';\n${optionalImports ? `${optionalImports}\n` : ""}`;
   return `${imports}\nconst ${currentOperationName} = ${callback};\nexport default ${currentOperationName};`;
 }

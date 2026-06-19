@@ -28,4 +28,27 @@ describe("pipeAsync", () => {
 
     expect(result).toBe("ok!");
   });
+
+  it("propagates promise rejections from await", async () => {
+    await expect(
+      pipeAsync(
+        "start",
+        () => Promise.reject(new Error("boom")),
+        await_,
+        () => "unreachable"
+      )
+    ).rejects.toThrow("boom");
+  });
+
+  it("supports multiple explicit await boundaries", async () => {
+    const result = await pipeAsync(
+      1,
+      (value) => Promise.resolve(Number(value) + 1),
+      await_,
+      (value) => Promise.resolve(Number(value) * 2),
+      await_
+    );
+
+    expect(result).toBe(4);
+  });
 });

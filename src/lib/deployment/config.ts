@@ -34,8 +34,12 @@ async function generateBaseFiles(project: Project, context: Context) {
       errors.push(`Failed to create operation from file: ${file.name}`);
       continue;
     }
-    const content = generateOperation(operation, context);
-    files.push({ path: `src/${file.name}.js`, content });
+    try {
+      const content = generateOperation(operation, context);
+      files.push({ path: `src/${file.name}.js`, content });
+    } catch (error) {
+      errors.push(`Failed to generate operation ${file.name}: ${error}`);
+    }
   }
   files.push({ path: "src/lib/built-in.js", content: generateBuiltInModule() });
 

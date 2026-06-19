@@ -100,6 +100,17 @@ describe("isComplexData", () => {
         })
       )
     ).toBe(true));
+  it("returns true for union", () =>
+    expect(
+      isComplexData(
+        createData({
+          type: {
+            kind: "union",
+            types: [{ kind: "string" }, { kind: "number" }],
+          },
+        })
+      )
+    ).toBe(true));
 });
 
 describe("constants", () => {
@@ -127,19 +138,10 @@ describe("getEntityWidth — string content length", () => {
     expect(getEntityWidth(testString("a".repeat(20)))).toBe(5);
   });
 
-  it("30-char string capped at display length = 6", () => {
-    expect(getEntityWidth(testString("a".repeat(30)))).toBe(6);
-  });
-
-  it("60-char string capped at display length = 6", () => {
-    expect(getEntityWidth(testString("a".repeat(60)))).toBe(6);
-  });
-
-  it("70-char string capped at display length = 6", () => {
-    expect(getEntityWidth(testString("a".repeat(70)))).toBe(6);
-  });
-
-  it("200-char string capped at display length = 6", () => {
+  it("strings at and beyond the display cap have capped width", () => {
+    expect(
+      getEntityWidth(testString("a".repeat(MAX_STRING_DISPLAY_LENGTH)))
+    ).toBe(6);
     expect(getEntityWidth(testString("a".repeat(200)))).toBe(6);
   });
 });
@@ -318,6 +320,16 @@ describe("getEntityWidth — conditions", () => {
     );
     expect(getEntityWidth(cond)).toBe(1 + 1 + objWidth + 1 + 1);
   });
+
+  it("uses threshold width for multi-statement branches", () => {
+    const cond = testCondition(
+      booleanStatement(true),
+      [stringStatement("a"), stringStatement("b")],
+      [stringStatement("n")]
+    );
+
+    expect(getEntityWidth(cond)).toBe(THRESHOLD);
+  });
 });
 
 describe("getEntityWidth — instances", () => {
@@ -331,7 +343,7 @@ describe("getEntityWidth — instances", () => {
     ).toBe(1);
   });
 
-  it("1 simple arg contributes base width plus argument width", () => {
+  it("1 string arg contributes base width plus argument width", () => {
     const instance = createData({
       type: {
         kind: "instance",
@@ -368,14 +380,12 @@ describe("getEntityWidth — instances", () => {
 
   it("calculates width for operation data", () => {
     const op = testOperation([stringStatement("")], [stringStatement("")]);
-    const width = getEntityWidth(op);
-    expect(width).toBeGreaterThan(1);
+    expect(getEntityWidth(op)).toBe(3);
   });
 
   it("calculates width for tuple data", () => {
     const tuple = testTuple([stringStatement("a")]);
-    const width = getEntityWidth(tuple);
-    expect(width).toBeGreaterThan(1);
+    expect(getEntityWidth(tuple)).toBe(2);
   });
 });
 
@@ -536,6 +546,13 @@ describe("isSimpleStatement", () => {
 describe("getEntityLayout", () => {
   it("returns inline for simple data", () => {
     expect(getEntityLayout(testString("hello"))).toBe("inline");
+  });
+
+  it("returns inline for simple data even when width exceeds the threshold", () => {
+    const longString = testString("a".repeat(200));
+
+    expect(getEntityWidth(longString)).toBeGreaterThanOrEqual(WRAP_THRESHOLD);
+    expect(getEntityLayout(longString, true)).toBe("inline");
   });
 
   it("returns inline for complex data under threshold", () => {

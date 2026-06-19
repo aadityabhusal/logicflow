@@ -15,26 +15,15 @@ describe("generatePlatformConfig", () => {
       expect(result[0].filename).toBe("vercel.json");
     });
 
-    it("returns empty array for netlify platform (not yet handled)", () => {
-      expect(generatePlatformConfig("netlify" as never, ops)).toEqual([]);
-    });
-
-    it("returns empty array for supabase platform", () => {
-      expect(generatePlatformConfig("supabase", ops)).toEqual([]);
-    });
-
-    it("returns empty array for unknown platform", () => {
-      expect(generatePlatformConfig("unknown" as never, ops)).toEqual([]);
-    });
+    it.each(["netlify", "supabase", "unknown"] as const)(
+      "returns empty array for unsupported %s platform",
+      (platform) => {
+        expect(generatePlatformConfig(platform as never, ops)).toEqual([]);
+      }
+    );
   });
 
   describe("Vercel config", () => {
-    it("generates valid JSON with version 2", () => {
-      const result = generatePlatformConfig("vercel", ops);
-      const parsed = JSON.parse(result[0].content);
-      expect(parsed.version).toBe(2);
-    });
-
     it("creates exact route structure for multiple operations", () => {
       const result = generatePlatformConfig("vercel", ops);
       const parsed = JSON.parse(result[0].content);

@@ -45,6 +45,7 @@ import { generatePlatformConfig } from "@/lib/deployment/platform-config";
 import {
   generateBuiltInModule,
   prefixNpmImports,
+  virtualPackageModules,
 } from "@/lib/deployment/utils";
 
 describe("getTriggeredOperations", () => {
@@ -274,13 +275,11 @@ describe("resolveNpmDependencies", () => {
     const files = [
       {
         path: "src/myOp.js",
-        content:
-          "import * as _ from './lib/built-in.js';\nimport * as R from 'remeda';",
+        content: "import * as _ from './lib/built-in.js';",
       },
     ];
     const result = resolveNpmDependencies(project, files);
     const names = result.map((d) => d.name);
-    expect(names).toContain("remeda");
     expect(names).not.toContain("built-in.js");
   });
 });
@@ -403,6 +402,9 @@ describe("generateDeployableProject", () => {
     );
     (generatePlatformConfig as ReturnType<typeof vi.fn>).mockReturnValue([]);
     (generatePlatformHandlers as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    for (const key of Object.keys(virtualPackageModules)) {
+      delete virtualPackageModules[key];
+    }
   });
 
   it("generates operation file for each operation with correct path", async () => {
@@ -430,8 +432,9 @@ describe("generateDeployableProject", () => {
   });
 
   it("generates platform config and handlers for each deployment platform", async () => {
+    const triggeredOp = createTriggeredOperationFile("op");
     const project = createTestProject({
-      files: [createOperationFile("op")],
+      files: [triggeredOp],
       deployment: {
         envVariables: [],
         platforms: [{ platform: "vercel", deployments: [] }],
@@ -445,13 +448,12 @@ describe("generateDeployableProject", () => {
     ]);
 
     const { files } = await generateDeployableProject(project, ctx);
-    expect(generatePlatformConfig).toHaveBeenCalledWith(
-      "vercel",
-      expect.any(Array)
-    );
+    expect(generatePlatformConfig).toHaveBeenCalledWith("vercel", [
+      triggeredOp,
+    ]);
     expect(generatePlatformHandlers).toHaveBeenCalledWith(
       "vercel",
-      expect.any(Array),
+      [triggeredOp],
       { nodejs: false }
     );
     expect(files.some((f) => f.path === "vercel.json")).toBe(true);
@@ -507,8 +509,9 @@ describe("generateDeployableProject", () => {
   });
 
   it("includes faker dependency and uses Node.js Vercel handler", async () => {
+    const triggeredOp = createTriggeredOperationFile("main");
     const project = createTestProject({
-      files: [createOperationFile("main")],
+      files: [triggeredOp],
       dependencies: {
         npm: [{ name: "faker", version: "9.0.0", exports: [] }],
       },
@@ -529,7 +532,7 @@ describe("generateDeployableProject", () => {
 
     expect(generatePlatformHandlers).toHaveBeenCalledWith(
       "vercel",
-      expect.any(Array),
+      [triggeredOp],
       { nodejs: true }
     );
     expect(packageJson).toBeDefined();
@@ -601,6 +604,36 @@ describe("generateDeployableProject", () => {
     expect(errors).toEqual(
       expect.arrayContaining([expect.stringContaining("handler boom")])
     );
+  });
+
+  it("collects error when operation generation throws and continues", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("bad"), createOperationFile("good")],
+    });
+    (generateOperation as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(() => {
+        throw new Error("operation boom");
+      })
+      .mockReturnValueOnce("good code");
+
+    const { files, errors } = await generateDeployableProject(project, ctx);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([expect.stringContaining("operation boom")])
+    );
+    expect(files.some((f) => f.path === "src/good.js")).toBe(true);
+  });
+
+  it("includes referenced virtual package modules", async () => {
+    const project = createTestProject({ files: [createOperationFile("op")] });
+    virtualPackageModules.ffmpeg = "export function command() {}";
+    (generateOperation as ReturnType<typeof vi.fn>).mockReturnValue(
+      "import * as ffmpeg from './lib/ffmpeg.js';"
+    );
+
+    const { files } = await generateDeployableProject(project, ctx);
+
+    expect(files.some((f) => f.path === "src/lib/ffmpeg.js")).toBe(true);
   });
 
   it("collects error when package.json generation throws", async () => {
@@ -693,13 +726,6 @@ describe("generateDeployableProject", () => {
     const { files, errors } = await generateDeployableProject(project, ctx);
     expect(errors).toEqual([]);
     expect(files.some((f) => f.path === "src/lib/built-in.js")).toBe(true);
-  });
-
-  it("returns warnings array (currently always empty)", async () => {
-    const project = createTestProject({ files: [createOperationFile("op")] });
-
-    const { warnings } = await generateDeployableProject(project, ctx);
-    expect(warnings).toEqual([]);
   });
 });
 

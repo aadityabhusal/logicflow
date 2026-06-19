@@ -10,7 +10,7 @@ export function createExportZip(files: DeploymentFile[]): Uint8Array {
 }
 
 export function createDownloadName(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-") || "project";
+  return name.trim().toLowerCase().replace(/\s+/g, "-") || "project";
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

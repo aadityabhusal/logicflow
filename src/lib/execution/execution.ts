@@ -12,6 +12,7 @@ import {
   createParamData,
   createInstance,
   getStatementResult,
+  isBlockCondition,
   getUnionActiveType,
   isDataOfType,
   isFatalError,
@@ -584,7 +585,7 @@ function resolveConditionBranch(
   const { trueBranch, falseBranch, condition } = data.value;
   const branch = conditionResult.value ? trueBranch : falseBranch;
   const skipped = conditionResult.value ? falseBranch : trueBranch;
-  const isBlock = trueBranch.length > 1 || falseBranch.length > 1;
+  const isBlock = isBlockCondition(data.value);
   const scopeId = `${ctx.scopeId}:${data.id}${conditionResult.value ? "_true" : "_false"}`;
   const branchCtx = isBlock ? createContext(ctx, { scopeId }) : ctx;
 

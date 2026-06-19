@@ -5,7 +5,7 @@ import * as ffmpeg from "@/lib/packages/virtual/ffmpeg";
 describe("virtual package modules", () => {
   function exportedNames(code: string) {
     const directExports = Array.from(
-      code.matchAll(/export\s+(?:const|function)\s+(\w+)/g),
+      code.matchAll(/export\s+(?:async\s+)?(?:const|function|class)\s+(\w+)/g),
       (match) => match[1]
     );
     const blockExports = Array.from(
@@ -34,9 +34,5 @@ describe("virtual package modules", () => {
 
     expect(code).toBeDefined();
     expect(exportedNames(code!)).toEqual(sourceExportNames);
-  });
-
-  it("returns undefined for unknown virtual packages", () => {
-    expect(virtualPackageModules["unknown"]).toBeUndefined();
   });
 });
