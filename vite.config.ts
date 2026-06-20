@@ -105,7 +105,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["icons/*.{png,svg}"],
       manifest: {
         name: "Logicflow - Programming through chained operations",

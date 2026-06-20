@@ -3,6 +3,7 @@ import {
   FaArrowRotateRight,
   FaChevronLeft,
   FaHouse,
+  FaRegCircleQuestion,
   FaSpinner,
 } from "react-icons/fa6";
 import {
@@ -18,8 +19,7 @@ import { Link } from "react-router";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
-import { MdCached } from "react-icons/md";
-import { TbKeyboardOff } from "react-icons/tb";
+import { TbKeyboardOff, TbRefresh } from "react-icons/tb";
 
 function HeaderComponent() {
   const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
@@ -63,7 +63,7 @@ function HeaderComponent() {
         )}
         <IconButton
           title="Clear cache and run"
-          icon={MdCached}
+          icon={TbRefresh}
           size={20}
           onClick={() => {
             executionWorkerClient.reset();
@@ -88,6 +88,16 @@ function HeaderComponent() {
           disabled={!canRedo}
           className={!canRedo ? "cursor-not-allowed" : ""}
         />
+        <Tooltip label="Open Docs">
+          <Button
+            component={Link}
+            to="/docs"
+            className="outline-none"
+            leftSection={smallScreen ? null : <FaRegCircleQuestion />}
+          >
+            {smallScreen ? <FaRegCircleQuestion /> : "Help"}
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );

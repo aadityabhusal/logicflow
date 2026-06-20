@@ -5,7 +5,7 @@ import {
   executeOperation,
   executeOperationSync,
 } from "./execution";
-import "../operations/dev-proxy-fetch";
+import { installDevProxyFetch } from "../dev-proxy-fetch";
 import { createLocalContext } from "../utils";
 import {
   Context,
@@ -19,6 +19,8 @@ import {
   syncPackageRegistry,
 } from "../operations/built-in";
 import { getAliasesFromPackages } from "../packages/catalog";
+
+installDevProxyFetch();
 
 function serializeContext(ctx: Context): WorkerContext {
   return {

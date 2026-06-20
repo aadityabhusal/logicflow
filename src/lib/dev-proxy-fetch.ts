@@ -46,5 +46,3 @@ export function installDevProxyFetch() {
   (proxyFetch as DevProxyFetch)[devProxyFetchMarker] = true;
   globalThis.fetch = proxyFetch;
 }
-
-installDevProxyFetch();

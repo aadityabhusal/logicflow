@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetch } from "./runtime";
+import { fetch } from "./operations/runtime";
 import { installDevProxyFetch } from "./dev-proxy-fetch";
 
 describe("dev proxy fetch", () => {
