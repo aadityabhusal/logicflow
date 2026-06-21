@@ -23,6 +23,7 @@ import {
   createRuntimeError,
   resolveParameters,
   createFileVariables,
+  resolveUnionType,
 } from "../utils";
 import {
   createOperationHandler,
@@ -179,6 +180,55 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   },
   { name: "toString", parameters: [{ type: { kind: "unknown" } }] },
   { name: "toNumber", parameters: [{ type: { kind: "string" } }] },
+  {
+    name: "parseJSON",
+    parameters: [
+      { type: { kind: "string" } },
+      {
+        type: {
+          kind: "operation",
+          parameters: [
+            { name: "key", type: { kind: "string" } },
+            { name: "value", type: { kind: "unknown" } },
+          ],
+          result: { kind: "unknown" },
+        },
+        isOptional: true,
+      },
+    ],
+    expectedType: { kind: "unknown" },
+  },
+  {
+    name: "stringifyJSON",
+    parameters: [
+      { type: { kind: "unknown" } },
+      {
+        type: resolveUnionType([
+          {
+            kind: "operation",
+            parameters: [
+              { name: "key", type: { kind: "string" } },
+              { name: "value", type: { kind: "unknown" } },
+            ],
+            result: { kind: "unknown" },
+          },
+          {
+            kind: "array",
+            elementType: resolveUnionType([
+              { kind: "string" },
+              { kind: "number" },
+            ]),
+          },
+        ]),
+        isOptional: true,
+      },
+      {
+        type: resolveUnionType([{ kind: "string" }, { kind: "number" }]),
+        isOptional: true,
+      },
+    ],
+    expectedType: { kind: "string" },
+  },
   {
     name: "getMessage",
     parameters: [{ type: { kind: "error", errorType: "custom_error" } }],

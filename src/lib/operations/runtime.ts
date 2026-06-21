@@ -200,6 +200,27 @@ export const toDictionary = <T>(obj: Record<string, T>) => ({ ...obj });
 
 export const toNumber = (value: string): number => Number(value);
 
+export function parseJSON(
+  text: string,
+  reviver?: (this: unknown, key: string, value: unknown) => unknown
+): unknown {
+  return JSON.parse(text, reviver as Parameters<typeof JSON.parse>[1]);
+}
+
+export function stringifyJSON(
+  value: unknown,
+  replacer?:
+    | ((this: unknown, key: string, value: unknown) => unknown)
+    | (string | number)[],
+  space?: string | number
+): string {
+  return JSON.stringify(
+    value,
+    replacer as Parameters<typeof JSON.stringify>[1],
+    space
+  );
+}
+
 export const toString = (value: unknown) => {
   if (
     value !== null &&
