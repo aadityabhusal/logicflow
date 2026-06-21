@@ -703,6 +703,48 @@ const requestOperations: OperationListItem[] = [
   },
 ];
 
+function createFileLikeOperation(
+  className: "File" | "Blob",
+  name: "getName" | "getSize" | "getType" | "text" | "arrayBuffer"
+): OperationListItem {
+  let expectedType: DataType | undefined = { kind: "string" };
+  if (name === "getSize") expectedType = { kind: "number" };
+  else if (name === "arrayBuffer") expectedType = undefined;
+
+  return {
+    name,
+    parameters: [
+      { type: { kind: "instance", className, constructorArgs: [] } },
+    ],
+    expectedType,
+    handler: (context, data) => {
+      const instance = getRawValueFromData(data, context) as File & Blob;
+      if (!instance)
+        return createRuntimeError(`${className} instance not found`);
+
+      let result;
+      if (name === "getName") result = instance.name;
+      else if (name === "getSize") result = instance.size;
+      else if (name === "getType") result = instance.type;
+      else if (name === "text") result = instance.text();
+      else result = instance.arrayBuffer();
+
+      return createDataFromRawValue(result, {
+        ...context,
+        ...(expectedType && { expectedType }),
+      });
+    },
+  };
+}
+
+const fileOperations = (
+  ["getName", "getSize", "getType", "text", "arrayBuffer"] as const
+).map((name) => createFileLikeOperation("File", name));
+
+const blobOperations = (
+  ["getSize", "getType", "text", "arrayBuffer"] as const
+).map((name) => createFileLikeOperation("Blob", name));
+
 function prefixExternalPackageName(op: OperationListItem): OperationListItem {
   const sourceName = op.source?.name;
   if (!sourceName) return op;
@@ -804,6 +846,8 @@ export const coreOperations: OperationListItem[] = [
   ...immerOperations,
   ...remedaOperations,
   ...requestOperations,
+  ...fileOperations,
+  ...blobOperations,
 ].map(prefixExternalPackageName);
 
 const builtInOperationsByKind = new Map<string, OperationListItem[]>();

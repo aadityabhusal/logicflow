@@ -294,7 +294,7 @@ export type ProjectCheckpoint = {
 
 export interface DeploymentFile {
   path: string;
-  content: string;
+  content: string | Uint8Array;
 }
 
 export type DeploymentProgress = {

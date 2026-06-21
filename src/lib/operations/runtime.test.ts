@@ -4,6 +4,11 @@ import {
   pipeAsync,
   parseJSON,
   stringifyJSON,
+  text,
+  arrayBuffer,
+  getName,
+  getSize,
+  getType,
 } from "./runtime";
 
 describe("pipeAsync", () => {
@@ -138,5 +143,38 @@ describe("stringifyJSON", () => {
   it("omits functions and undefined values", () => {
     const result = stringifyJSON({ a: 1, fn: () => 0, u: undefined });
     expect(result).toBe('{"a":1}');
+  });
+});
+
+describe("file and blob operations", () => {
+  it("reads File metadata and text", async () => {
+    const file = {
+      name: "hello.txt",
+      size: 5,
+      type: "text/plain",
+      text: async () => "hello",
+      arrayBuffer: async () => new TextEncoder().encode("hello").buffer,
+    } as File;
+
+    await expect(text(file)).resolves.toBe("hello");
+    expect(getName(file)).toBe("hello.txt");
+    expect(getSize(file)).toBe(5);
+    expect(getType(file)).toBe("text/plain");
+  });
+
+  it("reads Blob text and arrayBuffer", async () => {
+    const blob = {
+      size: 5,
+      type: "text/plain",
+      text: async () => "hello",
+      arrayBuffer: async () => new TextEncoder().encode("hello").buffer,
+    } as Blob;
+
+    await expect(text(blob)).resolves.toBe("hello");
+    await expect(
+      arrayBuffer(blob).then((buffer) => buffer.byteLength)
+    ).resolves.toBe(5);
+    expect(getSize(blob)).toBe(5);
+    expect(getType(blob)).toBe("text/plain");
   });
 });

@@ -111,6 +111,23 @@ export const InstanceTypes: { [K in string]: InstanceTypeConfig<K> } = {
       return args;
     },
   },
+  File: {
+    name: "File",
+    Constructor: File,
+    constructorArgs: [],
+  },
+  Blob: {
+    name: "Blob",
+    Constructor: Blob,
+    constructorArgs: [],
+    hideFromDropdown: true,
+  },
+  ArrayBuffer: {
+    name: "ArrayBuffer",
+    Constructor: ArrayBuffer,
+    constructorArgs: [],
+    hideFromDropdown: true,
+  },
 };
 
 type PackageLoadResult = {

@@ -19,6 +19,13 @@ import {
   syncPackageRegistry,
 } from "../operations/built-in";
 import { getAliasesFromPackages } from "../packages/catalog";
+import { walkData } from "../walk";
+import type { IData, OperationType } from "../types";
+import {
+  collectFileInstanceIds,
+  getFileAsset,
+  isFileInstanceData,
+} from "../file-assets";
 
 installDevProxyFetch();
 
@@ -46,12 +53,38 @@ const persistentInstances = new Map<
 
 let activeAbortController: AbortController | undefined;
 
+async function hydrateFileInstances(
+  operation: IData<OperationType>,
+  files: ExecutionWorkerRunRequest["files"]
+) {
+  const fileInstanceIds = new Set<string>();
+  const collectFileIds = (data: IData) => {
+    if (isFileInstanceData(data)) fileInstanceIds.add(data.value.instanceId);
+  };
+  const walkOptions = { nestedOperations: true, operationCalls: true };
+  walkData(operation, { onInstance: collectFileIds }, walkOptions);
+  collectFileInstanceIds(files).forEach((id) => fileInstanceIds.add(id));
+  await Promise.all(
+    [...fileInstanceIds].map(async (id) => {
+      if (persistentInstances.has(id)) return;
+      const file = (await getFileAsset(id))?.file;
+      if (file) {
+        persistentInstances.set(id, {
+          instance: file,
+          type: { kind: "instance", className: "File", constructorArgs: [] },
+        });
+      }
+    })
+  );
+}
+
 async function runExecution(req: ExecutionWorkerRunRequest) {
   const controller = new AbortController();
   activeAbortController = controller;
 
   try {
     await syncPackageRegistry(req.packages);
+    await hydrateFileInstances(req.operation, req.files);
 
     const results = new Map(req.cachedResults);
     const rootContext = {} as Context;

@@ -58,7 +58,8 @@ describe("generateBuiltInModule", () => {
   it("clones Request/Response instances before reading body content", () => {
     const code = generateBuiltInModule();
     expect(code).toContain("instance.clone().json()");
-    expect(code).toContain("instance.clone().text()");
+    expect(code).toContain('"clone" in instance ? instance.clone() : instance');
+    expect(code).toContain("cloneBody(instance).text()");
   });
 
   it("uses URL parsing for request query and path helpers", () => {

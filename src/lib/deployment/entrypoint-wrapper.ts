@@ -20,13 +20,17 @@ function toImportAlias(name: string) {
 export function generatePlatformHandlers(
   platform: DeploymentTarget["platform"],
   triggeredOps: ProjectFile[],
-  opts?: { nodejs?: boolean }
+  opts?: { nodejs?: boolean; hasFileAssets?: boolean }
 ): GeneratedHandler[] {
   if (triggeredOps.length === 0) return [];
 
   switch (platform) {
     case "vercel":
-      return generateVercelHandlers(triggeredOps, opts?.nodejs);
+      return generateVercelHandlers(
+        triggeredOps,
+        opts?.nodejs,
+        opts?.hasFileAssets
+      );
     case "supabase":
       return generateSupabaseHandlers(triggeredOps);
     default:
@@ -36,19 +40,36 @@ export function generatePlatformHandlers(
 
 function generateVercelHandlers(
   triggeredOps: ProjectFile[],
-  nodejs?: boolean
+  nodejs?: boolean,
+  hasFileAssets?: boolean
 ): GeneratedHandler[] {
   return triggeredOps.map((op) => ({
     filename: `api/${op.name}.js`,
     content: nodejs
-      ? generateVercelNodeHandler(op.name)
-      : generateVercelEdgeHandler(op.name),
+      ? generateVercelNodeHandler(op.name, hasFileAssets)
+      : generateVercelEdgeHandler(op.name, hasFileAssets),
   }));
 }
 
-function generateVercelEdgeHandler(name: string): string {
+function fileAssetImport(path: string, hasFileAssets?: boolean): string {
+  return hasFileAssets
+    ? `import { configureFileAssets } from '${path}';\n`
+    : "";
+}
+
+function fileAssetBaseUrlCall(hasFileAssets?: boolean): string {
+  return hasFileAssets
+    ? `\n  configureFileAssets({ baseUrl: new URL('/', request.url).href, headers: request.headers });\n`
+    : "";
+}
+
+function generateVercelEdgeHandler(
+  name: string,
+  hasFileAssets?: boolean
+): string {
   const alias = toImportAlias(name);
   return `import ${alias} from '../src/${name}.js';
+${fileAssetImport("../src/lib/built-in.js", hasFileAssets)}
 
 export const config = { runtime: 'edge' };
 
@@ -58,6 +79,7 @@ export default async function handler(request) {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
+${fileAssetBaseUrlCall(hasFileAssets)}
 
   try {
     const result = await ${alias}(request);
@@ -76,9 +98,13 @@ export default async function handler(request) {
 `;
 }
 
-function generateVercelNodeHandler(name: string): string {
+function generateVercelNodeHandler(
+  name: string,
+  hasFileAssets?: boolean
+): string {
   const alias = toImportAlias(name);
   return `import ${alias} from '../src/${name}.js';
+${fileAssetImport("../src/lib/built-in.js", hasFileAssets)}
 
 ${corsHeaders}
 
@@ -91,6 +117,11 @@ export default async function handler(req, res) {
     res.status(204).end();
     return;
   }
+${
+  hasFileAssets
+    ? "\n  configureFileAssets({\n    baseUrl: `${req.headers['x-forwarded-proto'] ?? 'https'}://${req.headers.host}/`,\n    headers: req.headers,\n  });\n"
+    : ""
+}
 
   try {
     const result = await ${alias}(req);
@@ -111,7 +142,6 @@ function generateSupabaseHandlers(
   return triggeredOps.map((op) => {
     const alias = toImportAlias(op.name);
     const handlerContent = `import ${alias} from '../../../src/${op.name}.js';
-
 ${corsHeaders}
 
 Deno.serve(async (request) => {

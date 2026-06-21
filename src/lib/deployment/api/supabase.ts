@@ -3,9 +3,21 @@ import {
   DeploymentResult,
   DeploymentProgress,
 } from "../../types";
-import { createPlatformFetch, parseError } from "../utils";
+import { createPlatformFetch, deploymentFileBytes, parseError } from "../utils";
 
 const supabaseFetch = createPlatformFetch("/supabase");
+
+function appendFile(formData: FormData, file: DeploymentFile) {
+  const type = file.path.endsWith(".js") ? "text/javascript" : undefined;
+  formData.append(
+    "file",
+    new Blob(
+      [deploymentFileBytes(file) as BlobPart],
+      type ? { type } : undefined
+    ),
+    file.path
+  );
+}
 
 export async function deployToSupabase(
   files: DeploymentFile[],
@@ -106,41 +118,16 @@ async function deployFunction(
     "metadata",
     new Blob([JSON.stringify(metadata)], { type: "application/json" })
   );
-  formData.append(
-    "file",
-    new Blob([handlerFile.content], { type: "text/javascript" }),
-    `supabase/functions/${funcName}/index.js`
-  );
+  appendFile(formData, handlerFile);
 
-  const builtInFile = files.find((f) => f.path === "src/lib/built-in.js");
-  if (builtInFile) {
-    formData.append(
-      "file",
-      new Blob([builtInFile.content], { type: "text/javascript" }),
-      "src/lib/built-in.js"
-    );
-  }
-
-  const operationFiles = files.filter(
-    (f) => f.path.startsWith("src/") && !f.path.startsWith("src/lib/")
-  );
-  for (const opFile of operationFiles) {
-    formData.append(
-      "file",
-      new Blob([opFile.content], { type: "text/javascript" }),
-      opFile.path
-    );
-  }
-
-  const packageFiles = files.filter(
-    (f) => f.path.startsWith("src/lib/") && f.path !== "src/lib/built-in.js"
-  );
-  for (const packageFile of packageFiles) {
-    formData.append(
-      "file",
-      new Blob([packageFile.content], { type: "text/javascript" }),
-      packageFile.path
-    );
+  for (const file of files) {
+    if (file === handlerFile) continue;
+    if (
+      file.path.startsWith("src/") ||
+      file.path.startsWith("public/assets/")
+    ) {
+      appendFile(formData, file);
+    }
   }
 
   let response: Response;

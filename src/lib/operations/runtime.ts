@@ -282,10 +282,21 @@ export function getQuery(...args: readonly unknown[]) {
 export const getPath = (request: Request): string =>
   new URL(request.url).pathname;
 
+function cloneBody<T extends Request | Response | Blob | File>(instance: T): T {
+  return "clone" in instance ? (instance.clone() as T) : instance;
+}
+
 export const json = (instance: Request | Response): Promise<unknown> =>
   instance.clone().json();
-export const text = (instance: Request | Response): Promise<string> =>
-  instance.clone().text();
+export const text = (
+  instance: Request | Response | Blob | File
+): Promise<string> => cloneBody(instance).text();
+export const arrayBuffer = (
+  instance: Request | Response | Blob | File
+): Promise<ArrayBuffer> => cloneBody(instance).arrayBuffer();
+export const getName = (file: File): string => file.name;
+export const getSize = (instance: Blob | File): number => instance.size;
+export const getType = (instance: Blob | File): string => instance.type;
 
 // ===== URL Instance Operations =====
 

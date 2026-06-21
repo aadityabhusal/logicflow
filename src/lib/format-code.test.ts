@@ -49,6 +49,60 @@ describe("generateData", () => {
     expect(result).toBe('""');
   });
 
+  it("shows File result metadata instead of an empty File", () => {
+    const root = createTestContext();
+    const data = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    root.setInstance(data.value.instanceId, {
+      type: data.type,
+      instance: new File(["hello"], "hello.txt", { type: "text/plain" }),
+    });
+
+    const result = generateData(
+      data,
+      createCodeGenContext(root, { showResult: true })
+    );
+    expect(result).toContain('"hello.txt"');
+    expect(result).toContain('"text/plain"');
+    expect(result).not.toContain("new File(");
+    expect(result).not.toContain("uploaded file contents");
+  });
+
+  it("generates loader call for deployable File assets", () => {
+    const ctx = createCodeGenContext(createTestContext(), {
+      fileAssets: new Map([
+        [
+          "file-1",
+          {
+            path: "/assets/file-1.txt",
+            name: "hello.txt",
+            type: "text/plain",
+            size: 5,
+            lastModified: 1,
+          },
+        ],
+      ]),
+    });
+    const data = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    data.value.instanceId = "file-1";
+
+    expect(generateData(data, ctx)).toBe('await _.File("file-1")');
+  });
+
+  it("previews File data without deployment assets", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const data = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+
+    expect(() => generateData(data, ctx)).not.toThrow();
+    expect(generateData(data, ctx)).not.toContain("uploaded file contents");
+    expect(generateData(data, ctx)).toMatch(/^File\("/);
+  });
+
   it("generates number literal", () => {
     const ctx = createCodeGenContext(createTestContext());
     expect(generateData(testNumber(42), ctx)).toBe("42");
@@ -1607,6 +1661,80 @@ describe("recursive operation code generation", () => {
     );
     const result = generateOperation(op, ctx);
     expect(result).toContain("(first, second)");
+  });
+
+  it("marks operations with file assets async and uses the built-in loader", () => {
+    const ctx = createTestContext();
+    const fileData = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    fileData.value.instanceId = "file-1";
+    const op = testOperation(
+      [],
+      [createStatement({ data: fileData })],
+      "readFile"
+    );
+
+    const result = generateOperation(op, ctx, {
+      fileAssets: new Map([
+        [
+          "file-1",
+          {
+            path: "/assets/file-1.txt",
+            name: "hello.txt",
+            type: "text/plain",
+            size: 5,
+            lastModified: 1,
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toContain("const readFile = async ()");
+    expect(result).toContain('await _.File("file-1")');
+  });
+
+  it("passes awaited file assets to text operation", () => {
+    const ctx = createTestContext();
+    const fileData = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    fileData.value.instanceId = "file-1";
+    const textOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: { kind: "instance", className: "File", constructorArgs: [] },
+          },
+        ],
+        result: { kind: "string" },
+      },
+      value: { name: "text", parameters: [], statements: [] },
+    });
+    const op = testOperation(
+      [],
+      [createStatement({ data: fileData, operations: [textOp] })],
+      "readFile"
+    );
+
+    const result = generateOperation(op, ctx, {
+      fileAssets: new Map([
+        [
+          "file-1",
+          {
+            path: "/assets/file-1.txt",
+            name: "hello.txt",
+            type: "text/plain",
+            size: 5,
+            lastModified: 1,
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toContain('_.pipe(await _.File("file-1"), _.text)');
+    expect(result).not.toContain('await _.File("file-1").text()');
   });
 
   it("generates internal callback with ...args for stored instance without type", () => {

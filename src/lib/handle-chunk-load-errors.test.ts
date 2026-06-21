@@ -42,7 +42,10 @@ describe("registerChunkLoadErrorHandler", () => {
     );
     expect(showMock).toHaveBeenCalledTimes(1);
     expect(showMock).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Reload needed", autoClose: false })
+      expect.objectContaining({
+        title: "Some app assets failed to load",
+        autoClose: false,
+      })
     );
   });
 
