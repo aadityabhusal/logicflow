@@ -18,6 +18,8 @@ import { useExecutionResultsStore } from "@/lib/execution/store";
 import { FaUpload, FaXmark } from "react-icons/fa6";
 import { IconButton } from "@/ui/IconButton";
 import { notifications } from "@mantine/notifications";
+import { useNavigationStore } from "@/lib/store";
+import { truncateMiddle } from "@/lib/utils";
 
 interface FileInputProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
@@ -40,6 +42,16 @@ const FileInputComponent = (
 ) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const selectNavId = `${data.id}_file_select`;
+  const clearNavId = `${data.id}_file_clear`;
+  const isSelectFocused = useNavigationStore(
+    (s) => s.navigation?.id === selectNavId && !s.navigation?.disable
+  );
+  const isClearFocused = useNavigationStore(
+    (s) => s.navigation?.id === clearNavId && !s.navigation?.disable
+  );
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
+  const openFilePicker = useCallback(() => inputRef.current?.click(), []);
 
   const hydrateInstance = useCallback(
     (file: File) => {
@@ -105,32 +117,45 @@ const FileInputComponent = (
         {file ? (
           <>
             <span
+              ref={(elem) => isSelectFocused && elem?.focus()}
+              role="button"
+              tabIndex={-1}
               className="text-string cursor-pointer hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
-                inputRef.current?.click();
+                openFilePicker();
               }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                openFilePicker();
+              }}
+              onFocus={() => setNavigation({ navigation: { id: selectNavId } })}
               title={`${file.name} (${formatFileSize(file.size)})`}
             >
-              {`"${file.name.length > 20 ? file.name.slice(0, 17) + "..." : file.name}"`}
+              {`"${truncateMiddle(file.name)}"`}
             </span>
             <IconButton
+              ref={(elem) => isClearFocused && elem?.focus()}
               icon={FaXmark}
               title="Remove file"
               onClick={(e) => {
                 e.stopPropagation();
                 void handleClear();
               }}
+              onFocus={() => setNavigation({ navigation: { id: clearNavId } })}
             />
           </>
         ) : (
           <IconButton
+            ref={(elem) => isSelectFocused && elem?.focus()}
             icon={FaUpload}
             title="Upload file"
             onClick={(e) => {
               e.stopPropagation();
-              inputRef.current?.click();
+              openFilePicker();
             }}
+            onFocus={() => setNavigation({ navigation: { id: selectNavId } })}
           />
         )}
         <input

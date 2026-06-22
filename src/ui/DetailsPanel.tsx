@@ -90,11 +90,12 @@ export function DetailsPanel() {
   const typeSignature = useMemo(() => {
     if (isResultPending) return "Pending";
     if (detailsId && operation?.type.kind === "operation") {
-      return getTypeSignature(operation.type, context);
+      return getTypeSignature(operation.type, context, 10);
     }
     return getTypeSignature(
       displayedResult?.type ?? { kind: "undefined" },
-      context
+      context,
+      10
     );
   }, [
     displayedResult?.type,

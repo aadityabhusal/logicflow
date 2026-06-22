@@ -334,6 +334,18 @@ function getStatementEntities(
       });
     }
   } else if (isDataOfType(statement.data, "instance")) {
+    if (statement.data.type.className === "File") {
+      entities.push({
+        id: `${dataId}_file_select`,
+        depth: depth + 1,
+        ...parent,
+      });
+      entities.push({
+        id: `${dataId}_file_clear`,
+        depth: depth + 1,
+        ...parent,
+      });
+    }
     statement.data.value.constructorArgs.forEach((arg) => {
       entities.push(...getStatementEntities(arg, depth + 1, parent, stmtCtx));
     });

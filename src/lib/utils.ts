@@ -1893,3 +1893,9 @@ export function fuzzySearch<T extends object>(
     return acc;
   }, []);
 }
+
+export function truncateMiddle(value: string) {
+  const maxChar = 20;
+  if (value.length < maxChar + 5) return value;
+  return `${value.slice(0, maxChar)}...${value.slice(-5)}`;
+}

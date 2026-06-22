@@ -8,6 +8,7 @@ import { useUncontrolled, useMediaQuery } from "@mantine/hooks";
 import { forwardRef, memo, useMemo, useState } from "react";
 import { useUiConfigStore } from "@/lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
+import { truncateMiddle } from "@/lib/utils";
 
 interface BaseInputProps<T extends string | number> extends Omit<
   TextInputProps & NumberInputProps,
@@ -29,7 +30,6 @@ function BaseInputInner<T extends string | number>(
   const disableKeyboard = useUiConfigStore(
     (s) => s.disableKeyboard && !options?.forceEnableKeyboard && smallScreen
   );
-  const MAX_CHAR = 20;
   const [textWidth, setTextWidth] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
   const [inputValue, setInputValue] = useUncontrolled({
@@ -40,8 +40,7 @@ function BaseInputInner<T extends string | number>(
 
   const displayValue = useMemo(() => {
     const value = String(inputValue);
-    if (value.length < MAX_CHAR + 5) return value;
-    return `${value.slice(0, MAX_CHAR)}...${value.slice(-5)}`;
+    return truncateMiddle(value);
   }, [inputValue]);
 
   const commonProps = {
