@@ -245,6 +245,118 @@ describe("execution store mutation helpers", () => {
       useExecutionResultsStore.getState().getInstance("entity")
     ).toBeUndefined();
   });
+
+  it("disposes an instance before replacing it", () => {
+    const destroy = vi.fn();
+    const replacementDestroy = vi.fn();
+    const type = {
+      kind: "instance" as const,
+      className: "TestResource",
+      constructorArgs: [],
+    };
+
+    useExecutionResultsStore.getState().setInstance("entity", {
+      instance: { destroy },
+      type,
+    });
+    useExecutionResultsStore.getState().setInstance("entity", {
+      instance: { destroy: replacementDestroy },
+      type,
+    });
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(replacementDestroy).not.toHaveBeenCalled();
+  });
+
+  it("does not dispose an instance when setting the same object", () => {
+    const destroy = vi.fn();
+    const instance = { destroy };
+    const type = {
+      kind: "instance" as const,
+      className: "TestResource",
+      constructorArgs: [],
+    };
+
+    useExecutionResultsStore
+      .getState()
+      .setInstance("entity", { instance, type });
+    useExecutionResultsStore
+      .getState()
+      .setInstance("entity", { instance, type });
+
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("disposes instances on clearCache", () => {
+    const destroy = vi.fn();
+    useExecutionResultsStore.setState({
+      instances: new Map([
+        [
+          "entity",
+          {
+            instance: { destroy },
+            type: {
+              kind: "instance",
+              className: "TestResource",
+              constructorArgs: [],
+            },
+          },
+        ],
+      ]),
+    });
+
+    useExecutionResultsStore.getState().clearCache();
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes instances on removeAll", () => {
+    const destroy = vi.fn();
+    useExecutionResultsStore.setState({
+      instances: new Map([
+        [
+          "entity",
+          {
+            instance: { destroy },
+            type: {
+              kind: "instance",
+              className: "TestResource",
+              constructorArgs: [],
+            },
+          },
+        ],
+      ]),
+    });
+
+    useExecutionResultsStore.getState().removeAll();
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes associated instance on removeResult", () => {
+    const destroy = vi.fn();
+    const data = createData({ value: 42 });
+    useExecutionResultsStore.setState({
+      results: new Map([["entity", { data }]]),
+      instances: new Map([
+        [
+          "entity",
+          {
+            instance: { destroy },
+            type: {
+              kind: "instance",
+              className: "TestResource",
+              constructorArgs: [],
+            },
+          },
+        ],
+      ]),
+    });
+
+    useExecutionResultsStore.getState().removeResult("entity");
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("getReservedNames", () => {

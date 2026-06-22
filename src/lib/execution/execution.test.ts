@@ -26,7 +26,11 @@ import {
   coreOperations,
   createExecutionVariables,
 } from "@/lib/operations/built-in";
-import { OperationListItem, Context } from "@/lib/execution/types";
+import {
+  OperationListItem,
+  Context,
+  ContextInstanceType,
+} from "@/lib/execution/types";
 import {
   createTestContext,
   testString,
@@ -4891,10 +4895,7 @@ describe("cached instance preservation across re-executions", () => {
       string,
       { data?: IData; shouldCacheResult?: boolean }
     >();
-    const outerInstances = new Map<
-      string,
-      NonNullable<ReturnType<Context["getInstance"]>>
-    >();
+    const outerInstances = new Map<string, NonNullable<ContextInstanceType>>();
 
     outerResults.set(instanceId, {
       data: promiseData,

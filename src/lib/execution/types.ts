@@ -49,19 +49,19 @@ export type ContextProps = {
   controlFlowState?: { returned?: IData };
 };
 
+export type ContextInstanceType = {
+  instance: InstanceType<ConstructorType>;
+  type: DataType;
+};
+
 export type Context = ContextProps & {
   isCancelled?: () => boolean;
   getResult: (id: string) => ExecutionResult | undefined;
-  getInstance: (
-    id: string
-  ) => { instance: InstanceType<ConstructorType>; type: DataType } | undefined;
+  getInstance: (id: string) => ContextInstanceType | undefined;
   getContext: (id: string) => Context;
   setContext: (id: string, context: Context) => void;
   setResult: (id: string, result: Partial<ExecutionResult>) => void;
-  setInstance: (
-    id: string,
-    data: { instance: InstanceType<ConstructorType>; type: DataType }
-  ) => void;
+  setInstance: (id: string, data: ContextInstanceType) => void;
   // execute functions are here to avoid circular dependency in operation.ts and built-in-operations.ts
   executeStatement: (
     statement: IStatement,

@@ -93,9 +93,9 @@ function HeaderComponent() {
             component={Link}
             to="/docs"
             className="outline-none"
-            leftSection={smallScreen ? null : <FaRegCircleQuestion />}
+            leftSection={smallScreen ? null : <FaRegCircleQuestion size={18} />}
           >
-            {smallScreen ? <FaRegCircleQuestion /> : "Help"}
+            {smallScreen ? <FaRegCircleQuestion size={18} /> : "Help"}
           </Button>
         </Tooltip>
       </div>

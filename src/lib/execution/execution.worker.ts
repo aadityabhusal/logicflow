@@ -6,13 +6,14 @@ import {
   executeOperationSync,
 } from "./execution";
 import { installDevProxyFetch } from "../dev-proxy-fetch";
-import { createLocalContext } from "../utils";
+import { createLocalContext, disposeRuntimeInstance } from "../utils";
 import {
   Context,
   WorkerContext,
   ExecutionWorkerRequest,
   ExecutionWorkerRunRequest,
   ExecutionWorkerResponse,
+  ContextInstanceType,
 } from "./types";
 import {
   createExecutionVariables,
@@ -46,10 +47,35 @@ function serializeContext(ctx: Context): WorkerContext {
   };
 }
 
-const persistentInstances = new Map<
-  string,
-  ReturnType<Context["getInstance"]>
->();
+const persistentInstances = new Map<string, ContextInstanceType | undefined>();
+
+function setPersistentInstance(
+  id: string,
+  instance: NonNullable<ContextInstanceType | undefined>
+) {
+  const current = persistentInstances.get(id);
+  if (current?.instance !== instance.instance) disposeRuntimeInstance(current);
+  persistentInstances.set(id, instance);
+}
+
+function clearPersistentInstances(req?: ExecutionWorkerRunRequest) {
+  const retainedIds = new Set(req ? collectFileInstanceIds(req.files) : []);
+  const walkOptions = { nestedOperations: true, operationCalls: true };
+  req?.cachedResults.forEach(([, result]) => {
+    if (result.data) {
+      walkData(
+        result.data,
+        { onInstance: (data) => retainedIds.add(data.value.instanceId) },
+        walkOptions
+      );
+    }
+  });
+  for (const [id, instance] of persistentInstances) {
+    if (retainedIds.has(id)) continue;
+    disposeRuntimeInstance(instance);
+    persistentInstances.delete(id);
+  }
+}
 
 let activeAbortController: AbortController | undefined;
 
@@ -69,7 +95,7 @@ async function hydrateFileInstances(
       if (persistentInstances.has(id)) return;
       const file = (await getFileAsset(id))?.file;
       if (file) {
-        persistentInstances.set(id, {
+        setPersistentInstance(id, {
           instance: file,
           type: { kind: "instance", className: "File", constructorArgs: [] },
         });
@@ -84,6 +110,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
 
   try {
     await syncPackageRegistry(req.packages);
+    clearPersistentInstances(req);
     await hydrateFileInstances(req.operation, req.files);
 
     const results = new Map(req.cachedResults);
@@ -102,7 +129,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
       getContext: () => rootContext,
       setContext: () => undefined,
       getInstance: (id) => persistentInstances.get(id),
-      setInstance: (id, instance) => persistentInstances.set(id, instance),
+      setInstance: setPersistentInstance,
       executeStatement,
       executeStatementSync,
       executeOperation,
@@ -149,7 +176,7 @@ async function runExecution(req: ExecutionWorkerRunRequest) {
 self.onmessage = (e: MessageEvent<ExecutionWorkerRequest>) => {
   const msg = e.data;
   if (msg.type === "reset") {
-    persistentInstances.clear();
+    clearPersistentInstances();
   } else if (msg.type === "cancel") activeAbortController?.abort();
   else if (msg.type === "run") void runExecution(msg);
 };

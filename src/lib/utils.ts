@@ -25,7 +25,12 @@ import {
   InstanceDataType,
   EntityPath,
 } from "./types";
-import { Context, OperationListItem, Thenable } from "./execution/types";
+import {
+  Context,
+  ContextInstanceType,
+  OperationListItem,
+  Thenable,
+} from "./execution/types";
 import { walkData } from "./walk";
 
 /* Create */
@@ -520,6 +525,17 @@ export function createInstance(
   );
   if (config.prepareArgs) rawArgs = config.prepareArgs(rawArgs);
   return new Constructor(...rawArgs) as InstanceType<typeof Constructor>;
+}
+
+export function disposeRuntimeInstance(stored?: ContextInstanceType) {
+  if (!stored || stored.type.kind !== "instance") return;
+
+  try {
+    const destroy = stored.instance?.destroy;
+    if (typeof destroy === "function") destroy.call(stored.instance);
+  } catch {
+    // Cleanup should not make cache invalidation or re-execution fail.
+  }
 }
 
 export function createRuntimeError(error: unknown) {

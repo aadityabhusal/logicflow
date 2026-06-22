@@ -1,8 +1,17 @@
 import { createWithEqualityFn } from "zustand/traditional";
-import { Context, ExecutionResult, ReservedNames } from "./types";
+import {
+  Context,
+  ExecutionResult,
+  ContextInstanceType,
+  ReservedNames,
+} from "./types";
 import { shallow } from "zustand/shallow";
 import { IData, EntityPath } from "../types";
-import { createOperationFromFile, resolveAncestorIds } from "../utils";
+import {
+  createOperationFromFile,
+  disposeRuntimeInstance,
+  resolveAncestorIds,
+} from "../utils";
 import { useProjectStore } from "../store";
 import {
   executeOperation,
@@ -39,7 +48,7 @@ interface ExecutionResultsState {
   rootContext: Context;
   contexts: Map<string, Context>;
   results: Map<string, ExecutionResult>;
-  instances: Map<string, ReturnType<Context["getInstance"]>>;
+  instances: Map<string, ContextInstanceType | undefined>;
   isExecuting: boolean;
   runVersion: number;
   getContext: Context["getContext"];
@@ -91,20 +100,24 @@ export const useExecutionResultsStore =
       runVersion: 0,
       setIsExecuting: (value) => set({ isExecuting: value }),
       clearCache: () =>
-        set((state) => ({
-          results: new Map(
-            [...state.results].filter(([, result]) => !result.shouldCacheResult)
-          ),
-          instances: new Map(),
-          rootContext: {
-            ...state.rootContext,
-            operationCache: new Map(),
-            packageAliases: getAliasesFromPackages(
-              getEnabledPackages(useProjectStore.getState().getCurrentProject())
+        set((state) => {
+          state.instances.forEach(disposeRuntimeInstance);
+          const project = useProjectStore.getState().getCurrentProject();
+          return {
+            results: new Map(
+              [...state.results].filter(([, res]) => !res.shouldCacheResult)
             ),
-          },
-          runVersion: state.runVersion + 1,
-        })),
+            instances: new Map(),
+            rootContext: {
+              ...state.rootContext,
+              operationCache: new Map(),
+              packageAliases: getAliasesFromPackages(
+                getEnabledPackages(project)
+              ),
+            },
+            runVersion: state.runVersion + 1,
+          };
+        }),
       setResult: (entityId, result) => {
         set((state) => {
           const newResults = new Map(state.results);
@@ -122,6 +135,10 @@ export const useExecutionResultsStore =
       setInstance: (entityId, instance) => {
         set((state) => {
           const newInstances = new Map(state.instances);
+          const current = newInstances.get(entityId);
+          if (current?.instance !== instance.instance) {
+            disposeRuntimeInstance(current);
+          }
           newInstances.set(entityId, instance);
           return { instances: newInstances };
         });
@@ -161,6 +178,7 @@ export const useExecutionResultsStore =
       },
       removeAll: () =>
         set((state) => {
+          state.instances.forEach(disposeRuntimeInstance);
           const project = useProjectStore.getState().getCurrentProject();
           const rootContext: Context = {
             ...state.rootContext,
@@ -188,6 +206,7 @@ export const useExecutionResultsStore =
           const newResults = new Map(state.results);
           newResults.delete(entityId);
           const newInstances = new Map(state.instances);
+          disposeRuntimeInstance(newInstances.get(entityId));
           newInstances.delete(entityId);
           return { results: newResults, instances: newInstances };
         });
