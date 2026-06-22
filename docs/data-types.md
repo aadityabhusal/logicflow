@@ -173,6 +173,16 @@ Wraps JavaScript's native Request object for creating HTTP requests with configu
 
 When options include a `body` that is an object, it is automatically JSON-stringified before creating the Request instance.
 
+### File
+
+Wraps the browser's native File object for working with uploaded files.
+
+**Value**: A File instance created from an uploaded file
+
+**Operations**: `getName`, `getSize`, `getType`, `text`, `arrayBuffer`
+
+Upload a file by selecting the `File` instance type and using the upload button. Uploaded files are stored locally in the browser's IndexedDB and are identified by their instance ID. Use `text` to read file contents as a string, or `arrayBuffer` to read raw bytes. See [File Upload](#file-upload) for details on uploading, storing, and deploying files.
+
 ### HttpRequest
 
 Received by triggered operations when deployed as API endpoints. Contains the incoming HTTP request data.

@@ -54,6 +54,38 @@ Checkpoints are stored locally in your browser's IndexedDB. They are not synced 
 
 The Settings tab lets you export the current project as a `.logicflow.json` file or import a previously exported project file. Use this to back up a project, move it between browsers, or share it manually.
 
+When a project contains uploaded file assets, export and import use a `.logicflow.zip` archive instead of JSON. The archive includes the project manifest and all referenced file assets, so uploaded files are preserved across exports and imports.
+
+## File Upload
+
+Logicflow supports uploading files directly into your operations using the `File` instance type. Uploaded files become first-class data that can be read, transformed, and passed to other operations.
+
+### Uploading a File
+
+1. Add a `File` instance type to a statement (from the data type dropdown, select **File**)
+2. Click the upload button that appears inside the `File(...)` expression
+3. Select a file from your device
+
+The file name is displayed inside the expression. Long file names are truncated in the middle (e.g., `"very-long-file-name...txt"`) to keep the editor readable. Click the file name to replace the file, or click the remove button to clear it.
+
+### Reading File Contents
+
+Use the File operations to access the contents:
+
+- **`text`** — Returns the file contents as a string
+- **`arrayBuffer`** — Returns the raw bytes as an ArrayBuffer
+- **`getName`** — Returns the file name
+- **`getSize`** — Returns the file size in bytes
+- **`getType`** — Returns the MIME type
+
+### Storage
+
+Uploaded files are stored locally in the browser's IndexedDB. Each file is keyed by its instance ID, so files persist across page reloads and editor sessions. Files are never uploaded to any server unless you deploy your project.
+
+### Keyboard Navigation
+
+The upload and remove buttons are part of the keyboard navigation flow. Use `Left/Right` arrow keys to move between the file name and the remove button. Press `Enter` or `Space` to trigger the file picker or remove the file.
+
 ## Context Menu
 
 Right-click an entity in the editor to open its context menu. On touch devices, use the browser's long-press gesture where available.

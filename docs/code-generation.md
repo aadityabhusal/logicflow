@@ -31,6 +31,15 @@ export default async () =>
 
 The `await` operation itself is not emitted as a function call — it triggers the switch to `pipeAsync` and the `await` prefix on the statement.
 
+### File Instances
+
+Uploaded files (the `File` instance type) are generated as `await _.File("instanceId")`, which loads the file asset at runtime. Operations that use file assets are automatically generated as `async`:
+
+```typescript
+export default async () =>
+  await _.pipeAsync(await _.File("file-1"), _.text);
+```
+
 ### Call Operation
 
 The `call` operation invokes a user-defined operation with arguments. It's generated as an arrow function inside the pipe:
