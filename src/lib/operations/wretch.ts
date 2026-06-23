@@ -404,6 +404,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "wretch" },
+    docsUrl:
+      "https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html",
   },
   "wretch.WretchResponseChain": {
     name: "wretch.WretchResponseChain",
@@ -411,6 +413,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "wretch" },
+    docsUrl:
+      "https://elbywan.github.io/wretch/api/interfaces/index.WretchResponseChain.html",
   },
 };
 

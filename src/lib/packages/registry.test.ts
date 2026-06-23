@@ -7,6 +7,7 @@ import {
   resetPackageRegistry,
   loadedPackageOperations,
   getAllInstanceTypes,
+  getInstanceDocsUrl,
   resolveDisplayName,
 } from "./registry";
 import {
@@ -680,5 +681,34 @@ describe("comfyui namespace-import package", () => {
       { name: "inputKeys", type: { kind: "array" } },
       { name: "outputKeys", type: { kind: "array" } },
     ]);
+  });
+
+  it.each([
+    ["comfyui.ComfyApi", "https://github.com/tctien342/comfyui-sdk#comfyapi"],
+    [
+      "comfyui.WorkflowBuilder",
+      "https://github.com/tctien342/comfyui-sdk#workflowbuilder",
+    ],
+    [
+      "wretch.Wretch",
+      "https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html",
+    ],
+    [
+      "rowguard.PolicyBuilder",
+      "https://supabase-community.github.io/rowguard/classes/PolicyBuilder.html",
+    ],
+    [
+      "ffmpeg.Command",
+      "https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md",
+    ],
+  ])("exposes docsUrl for %s after load", async (className, expected) => {
+    await loadPackage(className.split(".")[0]);
+    expect(getAllInstanceTypes()[className]?.docsUrl).toBe(expected);
+    expect(getInstanceDocsUrl(className)).toBe(expected);
+  });
+
+  it("returns undefined for unknown instance docsUrl", () => {
+    expect(getInstanceDocsUrl("comfyui.ComfyApi")).toBeUndefined();
+    expect(getInstanceDocsUrl("Date")).toBeUndefined();
   });
 });

@@ -753,6 +753,7 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: TDict, name: "opts", isOptional: true },
     ],
     importInfo: { packageName: "comfyui" },
+    docsUrl: "https://github.com/tctien342/comfyui-sdk#comfyapi",
   },
   "comfyui.ComfyPool": {
     name: "comfyui.ComfyPool",
@@ -763,6 +764,7 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: TDict, name: "opts", isOptional: true },
     ],
     importInfo: { packageName: "comfyui" },
+    docsUrl: "https://github.com/tctien342/comfyui-sdk#comfypool",
   },
   "comfyui.PromptBuilder": {
     name: "comfyui.PromptBuilder",
@@ -773,6 +775,7 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: TStringArray, name: "outputKeys" },
     ],
     importInfo: { packageName: "comfyui" },
+    docsUrl: "https://github.com/tctien342/comfyui-sdk#promptbuilder",
   },
   "comfyui.CallWrapper": {
     name: "comfyui.CallWrapper",
@@ -782,12 +785,14 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: PromptBuilderType, name: "workflow" },
     ],
     importInfo: { packageName: "comfyui" },
+    docsUrl: "https://github.com/tctien342/comfyui-sdk#callwrapper",
   },
   "comfyui.WorkflowBuilder": {
     name: "comfyui.WorkflowBuilder",
     Constructor: comfyuiSDK.WorkflowBuilder,
     constructorArgs: [],
     importInfo: { packageName: "comfyui" },
+    docsUrl: "https://github.com/tctien342/comfyui-sdk#workflowbuilder",
   },
 };
 

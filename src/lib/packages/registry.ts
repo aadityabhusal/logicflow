@@ -16,6 +16,7 @@ export type InstanceTypeConfig<
   readonly prepareArgs?: (args: unknown[]) => unknown[];
   readonly importInfo?: { packageName: string };
   readonly referenceExpression?: string;
+  readonly docsUrl?: string;
 };
 
 export const customInstances = new WeakMap<object, ConstructorType>();
@@ -192,6 +193,10 @@ export function getAllInstanceTypes(): Record<string, InstanceTypeConfig> {
     loaded[key] = config;
   }
   return { ...InstanceTypes, ...loaded };
+}
+
+export function getInstanceDocsUrl(className: string): string | undefined {
+  return getAllInstanceTypes()[className]?.docsUrl;
 }
 
 export function resetPackageRegistry(): void {
