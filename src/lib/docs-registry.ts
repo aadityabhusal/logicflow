@@ -174,6 +174,11 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     urlPattern: () => `https://github.com/tctien342/comfyui-sdk#callwrapper`,
     displayName: "ComfyUI CallWrapper",
   },
+  comfyuiWorkflowBuilder: {
+    urlPattern: () =>
+      `https://github.com/tctien342/comfyui-sdk#workflowbuilder`,
+    displayName: "ComfyUI WorkflowBuilder",
+  },
 };
 
 export function getDocsUrl(source?: OperationSource, operationName?: string) {
