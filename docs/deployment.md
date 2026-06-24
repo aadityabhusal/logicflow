@@ -119,6 +119,15 @@ Click a live endpoint link to open it in a new tab. For Vercel, endpoints are av
 
 You can remove a platform from your project at any time. This only removes the configuration from Logicflow and does not delete the project or deployments from the platform's dashboard.
 
+## File Assets
+
+Operations that use uploaded files (the `File` instance type) include those assets when deployed. How assets are packaged depends on the platform:
+
+- **Vercel** — File assets are deployed as static files under `public/assets/` and fetched at runtime via HTTP.
+- **Supabase** — File assets are embedded as base64 data directly in the generated JavaScript module, since Supabase Edge Functions don't preserve static files at runtime.
+
+Operations containing file assets are automatically generated as `async` because loading file contents is asynchronous.
+
 ## Exporting Code
 
 If you want to run or inspect the generated project outside Logicflow, use the **Export code** button in the Deploy panel.
@@ -128,5 +137,6 @@ The export downloads a ZIP file containing:
 - Generated JavaScript files for your operations
 - A `package.json` with the required dependencies
 - A `.env.example` file with environment variable keys, but not their values
+- File assets under `public/assets/` for any uploaded files used in your operations
 
 This export is separate from platform deployment. It does not create or update any Vercel or Supabase project.

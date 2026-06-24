@@ -137,6 +137,60 @@ Use `then` to execute a query and receive the result as a Promise.
 
 For the full API, see the [Supabase JavaScript documentation](https://supabase.com/docs/reference/javascript/introduction).
 
+## ComfyUI
+
+The [ComfyUI SDK](https://github.com/tctien342/comfyui-sdk) (`@saintno/comfyui-sdk`) provides a typed client for running image generation workflows against a ComfyUI server. Operations are grouped by class.
+
+### ComfyApi
+
+Connects to a ComfyUI server and exposes its HTTP and WebSocket APIs.
+
+**Value**: A ComfyApi instance created with a host string, optional client ID, and optional options
+
+**Operations**: `init`, `waitForReady`, `destroy`, `ping`, `reconnectWs`, `pollStatus`, `getQueue`, `getHistories`, `getHistory`, `getSystemStats`, `getExtensions`, `getEmbeddings`, `getCheckpoints`, `getLoras`, `getNodeDefs`, `getSettings`, `getSetting`, `storeSettings`, `storeSetting`, `uploadImage`, `uploadMask`, `getPathImage`, `getImage`, `interrupt`, `queuePrompt`, `appendPrompt`, `freeMemory`, `getFeatures`, `getModels`, `getModelFolders`, `getModelFiles`, `getUserData`, `storeUserData`, `deleteUserData`, `moveUserData`, `listUserData`, `getWorkflowTemplates`, `getViewMetadata`, `getUserConfig`, `createUser`, `getSamplerInfo`, `getModelTypes`, `getTerminalLogs`, `setTerminalSubscription`
+
+For the full list, see the [ComfyApi documentation](https://github.com/tctien342/comfyui-sdk#comfyapi).
+
+### ComfyPool
+
+Manages a pool of ComfyApi clients for round-robin or weighted execution.
+
+**Value**: A ComfyPool instance created from an array of ComfyApi clients, with optional mode and options
+
+**Operations**: `addClient`, `removeClient`, `removeClientByIndex`, `changeMode`, `pick`, `pickById`, `run`, `batch`, `destroy`
+
+For the full list, see the [ComfyPool documentation](https://github.com/tctien342/comfyui-sdk#comfypool).
+
+### PromptBuilder
+
+Builds and mutates a ComfyUI prompt workflow. Methods are chainable and return a new PromptBuilder.
+
+**Value**: A PromptBuilder instance created from a workflow object and input/output key arrays
+
+**Operations**: `clone`, `bypass`, `reinstate`, `setRawInputNode`, `appendRawInputNode`, `setRawOutputNode`, `inputRaw`, `input`, `setInputNode`, `appendInputNode`, `setOutputNode`
+
+For the full list, see the [PromptBuilder documentation](https://github.com/tctien342/comfyui-sdk#promptbuilder).
+
+### CallWrapper
+
+Wraps a ComfyApi client and a PromptBuilder to execute a prompt. Supports lifecycle callbacks.
+
+**Value**: A CallWrapper instance created from a ComfyApi client and a PromptBuilder workflow
+
+**Operations**: `onPreview`, `onPending`, `onStart`, `onOutput`, `onFinished`, `onFailed`, `onProgress`, `run`
+
+Each `on*` callback accepts an operation. For the full list, see the [CallWrapper documentation](https://github.com/tctien342/comfyui-sdk#callwrapper).
+
+### WorkflowBuilder
+
+Constructs a PromptBuilder from a config describing inputs and outputs.
+
+**Value**: A WorkflowBuilder instance created with no arguments
+
+**Operations**: `build(config?)`
+
+Calling `build` returns a PromptBuilder. For the full list, see the [WorkflowBuilder documentation](https://github.com/tctien342/comfyui-sdk#workflowbuilder).
+
 ## Package Aliases
 
 You can assign custom namespace aliases to packages. An alias lets you reference a package by a shorter or more convenient name in your operations.

@@ -150,6 +150,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "ffmpeg" },
+    docsUrl:
+      "https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md",
   },
 };
 

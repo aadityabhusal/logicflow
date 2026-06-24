@@ -96,4 +96,23 @@ describe("getDocsUrl", () => {
       "https://supabase.com/docs/reference/javascript/using-filters-eq"
     );
   });
+
+  it.each([
+    ["comfyuiApi", "https://github.com/tctien342/comfyui-sdk#comfyapi"],
+    ["comfyuiPool", "https://github.com/tctien342/comfyui-sdk#comfypool"],
+    [
+      "comfyuiPromptBuilder",
+      "https://github.com/tctien342/comfyui-sdk#promptbuilder",
+    ],
+    [
+      "comfyuiCallWrapper",
+      "https://github.com/tctien342/comfyui-sdk#callwrapper",
+    ],
+    [
+      "comfyuiWorkflowBuilder",
+      "https://github.com/tctien342/comfyui-sdk#workflowbuilder",
+    ],
+  ])("generates class-section URL for %s docs", (source, expected) => {
+    expect(getDocsUrl({ name: source }, "comfyui.build")).toBe(expected);
+  });
 });

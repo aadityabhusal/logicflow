@@ -108,6 +108,28 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     ],
     load: () => import("../operations/supabase").then((m) => m.default),
   },
+  comfyui: {
+    displayName: "ComfyUI SDK",
+    packageName: "@saintno/comfyui-sdk",
+    importKind: "namespace",
+    sourceNames: [
+      "comfyuiApi",
+      "comfyuiPool",
+      "comfyuiPromptBuilder",
+      "comfyuiCallWrapper",
+      "comfyuiWorkflowBuilder",
+    ],
+    description:
+      "A TypeScript SDK for building, executing, and managing ComfyUI workflows.",
+    links: [
+      {
+        label: "npm",
+        url: "https://www.npmjs.com/package/@saintno/comfyui-sdk",
+      },
+      { label: "GitHub", url: "https://github.com/tctien342/comfyui-sdk" },
+    ],
+    load: () => import("../operations/comfyui").then((m) => m.default),
+  },
 };
 
 export function getEnabledPackages(project?: Project): PackageNamespace[] {

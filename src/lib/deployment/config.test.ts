@@ -14,6 +14,33 @@ import {
   createOperationFile,
 } from "@/tests/helpers";
 
+const fileAssetMocks = vi.hoisted(() => ({
+  collectFileInstanceIds: vi.fn((): string[] => []),
+  getFileAsset: vi.fn(async (): Promise<unknown> => undefined),
+}));
+
+vi.mock("idb", () => ({
+  openDB: () =>
+    Promise.resolve({
+      get: async () => null,
+      put: async () => undefined,
+      delete: async () => undefined,
+      getAllKeys: async () => [],
+    }),
+}));
+
+vi.mock("@/lib/file-assets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/file-assets")>();
+  return {
+    ...actual,
+    collectFileInstanceIds: fileAssetMocks.collectFileInstanceIds,
+    getFileAsset: fileAssetMocks.getFileAsset,
+    saveFileAsset: async () => undefined,
+    deleteFileAsset: async () => undefined,
+    createFileFromAsset: async () => undefined,
+  };
+});
+
 vi.mock("@/lib/utils", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/utils")>();
   return { ...actual, createOperationFromFile: vi.fn() };
@@ -36,6 +63,11 @@ vi.mock("@/lib/deployment/utils", () => ({
   generateBuiltInModule: vi.fn(),
   virtualPackageModules: {},
   prefixNpmImports: vi.fn(),
+  bytesToBase64: (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)),
+  joinTextFiles: (files: { content: string | Uint8Array }[]) =>
+    files
+      .map((file) => (typeof file.content === "string" ? file.content : ""))
+      .join("\n"),
 }));
 
 import { createOperationFromFile } from "@/lib/utils";
@@ -402,6 +434,8 @@ describe("generateDeployableProject", () => {
     );
     (generatePlatformConfig as ReturnType<typeof vi.fn>).mockReturnValue([]);
     (generatePlatformHandlers as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    fileAssetMocks.collectFileInstanceIds.mockReturnValue([]);
+    fileAssetMocks.getFileAsset.mockResolvedValue(undefined);
     for (const key of Object.keys(virtualPackageModules)) {
       delete virtualPackageModules[key];
     }
@@ -431,6 +465,82 @@ describe("generateDeployableProject", () => {
     expect(builtIn).toBeDefined();
   });
 
+  it("packages file assets and appends the loader to built-in.js", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("op")],
+      deployment: {
+        envVariables: [],
+        platforms: [{ platform: "vercel", deployments: [] }],
+      },
+    });
+    fileAssetMocks.collectFileInstanceIds.mockReturnValue(["file-1"]);
+    const bytes = new TextEncoder().encode("hello");
+    fileAssetMocks.getFileAsset.mockResolvedValue({
+      file: {
+        name: "hello.txt",
+        type: "text/plain",
+        size: bytes.length,
+        lastModified: 1,
+        arrayBuffer: async () => bytes.buffer,
+      } as File,
+      createdAt: 1,
+    });
+
+    const { files } = await generateDeployableProject(project, ctx);
+    const asset = files.find((f) => f.path === "public/assets/file-1.txt");
+    const builtIn = files.find((f) => f.path === "src/lib/built-in.js");
+
+    expect(asset?.content).toBeInstanceOf(Uint8Array);
+    expect(builtIn?.content).toContain("export async function loadFileAsset");
+    expect(builtIn?.content).toContain("export { loadFileAsset as File }");
+    expect(builtIn?.content).toContain('"file-1"');
+    expect(files.some((f) => f.path === "src/lib/file-assets.js")).toBe(false);
+    expect(generatePlatformHandlers).toHaveBeenCalledWith("vercel", [], {
+      nodejs: false,
+      hasFileAssets: true,
+    });
+  });
+
+  it("embeds file assets for Supabase deployments", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("op")],
+      deployment: {
+        envVariables: [],
+        platforms: [{ platform: "supabase", deployments: [] }],
+      },
+    });
+    fileAssetMocks.collectFileInstanceIds.mockReturnValue(["file-1"]);
+    const bytes = new TextEncoder().encode("hello");
+    fileAssetMocks.getFileAsset.mockResolvedValue({
+      file: {
+        name: "hello.txt",
+        type: "text/plain",
+        size: bytes.length,
+        lastModified: 1,
+        arrayBuffer: async () => bytes.buffer,
+      } as File,
+      createdAt: 1,
+    });
+    (prefixNpmImports as ReturnType<typeof vi.fn>).mockImplementation(
+      (files: unknown[]) => files
+    );
+
+    const { files } = await generateDeployableProject(project, ctx, "supabase");
+    const builtIn = files.find((f) => f.path === "src/lib/built-in.js");
+    const assetModule = files.find(
+      (f) => f.path === "src/lib/file-assets.generated.js"
+    );
+
+    expect(files.some((f) => f.path === "public/assets/file-1.txt")).toBe(
+      false
+    );
+    expect(assetModule?.content).toContain('"file-1": "aGVsbG8="');
+    expect(builtIn?.content).toContain(
+      "import { fileAssetEmbeddedData } from './file-assets.generated.js'"
+    );
+    expect(builtIn?.content).toContain("decodeFileAssetData");
+  });
+
   it("generates platform config and handlers for each deployment platform", async () => {
     const triggeredOp = createTriggeredOperationFile("op");
     const project = createTestProject({
@@ -454,7 +564,7 @@ describe("generateDeployableProject", () => {
     expect(generatePlatformHandlers).toHaveBeenCalledWith(
       "vercel",
       [triggeredOp],
-      { nodejs: false }
+      { nodejs: false, hasFileAssets: false }
     );
     expect(files.some((f) => f.path === "vercel.json")).toBe(true);
     expect(files.some((f) => f.path === "api/op.js")).toBe(true);
@@ -503,7 +613,8 @@ describe("generateDeployableProject", () => {
     const packageJson = files.find((f) => f.path === "package.json");
 
     expect(packageJson).toBeDefined();
-    expect(JSON.parse(packageJson!.content).dependencies).toMatchObject({
+    const content = packageJson!.content as string;
+    expect(JSON.parse(content).dependencies).toMatchObject({
       remeda: "latest",
     });
   });
@@ -533,10 +644,11 @@ describe("generateDeployableProject", () => {
     expect(generatePlatformHandlers).toHaveBeenCalledWith(
       "vercel",
       [triggeredOp],
-      { nodejs: true }
+      { nodejs: true, hasFileAssets: false }
     );
     expect(packageJson).toBeDefined();
-    expect(JSON.parse(packageJson!.content).dependencies).toMatchObject({
+    const content = packageJson!.content as string;
+    expect(JSON.parse(content).dependencies).toMatchObject({
       "@faker-js/faker": "9.0.0",
     });
   });
@@ -768,7 +880,7 @@ describe("generateExportProject", () => {
     const { files } = await generateExportProject(project, ctx);
     const pkgFile = files.find((f) => f.path === "package.json");
     expect(pkgFile).toBeDefined();
-    const pkg = JSON.parse(pkgFile!.content);
+    const pkg = JSON.parse(pkgFile!.content as string);
     expect(pkg.type).toBe("module");
   });
 
@@ -780,7 +892,7 @@ describe("generateExportProject", () => {
 
     const { files } = await generateExportProject(project, ctx);
     const pkgFile = files.find((f) => f.path === "package.json");
-    const pkg = JSON.parse(pkgFile!.content);
+    const pkg = JSON.parse(pkgFile!.content as string);
     expect(pkg.dependencies).toMatchObject({
       remeda: "latest",
       immer: "latest",

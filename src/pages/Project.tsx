@@ -180,6 +180,7 @@ export default function Project() {
     const project = useProjectStore.getState().getCurrentProject();
     if (!project) return;
     void syncPackageRegistry(getEnabledPackages(project));
+    return () => executionWorkerClient.reset();
   }, [projectId]);
 
   useEffect(() => {

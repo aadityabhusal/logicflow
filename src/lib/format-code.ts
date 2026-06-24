@@ -26,6 +26,7 @@ import {
 } from "./packages/registry";
 import { PACKAGE_CATALOG } from "./packages/catalog";
 import type { Options } from "prettier";
+import type { FileAssetMeta } from "./file-assets";
 
 export async function formatCode(code: string, options?: Options) {
   const [prettier, estree, babel] = await Promise.all([
@@ -53,6 +54,8 @@ type CodeGenContext = Context & {
   importedOperations: Set<string>;
   usedPackages: Set<string>;
   currentOperationName?: string;
+  fileAssets?: Map<string, FileAssetMeta>;
+  usesFileAssetLoader?: boolean;
 };
 
 export function createCodeGenContext(
@@ -60,6 +63,7 @@ export function createCodeGenContext(
   options?: {
     showResult?: boolean;
     currentOperationName?: string;
+    fileAssets?: Map<string, FileAssetMeta>;
   }
 ): CodeGenContext {
   return {
@@ -69,6 +73,7 @@ export function createCodeGenContext(
     importedOperations: new Set(),
     usedPackages: new Set(),
     getOperation: (name: string) => builtInOperationsByName.get(name)?.[0],
+    fileAssets: options?.fileAssets,
   };
 }
 function getPackageImportName(
@@ -109,6 +114,27 @@ export function generateData(data: IData, context: CodeGenContext): string {
     return `{${data.value.entries.map((entry) => `${isValidIdentifier(entry.key) ? entry.key : JSON.stringify(entry.key)}: ${generateStatement(entry.value, context, true)}`).join(", ")}}`;
   } else if (isDataOfType(data, "error")) {
     return `new Error(${JSON.stringify(data.value.reason)})`;
+  } else if (
+    isDataOfType(data, "instance") &&
+    data.value.className === "File"
+  ) {
+    const id = JSON.stringify(data.value.instanceId);
+    const stored = context.getInstance(data.value.instanceId)?.instance;
+    if (
+      context.showResult &&
+      typeof File !== "undefined" &&
+      stored instanceof File
+    ) {
+      return `File(${id}, { name: ${JSON.stringify(stored.name)}, type: ${JSON.stringify(stored.type)}, size: ${stored.size} })`;
+    }
+    if (context.fileAssets) {
+      if (!context.fileAssets.has(data.value.instanceId)) {
+        throw new Error(`Missing file for instance ${data.value.instanceId}`);
+      }
+      context.usesFileAssetLoader = true;
+      return `await _.File(${id})`;
+    }
+    return `File(${id})`;
   } else if (isDataOfType(data, "instance")) {
     const config = getAllInstanceTypes()[data.value.className];
     if (config?.importInfo) {
@@ -326,6 +352,10 @@ function generateOperationChain(
   let result = data;
   let pipeCalls: ReturnType<typeof generateOperationCall>[] = [];
 
+  const wrapForMethodCall = () => {
+    if (result.startsWith("await ")) result = `(${result})`;
+  };
+
   const flushPipe = () => {
     if (pipeCalls.length === 0) return false;
     const pipeHasAwait = pipeCalls.some((call) => call.hasAwait);
@@ -339,6 +369,7 @@ function generateOperationChain(
     const call = generateOperationCall(operation, context);
     if (call.type === "method") {
       if (flushPipe()) result = `(${result})`;
+      wrapForMethodCall();
       result += call.code;
     } else {
       pipeCalls.push(call);
@@ -437,10 +468,11 @@ function generateCallback(
     }
   }
 
-  const asyncKeyword = operation.value.isAsync ? "async " : "";
   const statements = operation.value.statements.map((statement) =>
     generateStatement(statement, context)
   );
+  const asyncKeyword =
+    operation.value.isAsync || context.usesFileAssetLoader ? "async " : "";
 
   const bodyLines = statements.map((stmtCode, i) => {
     const stmt = operation.value.statements[i];
@@ -483,11 +515,13 @@ function generateImports(codegenContext?: CodeGenContext): string {
 
 export function generateOperation(
   operation: IData<OperationType>,
-  context: Context
+  context: Context,
+  options?: { fileAssets?: Map<string, FileAssetMeta> }
 ): string {
   const currentOperationName = operation.value.name ?? "op";
   const codeGenContext = createCodeGenContext(context, {
     currentOperationName,
+    fileAssets: options?.fileAssets,
   });
   const callback = generateCallback(operation, codeGenContext);
   const userImports = Array.from(codeGenContext.importedOperations)

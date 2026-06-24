@@ -46,13 +46,66 @@ function deployableSourceStrings(): Plugin {
   };
 }
 
+const devProxyPath = "/api/proxy";
+
+function getProxyTarget(proxyPath = ""): URL {
+  const target = new URL(proxyPath, "http://localhost").searchParams.get("url");
+  const url = new URL(target || "");
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only http(s) URLs can be proxied");
+  }
+  return url;
+}
+
+function devExternalApiProxy(): Plugin {
+  return {
+    name: "logicflow-dev-external-api-proxy",
+    configureServer(server) {
+      server.middlewares.use(devProxyPath, async (req, res) => {
+        let target: URL;
+        try {
+          target = getProxyTarget(req.url);
+        } catch (error) {
+          res.statusCode = 400;
+          res.end(error instanceof Error ? error.message : "Invalid proxy URL");
+          return;
+        }
+
+        try {
+          const response = await fetch(target, {
+            method: req.method,
+            headers: req.headers as HeadersInit,
+            body:
+              req.method === "GET" || req.method === "HEAD" ? undefined : req,
+            // Required by Node when streaming a request body through fetch.
+            duplex: "half",
+          } as RequestInit);
+
+          res.statusCode = response.status;
+          const decodedResHeaders = ["content-encoding", "content-length"];
+          response.headers.forEach((value, key) => {
+            if (!decodedResHeaders.includes(key)) res.setHeader(key, value);
+          });
+          res.end(Buffer.from(await response.arrayBuffer()));
+        } catch (error) {
+          res.statusCode = 502;
+          res.end(
+            error instanceof Error ? error.message : "Proxy request failed"
+          );
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     deployableSourceStrings(),
+    devExternalApiProxy(),
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["icons/*.{png,svg}"],
       manifest: {
         name: "Logicflow - Programming through chained operations",

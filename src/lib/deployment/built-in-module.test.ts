@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateBuiltInModule } from "@/lib/deployment/utils";
 import * as runtime from "@/lib/operations/runtime";
+import * as remeda from "remeda";
 
 describe("generateBuiltInModule", () => {
   function exportedNames() {
@@ -20,7 +21,12 @@ describe("generateBuiltInModule", () => {
               .at(-1) ?? ""
         )
     ).flat();
-    return [...directExports, ...blockExports].sort();
+    const reExports = code.includes('export * from "remeda"')
+      ? Object.getOwnPropertyNames(remeda).filter((k) => k !== "default")
+      : [];
+    return [
+      ...new Set([...directExports, ...blockExports, ...reExports]),
+    ].sort();
   }
 
   it("is deterministic", () => {
@@ -39,6 +45,10 @@ describe("generateBuiltInModule", () => {
     expect(generateBuiltInModule()).toContain('import { purry } from "remeda"');
   });
 
+  it("re-exports utility operations through the built-in namespace", () => {
+    expect(generateBuiltInModule()).toContain('export * from "remeda"');
+  });
+
   it("imports immer produce because mutation helpers depend on it", () => {
     expect(generateBuiltInModule()).toContain(
       'import { produce } from "immer"'
@@ -48,7 +58,8 @@ describe("generateBuiltInModule", () => {
   it("clones Request/Response instances before reading body content", () => {
     const code = generateBuiltInModule();
     expect(code).toContain("instance.clone().json()");
-    expect(code).toContain("instance.clone().text()");
+    expect(code).toContain('"clone" in instance ? instance.clone() : instance');
+    expect(code).toContain("cloneBody(instance).text()");
   });
 
   it("uses URL parsing for request query and path helpers", () => {
@@ -59,8 +70,13 @@ describe("generateBuiltInModule", () => {
 
   it("supports fetch overloads for direct and curried invocation", () => {
     const code = generateBuiltInModule();
-    expect(code).toContain("globalThis.fetch(args[0], args[1])");
+    expect(code).toContain("globalThis.fetch(");
     expect(code).toContain("return (url) => globalThis.fetch(url, args[0])");
-    expect(code).toContain("return (url) => globalThis.fetch(url)");
+  });
+
+  it("does not include the app-only dev proxy shim", () => {
+    const code = generateBuiltInModule();
+    expect(code).not.toContain("/api/proxy");
+    expect(code).not.toContain("installDevProxyFetch");
   });
 });

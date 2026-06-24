@@ -26,7 +26,11 @@ import {
   coreOperations,
   createExecutionVariables,
 } from "@/lib/operations/built-in";
-import { OperationListItem, Context } from "@/lib/execution/types";
+import {
+  OperationListItem,
+  Context,
+  ContextInstanceType,
+} from "@/lib/execution/types";
 import {
   createTestContext,
   testString,
@@ -250,7 +254,7 @@ describe("createOperationCall", () => {
     expect(result.id).toBe("custom-op-id");
   });
 
-  it("previews simple Remeda operations to infer result type", async () => {
+  it("previews simple utility operations to infer result type", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testNumber(6);
     const result = await createOperationCall({
@@ -1368,6 +1372,248 @@ describe("executeOperationSync", () => {
     const data = testNumber(10);
     const result = executeOperationSync(op, data, [numberStatement(5)], ctx);
     expect(result.value).toBe(true);
+  });
+});
+
+describe("parseJSON / stringifyJSON", () => {
+  describe("getFilteredOperations visibility", () => {
+    it("exposes parseJSON for string data", () => {
+      const ctx = createTestContext();
+      const ops = getFilteredOperations(testString('{"a":1}'), ctx);
+      expect(ops.map((op) => op.name)).toContain("parseJSON");
+    });
+
+    it("exposes stringifyJSON for string data", () => {
+      const ctx = createTestContext();
+      const ops = getFilteredOperations(testString("x"), ctx);
+      expect(ops.map((op) => op.name)).toContain("stringifyJSON");
+    });
+
+    it("exposes stringifyJSON for object data", () => {
+      const ctx = createTestContext();
+      const ops = getFilteredOperations(testObject([]), ctx);
+      expect(ops.map((op) => op.name)).toContain("stringifyJSON");
+    });
+
+    it("exposes stringifyJSON for array data", () => {
+      const ctx = createTestContext();
+      const ops = getFilteredOperations(
+        testArray([], { kind: "unknown" }),
+        ctx
+      );
+      expect(ops.map((op) => op.name)).toContain("stringifyJSON");
+    });
+
+    it("does not expose parseJSON for object data", () => {
+      const ctx = createTestContext();
+      const ops = getFilteredOperations(testObject([]), ctx);
+      expect(ops.map((op) => op.name)).not.toContain("parseJSON");
+    });
+  });
+
+  describe("executeOperation(parseJSON)", () => {
+    it("parses an object string into a dictionary", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("parseJSON");
+      const result = await executeOperation(
+        op,
+        testString('{"a":1,"b":"x"}'),
+        [],
+        ctx
+      );
+      expect(isDataOfType(result, "dictionary")).toBe(true);
+      if (isDataOfType(result, "dictionary")) {
+        const entries = result.value.entries;
+        expect(entries).toHaveLength(2);
+        expect(entries[0].key).toBe("a");
+        expect(getStatementResult(entries[0].value, ctx).value).toBe(1);
+        expect(entries[1].key).toBe("b");
+        expect(getStatementResult(entries[1].value, ctx).value).toBe("x");
+      }
+    });
+
+    it("parses an array string into an array", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("parseJSON");
+      const result = await executeOperation(op, testString("[1,2,3]"), [], ctx);
+      expect(isDataOfType(result, "array")).toBe(true);
+      if (isDataOfType(result, "array")) {
+        expect(result.value).toHaveLength(3);
+        expect(getStatementResult(result.value[0], ctx).value).toBe(1);
+      }
+    });
+
+    it("parses a primitive string into a primitive", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("parseJSON");
+      const result = await executeOperation(op, testString("42"), [], ctx);
+      expect(isDataOfType(result, "number")).toBe(true);
+      expect(result.value).toBe(42);
+    });
+
+    it("returns runtime_error for invalid JSON", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("parseJSON");
+      const result = await executeOperation(
+        op,
+        testString("{not json}"),
+        [],
+        ctx
+      );
+      expect(isDataOfType(result, "error")).toBe(true);
+      if (isDataOfType(result, "error")) {
+        expect(result.type.errorType).toBe("runtime_error");
+      }
+    });
+
+    it("applies a reviver callback", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("parseJSON");
+      // Reviver always returns 42, so even the root call yields 42.
+      const reviver = testOperation(
+        [
+          stringStatement("", "key"),
+          createStatement({
+            data: createData({ type: { kind: "unknown" } }),
+            name: "value",
+          }),
+        ],
+        [numberStatement(42)],
+        "reviver"
+      );
+      reviver.type.parameters = [
+        { name: "key", type: { kind: "string" } },
+        { name: "value", type: { kind: "unknown" } },
+      ];
+      reviver.type.result = { kind: "unknown" };
+      const result = await executeOperation(
+        op,
+        testString('{"a":1}'),
+        [createStatement({ data: reviver })],
+        ctx
+      );
+      expect(isDataOfType(result, "number")).toBe(true);
+      expect(result.value).toBe(42);
+    });
+
+    it("executes synchronously", () => {
+      const ctx = createTestContext({ isSync: true });
+      const op = findBuiltIn("parseJSON");
+      const result = executeOperationSync(op, testString('{"a":1}'), [], ctx);
+      expect(isDataOfType(result, "dictionary")).toBe(true);
+    });
+  });
+
+  describe("executeOperation(stringifyJSON)", () => {
+    it("stringifies a dictionary to a string", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      const data = testDictionary([
+        { key: "a", value: numberStatement(1) },
+        { key: "b", value: stringStatement("x") },
+      ]);
+      const result = await executeOperation(op, data, [], ctx);
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe('{"a":1,"b":"x"}');
+    });
+
+    it("stringifies an array to a string", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      const data = testArray(
+        [numberStatement(1), numberStatement(2), numberStatement(3)],
+        { kind: "number" }
+      );
+      const result = await executeOperation(op, data, [], ctx);
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe("[1,2,3]");
+    });
+
+    it("stringifies a primitive", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      const result = await executeOperation(op, testNumber(42), [], ctx);
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe("42");
+    });
+
+    it("applies numeric space for pretty-printing", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      const data = testDictionary([{ key: "a", value: numberStatement(1) }]);
+      const result = await executeOperation(
+        op,
+        data,
+        [createStatement({ data: testUndefined() }), numberStatement(2)],
+        ctx
+      );
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe('{\n  "a": 1\n}');
+    });
+
+    it("applies string space for pretty-printing", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      const data = testDictionary([{ key: "a", value: numberStatement(1) }]);
+      const result = await executeOperation(
+        op,
+        data,
+        [createStatement({ data: testUndefined() }), stringStatement("\t")],
+        ctx
+      );
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe('{\n\t"a": 1\n}');
+    });
+
+    it("uses an array replacer as a key whitelist", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      const data = testDictionary([
+        { key: "a", value: numberStatement(1) },
+        { key: "b", value: numberStatement(2) },
+        { key: "c", value: numberStatement(3) },
+      ]);
+      const replacer = createStatement({
+        data: createData({
+          type: {
+            kind: "array",
+            elementType: { kind: "string" },
+          },
+          value: [
+            createStatement({ data: testString("a") }),
+            createStatement({ data: testString("c") }),
+          ],
+        }),
+      });
+      const result = await executeOperation(op, data, [replacer], ctx);
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe('{"a":1,"c":3}');
+    });
+
+    it("executes synchronously", () => {
+      const ctx = createTestContext({ isSync: true });
+      const op = findBuiltIn("stringifyJSON");
+      const data = testDictionary([{ key: "a", value: numberStatement(1) }]);
+      const result = executeOperationSync(op, data, [], ctx);
+      expect(isDataOfType(result, "string")).toBe(true);
+      expect(result.value).toBe('{"a":1}');
+    });
+
+    it("returns runtime_error on circular references", async () => {
+      const ctx = createTestContext({ isSync: false });
+      const op = findBuiltIn("stringifyJSON");
+      // Build a circular structure via an instance-free dictionary that
+      // references itself. Since testDictionary values are statements, we
+      // construct a JS object with a self-reference and wrap it as unknown.
+      const circular: Record<string, unknown> = { a: 1 };
+      circular.self = circular;
+      const data = createData({ type: { kind: "unknown" }, value: circular });
+      const result = await executeOperation(op, data, [], ctx);
+      expect(isDataOfType(result, "error")).toBe(true);
+      if (isDataOfType(result, "error")) {
+        expect(result.type.errorType).toBe("runtime_error");
+      }
+    });
   });
 });
 
@@ -4649,10 +4895,7 @@ describe("cached instance preservation across re-executions", () => {
       string,
       { data?: IData; shouldCacheResult?: boolean }
     >();
-    const outerInstances = new Map<
-      string,
-      NonNullable<ReturnType<Context["getInstance"]>>
-    >();
+    const outerInstances = new Map<string, NonNullable<ContextInstanceType>>();
 
     outerResults.set(instanceId, {
       data: promiseData,

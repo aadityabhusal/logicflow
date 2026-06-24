@@ -220,13 +220,20 @@ describe("parseError", () => {
 });
 
 describe("createPlatformFetch", () => {
+  const originalProxyUrl = import.meta.env.VITE_API_PROXY_URL;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    delete import.meta.env.VITE_API_PROXY_URL;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete import.meta.env.VITE_API_PROXY_URL;
+    if (originalProxyUrl) {
+      import.meta.env.VITE_API_PROXY_URL = originalProxyUrl;
+    } else {
+      delete import.meta.env.VITE_API_PROXY_URL;
+    }
   });
 
   it("returns a function", () => {
@@ -234,7 +241,7 @@ describe("createPlatformFetch", () => {
     expect(typeof fetchFn).toBe("function");
   });
 
-  it("calls fetch with default proxy base + platform path + path", async () => {
+  it("calls fetch with default platform proxy path", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
 
@@ -247,7 +254,7 @@ describe("createPlatformFetch", () => {
     );
   });
 
-  it("uses VITE_API_PROXY_URL env var as proxy base", async () => {
+  it("uses VITE_API_PROXY_URL for deployment platform requests", async () => {
     import.meta.env.VITE_API_PROXY_URL = "https://proxy.example.com";
     const mockFetch = vi.fn().mockResolvedValue(new Response());
     vi.stubGlobal("fetch", mockFetch);
@@ -257,6 +264,20 @@ describe("createPlatformFetch", () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       "https://proxy.example.com/vercel/v13/deployments",
+      expect.any(Object)
+    );
+  });
+
+  it("preserves query strings in deployment platform paths", async () => {
+    import.meta.env.VITE_API_PROXY_URL = "https://proxy.example.com";
+    const mockFetch = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const fetchFn = createPlatformFetch("/supabase");
+    await fetchFn("/v1/projects?name=test", "token");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://proxy.example.com/supabase/v1/projects?name=test",
       expect.any(Object)
     );
   });

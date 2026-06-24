@@ -3,7 +3,7 @@ import {
   DeploymentResult,
   DeploymentProgress,
 } from "../../types";
-import { createPlatformFetch, parseError } from "../utils";
+import { bytesToBase64, createPlatformFetch, parseError } from "../utils";
 
 const vercelFetch = createPlatformFetch("/vercel");
 
@@ -94,10 +94,13 @@ export async function deployToVercel(
 
   const body = {
     name: vercelProject.name,
-    files: files.map((f) => ({
-      file: f.path,
-      data: f.content,
-      encoding: "utf-8",
+    files: files.map((file) => ({
+      file: file.path,
+      data:
+        typeof file.content === "string"
+          ? file.content
+          : bytesToBase64(file.content),
+      encoding: typeof file.content === "string" ? "utf-8" : "base64",
     })),
     projectSettings: {
       installCommand: "npm install",

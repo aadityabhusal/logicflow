@@ -1,10 +1,11 @@
 import { zipSync } from "fflate";
 import type { DeploymentFile } from "../types";
+import { deploymentFileBytes } from "./utils";
 
 export function createExportZip(files: DeploymentFile[]): Uint8Array {
   const entries: Record<string, Uint8Array> = {};
   for (const file of files) {
-    entries[file.path] = new TextEncoder().encode(file.content);
+    entries[file.path] = deploymentFileBytes(file);
   }
   return zipSync(entries);
 }

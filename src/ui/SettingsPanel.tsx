@@ -12,7 +12,6 @@ import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 import { notifications } from "@mantine/notifications";
 import { useRestrictedName } from "@/lib/useRestrictedName";
-import { ProjectSchema } from "@/lib/schemas";
 import { ProjectCheckpoints } from "./ProjectCheckpoints";
 import {
   FaSpinner,
@@ -22,7 +21,10 @@ import {
   FaDownload,
   FaUpload,
 } from "react-icons/fa6";
-import { createDownloadName, downloadBlob } from "@/lib/deployment/export";
+import {
+  exportProjectWithAssets,
+  importProjectFile,
+} from "@/lib/project-archive";
 
 export function SettingsPanel() {
   const enableMobileWrapping = useUiConfigStore((s) => s.enableMobileWrapping);
@@ -44,25 +46,23 @@ export function SettingsPanel() {
 
   const handleExportProject = useCallback(() => {
     if (!project) return;
-    const config = JSON.stringify(ProjectSchema.parse(project), null, 2);
-    const blob = new Blob([config], { type: "application/json" });
-    downloadBlob(blob, `${createDownloadName(project.name)}.logicflow.json`);
+    void exportProjectWithAssets(project);
   }, [project]);
 
   const handleImportProject = useCallback(
     async (file: File | undefined) => {
       if (!projectId || !file) return;
       try {
-        const imported = ProjectSchema.parse(JSON.parse(await file.text()));
+        const imported = await importProjectFile(file);
         const { id: _, ...projectConfig } = imported as Project;
         await syncPackageRegistry(imported.dependencies?.npm);
         updateProject(projectId, projectConfig);
         setCurrentFileId(imported.files[0]?.name);
         executionWorkerClient.reset();
         useExecutionResultsStore.getState().clearCache();
-        notifications.show({ message: "Project config imported" });
+        notifications.show({ message: "Project imported" });
       } catch {
-        notifications.show({ message: "Could not import project config" });
+        notifications.show({ message: "Could not import project" });
       } finally {
         if (importInputRef.current) importInputRef.current.value = "";
       }
@@ -294,7 +294,7 @@ export function SettingsPanel() {
               <input
                 ref={importInputRef}
                 type="file"
-                accept="application/json,.json"
+                accept=".json,.zip,application/json,application/zip"
                 className="hidden"
                 onChange={(e) => handleImportProject(e.target.files?.[0])}
               />

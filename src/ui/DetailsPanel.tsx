@@ -33,7 +33,10 @@ import {
   generateData,
   createCodeGenContext,
 } from "@/lib/format-code";
-import { resolveDisplayName } from "@/lib/packages/registry";
+import {
+  resolveDisplayName,
+  getInstanceDocsUrl,
+} from "@/lib/packages/registry";
 import { Link } from "react-router";
 
 export function DetailsPanel() {
@@ -90,11 +93,12 @@ export function DetailsPanel() {
   const typeSignature = useMemo(() => {
     if (isResultPending) return "Pending";
     if (detailsId && operation?.type.kind === "operation") {
-      return getTypeSignature(operation.type, context);
+      return getTypeSignature(operation.type, context, 10);
     }
     return getTypeSignature(
       displayedResult?.type ?? { kind: "undefined" },
-      context
+      context,
+      10
     );
   }, [
     displayedResult?.type,
@@ -112,13 +116,22 @@ export function DetailsPanel() {
     return isDataOfType(variable, "operation") ? variable : undefined;
   }, [operation, displayedResult, context]);
 
-  const docsUrl = useMemo(
-    () => getDocsUrl(docsOperation?.value.source, docsOperation?.value.name),
-    [docsOperation]
-  );
-  const docsConfig = docsOperation?.value.source
-    ? DOCS_REGISTRY[docsOperation.value.source.name]
-    : undefined;
+  const docsLink = useMemo(() => {
+    const source = docsOperation?.value.source;
+    const url = getDocsUrl(source, docsOperation?.value.name);
+    const config = source ? DOCS_REGISTRY[source.name] : undefined;
+    if (url && config) {
+      const label = `${config.displayName}:${getActualOperationName(docsOperation?.value.name ?? "")}`;
+      return { url, label };
+    }
+    if (displayedResult?.type.kind === "instance") {
+      const name = displayedResult.type.className;
+      const instanceUrl = getInstanceDocsUrl(name);
+      const resolvedName = resolveDisplayName(name, context.packageAliases);
+      if (instanceUrl) return { url: instanceUrl, label: resolvedName };
+    }
+    return undefined;
+  }, [docsOperation, displayedResult, context.packageAliases]);
 
   const [formattedValue, setFormattedValue] = useState("");
   const clipboard = useClipboard({ timeout: 500 });
@@ -189,10 +202,10 @@ export function DetailsPanel() {
             onClick={() => {
               setUiConfig((p) => {
                 if (!operationId) return p;
-                const lockedIds = { ...(p.sidebar?.lockedIds ?? {}) };
+                const lockedIds = { ...p.sidebar?.lockedIds };
                 if (panelLockedId) delete lockedIds[operationId];
                 else lockedIds[operationId] = detailsId;
-                return { sidebar: { ...(p.sidebar ?? {}), lockedIds } };
+                return { sidebar: { ...p.sidebar, lockedIds } };
               });
             }}
           />
@@ -236,19 +249,18 @@ export function DetailsPanel() {
             <div className="text-sm">{skipExecution.reason}</div>
           </div>
         )}
-        {docsUrl && docsConfig && (
+        {docsLink && (
           <div className="p-1 border-b gap-1 flex flex-col">
             <div className="text-gray-300 mb-1.5">Documentation</div>
             <Button
               component={Link}
-              to={docsUrl}
+              to={docsLink.url}
               target="_blank"
               rel="noopener noreferrer"
               className="outline-none w-fit"
               rightSection={<FaArrowUpRightFromSquare />}
             >
-              {docsConfig.displayName}:
-              {getActualOperationName(docsOperation?.value.name ?? "")}
+              {docsLink.label}
             </Button>
           </div>
         )}

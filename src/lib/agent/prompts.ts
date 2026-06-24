@@ -196,6 +196,8 @@ Operations are chained on the data using the pipe pattern:
 | \`isEqual\` | value: any | boolean | Deep equality |
 | \`toString\` | none | string | Converts to JSON string |
 | \`log\` | none | undefined | Logs to console |
+| \`parseJSON\` | reviver?: operation | unknown | Parses a string as JSON |
+| \`stringifyJSON\` | replacer?: operation/array, space?: string/number | string | Stringifies value to JSON |
 
 ---
 

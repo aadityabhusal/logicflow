@@ -12,7 +12,7 @@ Stores text values wrapped in quotes.
 
 **Operations**: `concat`, `includes`, `localeCompare`, `length`
 
-For additional string operations such as `toUpperCase`, `toLowerCase`, `capitalize`, `toCamelCase`, `toKebabCase`, `toSnakeCase`, `toTitleCase`, `startsWith`, `endsWith`, `truncate`, `split`, `sliceString`, and more, see the [Remeda string operations](https://remedajs.com/docs).
+For additional built-in string operations such as `toUpperCase`, `toLowerCase`, `capitalize`, `toCamelCase`, `toKebabCase`, `toSnakeCase`, `toTitleCase`, `startsWith`, `endsWith`, `truncate`, `split`, `sliceString`, and more, see the [Remeda string operation semantics](https://remedajs.com/docs).
 
 ### number
 
@@ -24,7 +24,7 @@ Stores numeric values including integers and decimals.
 
 ![Division by zero returns an error type](/docs-images/data-types-01.png)
 
-For additional number operations such as `ceil`, `floor`, `round`, `clamp`, `sum`, `product`, `mean`, `median`, `range`, `randomInteger`, `times`, and more, see the [Remeda number operations](https://remedajs.com/docs).
+For additional built-in number operations such as `ceil`, `floor`, `round`, `clamp`, `sum`, `product`, `mean`, `median`, `range`, `randomInteger`, `times`, and more, see the [Remeda number operation semantics](https://remedajs.com/docs).
 
 ### boolean
 
@@ -56,7 +56,7 @@ Stores ordered collections of elements with the same type. Arrays are typed by t
 
 **Operations**: `at`, `indexOf`, `lastIndexOf`, `slice`, `concat`, `length`, `includes`, `some`, `every`, `join`, `toTuple`
 
-For additional array operations such as `map`, `filter`, `find`, `findIndex`, `reduce`, `flatMap`, `sort`, `sortBy`, `unique`, `chunk`, `drop`, `take`, `flat`, `reverse`, `shuffle`, `zip`, `partition`, `groupBy`, `countBy`, `difference`, `intersection`, and many more, see the [Remeda array operations](https://remedajs.com/docs).
+For additional built-in array operations such as `map`, `filter`, `find`, `findIndex`, `reduce`, `flatMap`, `sort`, `sortBy`, `unique`, `chunk`, `drop`, `take`, `flat`, `reverse`, `shuffle`, `zip`, `partition`, `groupBy`, `countBy`, `difference`, `intersection`, and many more, see the [Remeda array operation semantics](https://remedajs.com/docs).
 
 ### tuple
 
@@ -74,7 +74,7 @@ Stores key-value pairs where each property has its own type. Each property maint
 
 **Operations**: `get`, `has`, `keys`, `values`, `entries`, `toDictionary`
 
-For additional object operations such as `invert`, `fromEntries`, `pick`, `omit`, `pickBy`, `omitBy`, `merge`, `mergeAll`, `mergeDeep`, `mapKeys`, `mapValues`, `set`, `setPath`, `addProp`, `swapProps`, `evolve`, `prop`, `pathOr`, and more, see the [Remeda object operations](https://remedajs.com/docs).
+For additional built-in object operations such as `invert`, `fromEntries`, `pick`, `omit`, `pickBy`, `omitBy`, `merge`, `mergeAll`, `mergeDeep`, `mapKeys`, `mapValues`, `set`, `setPath`, `addProp`, `swapProps`, `evolve`, `prop`, `pathOr`, and more, see the [Remeda object operation semantics](https://remedajs.com/docs).
 
 ### dictionary
 
@@ -84,7 +84,7 @@ Stores key-value pairs where all values share the same type. Unlike objects, dic
 
 **Operations**: `get`, `has`, `keys`, `values`, `entries`, `toObject`
 
-For additional dictionary operations, see the [Remeda object operations](https://remedajs.com/docs) (most object operations also work on dictionaries).
+For additional dictionary operation semantics, see the [Remeda object docs](https://remedajs.com/docs) (most object operations also work on dictionaries).
 
 ## Advanced Types
 
@@ -167,10 +167,21 @@ Wraps JavaScript's native Request object for creating HTTP requests with configu
 **Value**: A Request instance created from a URL string and optional options dictionary
 
 **Constructor parameters**:
+
 - `url` (string) — The request URL
 - `options` (dictionary, optional) — Request options including method, headers, body
 
 When options include a `body` that is an object, it is automatically JSON-stringified before creating the Request instance.
+
+### File
+
+Wraps the browser's native File object for working with uploaded files.
+
+**Value**: A File instance created from an uploaded file
+
+**Operations**: `getName`, `getSize`, `getType`, `text`, `arrayBuffer`
+
+Upload a file by selecting the `File` instance type and using the upload button. Uploaded files are stored locally in the browser's IndexedDB and are identified by their instance ID. Use `text` to read file contents as a string, or `arrayBuffer` to read raw bytes. See [File Upload](#file-upload) for details on uploading, storing, and deploying files.
 
 ### HttpRequest
 

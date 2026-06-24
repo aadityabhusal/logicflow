@@ -35,8 +35,8 @@ Packages can be enabled or disabled per project and given custom aliases or name
 
 ### Code Generation
 
-- **Visual operations to TypeScript/JavaScript**: Every program generates clean, readable code using Remeda's functional `pipe()`/`pipeAsync()` patterns.
-- **Operation source mapping**: Correctly maps built-in ops, Remeda ops, instance methods, and user-defined operations to their code equivalents.
+- **Visual operations to TypeScript/JavaScript**: Every program generates clean, readable code using built-in functional `pipe()`/`pipeAsync()` patterns.
+- **Operation source mapping**: Correctly maps built-in ops, package ops, instance methods, and user-defined operations to their code equivalents.
 - **Prettier-formatted output**: Generated code is automatically formatted.
 
 ### Deployment
@@ -131,9 +131,9 @@ yarn preview
 
 ### Environment Variables
 
-| Variable             | Description                                |
-| -------------------- | ------------------------------------------ |
-| `VITE_API_PROXY_URL` | API proxy URL for deployment platform APIs |
+| Variable             | Description                                         |
+| -------------------- | --------------------------------------------------- |
+| `VITE_API_PROXY_URL` | Proxy URL for deployment platform API requests only |
 
 ## Tech Stack
 

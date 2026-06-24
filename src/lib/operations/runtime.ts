@@ -1,6 +1,6 @@
 import { purry } from "remeda";
 import { produce } from "immer";
-export * as remeda from "remeda";
+export * from "remeda";
 
 // ===== Pipe Operations =====
 
@@ -200,6 +200,27 @@ export const toDictionary = <T>(obj: Record<string, T>) => ({ ...obj });
 
 export const toNumber = (value: string): number => Number(value);
 
+export function parseJSON(
+  text: string,
+  reviver?: (this: unknown, key: string, value: unknown) => unknown
+): unknown {
+  return JSON.parse(text, reviver as Parameters<typeof JSON.parse>[1]);
+}
+
+export function stringifyJSON(
+  value: unknown,
+  replacer?:
+    | ((this: unknown, key: string, value: unknown) => unknown)
+    | (string | number)[],
+  space?: string | number
+): string {
+  return JSON.stringify(
+    value,
+    replacer as Parameters<typeof JSON.stringify>[1],
+    space
+  );
+}
+
 export const toString = (value: unknown) => {
   if (
     value !== null &&
@@ -233,13 +254,10 @@ export const isTypeOf =
   };
 
 export function fetch(...args: readonly unknown[]) {
-  if (args.length === 2)
+  if (args.length > 1 || typeof args[0] === "string") {
     return globalThis.fetch(args[0] as string, args[1] as RequestInit);
-  if (args.length === 1 && typeof args[0] === "string")
-    return globalThis.fetch(args[0]);
-  if (args.length === 1)
-    return (url: string) => globalThis.fetch(url, args[0] as RequestInit);
-  return (url: string) => globalThis.fetch(url);
+  }
+  return (url: string) => globalThis.fetch(url, args[0] as RequestInit);
 }
 
 // ===== Request Instance Operations =====
@@ -264,10 +282,21 @@ export function getQuery(...args: readonly unknown[]) {
 export const getPath = (request: Request): string =>
   new URL(request.url).pathname;
 
+function cloneBody<T extends Request | Response | Blob | File>(instance: T): T {
+  return "clone" in instance ? (instance.clone() as T) : instance;
+}
+
 export const json = (instance: Request | Response): Promise<unknown> =>
   instance.clone().json();
-export const text = (instance: Request | Response): Promise<string> =>
-  instance.clone().text();
+export const text = (
+  instance: Request | Response | Blob | File
+): Promise<string> => cloneBody(instance).text();
+export const arrayBuffer = (
+  instance: Request | Response | Blob | File
+): Promise<ArrayBuffer> => cloneBody(instance).arrayBuffer();
+export const getName = (file: File): string => file.name;
+export const getSize = (instance: Blob | File): number => instance.size;
+export const getType = (instance: Blob | File): string => instance.type;
 
 // ===== URL Instance Operations =====
 

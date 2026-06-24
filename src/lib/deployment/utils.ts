@@ -12,6 +12,27 @@ export function generateBuiltInModule(): string {
   return builtInModuleCode;
 }
 
+export function deploymentFileBytes(file: DeploymentFile): Uint8Array {
+  return typeof file.content === "string"
+    ? new TextEncoder().encode(file.content)
+    : file.content;
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export function joinTextFiles(files: DeploymentFile[]): string {
+  return files
+    .map((file) => (typeof file.content === "string" ? file.content : ""))
+    .join("\n");
+}
+
 export function createPlatformFetch(platformPath: string) {
   const proxyBase = `${import.meta.env.VITE_API_PROXY_URL || "/api"}${platformPath}`;
   return async (
@@ -85,9 +106,12 @@ const npmImportPattern =
 export function prefixNpmImports<T extends DeploymentFile>(files: T[]): T[] {
   return files.map((file) => ({
     ...file,
-    content: file.content.replace(npmImportPattern, (match, pkg) => {
-      if (pkg.startsWith(".") || pkg.startsWith("npm:")) return match;
-      return `from "npm:${pkg}"`;
-    }),
+    content:
+      typeof file.content === "string"
+        ? file.content.replace(npmImportPattern, (match, pkg) => {
+            if (pkg.startsWith(".") || pkg.startsWith("npm:")) return match;
+            return `from "npm:${pkg}"`;
+          })
+        : file.content,
   }));
 }

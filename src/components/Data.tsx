@@ -25,6 +25,7 @@ import { Operation } from "./Operation";
 import { ErrorInput } from "./Input/ErrorInput";
 import { DictionaryInput } from "./Input/Dictionary";
 import { InstanceInput } from "./Input/InstanceInput";
+import { FileInput } from "./Input/FileInput";
 import { useNavigationStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
 import { OperationType } from "../lib/types";
@@ -204,6 +205,8 @@ const DataComponent = ({
           context={context}
           onClick={props.onClick}
         />
+      ) : isDataOfType(data, "instance") && data.type.className === "File" ? (
+        <FileInput {...props} onChange={onChange} data={data} />
       ) : isDataOfType(data, "instance") ? (
         <InstanceInput
           {...props}

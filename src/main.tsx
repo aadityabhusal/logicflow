@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import "./pwa";
 import {
   createBrowserRouter,
   LoaderFunctionArgs,
@@ -26,6 +25,10 @@ import {
   waitForHydration,
 } from "./lib/store";
 import { Notifications } from "@mantine/notifications";
+import { registerChunkLoadErrorHandler } from "@/lib/handle-chunk-load-errors";
+import { installDevProxyFetch } from "@/lib/dev-proxy-fetch";
+import { showReloadNotification } from "@/lib/reload-prompt";
+import { registerSW } from "virtual:pwa-register";
 
 const theme = createTheme({
   scale: 1,
@@ -113,6 +116,20 @@ const router = createBrowserRouter([
   },
   { path: "*", element: <Navigate to="/" replace /> },
 ]);
+
+installDevProxyFetch();
+registerChunkLoadErrorHandler();
+
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    showReloadNotification({
+      title: "A new version is available.",
+      buttonLabel: "Update Now",
+      onReload: () => updateSW(true),
+    });
+  },
+});
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

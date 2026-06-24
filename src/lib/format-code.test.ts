@@ -49,6 +49,60 @@ describe("generateData", () => {
     expect(result).toBe('""');
   });
 
+  it("shows File result metadata instead of an empty File", () => {
+    const root = createTestContext();
+    const data = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    root.setInstance(data.value.instanceId, {
+      type: data.type,
+      instance: new File(["hello"], "hello.txt", { type: "text/plain" }),
+    });
+
+    const result = generateData(
+      data,
+      createCodeGenContext(root, { showResult: true })
+    );
+    expect(result).toContain('"hello.txt"');
+    expect(result).toContain('"text/plain"');
+    expect(result).not.toContain("new File(");
+    expect(result).not.toContain("uploaded file contents");
+  });
+
+  it("generates loader call for deployable File assets", () => {
+    const ctx = createCodeGenContext(createTestContext(), {
+      fileAssets: new Map([
+        [
+          "file-1",
+          {
+            path: "/assets/file-1.txt",
+            name: "hello.txt",
+            type: "text/plain",
+            size: 5,
+            lastModified: 1,
+          },
+        ],
+      ]),
+    });
+    const data = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    data.value.instanceId = "file-1";
+
+    expect(generateData(data, ctx)).toBe('await _.File("file-1")');
+  });
+
+  it("previews File data without deployment assets", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const data = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+
+    expect(() => generateData(data, ctx)).not.toThrow();
+    expect(generateData(data, ctx)).not.toContain("uploaded file contents");
+    expect(generateData(data, ctx)).toMatch(/^File\("/);
+  });
+
   it("generates number literal", () => {
     const ctx = createCodeGenContext(createTestContext());
     expect(generateData(testNumber(42), ctx)).toBe("42");
@@ -349,7 +403,7 @@ describe("generateOperation", () => {
     expect(result).toContain("_.length");
   });
 
-  it("generates remeda operations through built-in namespace", () => {
+  it("generates utility operations through built-in namespace", () => {
     const ctx = createTestContext();
     const addOp = createData({
       type: {
@@ -1609,6 +1663,80 @@ describe("recursive operation code generation", () => {
     expect(result).toContain("(first, second)");
   });
 
+  it("marks operations with file assets async and uses the built-in loader", () => {
+    const ctx = createTestContext();
+    const fileData = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    fileData.value.instanceId = "file-1";
+    const op = testOperation(
+      [],
+      [createStatement({ data: fileData })],
+      "readFile"
+    );
+
+    const result = generateOperation(op, ctx, {
+      fileAssets: new Map([
+        [
+          "file-1",
+          {
+            path: "/assets/file-1.txt",
+            name: "hello.txt",
+            type: "text/plain",
+            size: 5,
+            lastModified: 1,
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toContain("const readFile = async ()");
+    expect(result).toContain('await _.File("file-1")');
+  });
+
+  it("passes awaited file assets to text operation", () => {
+    const ctx = createTestContext();
+    const fileData = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+    });
+    fileData.value.instanceId = "file-1";
+    const textOp = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          {
+            type: { kind: "instance", className: "File", constructorArgs: [] },
+          },
+        ],
+        result: { kind: "string" },
+      },
+      value: { name: "text", parameters: [], statements: [] },
+    });
+    const op = testOperation(
+      [],
+      [createStatement({ data: fileData, operations: [textOp] })],
+      "readFile"
+    );
+
+    const result = generateOperation(op, ctx, {
+      fileAssets: new Map([
+        [
+          "file-1",
+          {
+            path: "/assets/file-1.txt",
+            name: "hello.txt",
+            type: "text/plain",
+            size: 5,
+            lastModified: 1,
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toContain('_.pipe(await _.File("file-1"), _.text)');
+    expect(result).not.toContain('await _.File("file-1").text()');
+  });
+
   it("generates internal callback with ...args for stored instance without type", () => {
     const ctx = createTestContext();
     const opData = createData({
@@ -2287,5 +2415,156 @@ describe("ffmpeg code generation", () => {
     const result = generateOperation(op, ctx);
 
     expect(result).toContain('.normalize("fast")');
+  });
+});
+
+describe("comfyui code generation", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "comfyui" }]);
+  });
+
+  const ApiType = {
+    kind: "instance" as const,
+    className: "comfyui.ComfyApi",
+    constructorArgs: [
+      { type: { kind: "string" as const }, name: "host" },
+    ] as OperationType["parameters"],
+  };
+
+  const PromptBuilderType = {
+    kind: "instance" as const,
+    className: "comfyui.PromptBuilder",
+    constructorArgs: [
+      {
+        type: {
+          kind: "dictionary" as const,
+          elementType: { kind: "unknown" as const },
+        },
+        name: "workflow",
+      },
+      {
+        type: {
+          kind: "array" as const,
+          elementType: { kind: "string" as const },
+        },
+        name: "inputKeys",
+      },
+      {
+        type: {
+          kind: "array" as const,
+          elementType: { kind: "string" as const },
+        },
+        name: "outputKeys",
+      },
+    ] as OperationType["parameters"],
+  };
+
+  it("generates namespace import for comfyui instance data", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    generateData(createData({ type: ApiType }), ctx);
+
+    expect(ctx.usedPackages.has("comfyui")).toBe(true);
+  });
+
+  it("generates method chaining for ComfyApi instance methods", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const initOp = createData({
+      type: {
+        kind: "operation" as const,
+        parameters: [{ type: ApiType }],
+        result: ApiType,
+      },
+      value: {
+        name: "init",
+        parameters: [],
+        statements: [],
+        source: { name: "comfyuiApi", callStyle: "method" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: ApiType }),
+      operations: [initOp],
+    });
+    const op = testOperation([], [stmt], "comfyInitTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("import * as comfyui from '@saintno/comfyui-sdk'");
+    expect(result).toContain("new comfyui.ComfyApi(");
+    expect(result).toContain(".init()");
+  });
+
+  it("generates PromptBuilder instance data as package class constructor", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    const data = createData({ type: PromptBuilderType });
+
+    expect(generateData(data, ctx)).toContain("new comfyui.PromptBuilder(");
+    expect(ctx.usedPackages.has("comfyui")).toBe(true);
+  });
+
+  it("includes comfyui import when comfyui instance data is used", () => {
+    const ctx = createTestContext();
+    const stmt = createStatement({
+      data: createData({ type: ApiType }),
+    });
+    const op = testOperation([], [stmt], "usesComfy");
+    const result = generateOperation(op, ctx);
+    expect(result).toContain("import * as comfyui from '@saintno/comfyui-sdk'");
+  });
+
+  it("omits comfyui import when no comfyui usage", () => {
+    const ctx = createTestContext();
+    const stmt = createStatement({ data: testString("hello") });
+    const op = testOperation([], [stmt], "noComfy");
+    const result = generateOperation(op, ctx);
+    expect(result).not.toContain("from '@saintno/comfyui-sdk'");
+  });
+
+  it("generates WorkflowBuilder instance data as package class constructor", () => {
+    const ctx = createCodeGenContext(createTestContext(), { showResult: true });
+    const workflowBuilderType = {
+      kind: "instance" as const,
+      className: "comfyui.WorkflowBuilder",
+      constructorArgs: [] as OperationType["parameters"],
+    };
+    const data = createData({ type: workflowBuilderType });
+
+    expect(generateData(data, ctx)).toContain("new comfyui.WorkflowBuilder()");
+    expect(ctx.usedPackages.has("comfyui")).toBe(true);
+  });
+
+  it("generates build method chaining on WorkflowBuilder", () => {
+    const ctx = createCodeGenContext(createTestContext());
+    const workflowBuilderType = {
+      kind: "instance" as const,
+      className: "comfyui.WorkflowBuilder",
+      constructorArgs: [] as OperationType["parameters"],
+    };
+    const promptBuilderType = {
+      kind: "instance" as const,
+      className: "comfyui.PromptBuilder",
+      constructorArgs: [] as OperationType["parameters"],
+    };
+    const buildOp = createData({
+      type: {
+        kind: "operation" as const,
+        parameters: [{ type: workflowBuilderType }],
+        result: promptBuilderType,
+      },
+      value: {
+        name: "build",
+        parameters: [],
+        statements: [],
+        source: { name: "comfyuiWorkflowBuilder", callStyle: "method" },
+      },
+    });
+    const stmt = createStatement({
+      data: createData({ type: workflowBuilderType }),
+      operations: [buildOp],
+    });
+    const op = testOperation([], [stmt], "comfyBuildTest");
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain("new comfyui.WorkflowBuilder()");
+    expect(result).toContain(".build()");
   });
 });

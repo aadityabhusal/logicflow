@@ -791,6 +791,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: { kind: "string" } },
     ] as OperationType["parameters"],
     importInfo: { packageName: "rowguard" },
+    docsUrl:
+      "https://supabase-community.github.io/rowguard/classes/ColumnBuilder.html",
   },
   "rowguard.ConditionChain": {
     name: "rowguard.ConditionChain",
@@ -798,6 +800,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "rowguard" },
+    docsUrl:
+      "https://supabase-community.github.io/rowguard/classes/ConditionChain.html",
   },
   "rowguard.PolicyBuilder": {
     name: "rowguard.PolicyBuilder",
@@ -806,6 +810,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: { kind: "string" }, isOptional: true },
     ] as OperationType["parameters"],
     importInfo: { packageName: "rowguard" },
+    docsUrl:
+      "https://supabase-community.github.io/rowguard/classes/PolicyBuilder.html",
   },
   "rowguard.SubqueryBuilder": {
     name: "rowguard.SubqueryBuilder",
@@ -815,6 +821,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
       { type: { kind: "string" }, isOptional: true },
     ] as OperationType["parameters"],
     importInfo: { packageName: "rowguard" },
+    docsUrl:
+      "https://supabase-community.github.io/rowguard/classes/SubqueryBuilder.html",
   },
   "rowguard.SQLExpression": {
     name: "rowguard.SQLExpression",

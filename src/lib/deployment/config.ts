@@ -13,20 +13,123 @@ import {
   generateBuiltInModule,
   virtualPackageModules,
   prefixNpmImports,
+  joinTextFiles,
+  bytesToBase64,
 } from "./utils";
 import { PACKAGE_REGISTRY } from "../packages/registry";
 import { getEnabledPackages, PACKAGE_CATALOG } from "../packages/catalog";
 import { syncPackageRegistry } from "../operations/built-in";
+import {
+  FileAssetMeta,
+  getFileMeta,
+  getPublicAssetPath,
+  getFileAsset,
+  collectFileInstanceIds,
+} from "../file-assets";
+
+function generateFileAssetLoader(
+  fileAssets: Map<string, FileAssetMeta>,
+  hasEmbeddedAssets = false
+) {
+  const manifest = Object.fromEntries(fileAssets);
+  return (
+    `${hasEmbeddedAssets ? "import { fileAssetEmbeddedData } from './file-assets.generated.js';\n" : "const fileAssetEmbeddedData = {};\n"}
+const fileAssetManifest = ${JSON.stringify(manifest, null, 2)};
+const fileAssetCache = new Map();
+let fileAssetConfig = {};
+
+export function configureFileAssets(config = {}) {
+  fileAssetConfig = config;
+}
+
+async function fetchFileAsset(path) {
+  const headers = fileAssetConfig.headers instanceof Headers ? fileAssetConfig.headers : new Headers();
+  if (!(fileAssetConfig.headers instanceof Headers)) {
+    for (const [key, value] of Object.entries(fileAssetConfig.headers ?? {})) {
+      if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+    }
+  }
+  const response = await fetch(
+    fileAssetConfig.baseUrl ? new URL(path.replace(/^\\//, ""), fileAssetConfig.baseUrl) : path,
+    { headers },
+  );
+  if (!response.ok) throw new Error(\`Failed to load file asset \${path}: HTTP \${response.status}\`);
+  return response.arrayBuffer();
+}
+
+function decodeFileAssetData(data) {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+export async function loadFileAsset(id) {
+  if (fileAssetCache.has(id)) return fileAssetCache.get(id);
+  const meta = fileAssetManifest[id];
+  if (!meta) throw new Error(\`Missing file asset: \${id}\`);
+  const hasEmbeddedData = Object.prototype.hasOwnProperty.call(fileAssetEmbeddedData, id);
+  const bytes = hasEmbeddedData
+    ? decodeFileAssetData(fileAssetEmbeddedData[id])
+    : typeof Deno !== "undefined" && !fileAssetConfig.baseUrl
+    ? await Deno.readFile(new URL(` +
+    "`../../public${meta.path}`" +
+    `, import.meta.url))
+    : await fetchFileAsset(meta.path);
+  const file = new File([bytes], meta.name, {
+    type: meta.type,
+    lastModified: meta.lastModified,
+  });
+  fileAssetCache.set(id, file);
+  return file;
+}
+
+export { loadFileAsset as File };
+`
+  );
+}
+
+async function loadFileAssets(
+  project: Project,
+  options?: { embedAssets?: boolean }
+) {
+  const fileIds = collectFileInstanceIds(project.files);
+  const assets = new Map<string, FileAssetMeta>();
+  const embedded = new Map<string, string>();
+  const files: DeploymentFile[] = [];
+  const errors: string[] = [];
+
+  for (const id of fileIds) {
+    const asset = await getFileAsset(id);
+    if (!asset) {
+      errors.push(`Missing file asset for File instance ${id}`);
+      continue;
+    }
+    const publicPath = getPublicAssetPath(id, asset.file.name);
+    const bytes = new Uint8Array(await asset.file.arrayBuffer());
+    if (options?.embedAssets) embedded.set(id, bytesToBase64(bytes));
+    else files.push({ path: `public${publicPath}`, content: bytes });
+    assets.set(id, getFileMeta(publicPath, asset.file));
+  }
+  return { assets, embedded, files, errors };
+}
 
 export function getTriggeredOperations(project: Project): ProjectFile[] {
   return project.files.filter((f) => f.type === "operation" && f.trigger);
 }
 
-async function generateBaseFiles(project: Project, context: Context) {
+async function generateBaseFiles(
+  project: Project,
+  context: Context,
+  options: { embedAssets?: boolean } = {}
+) {
   const errors: string[] = [];
   const files: DeploymentFile[] = [];
 
   await syncPackageRegistry(getEnabledPackages(project));
+  const allAssets = await loadFileAssets(project, options);
+  errors.push(...allAssets.errors);
+  files.push(...allAssets.files);
 
   for (const file of project.files.filter((f) => f.type === "operation")) {
     const operation = createOperationFromFile(file);
@@ -35,28 +138,45 @@ async function generateBaseFiles(project: Project, context: Context) {
       continue;
     }
     try {
-      const content = generateOperation(operation, context);
+      const content = generateOperation(operation, context, {
+        fileAssets: allAssets.assets,
+      });
       files.push({ path: `src/${file.name}.js`, content });
     } catch (error) {
       errors.push(`Failed to generate operation ${file.name}: ${error}`);
     }
   }
-  files.push({ path: "src/lib/built-in.js", content: generateBuiltInModule() });
+  if (allAssets.embedded.size > 0) {
+    files.push({
+      path: "src/lib/file-assets.generated.js",
+      content: `export const fileAssetEmbeddedData = ${JSON.stringify(Object.fromEntries(allAssets.embedded), null, 2)};`,
+    });
+  }
+  files.push({
+    path: "src/lib/built-in.js",
+    content: `${generateBuiltInModule()}\n${
+      allAssets.assets.size
+        ? generateFileAssetLoader(allAssets.assets, allAssets.embedded.size > 0)
+        : ""
+    }`,
+  });
 
-  const allFileContent = files.map((f) => f.content).join("\n");
+  const allFileContent = joinTextFiles(files);
   for (const pkg of Object.keys(virtualPackageModules)) {
     const moduleContent = virtualPackageModules[pkg];
     if (moduleContent && allFileContent.includes(`./lib/${pkg}.js`)) {
       files.push({ path: `src/lib/${pkg}.js`, content: moduleContent });
     }
   }
-  return { files, errors };
+  return { files, errors, hasFileAssets: allAssets.assets.size > 0 };
 }
 
 async function formatProjectFiles(files: DeploymentFile[]) {
   const results = await Promise.allSettled(
     files.map(async (file) => {
-      if (!file.path.endsWith(".js")) return file;
+      if (typeof file.content !== "string" || !file.path.endsWith(".js")) {
+        return file;
+      }
       return { ...file, content: await formatCode(file.content) };
     })
   );
@@ -70,7 +190,13 @@ export async function generateDeployableProject(
 ) {
   const deployment = project.deployment ?? { envVariables: [], platforms: [] };
   const triggeredOps = getTriggeredOperations(project);
-  const { files: _files, errors } = await generateBaseFiles(project, context);
+  const {
+    files: _files,
+    errors,
+    hasFileAssets,
+  } = await generateBaseFiles(project, context, {
+    embedAssets: platform === "supabase",
+  });
   let files = _files;
 
   const platforms = platform
@@ -96,6 +222,7 @@ export async function generateDeployableProject(
         {
           nodejs:
             target.platform === "vercel" && hasEdgeIncompatiblePackages(files),
+          hasFileAssets,
         }
       );
       files.push(
@@ -131,7 +258,7 @@ type Dependency = { name: string; version: string };
 const EDGE_INCOMPATIBLE_PACKAGES: readonly string[] = ["@faker-js/faker"];
 
 function hasEdgeIncompatiblePackages(files: DeploymentFile[]) {
-  const allFiles = files.map((f) => f.content).join("\n");
+  const allFiles = joinTextFiles(files);
   return EDGE_INCOMPATIBLE_PACKAGES.some(
     (pkg) => allFiles.includes(`'${pkg}'`) || allFiles.includes(`"${pkg}"`)
   );
@@ -139,7 +266,7 @@ function hasEdgeIncompatiblePackages(files: DeploymentFile[]) {
 
 function extractNpmPackageNames(files: DeploymentFile[]) {
   const packages = new Set<string>();
-  const allFiles = files.map((f) => f.content).join("\n");
+  const allFiles = joinTextFiles(files);
   for (const pkg of Object.keys(PACKAGE_REGISTRY)) {
     if (PACKAGE_CATALOG[pkg]?.packageType === "virtual") continue;
     const packageName = PACKAGE_CATALOG[pkg]?.packageName ?? pkg;

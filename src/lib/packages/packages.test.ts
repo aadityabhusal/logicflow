@@ -9,12 +9,15 @@ import { operations as rowguardOperations } from "@/lib/operations/rowguard";
 import { operations as fakerOperations } from "@/lib/operations/faker";
 import { operations as dateFnsOperations } from "@/lib/operations/date-fns";
 import { operations as supabaseOperations } from "@/lib/operations/supabase";
+import { operations as comfyuiOperations } from "@/lib/operations/comfyui";
+import * as comfyuiSDK from "@saintno/comfyui-sdk";
 import {
   createData,
   getRawValueFromData,
   isDataOfType,
   createDataFromRawValue,
   createStatement,
+  createInstance,
 } from "@/lib/utils";
 import { Context, OperationListItem } from "@/lib/execution/types";
 import { IData, InstanceDataType } from "../types";
@@ -1019,5 +1022,301 @@ describe("date-fns operations", () => {
 
     expect(isDataOfType(result, "boolean")).toBe(true);
     expect(getRawValueFromData(result, ctx)).toBe(false);
+  });
+});
+
+describe("comfyui operations", () => {
+  beforeAll(async () => {
+    await syncPackageRegistry([{ name: "comfyui" }]);
+  });
+
+  function findOp(name: string): OperationListItem {
+    const op = comfyuiOperations.find((o) => o.name === name);
+    if (!op) throw new Error(`ComfyUI operation "${name}" not found`);
+    return op;
+  }
+
+  it("creates ComfyApi through instance type metadata", () => {
+    const ctx = createTestContext();
+    const raw = createInstance(
+      "comfyui.ComfyApi",
+      [testString("http://localhost:8188")],
+      ctx
+    );
+    const result = createDataFromRawValue(raw, ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.ComfyApi");
+    }
+    expect(raw).toBeInstanceOf(comfyuiSDK.ComfyApi);
+    expect(typeof (raw as { init: unknown }).init).toBe("function");
+  });
+
+  it("ComfyApi instance type accepts optional clientId", () => {
+    const ctx = createTestContext();
+    const raw = createInstance(
+      "comfyui.ComfyApi",
+      [testString("http://localhost:8188"), testString("my-client-id")],
+      ctx
+    );
+    const result = createDataFromRawValue(raw, ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.ComfyApi");
+    }
+    expect(raw).toBeInstanceOf(comfyuiSDK.ComfyApi);
+  });
+
+  it("creates PromptBuilder through instance type metadata", () => {
+    const ctx = createTestContext();
+    const raw = createInstance(
+      "comfyui.PromptBuilder",
+      [
+        createDataFromRawValue(
+          { "1": { inputs: {}, class_type: "Test", _meta: { title: "Test" } } },
+          ctx
+        ),
+        createDataFromRawValue(["positive"], ctx),
+        createDataFromRawValue(["images"], ctx),
+      ],
+      ctx
+    );
+    const result = createDataFromRawValue(raw, ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.PromptBuilder");
+    }
+    expect(raw).toBeInstanceOf(comfyuiSDK.PromptBuilder);
+    expect(typeof (raw as { inputRaw: unknown }).inputRaw).toBe("function");
+  });
+
+  it("clone returns a PromptBuilder instance", async () => {
+    const ctx = createTestContext();
+    const op = findOp("clone");
+    const raw = createInstance(
+      "comfyui.PromptBuilder",
+      [
+        createDataFromRawValue(
+          { "1": { inputs: {}, class_type: "Test", _meta: { title: "Test" } } },
+          ctx
+        ),
+        createDataFromRawValue(["positive"], ctx),
+        createDataFromRawValue(["images"], ctx),
+      ],
+      ctx
+    );
+    const source = createDataFromRawValue(raw, ctx);
+    const result = await executeOperation(op, source, [], ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.PromptBuilder");
+    }
+    expect(getRawValueFromData(result, ctx)).toBeInstanceOf(
+      comfyuiSDK.PromptBuilder
+    );
+  });
+
+  it("creates ComfyPool through instance type metadata", () => {
+    const ctx = createTestContext();
+    const api1 = createInstance(
+      "comfyui.ComfyApi",
+      [testString("http://localhost:8188")],
+      ctx
+    );
+    const api2 = createInstance(
+      "comfyui.ComfyApi",
+      [testString("http://localhost:8189")],
+      ctx
+    );
+    const raw = createInstance(
+      "comfyui.ComfyPool",
+      [createDataFromRawValue([api1, api2], ctx)],
+      ctx
+    );
+    const result = createDataFromRawValue(raw, ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.ComfyPool");
+    }
+    expect(raw).toBeInstanceOf(comfyuiSDK.ComfyPool);
+    expect(typeof (raw as { addClient: unknown }).addClient).toBe("function");
+  });
+
+  it("creates WorkflowBuilder through instance type metadata", () => {
+    const ctx = createTestContext();
+    const raw = createInstance("comfyui.WorkflowBuilder", [], ctx);
+    const result = createDataFromRawValue(raw, ctx);
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.WorkflowBuilder");
+    }
+    expect(raw).toBeInstanceOf(comfyuiSDK.WorkflowBuilder);
+    expect(typeof (raw as { build: unknown }).build).toBe("function");
+  });
+
+  it("build returns a PromptBuilder instance", async () => {
+    const ctx = createTestContext();
+    const op = findOp("build");
+    const builder = createInstance("comfyui.WorkflowBuilder", [], ctx);
+    const source = createDataFromRawValue(builder, ctx);
+    const config = createDataFromRawValue(
+      { inputs: { positive: "1.inputs.text" }, outputs: { images: "2" } },
+      ctx
+    );
+    const result = await executeOperation(
+      op,
+      source,
+      [createStatement({ data: config })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.PromptBuilder");
+    }
+    expect(getRawValueFromData(result, ctx)).toBeInstanceOf(
+      comfyuiSDK.PromptBuilder
+    );
+  });
+
+  it("input sets a value on PromptBuilder", async () => {
+    const ctx = createTestContext();
+    const op = findOp("input");
+    const builder = createInstance(
+      "comfyui.PromptBuilder",
+      [
+        createDataFromRawValue(
+          {
+            "1": {
+              inputs: { text: "" },
+              class_type: "Test",
+              _meta: { title: "Test" },
+            },
+          },
+          ctx
+        ),
+        createDataFromRawValue(["positive"], ctx),
+        createDataFromRawValue(["images"], ctx),
+      ],
+      ctx
+    );
+    (
+      builder as {
+        setRawInputNode: (input: string, key: string | string[]) => unknown;
+      }
+    ).setRawInputNode("positive", "1.inputs.text");
+    const source = createDataFromRawValue(builder, ctx);
+    const key = createDataFromRawValue("positive", ctx);
+    const value = createDataFromRawValue("a cute cat", ctx);
+    const result = await executeOperation(
+      op,
+      source,
+      [createStatement({ data: key }), createStatement({ data: value })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.PromptBuilder");
+    }
+    const raw = getRawValueFromData(result, ctx);
+    expect(raw).toBeInstanceOf(comfyuiSDK.PromptBuilder);
+  });
+
+  it("setInputNode returns a PromptBuilder instance", async () => {
+    const ctx = createTestContext();
+    const op = findOp("setInputNode");
+    const builder = createInstance(
+      "comfyui.PromptBuilder",
+      [
+        createDataFromRawValue(
+          {
+            "1": {
+              inputs: { text: "" },
+              class_type: "Test",
+              _meta: { title: "Test" },
+            },
+          },
+          ctx
+        ),
+        createDataFromRawValue(["positive"], ctx),
+        createDataFromRawValue(["images"], ctx),
+      ],
+      ctx
+    );
+    const source = createDataFromRawValue(builder, ctx);
+    const input = createDataFromRawValue("positive", ctx);
+    const key = createDataFromRawValue("1.inputs.text", ctx);
+    const result = await executeOperation(
+      op,
+      source,
+      [createStatement({ data: input }), createStatement({ data: key })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.PromptBuilder");
+    }
+  });
+
+  it("setOutputNode returns a PromptBuilder instance", async () => {
+    const ctx = createTestContext();
+    const op = findOp("setOutputNode");
+    const builder = createInstance(
+      "comfyui.PromptBuilder",
+      [
+        createDataFromRawValue(
+          {
+            "1": {
+              inputs: { text: "" },
+              class_type: "Test",
+              _meta: { title: "Test" },
+            },
+          },
+          ctx
+        ),
+        createDataFromRawValue(["positive"], ctx),
+        createDataFromRawValue(["images"], ctx),
+      ],
+      ctx
+    );
+    const source = createDataFromRawValue(builder, ctx);
+    const output = createDataFromRawValue("images", ctx);
+    const key = createDataFromRawValue("2", ctx);
+    const result = await executeOperation(
+      op,
+      source,
+      [createStatement({ data: output }), createStatement({ data: key })],
+      ctx
+    );
+
+    expect(isDataOfType(result, "instance")).toBe(true);
+    if (result.type.kind === "instance") {
+      expect(result.type.className).toBe("comfyui.PromptBuilder");
+    }
+  });
+
+  it("destroy on ComfyPool does not throw", async () => {
+    const ctx = createTestContext();
+    const op = findOp("destroy");
+    const api = createInstance(
+      "comfyui.ComfyApi",
+      [testString("http://localhost:8188")],
+      ctx
+    );
+    const pool = createInstance(
+      "comfyui.ComfyPool",
+      [createDataFromRawValue([api], ctx)],
+      ctx
+    );
+    const source = createDataFromRawValue(pool, ctx);
+    await expect(executeOperation(op, source, [], ctx)).resolves.toBeDefined();
   });
 });

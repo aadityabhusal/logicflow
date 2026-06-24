@@ -161,7 +161,8 @@ const wretchOperations: OperationListItem[] = [
   // Wretch Instance Methods
   createWretchOperation(
     "url",
-    (instance, _, p1) => instance.url(p1.value as string),
+    (instance, _, p1, p2) =>
+      instance.url(p1.value as string, p2?.value as boolean),
     [
       { type: { kind: "string" }, name: "url" },
       { type: { kind: "boolean" }, name: "replace", isOptional: true },
@@ -403,6 +404,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "wretch" },
+    docsUrl:
+      "https://elbywan.github.io/wretch/api/interfaces/index.Wretch.html",
   },
   "wretch.WretchResponseChain": {
     name: "wretch.WretchResponseChain",
@@ -410,6 +413,8 @@ export const instanceTypes: Record<string, InstanceTypeConfig> = {
     constructorArgs: [],
     hideFromDropdown: true,
     importInfo: { packageName: "wretch" },
+    docsUrl:
+      "https://elbywan.github.io/wretch/api/interfaces/index.WretchResponseChain.html",
   },
 };
 
