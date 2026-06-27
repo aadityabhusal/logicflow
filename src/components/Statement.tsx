@@ -103,6 +103,7 @@ const StatementComponent = ({
     disableDelete,
     path,
     position,
+    context,
   });
 
   const normalizeStatement = useCallback((nextStatement: IStatement) => {

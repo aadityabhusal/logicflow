@@ -13,8 +13,6 @@ import {
   FaCircleChevronDown,
   FaCirclePlus,
   FaCircleXmark,
-  FaObjectUngroup,
-  FaSquareArrowUpRight,
 } from "react-icons/fa6";
 import {
   useProjectStore,
@@ -29,18 +27,9 @@ import {
   IDropdownTargetProps,
   OperationType,
 } from "../lib/types";
-import { useSearchParams } from "react-router";
 import {
   createOperationFromFile,
-  createFileFromOperation,
-  createFileVariables,
-  createVariableName,
-  createStatement,
-  createParamData,
-  createData,
-  getFreeVariableNames,
   getTypeSignature,
-  handleSearchParams,
   isDataOfType,
   isTextInput,
   resolveReference,
@@ -51,7 +40,6 @@ import {
 import { getNextIdAfterDelete, getOperationEntities } from "@/lib/navigation";
 import { Context } from "@/lib/execution/types";
 import { useExecutionResultsStore } from "@/lib/execution/store";
-import { createOperationCall } from "@/lib/execution/execution";
 import { resolveDisplayName } from "@/lib/packages/registry";
 
 const MAX_DROPDOWN_ITEMS_PER_GROUP = 100;
@@ -64,7 +52,6 @@ const DropdownComponent = ({
   handleDelete,
   addOperationCall,
   canAddOperationCall,
-  handleChange,
   children,
   options,
   isInputTarget,
@@ -95,14 +82,12 @@ const DropdownComponent = ({
   operation?: IData<OperationType>;
   onContextMenu?: (e: React.MouseEvent) => void;
 }) => {
-  const [, setSearchParams] = useSearchParams();
   const isFocused = useNavigationStore((s) => s.navigation?.id === id);
   const isContextMenuHighlighted = useContextMenuStore(
     (s) => s.highlightedEntityId === id
   );
 
   const setNavigation = useNavigationStore((s) => s.setNavigation);
-  const addFile = useProjectStore((s) => s.addFile);
   const currentFileId = useProjectStore((s) => s.currentFileId);
   const detailsPanelLockedId = useUiConfigStore((s) => {
     const lockedId = currentFileId && s.sidebar.lockedIds?.[currentFileId];
@@ -120,10 +105,6 @@ const DropdownComponent = ({
   const operationResult = useExecutionResultsStore(
     (s) => s.getResult(getCacheKey(context, id))?.data
   );
-  const isOperationFile = useProjectStore((s) => {
-    if (!(isDataOfType(data, "reference") || operationResult)) return undefined;
-    return s.getCurrentProject()?.files.find((f) => f.name === value);
-  });
   const _result = useMemo(
     () =>
       operationResult
@@ -312,60 +293,6 @@ const DropdownComponent = ({
     }
   }, [isFocused, combobox]);
 
-  const handleExtractToFile = async (data: IData<OperationType>) => {
-    const newName = createVariableName({
-      prefix: "operation",
-      prev: useProjectStore.getState().getCurrentProject()?.files || [],
-    });
-
-    const definedVars = [...getFreeVariableNames(data, context)]
-      .map((name) => ({ name, variable: context.variables.get(name)! }))
-      .filter((item) => !!item.variable);
-    const fileParams = definedVars.map(({ name, variable }) => {
-      const data = createParamData({ type: variable.data.type });
-      return createStatement({ name, data });
-    });
-    const callArgs = definedVars.map(({ name, variable }) => {
-      const data = createData({ value: { name, id: variable.data.id } });
-      return createStatement({ name, data });
-    });
-
-    const file = createFileFromOperation(
-      createData({
-        type: fileParams.length > 0 ? undefined : data.type,
-        value: {
-          ...data.value,
-          name: newName,
-          parameters: [...fileParams, ...data.value.parameters],
-        },
-      })
-    );
-    addFile(file);
-
-    const opRef = createData({ value: { name: newName, id: data.id } });
-    if (fileParams.length === 0) {
-      handleChange?.(opRef);
-      return;
-    }
-    const newVariables = createFileVariables([file], context.variables);
-    const callOp = await createOperationCall({
-      data: opRef,
-      name: "call",
-      parameters: [...callArgs, ...data.value.parameters],
-      context: { ...context, variables: newVariables },
-    });
-
-    handleChange?.(
-      createData({
-        type: data.type,
-        value: {
-          parameters: data.value.parameters,
-          statements: [createStatement({ data: opRef, operations: [callOp] })],
-        },
-      })
-    );
-  };
-
   return (
     <Combobox
       onOptionSubmit={(optionValue) => {
@@ -440,31 +367,6 @@ const DropdownComponent = ({
               onFocus: () => setNavigation({ navigation: { id } }),
             })}
           </Combobox.EventsTarget>
-          {(isDataOfType(data, "reference") || operationResult) &&
-            isOperationFile && (
-              <IconButton
-                tabIndex={-1}
-                size={10}
-                className="editor-affordance absolute -top-1.5 right-3 z-10 p-0.5"
-                icon={FaSquareArrowUpRight}
-                onClick={() =>
-                  setSearchParams(...handleSearchParams({ file: value }, true))
-                }
-                hidden={!isFocused && !isHovered}
-                title="Go to operation"
-              />
-            )}
-          {isDataOfType(data, "operation") && handleChange && (
-            <IconButton
-              tabIndex={-1}
-              size={10}
-              className="editor-affordance absolute -top-1.5 right-3 z-10 p-0.5"
-              icon={FaObjectUngroup}
-              onClick={() => handleExtractToFile(data)}
-              hidden={!isFocused && !isHovered}
-              title="Extract operation"
-            />
-          )}
           {handleDelete && (
             <IconButton
               tabIndex={-1}

@@ -18,6 +18,7 @@ import { memo, MouseEvent, useCallback, useMemo } from "react";
 import { useNavigationStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 import { useExecutionResultsStore } from "@/lib/execution/store";
+import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { getOperationCallLayout } from "@/lib/layout";
 import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
@@ -38,7 +39,11 @@ const OperationCallComponent = ({
   ) => void;
   addOperationCall?: (data: IData, operationId?: string) => void;
   path: EntityPath;
-  onOperationContextMenu?: (e: MouseEvent, op: IData<OperationType>) => void;
+  onOperationContextMenu?: (
+    e: MouseEvent,
+    op: IData<OperationType>,
+    context: Context
+  ) => void;
 }) => {
   const context = useExecutionResultsStore((s) =>
     s.getContextOrAncestor(operation.id, path)
@@ -143,8 +148,8 @@ const OperationCallComponent = ({
   );
 
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => onOperationContextMenu?.(e, operation),
-    [onOperationContextMenu, operation]
+    (e: React.MouseEvent) => onOperationContextMenu?.(e, operation, context),
+    [onOperationContextMenu, operation, context]
   );
 
   const parameterPaths = useMemo(() => {

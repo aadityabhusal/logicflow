@@ -6,7 +6,15 @@ import {
   EntityPath,
   ContextMenuItem,
 } from "@/lib/types";
-import { useContextMenuStore } from "@/lib/store";
+import {
+  useContextMenuStore,
+  useNavigationStore,
+  useUiConfigStore,
+  useProjectStore,
+} from "@/lib/store";
+import { useExecutionResultsStore } from "@/lib/execution/store";
+import { Context } from "@/lib/execution/types";
+import { useSearchParams } from "react-router";
 import { notifications } from "@mantine/notifications";
 import {
   writeEntityClipboard,
@@ -14,7 +22,21 @@ import {
   cloneWithNewIds,
   EntityClipboard,
 } from "@/lib/editor-clipboard";
-import { moveArrayItemBy, shouldUseNativeContextMenu } from "@/lib/utils";
+import { createOperationCall } from "@/lib/execution/execution";
+import {
+  moveArrayItemBy,
+  shouldUseNativeContextMenu,
+  isDataOfType,
+  getCacheKey,
+  handleSearchParams,
+  createVariableName,
+  createFileFromOperation,
+  createFileVariables,
+  createParamData,
+  getFreeVariableNames,
+  createStatement,
+  createData,
+} from "@/lib/utils";
 
 const kindLabels: Record<string, string> = {
   statement: "a statement",
@@ -68,6 +90,7 @@ interface Params {
   disableDelete?: boolean;
   path: EntityPath;
   position?: "first" | "last" | "only";
+  context: Context;
 }
 
 export function useEntityContextMenu({
@@ -78,11 +101,80 @@ export function useEntityContextMenu({
   disableDelete,
   path,
   position,
+  context,
 }: Params) {
   const isHighlighted = useContextMenuStore(
     (s) => s.highlightedEntityId === statement.id
   );
   const openMenu = useContextMenuStore((s) => s.openMenu);
+  const setNavigation = useNavigationStore((s) => s.setNavigation);
+  const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
+  const addFile = useProjectStore((s) => s.addFile);
+  const [, setSearchParams] = useSearchParams();
+
+  const handleExtractToFile = useCallback(
+    async (data: IData<OperationType>) => {
+      const newName = createVariableName({
+        prefix: "operation",
+        prev: useProjectStore.getState().getCurrentProject()?.files || [],
+      });
+
+      const definedVars = [...getFreeVariableNames(data, context)]
+        .map((name) => ({ name, variable: context.variables.get(name)! }))
+        .filter((item) => !!item.variable);
+      const fileParams = definedVars.map(({ name, variable }) => {
+        const paramData = createParamData({ type: variable.data.type });
+        return createStatement({ name, data: paramData });
+      });
+      const callArgs = definedVars.map(({ name, variable }) => {
+        const refData = createData({ value: { name, id: variable.data.id } });
+        return createStatement({ name, data: refData });
+      });
+
+      const file = createFileFromOperation(
+        createData({
+          type: fileParams.length > 0 ? undefined : data.type,
+          value: {
+            ...data.value,
+            name: newName,
+            parameters: [...fileParams, ...data.value.parameters],
+          },
+        })
+      );
+      addFile(file);
+
+      const opRef = createData({ value: { name: newName, id: data.id } });
+      if (fileParams.length === 0) {
+        handleStatement({ ...statement, data: opRef }, false, path);
+        return;
+      }
+      const newVariables = createFileVariables([file], context.variables);
+      const callOp = await createOperationCall({
+        data: opRef,
+        name: "call",
+        parameters: [...callArgs, ...data.value.parameters],
+        context: { ...context, variables: newVariables },
+      });
+
+      handleStatement(
+        {
+          ...statement,
+          data: createData({
+            type: data.type,
+            value: {
+              parameters: data.value.parameters,
+              statements: [
+                createStatement({ data: opRef, operations: [callOp] }),
+              ],
+            },
+          }),
+        },
+        false,
+        path
+      );
+    },
+    [addFile, context, handleStatement, path, statement]
+  );
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -178,6 +270,39 @@ export function useEntityContextMenu({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      const data = statement.data;
+      const extraItems: ContextMenuItem[] = [];
+
+      if (isDataOfType(data, "reference")) {
+        const variable = context.variables.get(data.value.name);
+        if (variable && isDataOfType(variable.data, "operation")) {
+          extraItems.push({
+            label: "Go to operation",
+            onClick: () =>
+              setSearchParams(
+                ...handleSearchParams({ file: data.value.name }, true)
+              ),
+          });
+        } else if (
+          variable &&
+          !variable.isEnv &&
+          !isDataOfType(variable.data, "operation")
+        ) {
+          extraItems.push({
+            label: "Go to reference",
+            onClick: () =>
+              setNavigation({ navigation: { id: `${variable.data.id}_name` } }),
+          });
+        }
+      }
+
+      if (isDataOfType(data, "operation")) {
+        extraItems.push({
+          label: "Extract operation",
+          onClick: () => handleExtractToFile(data),
+        });
+      }
+
       openMenu({
         items: [
           {
@@ -238,6 +363,7 @@ export function useEntityContextMenu({
               !moveStatement || position === "last" || position === "only",
             onClick: () => moveStatement?.(statement.id, "down"),
           },
+          ...extraItems,
         ],
         position: { x: e.clientX, y: e.clientY },
         highlightedEntityId: statement.data.id,
@@ -251,99 +377,152 @@ export function useEntityContextMenu({
       openMenu,
       moveStatement,
       position,
+      context,
+      handleExtractToFile,
+      setNavigation,
+      setSearchParams,
     ]
   );
 
   const getOperationMenuItems = useCallback(
-    (operation: IData<OperationType>, opIndex: number): ContextMenuItem[] => [
-      {
-        label: "Copy",
-        onClick: () =>
-          writeEntityClipboard({ kind: "operationCall", value: operation }),
-      },
-      {
-        label: "Cut",
-        onClick: () => {
-          writeEntityClipboard({ kind: "operationCall", value: operation });
-          const ops = [...statement.operations];
-          ops.splice(opIndex, 1);
-          handleStatement({ ...statement, operations: ops }, false, path);
+    (operation: IData<OperationType>, opIndex: number, ctx: Context) => {
+      const name = ctx.variables.get(operation.value.name ?? "");
+      const canGoToOperation =
+        name &&
+        !name.isEnv &&
+        isDataOfType(name.data, "operation") &&
+        !name.data.id.startsWith("builtin:");
+      const file = canGoToOperation
+        ? useProjectStore
+            .getState()
+            .getCurrentProject()
+            ?.files.find((file) => file.id === name.data.id)?.name
+        : undefined;
+      const goToOperationItem = canGoToOperation
+        ? {
+            label: file ? "Go to operation" : "Go to reference",
+            onClick: () =>
+              file
+                ? setSearchParams(...handleSearchParams({ file }, true))
+                : setNavigation({ navigation: { id: `${name.data.id}_name` } }),
+          }
+        : undefined;
+
+      return [
+        {
+          label: "Copy",
+          onClick: () =>
+            writeEntityClipboard({ kind: "operationCall", value: operation }),
         },
-      },
-      {
-        label: "Paste over",
-        onClick: async () => {
-          const entry = await readClipboardAs("operationCall", "paste over");
-          if (!entry) return;
-          const ops = [...statement.operations];
-          ops[opIndex] = cloneWithNewIds(entry.value);
-          handleStatement({ ...statement, operations: ops }, false, path);
+        {
+          label: "Cut",
+          onClick: () => {
+            writeEntityClipboard({ kind: "operationCall", value: operation });
+            const ops = [...statement.operations];
+            ops.splice(opIndex, 1);
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
         },
-      },
-      {
-        label: "Paste after",
-        onClick: async () => {
-          const entry = await readClipboardAs("operationCall", "paste");
-          if (!entry) return;
-          const ops = [...statement.operations];
-          ops.splice(opIndex + 1, 0, cloneWithNewIds(entry.value));
-          handleStatement({ ...statement, operations: ops }, false, path);
+        {
+          label: "Paste over",
+          onClick: async () => {
+            const entry = await readClipboardAs("operationCall", "paste over");
+            if (!entry) return;
+            const ops = [...statement.operations];
+            ops[opIndex] = cloneWithNewIds(entry.value);
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
         },
-      },
-      {
-        label: "Duplicate",
-        onClick: () => {
-          const ops = [...statement.operations];
-          ops.splice(opIndex + 1, 0, cloneWithNewIds(operation));
-          handleStatement({ ...statement, operations: ops }, false, path);
+        {
+          label: "Paste after",
+          onClick: async () => {
+            const entry = await readClipboardAs("operationCall", "paste");
+            if (!entry) return;
+            const ops = [...statement.operations];
+            ops.splice(opIndex + 1, 0, cloneWithNewIds(entry.value));
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
         },
-      },
-      {
-        label: "Delete",
-        danger: true,
-        onClick: () => {
-          const ops = [...statement.operations];
-          ops.splice(opIndex, 1);
-          handleStatement({ ...statement, operations: ops }, false, path);
+        {
+          label: "Duplicate",
+          onClick: () => {
+            const ops = [...statement.operations];
+            ops.splice(opIndex + 1, 0, cloneWithNewIds(operation));
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
         },
-      },
-      {
-        label: "Move before",
-        disabled: opIndex === 0,
-        onClick: () => {
-          const ops = moveArrayItemBy(
-            statement.operations,
-            (op) => op.id === operation.id,
-            "up"
-          )!;
-          handleStatement({ ...statement, operations: ops }, false, path);
+        {
+          label: "Delete",
+          danger: true,
+          onClick: () => {
+            const ops = [...statement.operations];
+            ops.splice(opIndex, 1);
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
         },
-      },
-      {
-        label: "Move after",
-        disabled: opIndex === statement.operations.length - 1,
-        onClick: () => {
-          const ops = moveArrayItemBy(
-            statement.operations,
-            (op) => op.id === operation.id,
-            "down"
-          )!;
-          handleStatement({ ...statement, operations: ops }, false, path);
+        {
+          label: "Move before",
+          disabled: opIndex === 0,
+          onClick: () => {
+            const ops = moveArrayItemBy(
+              statement.operations,
+              (op) => op.id === operation.id,
+              "up"
+            )!;
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
         },
-      },
-    ],
-    [statement, handleStatement, path]
+        {
+          label: "Move after",
+          disabled: opIndex === statement.operations.length - 1,
+          onClick: () => {
+            const ops = moveArrayItemBy(
+              statement.operations,
+              (op) => op.id === operation.id,
+              "down"
+            )!;
+            handleStatement({ ...statement, operations: ops }, false, path);
+          },
+        },
+        ...(goToOperationItem ? [goToOperationItem] : []),
+        {
+          label: "Show result",
+          disabled: !useExecutionResultsStore
+            .getState()
+            .results.has(getCacheKey(ctx, operation.id)),
+          onClick: () => {
+            const fileId = useProjectStore.getState().currentFileId;
+            if (!fileId) return;
+            setUiConfig((p) => ({
+              sidebar: {
+                ...p.sidebar,
+                lockedIds: { ...p.sidebar?.lockedIds, [fileId]: operation.id },
+              },
+            }));
+            setSearchParams(...handleSearchParams({ tab: "details" }, true));
+          },
+        },
+      ];
+    },
+    [
+      statement,
+      handleStatement,
+      path,
+      setUiConfig,
+      setSearchParams,
+      setNavigation,
+    ]
   );
 
   const handleOperationContextMenu = useCallback(
-    (e: React.MouseEvent, operation: IData<OperationType>) => {
+    (e: React.MouseEvent, operation: IData<OperationType>, ctx: Context) => {
       e.preventDefault();
       e.stopPropagation();
       const opIndex = statement.operations.findIndex(
         (op) => op.id === operation.id
       );
       openMenu({
-        items: getOperationMenuItems(operation, opIndex),
+        items: getOperationMenuItems(operation, opIndex, ctx),
         position: { x: e.clientX, y: e.clientY },
         highlightedEntityId: operation.id,
       });
