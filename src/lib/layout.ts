@@ -1,6 +1,7 @@
 import { DataType, IData, IStatement, OperationType } from "./types";
 
 export type LayoutMode = "inline" | "multiline";
+type FoldedEntities = Record<string, boolean>;
 
 const THRESHOLD = 12;
 const WRAP_THRESHOLD = 6;
@@ -36,7 +37,9 @@ function getNumberWidth(value: number): number {
   return 1 + Math.min(Math.floor(digits / 3), 3);
 }
 
-export function getEntityWidth(data: IData): number {
+export function getEntityWidth(data: IData, folded?: FoldedEntities): number {
+  if (folded?.[data.id]) return 1;
+
   const kind = data.type.kind;
 
   if (kind === "string") {
@@ -53,7 +56,7 @@ export function getEntityWidth(data: IData): number {
     const items = data.value as IStatement[];
     if (items.length === 0) return 1;
     const itemsWidth = items.reduce(
-      (sum, item) => sum + getStatementWidth(item),
+      (sum, item) => sum + getStatementWidth(item, folded),
       0
     );
     return 1 + itemsWidth + Math.max(0, items.length - 1) * SEPARATOR_WIDTH;
@@ -65,7 +68,7 @@ export function getEntityWidth(data: IData): number {
     ).entries;
     if (entries.length === 0) return 1;
     const entriesWidth = entries.reduce(
-      (sum, entry) => sum + 1 + getStatementWidth(entry.value),
+      (sum, entry) => sum + 1 + getStatementWidth(entry.value, folded),
       0
     );
     return 1 + entriesWidth + Math.max(0, entries.length - 1) * SEPARATOR_WIDTH;
@@ -79,13 +82,17 @@ export function getEntityWidth(data: IData): number {
     };
     if (value.trueBranch.length > 1 || value.falseBranch.length > 1)
       return THRESHOLD;
-    const trueWidth =
-      value.trueBranch.length > 0 ? getStatementWidth(value.trueBranch[0]) : 1;
-    const falseWidth =
-      value.falseBranch.length > 0
-        ? getStatementWidth(value.falseBranch[0])
+    const trueW =
+      value.trueBranch.length > 0
+        ? getStatementWidth(value.trueBranch[0], folded)
         : 1;
-    return getStatementWidth(value.condition) + 1 + trueWidth + 1 + falseWidth;
+
+    const falseW =
+      value.falseBranch.length > 0
+        ? getStatementWidth(value.falseBranch[0], folded)
+        : 1;
+
+    return getStatementWidth(value.condition, folded) + 1 + trueW + 1 + falseW;
   }
 
   if (kind === "instance") {
@@ -96,7 +103,7 @@ export function getEntityWidth(data: IData): number {
     };
     if (value.constructorArgs.length === 0) return 1;
     const argsWidth = value.constructorArgs.reduce(
-      (sum, arg) => sum + getStatementWidth(arg),
+      (sum, arg) => sum + getStatementWidth(arg, folded),
       0
     );
     return (
@@ -116,11 +123,11 @@ export function getEntityWidth(data: IData): number {
       instanceId?: string;
     };
     const paramWidth = value.parameters.reduce(
-      (sum, p) => sum + getStatementWidth(p),
+      (sum, p) => sum + getStatementWidth(p, folded),
       0
     );
     const stmtWidth = value.statements.reduce(
-      (sum, s) => sum + getStatementWidth(s),
+      (sum, s) => sum + getStatementWidth(s, folded),
       0
     );
     return 1 + paramWidth + stmtWidth;
@@ -138,11 +145,19 @@ export function getOperationNameWidth(name: string): number {
   return Math.min(Math.ceil(overflow / 8), 3);
 }
 
-export function getOperationCallWidth(operation: IData<OperationType>): number {
+export function getOperationCallWidth(
+  operation: IData<OperationType>,
+  folded?: FoldedEntities
+): number {
+  if (folded?.[operation.id]) return 1;
+
   const name = operation.value.name ?? "";
   const nameWidth = name.length > 0 ? getOperationNameWidth(name) : 0;
   const params = operation.value.parameters;
-  const paramsWidth = params.reduce((sum, p) => sum + getStatementWidth(p), 0);
+  const paramsWidth = params.reduce(
+    (sum, p) => sum + getStatementWidth(p, folded),
+    0
+  );
   return (
     2 +
     nameWidth +
@@ -151,10 +166,13 @@ export function getOperationCallWidth(operation: IData<OperationType>): number {
   );
 }
 
-export function getStatementWidth(statement: IStatement): number {
-  let width = getEntityWidth(statement.data);
+export function getStatementWidth(
+  statement: IStatement,
+  folded?: FoldedEntities
+): number {
+  let width = getEntityWidth(statement.data, folded);
   for (const op of statement.operations) {
-    width += getOperationCallWidth(op);
+    width += getOperationCallWidth(op, folded);
   }
   return width;
 }
@@ -163,23 +181,34 @@ export function isSimpleStatement(statement: IStatement): boolean {
   return getStatementWidth(statement) <= 1;
 }
 
-export function getEntityLayout(data: IData, wrap?: boolean) {
+export function getEntityLayout(
+  data: IData,
+  wrap?: boolean,
+  folded?: FoldedEntities
+) {
   if (isSimpleData(data.type)) return "inline";
   const threshold = wrap ? WRAP_THRESHOLD : THRESHOLD;
-  return getEntityWidth(data) >= threshold ? "multiline" : "inline";
+  return getEntityWidth(data, folded) >= threshold ? "multiline" : "inline";
 }
 
-export function getStatementLayout(stmt: IStatement, wrap?: boolean) {
+export function getStatementLayout(
+  stmt: IStatement,
+  wrap?: boolean,
+  folded?: FoldedEntities
+) {
   const threshold = wrap ? WRAP_THRESHOLD : THRESHOLD;
-  return getStatementWidth(stmt) >= threshold ? "multiline" : "inline";
+  return getStatementWidth(stmt, folded) >= threshold ? "multiline" : "inline";
 }
 
 export function getOperationCallLayout(
   operation: IData<OperationType>,
-  wrap?: boolean
+  wrap?: boolean,
+  folded?: FoldedEntities
 ) {
   const threshold = wrap ? WRAP_THRESHOLD : THRESHOLD;
-  return getOperationCallWidth(operation) >= threshold ? "multiline" : "inline";
+  return getOperationCallWidth(operation, folded) >= threshold
+    ? "multiline"
+    : "inline";
 }
 
 export {

@@ -9,7 +9,7 @@ import {
   inferTypeFromValue,
   moveArrayItemBy,
 } from "@/lib/utils";
-import { useNavigationStore } from "@/lib/store";
+import { useNavigationStore, useUiConfigStore } from "@/lib/store";
 import { IconButton } from "@/ui/IconButton";
 import { FaQuestion } from "react-icons/fa6";
 import { Dropdown } from "../Dropdown";
@@ -29,7 +29,9 @@ const ObjectInputComponent = (
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const enableWrapping = useMobileCodeWrapping();
-  const isMultiline = getEntityLayout(data, enableWrapping) === "multiline";
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
+  const isMultiline =
+    getEntityLayout(data, enableWrapping, foldedEntities) === "multiline";
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const isDisabled = useNavigationStore((s) => s.navigation?.disable);
   const setNavigation = useNavigationStore((s) => s.setNavigation);

@@ -577,6 +577,17 @@ describe("getEntityLayout", () => {
     expect(getEntityWidth(testArray(items))).toBe(12);
     expect(getEntityLayout(testArray(items))).toBe("multiline");
   });
+
+  it("returns inline when a large entity is folded", () => {
+    const bigArray = testArray(
+      Array.from({ length: 20 }, () => numberStatement(1))
+    );
+
+    expect(getEntityLayout(bigArray)).toBe("multiline");
+    expect(getEntityLayout(bigArray, false, { [bigArray.id]: true })).toBe(
+      "inline"
+    );
+  });
 });
 
 describe("getEntityLayout with wrapping threshold", () => {
@@ -601,6 +612,20 @@ describe("getStatementLayout", () => {
     const items = Array.from({ length: 20 }, () => numberStatement(1));
     const bigStmt = createStatement({ data: testArray(items) });
     expect(getStatementLayout(bigStmt)).toBe("multiline");
+  });
+
+  it("uses folded nested entities for statement layout", () => {
+    const nestedArray = testArray(
+      Array.from({ length: 20 }, () => numberStatement(1))
+    );
+    const stmt = createStatement({
+      data: testArray([createStatement({ data: nestedArray })]),
+    });
+
+    expect(getStatementLayout(stmt)).toBe("multiline");
+    expect(getStatementLayout(stmt, false, { [nestedArray.id]: true })).toBe(
+      "inline"
+    );
   });
 
   it("returns multiline for complex data plus operations", () => {
@@ -670,6 +695,21 @@ describe("getOperationCallLayout", () => {
       value: { name: "sum", parameters: params, statements: [] },
     });
     expect(getOperationCallLayout(op)).toBe("multiline");
+  });
+
+  it("returns inline when the operation call is folded", () => {
+    const params = Array.from({ length: 20 }, () => numberStatement(1));
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: params.map(() => ({ type: { kind: "number" } })),
+        result: { kind: "number" },
+      },
+      value: { name: "sum", parameters: params, statements: [] },
+    });
+
+    expect(getOperationCallLayout(op)).toBe("multiline");
+    expect(getOperationCallLayout(op, false, { [op.id]: true })).toBe("inline");
   });
 });
 

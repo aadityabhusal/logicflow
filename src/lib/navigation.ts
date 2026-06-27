@@ -163,6 +163,7 @@ export function handleNavigation({
 export function getOperationEntities(
   operation: IData<OperationType>,
   context: Context,
+  folded?: Record<string, boolean>,
   depth = 0
 ): NavigationEntity[] {
   const expectedParameterType =
@@ -182,6 +183,7 @@ export function getOperationEntities(
         statementIndex: 0,
       },
       context,
+      folded,
       true,
       !!expectedParameterType ||
         (next && !next.isOptional) ||
@@ -199,6 +201,7 @@ export function getOperationEntities(
         statementIndex: i + 1,
       },
       context,
+      folded,
       true
     )
   );
@@ -237,6 +240,7 @@ function getStatementEntities(
   depth: number,
   parent: { operationId: string; statementId: string; statementIndex: number },
   context: Context,
+  folded?: Record<string, boolean>,
   allowVariable?: boolean,
   disableStatementActions?: boolean
 ): NavigationEntity[] {
@@ -258,6 +262,10 @@ function getStatementEntities(
   }
   const dataId = statement.data.id;
   entities.push({ id: dataId, depth, ...parent });
+  if (folded?.[dataId]) {
+    entities.push({ id: `${dataId}_fold`, depth, ...parent });
+  }
+  if (folded?.[dataId]) return entities;
 
   if (
     isDataOfType(statement.data, "array") ||
@@ -265,7 +273,7 @@ function getStatementEntities(
   ) {
     statement.data.value.forEach((arrayItem) => {
       entities.push(
-        ...getStatementEntities(arrayItem, depth + 1, parent, stmtCtx)
+        ...getStatementEntities(arrayItem, depth + 1, parent, stmtCtx, folded)
       );
     });
     if (isDataOfType(statement.data, "array") || !stmtCtx.expectedType) {
@@ -283,7 +291,7 @@ function getStatementEntities(
         entities.push({ id: `${keyId}_colon`, depth: depth + 1, ...parent });
       }
       entities.push(
-        ...getStatementEntities(entry.value, depth + 1, parent, stmtCtx)
+        ...getStatementEntities(entry.value, depth + 1, parent, stmtCtx, folded)
       );
     });
     if (
@@ -297,7 +305,9 @@ function getStatementEntities(
       entities.push({ id: `${dataId}_add`, depth: depth + 1, ...parent });
     }
   } else if (isDataOfType(statement.data, "operation")) {
-    entities.push(...getOperationEntities(statement.data, stmtCtx, depth + 1));
+    entities.push(
+      ...getOperationEntities(statement.data, stmtCtx, folded, depth + 1)
+    );
   } else if (isDataOfType(statement.data, "condition")) {
     const condVal = statement.data.value as DataValue<ConditionType>;
     entities.push(
@@ -306,12 +316,20 @@ function getStatementEntities(
         depth + 1,
         parent,
         stmtCtx,
+        folded,
         false
       )
     );
     for (const stmt of condVal.trueBranch) {
       entities.push(
-        ...getStatementEntities(stmt, depth + 1, parent, stmtCtx, allowVariable)
+        ...getStatementEntities(
+          stmt,
+          depth + 1,
+          parent,
+          stmtCtx,
+          folded,
+          allowVariable
+        )
       );
     }
     if (allowVariable || condVal.trueBranch.length === 0) {
@@ -323,7 +341,14 @@ function getStatementEntities(
     }
     for (const stmt of condVal.falseBranch) {
       entities.push(
-        ...getStatementEntities(stmt, depth + 1, parent, stmtCtx, allowVariable)
+        ...getStatementEntities(
+          stmt,
+          depth + 1,
+          parent,
+          stmtCtx,
+          folded,
+          allowVariable
+        )
       );
     }
     if (allowVariable || condVal.falseBranch.length === 0) {
@@ -347,7 +372,9 @@ function getStatementEntities(
       });
     }
     statement.data.value.constructorArgs.forEach((arg) => {
-      entities.push(...getStatementEntities(arg, depth + 1, parent, stmtCtx));
+      entities.push(
+        ...getStatementEntities(arg, depth + 1, parent, stmtCtx, folded)
+      );
     });
     if (
       statement.data.value.constructorArgs.length <
@@ -364,7 +391,7 @@ function getStatementEntities(
       value: statement.data.value,
       context: stmtCtx,
     });
-    const dataStatement = createStatement({
+    const dataStmt = createStatement({
       data: createData({
         id: `${dataId}_data`,
         type: valueType,
@@ -372,15 +399,21 @@ function getStatementEntities(
       }),
     });
     entities.push(
-      ...getStatementEntities(dataStatement, depth + 1, parent, stmtCtx)
+      ...getStatementEntities(dataStmt, depth + 1, parent, stmtCtx, folded)
     );
     entities.push({ id: `${dataId}_options`, depth: depth + 1, ...parent });
   }
 
   statement.operations.forEach((operation) => {
     entities.push({ id: operation.id, depth, ...parent });
+    if (folded?.[operation.id]) {
+      entities.push({ id: `${operation.id}_fold`, depth, ...parent });
+    }
+    if (folded?.[operation.id]) return;
     operation.value.parameters.forEach((param) => {
-      entities.push(...getStatementEntities(param, depth + 1, parent, stmtCtx));
+      entities.push(
+        ...getStatementEntities(param, depth + 1, parent, stmtCtx, folded)
+      );
     });
     const restParam = operation.type.parameters.findLast((p) => p.isRest)?.type;
     if (

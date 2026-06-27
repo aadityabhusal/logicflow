@@ -12,6 +12,7 @@ import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
+import { useUiConfigStore } from "@/lib/store";
 
 interface ArrayInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ArrayType | TupleType>;
@@ -25,7 +26,9 @@ const ArrayInputComponent = (
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const enableWrapping = useMobileCodeWrapping();
-  const isMultiline = getEntityLayout(data, enableWrapping) === "multiline";
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
+  const isMultiline =
+    getEntityLayout(data, enableWrapping, foldedEntities) === "multiline";
 
   const itemPaths = useMemo(() => {
     const arr = Array.from({ length: data.value.length });

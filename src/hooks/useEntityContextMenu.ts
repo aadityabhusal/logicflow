@@ -109,6 +109,7 @@ export function useEntityContextMenu({
   const openMenu = useContextMenuStore((s) => s.openMenu);
   const setNavigation = useNavigationStore((s) => s.setNavigation);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
   const addFile = useProjectStore((s) => s.addFile);
   const [, setSearchParams] = useSearchParams();
 
@@ -272,6 +273,26 @@ export function useEntityContextMenu({
       e.stopPropagation();
       const data = statement.data;
       const extraItems: ContextMenuItem[] = [];
+      const isFolded = !!foldedEntities?.[data.id];
+      if (
+        [
+          "array",
+          "tuple",
+          "object",
+          "dictionary",
+          "condition",
+          "union",
+          "operation",
+        ].includes(data.type.kind)
+      ) {
+        extraItems.push({
+          label: isFolded ? "Expand" : "Collapse",
+          onClick: () =>
+            setUiConfig(({ foldedEntities }) => ({
+              foldedEntities: { ...foldedEntities, [data.id]: !isFolded },
+            })),
+        });
+      }
 
       if (isDataOfType(data, "reference")) {
         const variable = context.variables.get(data.value.name);
@@ -378,8 +399,10 @@ export function useEntityContextMenu({
       moveStatement,
       position,
       context,
+      foldedEntities,
       handleExtractToFile,
       setNavigation,
+      setUiConfig,
       setSearchParams,
     ]
   );

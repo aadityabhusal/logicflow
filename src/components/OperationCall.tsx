@@ -15,7 +15,7 @@ import { resolveParameters } from "../lib/utils";
 import { resolveDisplayName } from "../lib/packages/registry";
 import { BaseInput } from "./Input/BaseInput";
 import { memo, MouseEvent, useCallback, useMemo } from "react";
-import { useNavigationStore } from "@/lib/store";
+import { useNavigationStore, useUiConfigStore } from "@/lib/store";
 import { AddStatement } from "./AddStatement";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { Context } from "@/lib/execution/types";
@@ -165,8 +165,10 @@ const OperationCallComponent = ({
   );
 
   const enableWrapping = useMobileCodeWrapping();
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
   const isMultiline =
-    getOperationCallLayout(operation, enableWrapping) === "multiline";
+    getOperationCallLayout(operation, enableWrapping, foldedEntities) ===
+    "multiline";
 
   return (
     <Dropdown

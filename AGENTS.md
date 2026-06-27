@@ -4,7 +4,7 @@
 
 - Always keep the solution simple, concise, and minimal without losing any expected behavior or readability.
 - Always follow existing project patterns and match the coding style of the existing codebase. For example, Do not add return types to functions unless they are useful or already match the existing style.
-- Never stage changes unless explicitly asked, and avoid destructive git commands.
+- Never stage/unstage changes unless explicitly asked, and avoid destructive git commands.
 - Inspect the codebase before making configuration or tooling changes. For example, use the existing package manager instead of assuming `npm`.
 - Use subagents whenever possible for focused research, exploration, or parallelizable work.
 - Always ask before making broad architectural or configuration changes. Mention risks or follow-ups clearly.

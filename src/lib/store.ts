@@ -341,6 +341,7 @@ type UiConfigStore = {
   enableMobileWrapping?: boolean;
   wrapResult?: boolean;
   examplesCollapsed?: boolean;
+  foldedEntities?: Record<string, boolean>;
   setUiConfig: (
     change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
   ) => void;

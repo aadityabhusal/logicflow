@@ -14,6 +14,7 @@ import {
   FaCirclePlus,
   FaCircleXmark,
 } from "react-icons/fa6";
+import { FoldToggle } from "./FoldToggle";
 import {
   useProjectStore,
   useNavigationStore,
@@ -75,6 +76,7 @@ const DropdownComponent = ({
     withSearch?: boolean;
     withDropdownIcon?: boolean;
     focusOnClick?: boolean;
+    fold?: { placeholder: string };
   };
   isInputTarget?: boolean;
   target: (value: IDropdownTargetProps) => ReactNode;
@@ -119,6 +121,9 @@ const DropdownComponent = ({
   const [isHovered, setHovered] = useState(false);
   const [search, setSearch] = useState("");
   const wasFocusedAtPressStart = useRef<boolean>();
+  const isFolded = useUiConfigStore((s) =>
+    options?.fold ? !!s.foldedEntities?.[id] : false
+  );
 
   const displayValue = useMemo(
     () => resolveDisplayName(value ?? "", context.packageAliases),
@@ -208,7 +213,11 @@ const DropdownComponent = ({
                   useProjectStore.getState().getCurrentFile()
                 );
                 if (!operation) return p;
-                const newEntities = getOperationEntities(operation, context);
+                const newEntities = getOperationEntities(
+                  operation,
+                  context,
+                  useUiConfigStore.getState().foldedEntities
+                );
                 const oldEntities = p.navigationEntities || [];
                 return {
                   navigationEntities: newEntities,
@@ -293,6 +302,41 @@ const DropdownComponent = ({
     }
   }, [isFocused, combobox]);
 
+  const targetProps: IDropdownTargetProps = {
+    ...(isInputTarget
+      ? {
+          value: search,
+          onChange: (val) => handleSearch(val),
+          onBlur: () => combobox?.closeDropdown(),
+          onKeyDown: getHotkeyHandler([
+            ["ctrl+space", () => combobox.openDropdown()],
+          ]),
+          options: { allowDisableKeyboard: true },
+        }
+      : {}),
+    onClick: (e) => {
+      e.stopPropagation();
+      if (options?.focusOnClick) {
+        if (e.target === e.currentTarget) setNavigation({ navigation: { id } });
+      } else combobox?.openDropdown();
+    },
+    onPointerDownCapture: (e) => trackEditableFocus(e.target),
+    onTouchStartCapture: (e) => trackEditableFocus(e.target),
+    onContextMenu: handleTargetContextMenu,
+    onFocus: () => setNavigation({ navigation: { id } }),
+  };
+
+  const targetNode = isFolded ? (
+    <span
+      className="whitespace-nowrap"
+      {...(targetProps as Omit<IDropdownTargetProps, "onChange">)}
+    >
+      {options?.fold?.placeholder}
+    </span>
+  ) : (
+    target(targetProps)
+  );
+
   return (
     <Combobox
       onOptionSubmit={(optionValue) => {
@@ -341,31 +385,14 @@ const DropdownComponent = ({
           <Combobox.EventsTarget
             withKeyboardNavigation={combobox.dropdownOpened && hasOptions}
           >
-            {target({
-              ...(isInputTarget
-                ? {
-                    value: search,
-                    onChange: (val) => handleSearch(val),
-                    onBlur: () => combobox?.closeDropdown(),
-                    onKeyDown: getHotkeyHandler([
-                      ["ctrl+space", () => combobox.openDropdown()],
-                    ]),
-                    options: { allowDisableKeyboard: true },
-                  }
-                : {}),
-              onClick: (e) => {
-                e.stopPropagation();
-                if (options?.focusOnClick) {
-                  if (e.target === e.currentTarget) {
-                    setNavigation({ navigation: { id } });
-                  }
-                } else combobox?.openDropdown();
-              },
-              onPointerDownCapture: (e) => trackEditableFocus(e.target),
-              onTouchStartCapture: (e) => trackEditableFocus(e.target),
-              onContextMenu: handleTargetContextMenu,
-              onFocus: () => setNavigation({ navigation: { id } }),
-            })}
+            {options?.fold && isFolded ? (
+              <span className="inline-flex items-start gap-1">
+                <FoldToggle id={id} />
+                {targetNode}
+              </span>
+            ) : (
+              targetNode
+            )}
           </Combobox.EventsTarget>
           {handleDelete && (
             <IconButton

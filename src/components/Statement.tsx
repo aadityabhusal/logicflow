@@ -33,7 +33,7 @@ import { AddStatement } from "./AddStatement";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { Popover, useDelayedHover } from "@mantine/core";
 import { memo, useCallback, useMemo, useState } from "react";
-import { useNavigationStore } from "@/lib/store";
+import { useNavigationStore, useUiConfigStore } from "@/lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { notifications } from "@mantine/notifications";
 import { useExecutionResultsStore } from "@/lib/execution/store";
@@ -166,8 +166,10 @@ const StatementComponent = ({
   });
   const isMobileLayout = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const enableWrapping = useMobileCodeWrapping();
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
   const isMultiline =
-    getStatementLayout(statement, enableWrapping) === "multiline";
+    getStatementLayout(statement, enableWrapping, foldedEntities) ===
+    "multiline";
   const PipeArrow = isMultiline ? FaArrowTurnUp : FaArrowRightLong;
   const equalsIcon = isReturn
     ? FaArrowTurnDown

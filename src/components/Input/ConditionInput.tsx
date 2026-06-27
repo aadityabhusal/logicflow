@@ -14,6 +14,7 @@ import { useRestrictedName } from "@/lib/useRestrictedName";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
+import { useUiConfigStore } from "@/lib/store";
 
 interface ConditionInputProps extends HTMLAttributes<HTMLDivElement> {
   data: IData<ConditionType>;
@@ -50,7 +51,9 @@ const ConditionInputComponent = (
     [basePath, data.value.trueBranch, data.value.falseBranch]
   );
   const enableWrapping = useMobileCodeWrapping();
-  const multiline = getEntityLayout(data, enableWrapping) === "multiline";
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
+  const multiline =
+    getEntityLayout(data, enableWrapping, foldedEntities) === "multiline";
 
   const { reservedNames } = useRestrictedName({ context });
 

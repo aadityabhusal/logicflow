@@ -9,7 +9,7 @@ import {
   inferTypeFromValue,
   moveArrayItemBy,
 } from "@/lib/utils";
-import { useNavigationStore } from "@/lib/store";
+import { useNavigationStore, useUiConfigStore } from "@/lib/store";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
 import { getEntityLayout } from "@/lib/layout";
@@ -27,7 +27,9 @@ const DictionaryInputComponent = (
   ref: React.ForwardedRef<HTMLDivElement>
 ) => {
   const enableWrapping = useMobileCodeWrapping();
-  const isMultiline = getEntityLayout(data, enableWrapping) === "multiline";
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
+  const isMultiline =
+    getEntityLayout(data, enableWrapping, foldedEntities) === "multiline";
   const navigationId = useNavigationStore((s) => s.navigation?.id);
   const isDisabled = useNavigationStore((s) => s.navigation?.disable);
   const setNavigation = useNavigationStore((s) => s.setNavigation);

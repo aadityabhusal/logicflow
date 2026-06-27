@@ -4,6 +4,7 @@ import {
   useNavigationStore,
   fileHistoryActions,
   useContextMenuStore,
+  useUiConfigStore,
 } from "@/lib/store";
 import { EntityContextMenu } from "@/components/EntityContextMenu";
 import { Header } from "@/ui/Header";
@@ -157,6 +158,7 @@ export default function Project() {
   );
 
   const deferredOperation = useDeferredValue(currentOperation);
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
   const runVersion = useExecutionResultsStore((s) => s.runVersion);
   useEffect(() => {
     if (deferredOperation?.id !== currentOperation?.id) return;
@@ -164,11 +166,18 @@ export default function Project() {
       setNavigation({
         navigationEntities: getOperationEntities(
           deferredOperation,
-          rootContext
+          rootContext,
+          foldedEntities
         ),
       });
     }
-  }, [deferredOperation, currentOperation?.id, setNavigation, rootContext]);
+  }, [
+    deferredOperation,
+    currentOperation?.id,
+    setNavigation,
+    rootContext,
+    foldedEntities,
+  ]);
 
   useEffect(() => {
     const project = useProjectStore.getState().getCurrentProject();

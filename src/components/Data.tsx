@@ -71,10 +71,21 @@ const DataComponent = ({
       isDataOfType(data, "condition") ||
       isDataOfType(data, "operation") ||
       isDataOfType(data, "error");
+
     return {
       withDropdownIcon: showDropdownIcon,
       withSearch: showDropdownIcon,
       focusOnClick: showDropdownIcon,
+      fold:
+        isDataOfType(data, "array") || isDataOfType(data, "tuple")
+          ? { placeholder: "[…]" }
+          : isDataOfType(data, "object") || isDataOfType(data, "dictionary")
+            ? { placeholder: "{…}" }
+            : isDataOfType(data, "union") || isDataOfType(data, "condition")
+              ? { placeholder: "…" }
+              : isDataOfType(data, "operation")
+                ? { placeholder: "(…)" }
+                : undefined,
     };
   }, [data]);
 
@@ -124,6 +135,7 @@ const DataComponent = ({
         <BaseInput {...props} onChange={onChange} className="text-variable" />
       ) : isDataOfType(data, "operation") ? (
         <Operation
+          onClick={props.onClick}
           operation={data}
           handleChange={handleOperationChange}
           context={context}

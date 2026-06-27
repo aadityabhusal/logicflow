@@ -9,6 +9,7 @@ import { inferTypeFromValue, moveArrayItemBy, getPosition } from "@/lib/utils";
 import { resolveDisplayName } from "@/lib/packages/registry";
 import { getEntityLayout } from "@/lib/layout";
 import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
+import { useUiConfigStore } from "@/lib/store";
 
 interface InstanceInputProps {
   data: IData<InstanceDataType>;
@@ -71,7 +72,9 @@ const InstanceInputComponent = (
   );
 
   const enableWrapping = useMobileCodeWrapping();
-  const isMultiline = getEntityLayout(data, enableWrapping) === "multiline";
+  const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
+  const isMultiline =
+    getEntityLayout(data, enableWrapping, foldedEntities) === "multiline";
 
   return (
     <div
