@@ -20,6 +20,20 @@ import { useExecutionResultsStore } from "@/lib/execution/store";
 import { executionWorkerClient } from "@/lib/execution/worker-client";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { TbKeyboardOff, TbRefresh } from "react-icons/tb";
+import { MdOutlineFeedback } from "react-icons/md";
+
+const feedbackMailto = `mailto:support@logicflow.dev?subject=${encodeURIComponent(
+  "Logicflow Feedback"
+)}&body=${encodeURIComponent(`Hi,
+
+Feedback:
+
+Steps/context:
+
+Expected:
+
+Actual:
+`)}`;
 
 function HeaderComponent() {
   const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
@@ -88,14 +102,27 @@ function HeaderComponent() {
           disabled={!canRedo}
           className={!canRedo ? "cursor-not-allowed" : ""}
         />
+        <div className="h-6 border-l" />
         <Tooltip label="Open Docs">
           <Button
             component={Link}
             to="/docs"
-            className="outline-none"
+            aria-label="Open docs"
+            className="outline-none p-0.5!"
             leftSection={smallScreen ? null : <FaRegCircleQuestion size={18} />}
           >
             {smallScreen ? <FaRegCircleQuestion size={18} /> : "Help"}
+          </Button>
+        </Tooltip>
+        <Tooltip label="Send Feedback">
+          <Button
+            component="a"
+            href={feedbackMailto}
+            aria-label="Send feedback"
+            className="outline-none p-0.5!"
+            leftSection={smallScreen ? null : <MdOutlineFeedback size={18} />}
+          >
+            {smallScreen ? <MdOutlineFeedback size={18} /> : "Feedback"}
           </Button>
         </Tooltip>
       </div>

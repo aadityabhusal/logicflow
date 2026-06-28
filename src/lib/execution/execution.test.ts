@@ -303,6 +303,32 @@ describe("createOperationCall", () => {
     expect(result.value.parameters[0].data.value).toBe(5);
   });
 
+  it("patches a user-defined operation call from the current source signature", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const sourceOperation = testOperation(
+      [
+        stringStatement("", "input"),
+        numberStatement(0, "count"),
+        booleanStatement(false, "enabled"),
+      ],
+      [],
+      "customOp"
+    );
+    ctx.variables.set("customOp", { data: sourceOperation });
+
+    const existingParam = numberStatement(3);
+    const result = await createOperationCall({
+      data: testString("value"),
+      name: "customOp",
+      parameters: [existingParam],
+      context: ctx,
+    });
+
+    expect(result.value.parameters).toHaveLength(2);
+    expect(result.value.parameters[0]).toBe(existingParam);
+    expect(result.value.parameters[1].data.type.kind).toBe("boolean");
+  });
+
   it("sets result on context cache", async () => {
     const ctx = createTestContext({ isSync: false });
     const data = testString("hello");

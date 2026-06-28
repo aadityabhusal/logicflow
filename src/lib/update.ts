@@ -97,7 +97,13 @@ function updateOperationCalls(
         {
           ...operation,
           type: { ...operation.type, parameters: updatedTypeParameters },
-          value: { ...operation.value, parameters: updatedParameters },
+          value: {
+            ...operation.value,
+            name: foundOperation?.id
+              ? (variableNames?.get(foundOperation.id) ?? operation.value.name)
+              : operation.value.name,
+            parameters: updatedParameters,
+          },
         },
       ];
     },

@@ -370,6 +370,37 @@ describe("updateStatement - operation call updates", () => {
     expect(result[0].operations[0].value.name).toBe("length");
   });
 
+  it("updates operation call name when the referenced statement is renamed", () => {
+    const ctx = createTestContext();
+    const operationStatement = createStatement({
+      name: "oldOp",
+      data: testOperation(
+        [stringStatement("source", "source")],
+        [stringStatement("result")],
+        "oldOp"
+      ),
+    });
+    ctx.variables.set("oldOp", {
+      data: { ...operationStatement.data, id: operationStatement.id },
+    });
+
+    const operationCall = testOperation([], [], "oldOp");
+    const callStatement = createStatement({
+      data: createData({ type: { kind: "string" }, value: "input" }),
+      operations: [operationCall],
+    });
+
+    const changed = { ...operationStatement, name: "newOp" };
+    const result = updateStatements({
+      statements: [operationStatement, callStatement],
+      context: ctx,
+      changedStatement: changed,
+    });
+
+    expect(result[1].operations).toHaveLength(1);
+    expect(result[1].operations[0].value.name).toBe("newOp");
+  });
+
   it("preserves recursive call arguments while editing against a stale saved signature", () => {
     const ctx = createTestContext();
     const savedOperation = testOperation(

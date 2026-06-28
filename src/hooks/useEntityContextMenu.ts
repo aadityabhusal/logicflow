@@ -22,7 +22,10 @@ import {
   cloneWithNewIds,
   EntityClipboard,
 } from "@/lib/editor-clipboard";
-import { createOperationCall } from "@/lib/execution/execution";
+import {
+  createOperationCall,
+  getFilteredOperations,
+} from "@/lib/execution/execution";
 import {
   moveArrayItemBy,
   shouldUseNativeContextMenu,
@@ -36,6 +39,7 @@ import {
   getFreeVariableNames,
   createStatement,
   createData,
+  getStatementResult,
 } from "@/lib/utils";
 
 const kindLabels: Record<string, string> = {
@@ -296,19 +300,19 @@ export function useEntityContextMenu({
 
       if (isDataOfType(data, "reference")) {
         const variable = context.variables.get(data.value.name);
-        if (variable && isDataOfType(variable.data, "operation")) {
+        const operationFile =
+          variable && isDataOfType(variable.data, "operation")
+            ? useProjectStore.getState().getFile(variable.data.id)
+            : undefined;
+        if (operationFile) {
           extraItems.push({
             label: "Go to operation",
             onClick: () =>
               setSearchParams(
-                ...handleSearchParams({ file: data.value.name }, true)
+                ...handleSearchParams({ file: operationFile.name }, true)
               ),
           });
-        } else if (
-          variable &&
-          !variable.isEnv &&
-          !isDataOfType(variable.data, "operation")
-        ) {
+        } else if (variable && !variable.isEnv) {
           extraItems.push({
             label: "Go to reference",
             onClick: () =>
@@ -409,26 +413,27 @@ export function useEntityContextMenu({
 
   const getOperationMenuItems = useCallback(
     (operation: IData<OperationType>, opIndex: number, ctx: Context) => {
-      const name = ctx.variables.get(operation.value.name ?? "");
-      const canGoToOperation =
-        name &&
-        !name.isEnv &&
-        isDataOfType(name.data, "operation") &&
-        !name.data.id.startsWith("builtin:");
-      const file = canGoToOperation
-        ? useProjectStore
-            .getState()
-            .getCurrentProject()
-            ?.files.find((file) => file.id === name.data.id)?.name
-        : undefined;
-      const goToOperationItem = canGoToOperation
-        ? {
-            label: file ? "Go to operation" : "Go to reference",
-            onClick: () =>
-              file
-                ? setSearchParams(...handleSearchParams({ file }, true))
-                : setNavigation({ navigation: { id: `${name.data.id}_name` } }),
-          }
+      const inputData = getStatementResult(statement, ctx, {
+        index: opIndex,
+        prevEntity: true,
+        skipResolveReference: true,
+      });
+      const opName = operation.value.name;
+      const sourceOpVariable =
+        opName === "call" && isDataOfType(inputData, "reference")
+          ? ctx.variables.get(inputData.value.name)
+          : ctx.variables.get(opName ?? "");
+      const isUserOperation = !!(
+        sourceOpVariable &&
+        !sourceOpVariable.isEnv &&
+        isDataOfType(sourceOpVariable.data, "operation") &&
+        !sourceOpVariable.data.id.startsWith("builtin:")
+      );
+      const canSyncReference =
+        isUserOperation &&
+        getFilteredOperations(inputData, ctx).some((i) => i.name === opName);
+      const file = isUserOperation
+        ? useProjectStore.getState().getFile(sourceOpVariable.data.id)?.name
         : undefined;
 
       return [
@@ -507,7 +512,38 @@ export function useEntityContextMenu({
             handleStatement({ ...statement, operations: ops }, false, path);
           },
         },
-        ...(goToOperationItem ? [goToOperationItem] : []),
+        ...(isUserOperation
+          ? [
+              {
+                label: file ? "Go to operation" : "Go to reference",
+                onClick: () =>
+                  file
+                    ? setSearchParams(...handleSearchParams({ file }, true))
+                    : setNavigation({
+                        navigation: { id: `${sourceOpVariable.data.id}_name` },
+                      }),
+              },
+            ]
+          : []),
+        ...(canSyncReference
+          ? [
+              {
+                label: "Sync Reference",
+                onClick: async () => {
+                  const operationCall = await createOperationCall({
+                    data: inputData,
+                    name: operation.value.name,
+                    parameters: operation.value.parameters,
+                    context: ctx,
+                    operationId: operation.id,
+                  });
+                  const operations = [...statement.operations];
+                  operations[opIndex] = operationCall;
+                  handleStatement({ ...statement, operations }, false, path);
+                },
+              },
+            ]
+          : []),
         {
           label: "Show result",
           disabled: !useExecutionResultsStore

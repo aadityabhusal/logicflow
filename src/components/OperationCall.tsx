@@ -20,8 +20,9 @@ import { AddStatement } from "./AddStatement";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { Context } from "@/lib/execution/types";
 import { EntityPath } from "@/lib/types";
-import { getOperationCallLayout } from "@/lib/layout";
+import { getOperationCallLayout, getOpCallParamName } from "@/lib/layout";
 import { useMobileCodeWrapping } from "@/hooks/useMobileLayout";
+import { FaEquals } from "react-icons/fa6";
 
 const OperationCallComponent = ({
   data,
@@ -198,19 +199,28 @@ const OperationCallComponent = ({
           isMultiline ? "flex-col ml-2" : "flex-row",
         ].join(" ")}
       >
-        {operation.value.parameters.map((item, paramIndex, arr) => (
-          <div key={item.id} className="flex items-start">
-            <Statement
-              statement={item}
-              path={parameterPaths[paramIndex]}
-              handleStatement={handleParameter}
-              disableDelete={!item.isOptional}
-            />
-            {paramIndex < arr.length - 1 ? (
-              <span>{isMultiline ? "," : ", "}</span>
-            ) : null}
-          </div>
-        ))}
+        {operation.value.parameters.map((item, paramIndex, arr) => {
+          const parameterName = getOpCallParamName(operation, paramIndex);
+          return (
+            <div key={item.id} className="flex items-start">
+              {parameterName ? (
+                <div className="flex items-center gap-1 mr-1 text-disabled">
+                  <span>{parameterName}</span>
+                  <FaEquals className="mt-1" />
+                </div>
+              ) : null}
+              <Statement
+                statement={item}
+                path={parameterPaths[paramIndex]}
+                handleStatement={handleParameter}
+                disableDelete={!item.isOptional}
+              />
+              {paramIndex < arr.length - 1 ? (
+                <span>{isMultiline ? "," : ", "}</span>
+              ) : null}
+            </div>
+          );
+        })}
         {operation.value.parameters.length + 1 <
           operation.type.parameters.length || restParamType ? (
           <AddStatement

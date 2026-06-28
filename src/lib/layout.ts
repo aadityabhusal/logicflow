@@ -145,6 +145,21 @@ export function getOperationNameWidth(name: string): number {
   return Math.min(Math.ceil(overflow / 8), 3);
 }
 
+export function getOpCallParamName(
+  operation: IData<OperationType>,
+  paramIndex: number
+) {
+  const typeParamIndex = paramIndex + 1;
+  const paramConfig =
+    operation.type.parameters[typeParamIndex] ??
+    operation.type.parameters.findLast((p) => p.isRest);
+  return paramConfig?.name;
+}
+
+function getParameterLabelWidth(name?: string) {
+  return name ? getStringWidth(name) + 1 : 0;
+}
+
 export function getOperationCallWidth(
   operation: IData<OperationType>,
   folded?: FoldedEntities
@@ -155,7 +170,10 @@ export function getOperationCallWidth(
   const nameWidth = name.length > 0 ? getOperationNameWidth(name) : 0;
   const params = operation.value.parameters;
   const paramsWidth = params.reduce(
-    (sum, p) => sum + getStatementWidth(p, folded),
+    (sum, p, i) =>
+      sum +
+      getParameterLabelWidth(getOpCallParamName(operation, i)) +
+      getStatementWidth(p, folded),
     0
   );
   return (
