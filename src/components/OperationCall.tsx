@@ -167,9 +167,14 @@ const OperationCallComponent = ({
 
   const enableWrapping = useMobileCodeWrapping();
   const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
+  const hideArgumentNames = useUiConfigStore((s) => s.hideArgumentNames);
   const isMultiline =
-    getOperationCallLayout(operation, enableWrapping, foldedEntities) ===
-    "multiline";
+    getOperationCallLayout(
+      operation,
+      enableWrapping,
+      foldedEntities,
+      hideArgumentNames
+    ) === "multiline";
 
   return (
     <Dropdown
@@ -200,7 +205,9 @@ const OperationCallComponent = ({
         ].join(" ")}
       >
         {operation.value.parameters.map((item, paramIndex, arr) => {
-          const parameterName = getOpCallParamName(operation, paramIndex);
+          const parameterName = hideArgumentNames
+            ? undefined
+            : getOpCallParamName(operation, paramIndex);
           return (
             <div key={item.id} className="flex items-start">
               {parameterName ? (

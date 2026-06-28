@@ -339,6 +339,7 @@ type UiConfigStore = {
   };
   disableKeyboard?: boolean;
   enableMobileWrapping?: boolean;
+  hideArgumentNames?: boolean;
   wrapResult?: boolean;
   examplesCollapsed?: boolean;
   foldedEntities?: Record<string, boolean>;

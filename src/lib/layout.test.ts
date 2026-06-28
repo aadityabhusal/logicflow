@@ -459,6 +459,25 @@ describe("getOperationCallWidth", () => {
     expect(getOperationCallWidth(op)).toBe(2 + 2 + 1 + 1);
   });
 
+  it("excludes named argument labels when hidden", () => {
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" } },
+          { name: "options", type: { kind: "number" } },
+        ],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "fetch",
+        parameters: [numberStatement(3)],
+        statements: [],
+      },
+    });
+    expect(getOperationCallWidth(op, undefined, true)).toBe(2 + 1);
+  });
+
   it("complex param contributes its full width", () => {
     const paramObj = testObject([
       { key: "a", value: numberStatement(1) },

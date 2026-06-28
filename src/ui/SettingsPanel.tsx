@@ -28,6 +28,7 @@ import {
 
 export function SettingsPanel() {
   const enableMobileWrapping = useUiConfigStore((s) => s.enableMobileWrapping);
+  const hideArgumentNames = useUiConfigStore((s) => s.hideArgumentNames);
   const setUiConfig = useUiConfigStore((s) => s.setUiConfig);
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const project = useProjectStore((s) => s.getCurrentProject());
@@ -156,6 +157,15 @@ export function SettingsPanel() {
             />
           </label>
         )}
+        <label className="flex items-center justify-between gap-2 border-b p-2">
+          <span className="text-sm">Hide argument names</span>
+          <BooleanInput
+            data={createData({ value: hideArgumentNames ?? false })}
+            handleData={(data) =>
+              setUiConfig({ hideArgumentNames: data.value })
+            }
+          />
+        </label>
         {projectId && <ProjectCheckpoints />}
         {projectId && externalPackages.length > 0 && (
           <div className="border-b p-1">
