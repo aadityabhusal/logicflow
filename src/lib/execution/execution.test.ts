@@ -23,6 +23,7 @@ import {
 } from "@/lib/utils";
 import { InstanceTypes } from "@/lib/packages/registry";
 import {
+  builtInOperationsByName,
   coreOperations,
   createExecutionVariables,
 } from "@/lib/operations/built-in";
@@ -2847,6 +2848,392 @@ describe("manual Promise instances", () => {
 
     expect(result.type.kind).toBe("string");
     expect(result.value).toBe("hello");
+  });
+
+  it("does not preview Promise executor body before constructing the Promise", async () => {
+    const ctx = createTestContext({ isSync: false });
+    let calls = 0;
+    const callbackParam = stringStatement("editor", "data");
+    const callbackBody = createStatement({
+      id: "side-effect-callback-body",
+      data: testReference("data", callbackParam.id),
+      operations: [
+        testBuiltInOperation(
+          "concat",
+          [{ type: { kind: "string" } }, { type: { kind: "string" } }],
+          { kind: "string" },
+          [stringStatement("!")]
+        ),
+      ],
+    });
+    const callback = testOperation([callbackParam], [callbackBody]);
+    const sideEffectOp: OperationListItem = {
+      name: "sideEffectForPromisePreview",
+      parameters: [{ type: { kind: "unknown" } }, { type: callback.type }],
+      handler: () => {
+        calls += 1;
+        return createData();
+      },
+    };
+    const previousOps = builtInOperationsByName.get(
+      "sideEffectForPromisePreview"
+    );
+    builtInOperationsByName.set("sideEffectForPromisePreview", [sideEffectOp]);
+
+    try {
+      const resolveType: OperationType = {
+        kind: "operation",
+        parameters: [{ name: "value", type: { kind: "string" } }],
+        result: { kind: "unknown" },
+      };
+      const resolveParam = createStatement({
+        id: "side-effect-resolve-param",
+        name: "resolve",
+        data: createData({ type: resolveType }),
+      });
+      const executor = testOperation(
+        [resolveParam],
+        [
+          createStatement({
+            data: createData(),
+            operations: [
+              testBuiltInOperation(
+                "sideEffectForPromisePreview",
+                [{ type: { kind: "unknown" } }, { type: callback.type }],
+                { kind: "undefined" },
+                [createStatement({ data: callback })]
+              ),
+            ],
+          }),
+          createStatement({
+            data: testReference("resolve", resolveParam.id),
+            operations: [
+              testBuiltInOperation(
+                "call",
+                [{ type: resolveType }, { type: { kind: "string" } }],
+                { kind: "unknown" },
+                [stringStatement("done")]
+              ),
+            ],
+          }),
+        ]
+      );
+      executor.type.parameters = [{ name: "resolve", type: resolveType }];
+      const promiseType: InstanceDataType = {
+        kind: "instance",
+        className: "Promise",
+        constructorArgs: resolveConstructorArgs(
+          InstanceTypes.Promise.constructorArgs
+        ),
+        result: { kind: "string" },
+      };
+      const promiseData = createData({ type: promiseType });
+      if (!isDataOfType(promiseData, "instance")) return;
+      promiseData.value.constructorArgs = [createStatement({ data: executor })];
+
+      const statement = createStatement({
+        data: promiseData,
+        operations: [
+          testBuiltInOperation("await", [{ type: promiseType }], {
+            kind: "string",
+          }),
+        ],
+      });
+
+      const result = await executeStatement(statement, ctx);
+
+      expect(result.value).toBe("done");
+      expect(calls).toBe(1);
+      const callbackContext = ctx.getContext(callbackBody.id);
+      expect(callbackContext.variables.has("data")).toBe(true);
+      expect(getStatementResult(callbackBody, callbackContext).value).toBe(
+        "editor!"
+      );
+    } finally {
+      if (previousOps)
+        builtInOperationsByName.set("sideEffectForPromisePreview", previousOps);
+      else builtInOperationsByName.delete("sideEffectForPromisePreview");
+    }
+  });
+
+  it("allows native Promise resolve callbacks to receive runtime object values", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const resolveType: OperationType = {
+      kind: "operation",
+      parameters: [{ name: "value", type: { kind: "string" } }],
+      result: { kind: "unknown" },
+    };
+    const resolveValueParam = stringStatement("s", "value");
+    resolveValueParam.id = "object-resolve-value";
+    const resolveParam = createStatement({
+      id: "object-resolve-param",
+      name: "resolve",
+      data: testOperation(
+        [resolveValueParam],
+        [
+          createStatement({
+            data: testReference("value", "object-resolve-value"),
+          }),
+        ]
+      ),
+    });
+    resolveParam.data.type = resolveType;
+
+    const callbackParam = createStatement({
+      id: "object-callback-data-param",
+      name: "data",
+      data: testObject([{ key: "preview", value: stringStatement("editor") }]),
+    });
+    const previewStatement = createStatement({
+      id: "object-preview-statement",
+      name: "preview",
+      data: testReference("data", callbackParam.id),
+      operations: [
+        testBuiltInOperation(
+          "get",
+          [
+            { type: { kind: "object", properties: [] } },
+            { type: { kind: "string" } },
+          ],
+          { kind: "unknown" },
+          [stringStatement("preview")]
+        ),
+      ],
+    });
+    const callback = testOperation(
+      [callbackParam],
+      [
+        previewStatement,
+        createStatement({
+          data: testReference("resolve", resolveParam.id),
+          operations: [
+            testBuiltInOperation(
+              "call",
+              [{ type: resolveType }, { type: { kind: "string" } }],
+              { kind: "unknown" },
+              [
+                createStatement({
+                  data: testReference("preview", previewStatement.id),
+                }),
+              ]
+            ),
+          ],
+        }),
+      ]
+    );
+
+    let runtimeCallback: ((value: unknown) => unknown) | undefined;
+    const registerCallbackOp: OperationListItem = {
+      name: "registerObjectCallback",
+      parameters: [{ type: { kind: "unknown" } }, { type: callback.type }],
+      handler: (context, _data, callback) => {
+        runtimeCallback = getRawValueFromData(callback, context) as (
+          value: unknown
+        ) => unknown;
+        return createData();
+      },
+    };
+    const previousOps = builtInOperationsByName.get("registerObjectCallback");
+    builtInOperationsByName.set("registerObjectCallback", [registerCallbackOp]);
+
+    try {
+      const executor = testOperation(
+        [resolveParam],
+        [
+          createStatement({
+            data: createData(),
+            operations: [
+              testBuiltInOperation(
+                "registerObjectCallback",
+                [{ type: { kind: "unknown" } }, { type: callback.type }],
+                { kind: "unknown" },
+                [createStatement({ data: callback })]
+              ),
+            ],
+          }),
+        ]
+      );
+      executor.type.parameters = [{ name: "resolve", type: resolveType }];
+
+      const promise = new Promise<unknown>(
+        getRawValueFromData(executor, ctx) as (
+          resolve: (value: unknown) => void
+        ) => void
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(runtimeCallback).toBeDefined();
+      await runtimeCallback!({ preview: { output: ["runtime"] } });
+
+      await expect(promise).resolves.toEqual({ output: ["runtime"] });
+    } finally {
+      if (previousOps)
+        builtInOperationsByName.set("registerObjectCallback", previousOps);
+      else builtInOperationsByName.delete("registerObjectCallback");
+    }
+  });
+
+  it("uses operation parameter preview data instead of runtime callbacks during inner scope previews", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const resolveType: OperationType = {
+      kind: "operation",
+      parameters: [{ name: "value", type: { kind: "string" } }],
+      result: { kind: "unknown" },
+    };
+    const resolveParam = createStatement({
+      id: "resolve-param",
+      name: "resolve",
+      data: createData({ type: resolveType }),
+    });
+    const resolve2Param = stringStatement("ab", "val");
+    const resolve2 = testOperation(
+      [resolve2Param],
+      [
+        createStatement({
+          data: testReference("resolve", "resolve-param"),
+          operations: [
+            testBuiltInOperation(
+              "call",
+              [{ type: resolveType }, { type: { kind: "string" } }],
+              { kind: "unknown" },
+              [
+                createStatement({
+                  data: testReference("val", resolve2Param.id),
+                }),
+              ]
+            ),
+          ],
+        }),
+      ]
+    );
+    const callbackParam = stringStatement("editor", "data");
+    const previewCallback = testOperation(
+      [callbackParam],
+      [
+        createStatement({
+          data: testReference("resolve2", "resolve2-statement"),
+          operations: [
+            testBuiltInOperation(
+              "call",
+              [{ type: resolve2.type }, { type: { kind: "string" } }],
+              { kind: "unknown" },
+              [
+                createStatement({
+                  data: testReference("data", callbackParam.id),
+                }),
+              ]
+            ),
+          ],
+        }),
+      ]
+    );
+
+    let runtimeCallback: ((value: string) => unknown) | undefined;
+    const registerCallbackOp: OperationListItem = {
+      name: "registerCallback",
+      parameters: [
+        { type: { kind: "unknown" } },
+        { type: previewCallback.type },
+      ],
+      handler: (context, _data, callback) => {
+        runtimeCallback = getRawValueFromData(callback, context) as (
+          value: string
+        ) => unknown;
+        return createData();
+      },
+    };
+    const previousOps = builtInOperationsByName.get("registerCallback");
+    builtInOperationsByName.set("registerCallback", [registerCallbackOp]);
+
+    try {
+      const executor = testOperation(
+        [resolveParam],
+        [
+          createStatement({
+            id: "resolve2-statement",
+            name: "resolve2",
+            data: resolve2,
+          }),
+          createStatement({
+            data: createData(),
+            operations: [
+              testBuiltInOperation(
+                "registerCallback",
+                [{ type: { kind: "unknown" } }, { type: previewCallback.type }],
+                { kind: "unknown" },
+                [createStatement({ data: previewCallback })]
+              ),
+            ],
+          }),
+        ]
+      );
+      executor.type.parameters = [{ name: "resolve", type: resolveType }];
+
+      const promise = new Promise<string>(
+        getRawValueFromData(executor, ctx) as (
+          resolve: (value: string) => void
+        ) => void
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(runtimeCallback).toBeDefined();
+      await runtimeCallback!("runtime");
+
+      const timeoutPromise = new Promise<string>((_, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error("Timed out waiting for manual Promise to resolve"));
+        }, 200);
+        promise.finally(() => clearTimeout(timeoutId));
+      });
+
+      await expect(Promise.race([promise, timeoutPromise])).resolves.toBe(
+        "runtime"
+      );
+    } finally {
+      if (previousOps)
+        builtInOperationsByName.set("registerCallback", previousOps);
+      else builtInOperationsByName.delete("registerCallback");
+    }
+  });
+
+  it("does not execute pipe callback parameters before pipe invokes them", async () => {
+    const ctx = createTestContext({ isSync: false });
+    const values: string[] = [];
+    const resolveType: OperationType = {
+      kind: "operation",
+      parameters: [{ name: "value", type: { kind: "string" } }],
+      result: { kind: "unknown" },
+    };
+    const resolveData = createDataFromRawValue(
+      (value: string) => values.push(value),
+      { ...ctx, expectedType: resolveType }
+    );
+    const argParam = createStatement({
+      name: "arg",
+      data: createData({ type: resolveType }),
+    });
+    const bodyStatement = createStatement({
+      data: testReference("arg", argParam.id),
+      operations: [
+        testBuiltInOperation(
+          "call",
+          [{ type: resolveType }, { type: { kind: "string" } }],
+          { kind: "unknown" },
+          [stringStatement("preview")]
+        ),
+      ],
+    });
+    const callback = testOperation([argParam], [bodyStatement]);
+
+    await executeOperation(
+      findBuiltIn("pipe"),
+      resolveData,
+      [createStatement({ data: callback })],
+      ctx
+    );
+
+    expect(values).toEqual(["preview"]);
+    expect(ctx.getContext(bodyStatement.id).variables.has("arg")).toBe(true);
   });
 
   it("only exposes await for Promise instances", async () => {

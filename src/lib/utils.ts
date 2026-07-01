@@ -554,6 +554,7 @@ export function operationToListItem(
     id: operation.id,
     name: name ?? operation.value.name ?? "anonymous",
     parameters: operation.type.parameters,
+    parameterStatements: operation.value.parameters,
     statements: operation.value.statements,
   };
 }
@@ -1125,7 +1126,12 @@ export function resolveReference(data: IData, context: Context): IData {
         value: { reason: `'${data.value.name}' not found` },
       });
     }
-    return resolveReference(variable.data, context);
+    return resolveReference(
+      context.usePreviewData && variable.previewData
+        ? variable.previewData
+        : variable.data,
+      context
+    );
   }
   if (
     (isDataOfType(data, "array") || isDataOfType(data, "tuple")) &&

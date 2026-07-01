@@ -364,7 +364,7 @@ function executeDataValue(
       );
     });
   } else if (isDataOfType(data, "operation")) {
-    return [setOperationResults(data, context)];
+    return [setOperationResults(data, { ...context, usePreviewData: true })];
   } else if (isDataOfType(data, "union")) {
     const activeType = getUnionActiveType(data.type, {
       value: data.value,
@@ -376,12 +376,15 @@ function executeDataValue(
     );
   } else if (isDataOfType(data, "instance")) {
     const args = data.value.constructorArgs.map((arg, index) => {
+      const expectedType = data.type.constructorArgs[index]?.type;
+      const shouldSkipOperationHandlers =
+        data.type.className === "Promise" && expectedType?.kind === "operation";
+      const argContext = getChildContext(context, { index, expectedType });
       return _execute(
         arg,
-        getChildContext(context, {
-          index,
-          expectedType: data.type.constructorArgs[index]?.type,
-        })
+        shouldSkipOperationHandlers
+          ? { ...argContext, skipOperationHandlers: true }
+          : argContext
       );
     });
     return [
@@ -415,12 +418,14 @@ export function setOperationResults(
   const _execute = context.isSync ? executeStatementSync : executeStatement;
 
   function processStatement(statement: IStatement, index: number) {
-    const result = _execute(
-      statement,
+    const statementContext =
       index < parameters.length
-        ? getChildContext(_context, { index, enforceExpectedType: true })
-        : context
-    );
+        ? {
+            ...getChildContext(_context, { index, enforceExpectedType: true }),
+            skipOperationHandlers: undefined,
+          }
+        : context;
+    const result = _execute(statement, statementContext);
     return (result instanceof Promise ? result : createThenable(result)).then(
       (resolved) => {
         if (context.controlFlowState?.returned) return;
@@ -828,7 +833,7 @@ function executeOperationCore(
     return data;
   }
 
-  if ("lazyHandler" in operation) {
+  if ("lazyHandler" in operation && !context.skipOperationHandlers) {
     try {
       return operation.lazyHandler(context, data, ..._parameters);
     } catch (error) {
@@ -842,12 +847,17 @@ function executeOperationCore(
     const params = p.isRest ? _parameters.slice(index) : [_parameters[index]];
     return params.map((param) => {
       if (!param) return createData();
+      const expectedType =
+        p.isRest && p.type.kind === "array" ? p.type.elementType : p.type;
+      const paramContext = getChildContext(context, { expectedType });
       return _execute(
         param,
-        getChildContext(context, {
-          expectedType:
-            p.isRest && p.type.kind === "array" ? p.type.elementType : p.type,
-        })
+        expectedType.kind === "operation" && context.skipOperationHandlers
+          ? {
+              ...paramContext,
+              skipOperationHandlers: undefined,
+            }
+          : paramContext
       );
     });
   });
@@ -871,7 +881,13 @@ function executeOperationCore(
         ? resolveUnionType([resolvedParam.type, { kind: "undefined" }])
         : resolvedParam.type;
       const hasFatalError = isFatalError(param);
-      const typeMismatch = !isTypeCompatible(param.type, expectedType, context);
+      const isNativeOperationCall =
+        operation.name === "call" &&
+        isDataOfType(data, "operation") &&
+        Boolean(data.value.instanceId);
+      const typeMismatch =
+        !isNativeOperationCall &&
+        !isTypeCompatible(param.type, expectedType, context);
       if (hasFatalError || typeMismatch) {
         if (hasFatalError && operation.name === "call") return param;
         const incorrectType = isDataOfType(param, "error")
@@ -887,6 +903,9 @@ function executeOperationCore(
           },
         });
       }
+    }
+    if (context.skipOperationHandlers) {
+      return createData({ type: getPreviewFallbackType(operation, data) });
     }
     if ("handler" in operation) {
       try {
@@ -937,7 +956,16 @@ function executeOperationCore(
           resolved,
           resolvedParams
         );
-        if (variable) newContext.variables.set(_param.name, variable);
+        if (variable) {
+          const previewData =
+            _param.type.kind === "operation"
+              ? operation.parameterStatements?.[index]?.data
+              : undefined;
+          newContext.variables.set(_param.name, {
+            ...variable,
+            ...(previewData && { previewData }),
+          });
+        }
       }
     });
     if (memoCacheKey) newContext._memoCacheKey = memoCacheKey;
