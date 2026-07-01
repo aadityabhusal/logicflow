@@ -364,7 +364,7 @@ function executeDataValue(
       );
     });
   } else if (isDataOfType(data, "operation")) {
-    return [setOperationResults(data, { ...context, usePreviewData: true })];
+    return [setOperationResults(data, getOperationPreviewContext(context))];
   } else if (isDataOfType(data, "union")) {
     const activeType = getUnionActiveType(data.type, {
       value: data.value,
@@ -377,12 +377,10 @@ function executeDataValue(
   } else if (isDataOfType(data, "instance")) {
     const args = data.value.constructorArgs.map((arg, index) => {
       const expectedType = data.type.constructorArgs[index]?.type;
-      const shouldSkipOperationHandlers =
-        data.type.className === "Promise" && expectedType?.kind === "operation";
       const argContext = getChildContext(context, { index, expectedType });
       return _execute(
         arg,
-        shouldSkipOperationHandlers
+        data.type.className === "Promise" && expectedType?.kind === "operation"
           ? { ...argContext, skipOperationHandlers: true }
           : argContext
       );
@@ -405,6 +403,21 @@ function executeDataValue(
   return [];
 }
 
+function getOperationPreviewContext(context: Context): Context {
+  let variables: Context["variables"] | undefined;
+  for (const [name, variable] of context.variables) {
+    const data = variable.data;
+    if (isDataOfType(data, "operation") && data.value.instanceId) {
+      variables ??= new Map(context.variables);
+      variables.set(name, {
+        ...variable,
+        data: createParamData({ type: data.type }),
+      });
+    }
+  }
+  return variables ? { ...context, variables } : context;
+}
+
 export function setOperationResults(
   operation: IData<OperationType>,
   _context: Context
@@ -420,10 +433,7 @@ export function setOperationResults(
   function processStatement(statement: IStatement, index: number) {
     const statementContext =
       index < parameters.length
-        ? {
-            ...getChildContext(_context, { index, enforceExpectedType: true }),
-            skipOperationHandlers: undefined,
-          }
+        ? getChildContext(_context, { index, enforceExpectedType: true })
         : context;
     const result = _execute(statement, statementContext);
     return (result instanceof Promise ? result : createThenable(result)).then(
@@ -853,10 +863,7 @@ function executeOperationCore(
       return _execute(
         param,
         expectedType.kind === "operation" && context.skipOperationHandlers
-          ? {
-              ...paramContext,
-              skipOperationHandlers: undefined,
-            }
+          ? { ...paramContext, skipOperationHandlers: undefined }
           : paramContext
       );
     });
@@ -956,16 +963,7 @@ function executeOperationCore(
           resolved,
           resolvedParams
         );
-        if (variable) {
-          const previewData =
-            _param.type.kind === "operation"
-              ? operation.parameterStatements?.[index]?.data
-              : undefined;
-          newContext.variables.set(_param.name, {
-            ...variable,
-            ...(previewData && { previewData }),
-          });
-        }
+        if (variable) newContext.variables.set(_param.name, variable);
       }
     });
     if (memoCacheKey) newContext._memoCacheKey = memoCacheKey;

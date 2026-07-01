@@ -27,7 +27,6 @@ export type ReservedNames = {
 
 export type Variable = {
   data: IData;
-  previewData?: IData;
   reference?: { name: string; id: string };
   isEnv?: boolean;
 };
@@ -47,7 +46,6 @@ export type ContextProps = {
   operationCache?: Map<string, IData>;
   _memoCacheKey?: string;
   _currentOperationId?: string;
-  usePreviewData?: boolean;
   skipOperationHandlers?: boolean;
   controlFlowState?: { returned?: IData };
 };
@@ -91,7 +89,6 @@ export type OperationListItem = {
     | ((data: IData) => OperationType["parameters"])
     | OperationType["parameters"];
   shouldCacheResult?: boolean;
-  parameterStatements?: IStatement[];
   narrowType?:
     | ((...args: [Context, ...IData[]]) => DataType | undefined)
     | DataType;
