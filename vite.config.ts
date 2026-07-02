@@ -108,7 +108,7 @@ export default defineConfig({
       registerType: "prompt",
       includeAssets: ["icons/*.{png,svg}"],
       manifest: {
-        name: "Logicflow - Programming through chained operations",
+        name: "Logicflow - Visual programming by chaining operations on data",
         short_name: "Logicflow",
         description:
           "Logicflow is a live, block-based visual programming environment built around data transformation through chained operations.",

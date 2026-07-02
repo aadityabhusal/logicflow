@@ -167,14 +167,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    document.title = "Logicflow - Programming through chained operations";
+    document.title =
+      "Logicflow - Visual programming by chaining operations on data";
   }, []);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
-      <div className="border-b pb-2 flex items-center justify-between gap-4">
+      <div className="border-b pb-2 flex items-center justify-between gap-3">
         <div className="mr-auto flex items-center gap-3">
-          <AppIcon className="size-10 shadow-lg shadow-black/20" />
+          <AppIcon className="size-10 shadow-lg shadow-black/20 shrink-0" />
           <h1 className="hidden text-2xl leading-tight sm:block">Logicflow</h1>
         </div>
         <Button
@@ -185,7 +186,7 @@ export default function Dashboard() {
           className="outline-none"
           leftSection={<FaGithub />}
         >
-          <span className="hidden sm:inline">Source</span>
+          Code
         </Button>
         <Button
           component={Link}
@@ -196,10 +197,10 @@ export default function Dashboard() {
           Docs
         </Button>
         <Button leftSection={<FaPlus />} onClick={() => handleCreate()}>
-          Create project
+          New Project
         </Button>
       </div>
-      <section className={"space-y-2 border-b pb-3"}>
+      <section className={"space-y-2 border-b pb-4"}>
         <Button
           variant="subtle"
           className="outline-none"
@@ -239,9 +240,11 @@ export default function Dashboard() {
         Projects
       </h2>
       {sortedProjects.length === 0 ? (
-        <div className="text-center py-8 text-disabled">
-          <p className="text-lg mb-2">No projects</p>
-          <p className="text-sm">Create your first project to get started</p>
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <p className="text-md">Create your first project to get started</p>
+          <Button leftSection={<FaPlus />} onClick={() => handleCreate()}>
+            New project
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4">
