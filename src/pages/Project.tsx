@@ -16,6 +16,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useState,
 } from "react";
 import { useHotkeys, useClickOutside } from "@mantine/hooks";
 import { Navigate, useSearchParams } from "react-router";
@@ -55,14 +56,19 @@ export default function Project() {
   }, [currentFile]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const rootPath = useMemo(() => [], []);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") ?? undefined;
+  const [, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<string | undefined>(
+    () => new URLSearchParams(location.search).get("tab") ?? "operations"
+  );
   const setActiveTab = useCallback(
     (value?: string | ((prev?: string) => string | undefined)) => {
-      const next = typeof value === "function" ? value(activeTab) : value;
-      setSearchParams(...handleSearchParams({ tab: next }, true));
+      setActiveTabState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value;
+        setSearchParams(...handleSearchParams({ tab: next }, true));
+        return next;
+      });
     },
-    [activeTab, setSearchParams]
+    [setSearchParams]
   );
   useHotkeys(useCustomHotkeys(setActiveTab), []);
   const operationRef = useClickOutside(() => {

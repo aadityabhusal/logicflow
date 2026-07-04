@@ -4,7 +4,7 @@ import { fileHistoryActions, useProjectStore } from "../lib/store";
 import { createProjectFile, handleSearchParams } from "../lib/utils";
 import { NoteText } from "./NoteText";
 import { IconButton } from "./IconButton";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { memo, useEffect, useRef, useState } from "react";
 import { updateFiles } from "@/lib/update";
 import { notifications } from "@mantine/notifications";
@@ -17,7 +17,7 @@ import { useRestrictedName } from "@/lib/useRestrictedName";
 const OperationListItem = memo(OperationListItemComponent);
 
 export function OperationsList() {
-  const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
   const addFile = useProjectStore((s) => s.addFile);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
   const { isRestricted, reservedNames } = useRestrictedName();
@@ -28,7 +28,7 @@ export function OperationsList() {
       Array.from(reservedNames).map((r) => r.name)
     );
     addFile(newFile);
-    navigate(`/project/${currentProject?.id}?file=${newFile.name}`);
+    setSearchParams(...handleSearchParams({ file: newFile.name }, true));
   };
 
   return (
@@ -93,7 +93,6 @@ function OperationListItemComponent({
   const getFile = useProjectStore((s) => s.getFile);
   const [editingId, setEditingId] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
   const projectId = useProjectStore((s) => s.getCurrentProject()?.id);
 
   useEffect(() => {
@@ -194,8 +193,11 @@ function OperationListItemComponent({
                 className="text-sm self-end"
                 onClick={() => {
                   deleteFile(item.id);
-                  if (searchParams.get("file") === item.name && projectId)
-                    navigate(`/project/${projectId}`);
+                  if (searchParams.get("file") === item.name && projectId) {
+                    setSearchParams(
+                      ...handleSearchParams({ file: undefined }, true)
+                    );
+                  }
                 }}
               >
                 Yes, delete.

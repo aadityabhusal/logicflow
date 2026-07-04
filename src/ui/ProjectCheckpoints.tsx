@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useSearchParams } from "react-router";
 import { Button, Popover, Tooltip } from "@mantine/core";
 import { FaRotateLeft, FaTrash, FaCheck, FaCircleInfo } from "react-icons/fa6";
 import { formatDistanceToNow } from "date-fns";
@@ -10,9 +10,10 @@ import { useExecutionResultsStore } from "@/lib/execution/store";
 import { ProjectCheckpoint } from "@/lib/types";
 import { IconButton } from "./IconButton";
 import { NoteText } from "./NoteText";
+import { handleSearchParams } from "@/lib/utils";
 
 export function ProjectCheckpoints() {
-  const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
   const currentProject = useProjectStore((s) => s.getCurrentProject());
   const restoreProjectFromCheckpoint = useProjectStore(
     (s) => s.restoreProjectFromCheckpoint
@@ -44,7 +45,7 @@ export function ProjectCheckpoints() {
       !prevFileId ||
       !checkpoint.snapshot.files.some((f) => f.id === prevFileId)
     ) {
-      navigate(`/project/${currentProject.id}`, { replace: true });
+      setSearchParams(...handleSearchParams({ file: undefined }, true));
     }
   };
 
