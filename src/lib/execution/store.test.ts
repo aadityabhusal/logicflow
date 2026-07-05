@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const projectStoreMocks = vi.hoisted(() => ({
+  currentFile: null as unknown,
+}));
+
 vi.mock("idb", () => ({
   openDB: () =>
     Promise.resolve({
@@ -30,17 +34,18 @@ vi.mock("../store", () => ({
           ],
         },
       }),
-      getCurrentFile: () => null,
+      getCurrentFile: () => projectStoreMocks.currentFile,
     }),
   },
 }));
 
-import { createData } from "../utils";
+import { createData, createStatement } from "../utils";
 import { getReservedNames, useExecutionResultsStore } from "./store";
 import type { Context, Variable } from "./types";
 
 describe("execution store cache invalidation", () => {
   beforeEach(() => {
+    projectStoreMocks.currentFile = null;
     useExecutionResultsStore.getState().removeAll();
   });
 
@@ -116,6 +121,39 @@ describe("execution store cache invalidation", () => {
     expect(rootContext.operationCache?.size).toBe(0);
     expect(runVersion).toBe(initialRunVersion + 1);
   });
+
+  it("does not retain instance results after clearing disposed instances", () => {
+    const instanceResult = createData({
+      type: {
+        kind: "instance",
+        className: "TestResource",
+        constructorArgs: [],
+      },
+    });
+    const normalResult = createData({ value: "keep" });
+
+    useExecutionResultsStore.setState({
+      results: new Map([
+        ["instance-result", { data: instanceResult }],
+        ["normal-result", { data: normalResult }],
+      ]),
+      instances: new Map([
+        [
+          instanceResult.value.instanceId,
+          { instance: {}, type: instanceResult.type },
+        ],
+      ]),
+    });
+
+    useExecutionResultsStore.getState().clearCache();
+
+    expect(
+      useExecutionResultsStore.getState().getResult("instance-result")
+    ).toBeUndefined();
+    expect(
+      useExecutionResultsStore.getState().getResult("normal-result")?.data
+    ).toBe(normalResult);
+  });
 });
 
 describe("packageAliases in store lifecycle", () => {
@@ -159,6 +197,7 @@ describe("packageAliases in store lifecycle", () => {
 
 describe("getContext merges rootContext.packageAliases", () => {
   beforeEach(() => {
+    projectStoreMocks.currentFile = null;
     useExecutionResultsStore.getState().removeAll();
   });
 
@@ -205,10 +244,49 @@ describe("getContext merges rootContext.packageAliases", () => {
     const ctx = useExecutionResultsStore.getState().getContext("nonexistent");
     expect(ctx.packageAliases).toEqual({ custom: "val" });
   });
+
+  it("falls back to the nearest registered ancestor context", () => {
+    const state = useExecutionResultsStore.getState();
+    const child = createStatement({ data: createData({ value: "child" }) });
+    const ancestor = createStatement({
+      data: createData({
+        type: {
+          kind: "object",
+          properties: [{ key: "child", value: child.data.type }],
+        },
+        value: { entries: [{ key: "child", value: child }] },
+      }),
+    });
+    const ancestorContext: Context = {
+      ...state.rootContext,
+      scopeId: "ancestor",
+    };
+    projectStoreMocks.currentFile = {
+      type: "operation",
+      content: { value: { parameters: [], statements: [ancestor] } },
+    };
+
+    state.setContext(ancestor.id, ancestorContext);
+
+    const context = useExecutionResultsStore
+      .getState()
+      .getContextOrAncestor(child.id, [
+        "statements",
+        0,
+        "data",
+        "value",
+        "entries",
+        0,
+        "value",
+      ]);
+
+    expect(context.scopeId).toBe("ancestor");
+  });
 });
 
 describe("execution store mutation helpers", () => {
   beforeEach(() => {
+    projectStoreMocks.currentFile = null;
     useExecutionResultsStore.getState().removeAll();
   });
 

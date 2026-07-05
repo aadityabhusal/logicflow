@@ -403,6 +403,41 @@ describe("generateOperation", () => {
     expect(result).toContain("_.length");
   });
 
+  it("passes the piped argument to user-defined operation calls with explicit parameters", () => {
+    const ctx = createTestContext();
+    ctx.variables.set("otherOp", {
+      data: testOperation(
+        [stringStatement("", "input"), numberStatement(0, "count")],
+        [stringStatement("result")],
+        "otherOp"
+      ),
+    });
+    const userOpCall = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" } },
+          { type: { kind: "number" } },
+        ],
+        result: { kind: "string" },
+      },
+      value: {
+        name: "otherOp",
+        parameters: [numberStatement(3)],
+        statements: [],
+      },
+    });
+    const stmt = createStatement({
+      data: testString("seed"),
+      operations: [userOpCall],
+    });
+    const op = testOperation([], [stmt], "usesOtherOp");
+
+    const result = generateOperation(op, ctx);
+
+    expect(result).toContain('_.pipe("seed", (arg) => otherOp(arg, 3))');
+  });
+
   it("generates utility operations through built-in namespace", () => {
     const ctx = createTestContext();
     const addOp = createData({

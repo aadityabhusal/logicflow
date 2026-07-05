@@ -49,6 +49,18 @@ describe("generatePlatformConfig", () => {
       });
     });
 
+    it("uses custom HTTP trigger paths as route sources", () => {
+      const op = createTriggeredOperationFile("hello");
+      op.trigger = { type: "http", path: "/custom/hello" };
+
+      const result = generatePlatformConfig("vercel", [op]);
+      const parsed = JSON.parse(result[0].content);
+
+      expect(parsed.routes).toEqual([
+        { src: "/custom/hello", dest: "/api/hello" },
+      ]);
+    });
+
     it("generates valid vercel.json with empty routes when no triggered operations", () => {
       const result = generatePlatformConfig("vercel", []);
       expect(result).toHaveLength(1);

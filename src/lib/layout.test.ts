@@ -10,6 +10,7 @@ import {
   getStatementLayout,
   getOperationCallLayout,
   getOperationNameWidth,
+  getOpCallParamName,
   THRESHOLD,
   WRAP_THRESHOLD,
   SEPARATOR_WIDTH,
@@ -50,6 +51,8 @@ describe("isSimpleData", () => {
     expect(isSimpleData(testError("oops").type)).toBe(true));
   it("returns false for array", () =>
     expect(isSimpleData(testArray([]).type)).toBe(false));
+  it("returns false for tuple", () =>
+    expect(isSimpleData(testTuple([]).type)).toBe(false));
   it("returns false for object", () =>
     expect(isSimpleData(testObject([]).type)).toBe(false));
   it("returns false for dictionary", () =>
@@ -76,6 +79,8 @@ describe("isSimpleData", () => {
 describe("isComplexData", () => {
   it("returns true for array", () =>
     expect(isComplexData(testArray([]))).toBe(true));
+  it("returns true for tuple", () =>
+    expect(isComplexData(testTuple([]))).toBe(true));
   it("returns false for string", () =>
     expect(isComplexData(testString("x"))).toBe(false));
   it("returns true for dictionary", () =>
@@ -186,6 +191,15 @@ describe("getEntityWidth — number digit length", () => {
   it("0 = 1", () => {
     expect(getEntityWidth(testNumber(0))).toBe(1);
   });
+
+  it("handles non-finite numbers without throwing", () => {
+    expect(getEntityWidth(testNumber(Number.NaN))).toBe(2);
+    expect(getEntityWidth(testNumber(Number.POSITIVE_INFINITY))).toBe(3);
+  });
+
+  it("handles exponential notation", () => {
+    expect(getEntityWidth(testNumber(1e-7))).toBe(2);
+  });
 });
 
 describe("getEntityWidth — primitives", () => {
@@ -245,6 +259,15 @@ describe("getEntityWidth — arrays (sum + separators)", () => {
     const inner = testArray([numberStatement(1)]);
     const outer = testArray([createStatement({ data: inner })]);
     expect(getEntityWidth(outer)).toBe(3);
+  });
+
+  it("folded top-level arrays collapse to one width unit", () => {
+    const array = testArray(
+      Array.from({ length: 10 }, () => numberStatement(1))
+    );
+
+    expect(getEntityWidth(array)).toBeGreaterThan(1);
+    expect(getEntityWidth(array, { [array.id]: true })).toBe(1);
   });
 });
 
@@ -478,6 +501,29 @@ describe("getOperationCallWidth", () => {
     expect(getOperationCallWidth(op, undefined, true)).toBe(2 + 1);
   });
 
+  it("reuses rest parameter names for additional arguments", () => {
+    const op = createData({
+      type: {
+        kind: "operation",
+        parameters: [
+          { type: { kind: "string" } },
+          { name: "items", type: { kind: "number" }, isRest: true },
+        ],
+        result: { kind: "number" },
+      },
+      value: {
+        name: "sum",
+        parameters: [numberStatement(1), numberStatement(2)],
+        statements: [],
+      },
+    });
+
+    expect(getOpCallParamName(op, 0)).toBe("items");
+    expect(getOpCallParamName(op, 1)).toBe("items");
+    expect(getOperationCallWidth(op)).toBe(11);
+    expect(getOperationCallWidth(op, undefined, true)).toBe(5);
+  });
+
   it("complex param contributes its full width", () => {
     const paramObj = testObject([
       { key: "a", value: numberStatement(1) },
@@ -586,7 +632,7 @@ describe("getEntityLayout", () => {
     expect(getEntityLayout(testString("hello"))).toBe("inline");
   });
 
-  it("returns inline for simple data even when width exceeds the threshold", () => {
+  it("returns inline for simple data even when width reaches the wrap threshold", () => {
     const longString = testString("a".repeat(200));
 
     expect(getEntityWidth(longString)).toBeGreaterThanOrEqual(WRAP_THRESHOLD);

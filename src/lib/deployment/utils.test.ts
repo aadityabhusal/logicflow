@@ -1,10 +1,48 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  bytesToBase64,
   createPlatformFetch,
+  deploymentFileBytes,
   parseError,
   formatRelativeTime,
+  joinTextFiles,
   prefixNpmImports,
 } from "@/lib/deployment/utils";
+
+describe("deployment file helpers", () => {
+  it("encodes string deployment files as UTF-8 bytes", () => {
+    expect(
+      new TextDecoder().decode(
+        deploymentFileBytes({ path: "src/index.js", content: "hello" })
+      )
+    ).toBe("hello");
+  });
+
+  it("returns binary deployment file content without copying", () => {
+    const bytes = new Uint8Array([0, 255, 10]);
+
+    expect(
+      deploymentFileBytes({ path: "assets/file.bin", content: bytes })
+    ).toBe(bytes);
+  });
+
+  it("converts binary bytes to base64 across internal chunks", () => {
+    const bytes = new Uint8Array(0x8000 + 3);
+    bytes.set([0, 255, 10], 0x8000);
+
+    expect(bytesToBase64(bytes)).toBe(btoa(String.fromCharCode(...bytes)));
+  });
+
+  it("joins only text deployment files", () => {
+    expect(
+      joinTextFiles([
+        { path: "a.js", content: "a" },
+        { path: "file.bin", content: new Uint8Array([1]) },
+        { path: "b.js", content: "b" },
+      ])
+    ).toBe("a\n\nb");
+  });
+});
 
 describe("formatRelativeTime", () => {
   const MINUTE = 60_000;
@@ -103,7 +141,7 @@ describe("prefixNpmImports", () => {
       { path: "src/ops.js", content: 'import { pipe } from   "remeda" ;' },
     ];
     const result = prefixNpmImports(files);
-    expect(result[0].content).toBe('import { pipe } from "npm:remeda" ;');
+    expect(result[0].content).toBe('import { pipe } from   "npm:remeda" ;');
   });
 
   it("leaves non-npm protocol and built-in specifiers unchanged", () => {
@@ -128,12 +166,24 @@ describe("prefixNpmImports", () => {
     );
   });
 
+  it("prefixes bare package re-exports", () => {
+    const files = [
+      { path: "src/ops.js", content: 'export { pipe } from "remeda";' },
+    ];
+
+    expect(prefixNpmImports(files)[0].content).toBe(
+      'export { pipe } from "npm:remeda";'
+    );
+  });
+
   it("returns empty array for empty input", () => {
     expect(prefixNpmImports([])).toEqual([]);
   });
 
   it("preserves file path property", () => {
-    const files = [{ path: "src/ops.js", content: 'from "remeda"' }];
+    const files = [
+      { path: "src/ops.js", content: 'import { pipe } from "remeda";' },
+    ];
     const result = prefixNpmImports(files);
     expect(result[0].path).toBe("src/ops.js");
   });
@@ -166,6 +216,25 @@ describe("prefixNpmImports", () => {
       content
     );
   });
+
+  it("does not rewrite comments or string literals that mention imports", () => {
+    const content = [
+      '// import { pipe } from "remeda";',
+      `const text = 'from "wretch"';`,
+    ].join("\n");
+
+    expect(prefixNpmImports([{ path: "src/ops.js", content }])[0].content).toBe(
+      content
+    );
+  });
+
+  it("leaves binary files unchanged", () => {
+    const content = new Uint8Array([1, 2, 3]);
+
+    expect(prefixNpmImports([{ path: "file.bin", content }])[0].content).toBe(
+      content
+    );
+  });
 });
 
 describe("parseError", () => {
@@ -181,9 +250,19 @@ describe("parseError", () => {
     ["falls back to msg field", { msg: "Too large" }, 413, "Too large"],
     ["falls back to HTTP status", { details: "info" }, 422, "HTTP 422"],
     ["handles empty JSON object", {}, 418, "HTTP 418"],
+    ["handles JSON null", null, 500, "HTTP 500"],
+    ["handles JSON arrays", ["bad"], 400, "HTTP 400"],
   ])("%s from JSON body", async (_, body, status, expected) => {
     const response = new Response(JSON.stringify(body), { status });
     expect(await parseError(response)).toBe(expected);
+  });
+
+  it("uses JSON string bodies as the error message", async () => {
+    const response = new Response(JSON.stringify("plain failure"), {
+      status: 400,
+    });
+
+    expect(await parseError(response)).toBe("plain failure");
   });
 
   it("prioritizes message over error when both present", async () => {
@@ -268,6 +347,20 @@ describe("createPlatformFetch", () => {
     );
   });
 
+  it("normalizes trailing slash in VITE_API_PROXY_URL", async () => {
+    import.meta.env.VITE_API_PROXY_URL = "https://proxy.example.com/";
+    const mockFetch = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const fetchFn = createPlatformFetch("/vercel");
+    await fetchFn("/v13/deployments", "token");
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://proxy.example.com/vercel/v13/deployments",
+      expect.any(Object)
+    );
+  });
+
   it("preserves query strings in deployment platform paths", async () => {
     import.meta.env.VITE_API_PROXY_URL = "https://proxy.example.com";
     const mockFetch = vi.fn().mockResolvedValue(new Response());
@@ -339,9 +432,9 @@ describe("createPlatformFetch", () => {
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].headers).toMatchObject({
       Authorization: "Bearer token",
-      "Content-Type": "application/json",
       "X-Custom": "value",
     });
+    expect(callArgs[1].headers["Content-Type"]).toBeUndefined();
   });
 
   it("allows overriding default Content-Type via options", async () => {
@@ -405,5 +498,19 @@ describe("createPlatformFetch", () => {
     const callArgs = mockFetch.mock.calls[0];
     expect(callArgs[1].method).toBe("DELETE");
     expect(callArgs[1].body).toBe('{"id":1}');
+  });
+
+  it("does not inject JSON Content-Type for binary bodies", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", mockFetch);
+
+    const fetchFn = createPlatformFetch("/test");
+    await fetchFn("/path", "token", {
+      method: "POST",
+      body: new Uint8Array([1, 2, 3]),
+    });
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[1].headers["Content-Type"]).toBeUndefined();
   });
 });

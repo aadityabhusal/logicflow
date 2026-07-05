@@ -1,18 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-const showMock = vi.hoisted(() => vi.fn());
+const showReloadNotificationMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@mantine/notifications", () => ({
-  notifications: {
-    show: showMock,
-    clean: vi.fn(),
-    update: vi.fn(),
-    hide: vi.fn(),
-  },
-}));
-
-vi.mock("@mantine/core", () => ({
-  Button: () => null,
+vi.mock("@/lib/reload-prompt", () => ({
+  showReloadNotification: showReloadNotificationMock,
 }));
 
 function dispatchUnhandledRejection(reason: unknown) {
@@ -26,7 +17,7 @@ describe("registerChunkLoadErrorHandler", () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    showMock.mockClear();
+    showReloadNotificationMock.mockClear();
     const mod = await import("@/lib/handle-chunk-load-errors");
     cleanup = mod.registerChunkLoadErrorHandler();
   });
@@ -40,11 +31,10 @@ describe("registerChunkLoadErrorHandler", () => {
     dispatchUnhandledRejection(
       new Error("Failed to fetch dynamically imported module: /assets/x.js")
     );
-    expect(showMock).toHaveBeenCalledTimes(1);
-    expect(showMock).toHaveBeenCalledWith(
+    expect(showReloadNotificationMock).toHaveBeenCalledTimes(1);
+    expect(showReloadNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Some app assets failed to load",
-        autoClose: false,
       })
     );
   });
@@ -52,17 +42,25 @@ describe("registerChunkLoadErrorHandler", () => {
   it("dedupes subsequent chunk-load rejections", () => {
     dispatchUnhandledRejection(new Error("Importing a module script failed."));
     dispatchUnhandledRejection(new Error("Loading chunk 5 failed."));
-    expect(showMock).toHaveBeenCalledTimes(1);
+    expect(showReloadNotificationMock).toHaveBeenCalledTimes(1);
   });
 
   it("ignores non-chunk errors", () => {
     dispatchUnhandledRejection(new Error("Some unrelated runtime error"));
-    expect(showMock).not.toHaveBeenCalled();
+    expect(showReloadNotificationMock).not.toHaveBeenCalled();
   });
 
   it("handles string rejections", () => {
     dispatchUnhandledRejection("error loading dynamically imported module");
-    expect(showMock).toHaveBeenCalledTimes(1);
+    expect(showReloadNotificationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles object-shaped chunk errors", () => {
+    dispatchUnhandledRejection({
+      message: "ChunkLoadError: Loading chunk app failed.",
+    });
+
+    expect(showReloadNotificationMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows a notification for a chunk-load error event", () => {
@@ -71,6 +69,23 @@ describe("registerChunkLoadErrorHandler", () => {
         error: new Error("Loading chunk 12 failed."),
       })
     );
-    expect(showMock).toHaveBeenCalledTimes(1);
+    expect(showReloadNotificationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the error event message when no error object is present", () => {
+    window.dispatchEvent(
+      new ErrorEvent("error", { message: "ChunkLoadError: app.js" })
+    );
+
+    expect(showReloadNotificationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes listeners during cleanup", () => {
+    cleanup?.();
+    cleanup = undefined;
+
+    dispatchUnhandledRejection(new Error("Loading chunk 5 failed."));
+
+    expect(showReloadNotificationMock).not.toHaveBeenCalled();
   });
 });

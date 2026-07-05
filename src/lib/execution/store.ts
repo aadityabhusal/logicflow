@@ -105,7 +105,10 @@ export const useExecutionResultsStore =
           const project = useProjectStore.getState().getCurrentProject();
           return {
             results: new Map(
-              [...state.results].filter(([, res]) => !res.shouldCacheResult)
+              [...state.results].filter(
+                ([, res]) =>
+                  !res.shouldCacheResult && res.data?.type.kind !== "instance"
+              )
             ),
             instances: new Map(),
             rootContext: {

@@ -214,10 +214,12 @@ export function stringifyJSON(
     | (string | number)[],
   space?: string | number
 ): string {
-  return JSON.stringify(
-    value,
-    replacer as Parameters<typeof JSON.stringify>[1],
-    space
+  return (
+    JSON.stringify(
+      value,
+      replacer as Parameters<typeof JSON.stringify>[1],
+      space
+    ) ?? "undefined"
   );
 }
 

@@ -97,8 +97,9 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
   },
   faker: {
     urlPattern: (name) => {
-      const withoutPrefix =
-        name.indexOf(".") !== -1 ? name.slice(name.indexOf(".") + 1) : name;
+      const withoutPrefix = name.startsWith("faker.")
+        ? name.slice("faker.".length)
+        : name;
       const parts = withoutPrefix.split(".");
       const module = parts[0];
       const method = parts[parts.length - 1].toLowerCase();

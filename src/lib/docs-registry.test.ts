@@ -5,6 +5,7 @@ describe("getDocsUrl", () => {
   it("returns undefined for missing source or operation name", () => {
     expect(getDocsUrl(undefined, "eq")).toBeUndefined();
     expect(getDocsUrl({ name: "supabaseBuilder" }, undefined)).toBeUndefined();
+    expect(getDocsUrl({ name: "supabaseBuilder" }, "")).toBeUndefined();
   });
 
   it("returns undefined for unknown source", () => {
@@ -70,6 +71,31 @@ describe("getDocsUrl", () => {
 
   it.each([
     [
+      "rowguardColumnBuilder",
+      "rowguardColumnBuilder.references",
+      "https://supabase-community.github.io/rowguard/classes/ColumnBuilder.html#references",
+    ],
+    [
+      "rowguardConditionChain",
+      "rowguardConditionChain.and",
+      "https://supabase-community.github.io/rowguard/classes/ConditionChain.html#and",
+    ],
+    [
+      "rowguardPolicyBuilder",
+      "rowguardPolicyBuilder.toSQL",
+      "https://supabase-community.github.io/rowguard/classes/PolicyBuilder.html#tosql",
+    ],
+    [
+      "rowguardSubqueryBuilder",
+      "rowguardSubqueryBuilder.select",
+      "https://supabase-community.github.io/rowguard/classes/SubqueryBuilder.html#select",
+    ],
+  ])("generates rowguard class docs for %s", (source, operation, expected) => {
+    expect(getDocsUrl({ name: source }, operation)).toBe(expected);
+  });
+
+  it.each([
+    [
       "faker",
       "faker.person.firstName",
       "https://fakerjs.dev/api/person.html#firstname",
@@ -86,6 +112,12 @@ describe("getDocsUrl", () => {
     ],
   ])("uses raw operation names for %s docs", (source, operation, expected) => {
     expect(getDocsUrl({ name: source }, operation)).toBe(expected);
+  });
+
+  it("generates faker docs for unprefixed dotted operation names", () => {
+    expect(getDocsUrl({ name: "faker" }, "person.firstName")).toBe(
+      "https://fakerjs.dev/api/person.html#firstname"
+    );
   });
 
   it("strips package prefix from operation name", () => {

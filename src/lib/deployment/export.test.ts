@@ -70,6 +70,16 @@ describe("createExportZip", () => {
     expect(unzipText(data)).toEqual({ "empty.js": "" });
   });
 
+  it("preserves binary file contents", () => {
+    const bytes = new Uint8Array([0, 255, 10, 13]);
+
+    const data = createExportZip([{ path: "assets/file.bin", content: bytes }]);
+
+    expect(Array.from(unzipSync(data)["assets/file.bin"])).toEqual([
+      0, 255, 10, 13,
+    ]);
+  });
+
   it("zips many files without dropping entries", () => {
     const files: DeploymentFile[] = Array.from({ length: 20 }, (_, i) => ({
       path: `src/op${i}.js`,
@@ -81,20 +91,30 @@ describe("createExportZip", () => {
     expect(entries["src/op19.js"]).toBe("export default () => 19;");
   });
 
-  it("uses the last file when duplicate paths are provided", () => {
-    const data = createExportZip([
-      { path: "src/index.js", content: "first" },
-      { path: "src/index.js", content: "second" },
-    ]);
-
-    expect(unzipText(data)).toEqual({ "src/index.js": "second" });
+  it("rejects duplicate paths instead of overwriting entries", () => {
+    expect(() =>
+      createExportZip([
+        { path: "src/index.js", content: "first" },
+        { path: "src/index.js", content: "second" },
+      ])
+    ).toThrow("Duplicate export path: src/index.js");
   });
+
+  it.each(["", "/absolute.js", "../secret.js", "src/../secret.js"])(
+    "rejects unsafe path %s",
+    (path) => {
+      expect(() => createExportZip([{ path, content: "" }])).toThrow(
+        "Unsafe export path"
+      );
+    }
+  );
 });
 
 describe("createDownloadName", () => {
   it.each([
     ["My Project", "my-project"],
     ["  Spaced App  ", "spaced-app"],
+    ["My/App!", "my-app"],
     ["", "project"],
     ["   ", "project"],
   ])("creates %s as %s", (name, expected) => {
@@ -127,6 +147,20 @@ describe("download helpers", () => {
 
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect(click).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('a[download="project.zip"]')).toBeNull();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:test");
+  });
+
+  it("cleans up the temporary link and URL when click throws", () => {
+    const { revokeObjectURL } = mockUrlApi();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+
+    expect(() => downloadBlob(new Blob(["data"]), "project.zip")).toThrow(
+      "blocked"
+    );
+
     expect(document.querySelector('a[download="project.zip"]')).toBeNull();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:test");
   });

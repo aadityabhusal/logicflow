@@ -338,7 +338,7 @@ function generateOperationCall(
       ) {
         context.importedOperations.add(actualName);
       }
-      const code = `, ${paramStr ? `(arg) => ${actualName}${paramStr}` : actualName}`;
+      const code = `, ${paramStr ? `(arg) => ${actualName}(arg, ${params})` : actualName}`;
       return { type: "pipe", code };
     }
   }

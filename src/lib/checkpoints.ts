@@ -15,7 +15,7 @@ export function createProjectCheckpoint(
   return {
     id: nanoid(),
     projectId: project.id,
-    name: name || `Checkpoint ${format(new Date(), "MMM d, h:mm a")}`,
+    name: name?.trim() || `Checkpoint ${format(new Date(), "MMM d, h:mm a")}`,
     createdAt: Date.now(),
     schemaVersion: 1,
     snapshot: rest,

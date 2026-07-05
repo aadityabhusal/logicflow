@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { virtualPackageModules } from "@/lib/deployment/utils";
+import { PACKAGE_CATALOG } from "@/lib/packages/catalog";
 import * as ffmpeg from "@/lib/packages/virtual/ffmpeg";
 
 describe("virtual package modules", () => {
@@ -22,8 +23,15 @@ describe("virtual package modules", () => {
     return [...directExports, ...blockExports].sort();
   }
 
-  it("lists ffmpeg as a deployable virtual package", () => {
-    expect(Object.keys(virtualPackageModules)).toEqual(["ffmpeg"]);
+  it("provides a deployable source module for every virtual catalog package", () => {
+    const virtualCatalogPackages = Object.entries(PACKAGE_CATALOG)
+      .filter(([, entry]) => entry.packageType === "virtual")
+      .map(([name]) => name)
+      .sort();
+
+    expect(Object.keys(virtualPackageModules).sort()).toEqual(
+      virtualCatalogPackages
+    );
   });
 
   it("exports the ffmpeg source module surface", () => {

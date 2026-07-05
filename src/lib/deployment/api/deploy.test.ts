@@ -101,6 +101,18 @@ describe("deployToPlatform", () => {
     expect(result.error).toContain("API token is required");
   });
 
+  it("returns error when token is whitespace only", async () => {
+    const result = await deployToPlatform(baseProject, ctx, {
+      platform: "vercel",
+      credentials: { token: "   " },
+      deployments: [],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("API token is required");
+    expect(generateDeployableProject).not.toHaveBeenCalled();
+  });
+
   it("capitalizes platform name in token error message", async () => {
     const result = await deployToPlatform(baseProject, ctx, {
       platform: "supabase",
@@ -212,6 +224,19 @@ describe("deployToPlatform", () => {
     expect(deployToSupabase).not.toHaveBeenCalled();
   });
 
+  it("returns unknown platform before checking platform-specific token", async () => {
+    const result = await deployToPlatform(baseProject, ctx, {
+      platform: "unknown" as DeploymentTarget["platform"],
+      deployments: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Unknown platform: unknown",
+    });
+    expect(generateDeployableProject).not.toHaveBeenCalled();
+  });
+
   it("returns error for Supabase targets without projectId before generation", async () => {
     const result = await deployToPlatform(baseProject, ctx, {
       platform: "supabase",
@@ -225,6 +250,21 @@ describe("deployToPlatform", () => {
     });
     expect(generateDeployableProject).not.toHaveBeenCalled();
     expect(deployToSupabase).not.toHaveBeenCalled();
+  });
+
+  it("returns error for Supabase targets with whitespace-only projectId", async () => {
+    const result = await deployToPlatform(baseProject, ctx, {
+      platform: "supabase",
+      credentials: { token: "test-token" },
+      projectId: "   ",
+      deployments: [],
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Supabase project reference is required",
+    });
+    expect(generateDeployableProject).not.toHaveBeenCalled();
   });
 
   it("passes envVars from project deployment config", async () => {

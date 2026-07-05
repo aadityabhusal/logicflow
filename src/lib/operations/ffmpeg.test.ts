@@ -264,6 +264,14 @@ describe("ffmpeg operations", () => {
     [[{ name: "input", args: [""] }], "ffmpeg -i ''"],
     [[{ name: "input", args: ["my;rm.mp4"] }], "ffmpeg -i 'my;rm.mp4'"],
     [
+      [{ name: "input", args: ["C:\\tmp\\video.mp4"] }],
+      "ffmpeg -i 'C:\\tmp\\video.mp4'",
+    ],
+    [
+      [{ name: "input", args: ["line\nbreak.mp4"] }],
+      "ffmpeg -i 'line\nbreak.mp4'",
+    ],
+    [
       [{ name: "input", args: ["Bob's video.mp4"] }],
       "ffmpeg -i 'Bob'\\''s video.mp4'",
     ],
@@ -363,6 +371,16 @@ describe("ffmpeg operations", () => {
         },
       ],
       "ffmpeg -movflags +faststart -y -vn",
+    ],
+    [
+      "conform with explicit false, zero, and empty string values",
+      [
+        {
+          name: "conform",
+          args: [{ shortest: false, threads: 0, metadata: "" }],
+        },
+      ],
+      "ffmpeg -shortest false -threads 0 -metadata ''",
     ],
   ])("%s renders the expected command", async (_, steps, expected) => {
     await expect(commandString(steps)).resolves.toBe(expected);

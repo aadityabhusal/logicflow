@@ -24,13 +24,6 @@ export async function deployToPlatform(
     };
   }
 
-  if (!target.credentials?.token) {
-    return {
-      success: false,
-      error: `${capitalize(target.platform)} API token is required`,
-    };
-  }
-
   if (target.platform !== "vercel" && target.platform !== "supabase") {
     return {
       success: false,
@@ -38,7 +31,14 @@ export async function deployToPlatform(
     };
   }
 
-  if (target.platform === "supabase" && !target.projectId) {
+  if (!target.credentials?.token?.trim()) {
+    return {
+      success: false,
+      error: `${capitalize(target.platform)} API token is required`,
+    };
+  }
+
+  if (target.platform === "supabase" && !target.projectId?.trim()) {
     return { success: false, error: "Supabase project reference is required" };
   }
 

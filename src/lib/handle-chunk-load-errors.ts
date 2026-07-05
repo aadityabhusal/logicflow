@@ -1,12 +1,20 @@
 import { showReloadNotification } from "@/lib/reload-prompt";
 
 const CHUNK_ERROR_PATTERN =
-  /dynamically imported module|importing a module script|loading chunk/i;
+  /dynamically imported module|importing a module script|loading chunk|chunkloaderror/i;
 
 let notified = false;
 
 function isChunkLoadError(reason: unknown): boolean {
-  const message = reason instanceof Error ? reason.message : String(reason);
+  const message =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === "object" &&
+          reason !== null &&
+          "message" in reason &&
+          typeof reason.message === "string"
+        ? reason.message
+        : String(reason);
   return CHUNK_ERROR_PATTERN.test(message);
 }
 

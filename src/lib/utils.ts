@@ -105,6 +105,10 @@ export function isValidIdentifier(name: string): boolean {
   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function createVariableName({
   prefix,
   prev,
@@ -117,7 +121,7 @@ export function createVariableName({
   const index = prev
     .map((s) => (typeof s === "string" ? s : s.name))
     .reduce((acc, cur) => {
-      const match = cur?.match(new RegExp(`^${prefix}(\\d+)?$`));
+      const match = cur?.match(new RegExp(`^${escapeRegExp(prefix)}(\\d+)?$`));
       if (!match) return acc;
       return match[1] ? Math.max(acc, Number(match[1]) + 1) : Math.max(acc, 1);
     }, indexOffset);
@@ -211,11 +215,17 @@ export function createDefaultValue<T extends DataType>(
     }
 
     case "union": {
-      // Find first non-undefined type, or fall back to first type
-      const defaultIndex =
-        type.activeIndex ?? type.types.findIndex((t) => t.kind !== "undefined");
-      const index = defaultIndex >= 0 ? defaultIndex : 0;
-      return createDefaultValue(type.types[index], options) as DataValue<T>;
+      const fallbackIndex = type.types.findIndex((t) => t.kind !== "undefined");
+      const index =
+        type.activeIndex !== undefined && type.types[type.activeIndex]
+          ? type.activeIndex
+          : fallbackIndex >= 0
+            ? fallbackIndex
+            : 0;
+      const activeType = type.types[index];
+      return activeType
+        ? (createDefaultValue(activeType, options) as DataValue<T>)
+        : (undefined as DataValue<T>);
     }
 
     case "operation": {
@@ -618,7 +628,10 @@ export function createDataFromRawValue(
 
   if (isObject(value)) {
     const instanceClass = Object.entries(getAllInstanceTypes()).find(
-      ([, config]) => value instanceof config.Constructor
+      ([className, config]) =>
+        value instanceof config.Constructor ||
+        (className === "ArrayBuffer" &&
+          Object.prototype.toString.call(value) === "[object ArrayBuffer]")
     );
     if (instanceClass) {
       const [className, config] = instanceClass;
@@ -712,7 +725,9 @@ export function createDataFromRawValue(
 
 export function createThenable<T>(data: T): Thenable<T> {
   // Allows nested Thenables to pass through
-  if (isObject(data, ["then"])) return data as Thenable<T>;
+  if (isObject(data, ["then"]) && typeof data.then === "function") {
+    return data as Thenable<T>;
+  }
   return {
     then: ((onfulfilled?) => {
       if (!onfulfilled) return createThenable(data);
@@ -724,7 +739,7 @@ export function createThenable<T>(data: T): Thenable<T> {
 
 export function unwrapThenable<T>(thenable: T | Thenable<T>): T {
   let result = thenable;
-  if (isObject(thenable, ["then"])) {
+  if (isObject(thenable, ["then"]) && typeof thenable.then === "function") {
     let unwrapped: T;
     thenable.then((r) => {
       unwrapped = r;
@@ -1387,6 +1402,10 @@ export function getTypeSignature(
       const params = type.parameters
         .map((p) => {
           const typeSignature = getTypeSignature(p.type, context, maxDepth - 1);
+          const restTypeSignature =
+            p.isRest && p.type.kind === "array"
+              ? typeSignature
+              : `array<${typeSignature}>`;
           const parameterName =
             p.name || createVariableName({ prefix: "param", prev: prevNames });
           prevNames.push(parameterName);
@@ -1394,7 +1413,7 @@ export function getTypeSignature(
             p.isRest ? "..." : "",
             parameterName,
             p.isOptional ? "?" : "",
-            ": " + (p.isRest ? `array<${typeSignature}>` : typeSignature),
+            ": " + (p.isRest ? restTypeSignature : typeSignature),
           ].join("");
         })
         .join(", ");
@@ -1670,10 +1689,9 @@ export function getRawValueFromData(data: IData, context: Context): unknown {
       context
     );
   } else if (isDataOfType(data, "reference")) {
-    return getRawValueFromData(
-      createData(resolveReference(data, context)),
-      context
-    );
+    const resolved = resolveReference(data, context);
+    if (resolved === data) return undefined;
+    return getRawValueFromData(createData(resolved), context);
   } else if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
     return data.value.map((element) =>
       getRawValueFromData(getStatementResult(element, context), context)
@@ -1872,8 +1890,9 @@ export function handleSearchParams(
 ) {
   const searchParams = new URLSearchParams(location.search);
   Object.entries(params).map(([key, value]) => {
-    if (!value) searchParams.delete(key);
-    else searchParams.set(key, value.toString());
+    if (value === null || value === undefined || value === "") {
+      searchParams.delete(key);
+    } else searchParams.set(key, value.toString());
   });
   return [searchParams, { replace }] as const;
 }

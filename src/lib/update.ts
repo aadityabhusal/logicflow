@@ -30,6 +30,23 @@ type UpdateOptions = {
   variableNames?: Map<string, string>;
   selfOperation?: IData<OperationType>;
 };
+
+function getUpdateContext(context: Context, id: string): Context {
+  const childCtx = context.getContext(id);
+
+  return {
+    ...childCtx,
+    packageAliases: { ...childCtx.packageAliases, ...context.packageAliases },
+    variables: new Map([
+      ...childCtx.variables,
+      ...[...context.variables].filter(
+        ([name, { data }]) =>
+          !childCtx.variables.has(name) || isDataOfType(data, "operation")
+      ),
+    ]),
+  };
+}
+
 function updateOperationCalls(
   statement: IStatement,
   context: Context,
@@ -43,7 +60,7 @@ function updateOperationCalls(
         prevEntity: true,
         skipResolveReference: true,
       });
-      const _context = context.getContext(operation.id);
+      const _context = getUpdateContext(context, operation.id);
 
       const foundOperation = getFilteredOperations(data, _context).find(
         (op) => op.name === operation.value.name
@@ -84,7 +101,7 @@ function updateOperationCalls(
                   ..._param,
                   isOptional: sourceParam.isOptional || sourceParam.isRest,
                 },
-                context.getContext(_param.id),
+                getUpdateContext(context, _param.id),
                 { variableNames, selfOperation }
               )
             );
@@ -130,7 +147,11 @@ function updateDataValue({
         ? {
             entries: data.value.entries.map(({ key, value }) => ({
               key,
-              value: updateStatement(value, context, options),
+              value: updateStatement(
+                value,
+                getUpdateContext(context, value.id),
+                options
+              ),
             })),
           }
         : isDataOfType(data, "operation")
@@ -151,7 +172,7 @@ function updateDataValue({
               ? (() => {
                   const condition = updateStatement(
                     data.value.condition,
-                    context,
+                    getUpdateContext(context, data.value.condition.id),
                     options
                   );
                   const trueBranch = updateStatements({
@@ -267,7 +288,7 @@ export function updateStatements({
     if (changedStatement && !currentIndexFound) return currentStatement;
     const result = updateStatement(
       statementToProcess,
-      context.getContext(statementToProcess.id),
+      getUpdateContext(context, statementToProcess.id),
       { ...options, variableNames: currentVariableNames }
     );
     if (result.name) currentVariableNames.set(result.id, result.name);
@@ -326,7 +347,13 @@ export function updateFiles(
         });
         fileToProcess = {
           ...operationFile,
+          createdAt: currentFile.createdAt,
+          tags: currentFile.tags,
           ...("trigger" in currentFile ? { trigger: currentFile.trigger } : {}),
+          ...("tests" in currentFile ? { tests: currentFile.tests } : {}),
+          ...("documentation" in currentFile
+            ? { documentation: currentFile.documentation }
+            : {}),
           updatedAt: Date.now(),
         } as ProjectFile;
       }

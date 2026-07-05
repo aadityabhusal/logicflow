@@ -1036,6 +1036,29 @@ describe("comfyui operations", () => {
     return op;
   }
 
+  function findOpForInput(name: string, className: string): OperationListItem {
+    const op = comfyuiOperations.find((o) => {
+      const parameters =
+        typeof o.parameters === "function"
+          ? o.parameters(
+              createData({
+                type: { kind: "instance", className, constructorArgs: [] },
+              })
+            )
+          : o.parameters;
+      const sourceType = parameters[0]?.type;
+      return (
+        o.name === name &&
+        sourceType?.kind === "instance" &&
+        sourceType.className === className
+      );
+    });
+    if (!op) {
+      throw new Error(`ComfyUI operation "${name}" for ${className} not found`);
+    }
+    return op;
+  }
+
   it("creates ComfyApi through instance type metadata", () => {
     const ctx = createTestContext();
     const raw = createInstance(
@@ -1305,7 +1328,7 @@ describe("comfyui operations", () => {
 
   it("destroy on ComfyPool does not throw", async () => {
     const ctx = createTestContext();
-    const op = findOp("destroy");
+    const op = findOpForInput("destroy", "comfyui.ComfyPool");
     const api = createInstance(
       "comfyui.ComfyApi",
       [testString("http://localhost:8188")],
@@ -1317,6 +1340,7 @@ describe("comfyui operations", () => {
       ctx
     );
     const source = createDataFromRawValue(pool, ctx);
+    expect(op.source?.name).toBe("comfyuiPool");
     await expect(executeOperation(op, source, [], ctx)).resolves.toBeDefined();
   });
 });

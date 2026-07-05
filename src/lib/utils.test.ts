@@ -3,10 +3,12 @@ import {
   createData,
   createStatement,
   createDefaultValue,
+  createTypeFromStatement,
   isTypeCompatible,
   isDataOfType,
   isFatalError,
   resolveReference,
+  resolveAncestorIds,
   resolveUnionType,
   inferTypeFromValue,
   createThenable,
@@ -36,6 +38,7 @@ import {
   getCacheKey,
   createContext,
   createInstance,
+  disposeRuntimeInstance,
   createRuntimeError,
   getFreeVariableNames,
   getContextExpectedTypes,
@@ -49,6 +52,11 @@ import {
   isBlockCondition,
   resolveConstructorArgs,
   getDataDropdownList,
+  isTextInput,
+  getEditableElement,
+  shouldUseNativeContextMenu,
+  handleSearchParams,
+  truncateMiddle,
 } from "@/lib/utils";
 import { DataType, UnionType, OperationType, IData } from "@/lib/types";
 import { Context, OperationListItem } from "@/lib/execution/types";
@@ -362,6 +370,20 @@ describe("createDefaultValue", () => {
       types: [{ kind: "undefined" }, { kind: "string" }],
     });
     expect(val).toBe("");
+  });
+
+  it("falls back when a union activeIndex is out of range", () => {
+    const val = createDefaultValue({
+      kind: "union",
+      activeIndex: 99,
+      types: [{ kind: "undefined" }, { kind: "number" }],
+    });
+
+    expect(val).toBe(0);
+  });
+
+  it("returns undefined for an empty union", () => {
+    expect(createDefaultValue({ kind: "union", types: [] })).toBeUndefined();
   });
 
   it("returns operation value for operation type", () => {
@@ -1338,6 +1360,13 @@ describe("createThenable / unwrapThenable", () => {
     expect(unwrapThenable(42)).toBe(42);
   });
 
+  it("does not treat non-function then properties as thenables", () => {
+    const value = { then: "not a function", result: 1 };
+
+    expect(createThenable(value)).not.toBe(value);
+    expect(unwrapThenable(value)).toBe(value);
+  });
+
   it("passes through existing thenables", () => {
     const inner = createThenable(10);
     const outer = createThenable(inner);
@@ -1583,6 +1612,12 @@ describe("createVariableName", () => {
   it("handles string prev items", () => {
     expect(createVariableName({ prefix: "op", prev: ["op1"] })).toBe("op2");
   });
+
+  it("treats regex metacharacters in prefixes literally", () => {
+    expect(createVariableName({ prefix: "op.", prev: ["op.1", "opx1"] })).toBe(
+      "op.2"
+    );
+  });
 });
 
 describe("fuzzySearch", () => {
@@ -1612,7 +1647,7 @@ describe("fuzzySearch", () => {
     expect(result[0].name).toBe("multiply");
   });
 
-  it("fuzzy matches letters out of order", () => {
+  it("fuzzy matches ordered non-contiguous letters", () => {
     const result = fuzzySearch(data, [{ name: "sb" }]);
     expect(result.some((r) => r.name === "subtract")).toBe(true);
   });
@@ -1864,6 +1899,25 @@ describe("getTypeSignature", () => {
     );
     expect(sig).toContain("...");
     expect(sig).toContain("array");
+  });
+
+  it("does not double-wrap array-typed rest parameters", () => {
+    const sig = getTypeSignature(
+      {
+        kind: "operation",
+        parameters: [
+          {
+            name: "items",
+            type: { kind: "array", elementType: { kind: "number" } },
+            isRest: true,
+          },
+        ],
+        result: { kind: "undefined" },
+      },
+      ctx
+    );
+
+    expect(sig).toBe("(...items: array<number>) => undefined");
   });
 
   it("formats operation with optional parameter", () => {
@@ -2240,6 +2294,12 @@ describe("getRawValueFromData", () => {
     ctxWithVar.variables.set("x", { data: testNumber(99) });
     const result = getRawValueFromData(ref, ctxWithVar);
     expect(result).toBe(99);
+  });
+
+  it("returns undefined for unresolved root references", () => {
+    expect(
+      getRawValueFromData(testReference("missing", "missing-id"), ctx)
+    ).toBeUndefined();
   });
 
   it("extracts array values as raw array", () => {
@@ -4040,5 +4100,86 @@ describe("isBlockCondition", () => {
       [stringStatement("fallback")]
     ).value;
     expect(isBlockCondition(condVal)).toBe(false);
+  });
+});
+
+describe("exported utility helpers", () => {
+  it("creates operation parameter metadata from statements", () => {
+    const statement = stringStatement("value", "input");
+    statement.isOptional = true;
+    statement.isRest = true;
+
+    expect(createTypeFromStatement(statement)).toEqual({
+      name: "input",
+      type: { kind: "string" },
+      isOptional: true,
+      isRest: true,
+    });
+  });
+
+  it("resolves ancestor ids from deepest to nearest root", () => {
+    expect(
+      resolveAncestorIds(["workflow", "steps", 0, "data"], {
+        workflow: {
+          id: "workflow",
+          steps: [{ id: "step", data: { id: "data" } }],
+        },
+      })
+    ).toEqual(["data", "step", "workflow"]);
+  });
+
+  it("disposes runtime instances without surfacing cleanup errors", () => {
+    const destroy = vi.fn(() => {
+      throw new Error("cleanup failed");
+    });
+
+    expect(() =>
+      disposeRuntimeInstance({
+        instance: { destroy },
+        type: {
+          kind: "instance",
+          className: "Disposable",
+          constructorArgs: [],
+        },
+      })
+    ).not.toThrow();
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("detects text and editable elements", () => {
+    document.body.innerHTML = `
+      <input id="text" type="text" />
+      <input id="password" type="password" />
+      <div id="editor" contenteditable="true"><span id="child"></span></div>
+    `;
+    const text = document.getElementById("text")!;
+    const password = document.getElementById("password")!;
+    const editor = document.getElementById("editor")!;
+    const child = document.getElementById("child")!;
+
+    expect(isTextInput(text)).toBe(text);
+    expect(isTextInput(password)).toBeUndefined();
+    expect(getEditableElement(child)).toBe(editor);
+
+    text.focus();
+    expect(shouldUseNativeContextMenu(text)).toBe(true);
+    expect(shouldUseNativeContextMenu(editor)).toBe(false);
+  });
+
+  it("updates search params while preserving numeric zero", () => {
+    history.pushState({}, "", "/?keep=yes&remove=1&empty=old");
+
+    const [params, options] = handleSearchParams(
+      { keep: "changed", remove: null, empty: "", zero: 0 },
+      true
+    );
+
+    expect(params.toString()).toBe("keep=changed&zero=0");
+    expect(options).toEqual({ replace: true });
+  });
+
+  it("truncates long strings in the middle only when needed", () => {
+    expect(truncateMiddle("short value")).toBe("short value");
+    expect(truncateMiddle("a".repeat(30))).toBe(`${"a".repeat(20)}...aaaaa`);
   });
 });

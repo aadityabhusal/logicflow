@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Blob as NodeBlob, File as NodeFile } from "node:buffer";
 import {
   await as await_,
   pipeAsync,
@@ -144,36 +145,37 @@ describe("stringifyJSON", () => {
     const result = stringifyJSON({ a: 1, fn: () => 0, u: undefined });
     expect(result).toBe('{"a":1}');
   });
+
+  it.each([undefined, () => 0, Symbol("x")])(
+    "returns a string for root %s values",
+    (value) => {
+      expect(stringifyJSON(value)).toBe("undefined");
+    }
+  );
 });
 
 describe("file and blob operations", () => {
   it("reads File metadata and text", async () => {
-    const file = {
-      name: "hello.txt",
-      size: 5,
+    const file = new NodeFile(["hello"], "hello.txt", {
       type: "text/plain",
-      text: async () => "hello",
-      arrayBuffer: async () => new TextEncoder().encode("hello").buffer,
-    } as File;
+    }) as unknown as File;
 
     await expect(text(file)).resolves.toBe("hello");
+    await expect(
+      arrayBuffer(file).then((buffer) => new TextDecoder().decode(buffer))
+    ).resolves.toBe("hello");
     expect(getName(file)).toBe("hello.txt");
     expect(getSize(file)).toBe(5);
     expect(getType(file)).toBe("text/plain");
   });
 
   it("reads Blob text and arrayBuffer", async () => {
-    const blob = {
-      size: 5,
-      type: "text/plain",
-      text: async () => "hello",
-      arrayBuffer: async () => new TextEncoder().encode("hello").buffer,
-    } as Blob;
+    const blob = new NodeBlob(["hello"], { type: "text/plain" }) as Blob;
 
     await expect(text(blob)).resolves.toBe("hello");
     await expect(
-      arrayBuffer(blob).then((buffer) => buffer.byteLength)
-    ).resolves.toBe(5);
+      arrayBuffer(blob).then((buffer) => new TextDecoder().decode(buffer))
+    ).resolves.toBe("hello");
     expect(getSize(blob)).toBe(5);
     expect(getType(blob)).toBe("text/plain");
   });

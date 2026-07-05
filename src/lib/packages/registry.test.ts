@@ -66,6 +66,17 @@ describe("SOURCE_PACKAGE_MAP derivation", () => {
   it("contains rowguardCondition which rowguard operations reference", () => {
     expect(SOURCE_PACKAGE_MAP["rowguardCondition"]).toBe("rowguard");
   });
+
+  it("does not define duplicate source names in the catalog", () => {
+    const owners = new Map<string, string>();
+
+    for (const [pkgName, entry] of Object.entries(PACKAGE_CATALOG)) {
+      for (const sourceName of entry.sourceNames) {
+        expect(owners.get(sourceName)).toBeUndefined();
+        owners.set(sourceName, pkgName);
+      }
+    }
+  });
 });
 
 describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
@@ -206,8 +217,18 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
     await loadPackage("wretch");
     await loadPackage("rowguard");
 
+    expect(getAllInstanceTypes()["wretch.Wretch"]).toBeDefined();
+    expect(getAllInstanceTypes()["rowguard.PolicyBuilder"]).toBeDefined();
+
     resetPackageRegistry();
 
+    expect(loadedPackageOperations.size).toBe(0);
+    expect(getAllInstanceTypes()["wretch.Wretch"]).toBeUndefined();
+    expect(getAllInstanceTypes()["rowguard.PolicyBuilder"]).toBeUndefined();
+  });
+
+  it("unloadPackage is idempotent for unknown packages", async () => {
+    await expect(unloadPackage("missing")).resolves.toBeUndefined();
     expect(loadedPackageOperations.size).toBe(0);
   });
 

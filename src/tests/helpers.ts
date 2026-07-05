@@ -243,7 +243,9 @@ export function createTestProject(
   };
 }
 
-export function createTriggeredOperationFile(name: string): ProjectFile {
+export function createTriggeredOperationFile(
+  name: string
+): Extract<ProjectFile, { type: "operation" }> {
   return {
     id: `op-${name}`,
     name,
@@ -260,7 +262,7 @@ export function createTriggeredOperationFile(name: string): ProjectFile {
 export function createOperationFile(
   name: string,
   source?: OperationSource
-): ProjectFile {
+): Extract<ProjectFile, { type: "operation" }> {
   return {
     id: `op-${name}`,
     name,

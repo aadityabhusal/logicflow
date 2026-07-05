@@ -33,8 +33,22 @@ export function joinTextFiles(files: DeploymentFile[]): string {
     .join("\n");
 }
 
+function shouldUseJsonContentType(body: RequestInit["body"]): boolean {
+  if (body === undefined || body === null) return false;
+  if (typeof FormData !== "undefined" && body instanceof FormData) return false;
+  if (typeof Blob !== "undefined" && body instanceof Blob) return false;
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams)
+    return false;
+  if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return false;
+  return true;
+}
+
 export function createPlatformFetch(platformPath: string) {
-  const proxyBase = `${import.meta.env.VITE_API_PROXY_URL || "/api"}${platformPath}`;
+  const apiBase = (import.meta.env.VITE_API_PROXY_URL || "/api").replace(
+    /\/+$/,
+    ""
+  );
+  const proxyBase = `${apiBase}${platformPath}`;
   return async (
     path: string,
     token: string,
@@ -42,7 +56,7 @@ export function createPlatformFetch(platformPath: string) {
   ): Promise<Response> => {
     const defaultHeaders = {
       Authorization: `Bearer ${token}`,
-      ...(!(options.body instanceof FormData) && {
+      ...(shouldUseJsonContentType(options.body) && {
         "Content-Type": "application/json",
       }),
     };
@@ -78,12 +92,16 @@ function mergeHeaders(
 export async function parseError(response: Response): Promise<string> {
   try {
     const body = await response.json();
-    const message =
-      body.message ||
-      (typeof body.error === "string" ? body.error : body.error?.message) ||
-      body.msg ||
-      `HTTP ${response.status}`;
-    return String(message);
+    if (typeof body === "string") return body;
+    if (body && typeof body === "object") {
+      const message =
+        body.message ||
+        (typeof body.error === "string" ? body.error : body.error?.message) ||
+        body.msg ||
+        `HTTP ${response.status}`;
+      return String(message);
+    }
+    return `HTTP ${response.status}`;
   } catch {
     return `HTTP ${response.status}: ${response.statusText}`;
   }
@@ -101,16 +119,16 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 const npmImportPattern =
-  /\bfrom\s+['"]((?!npm:|node:|https?:|data:|\.{1,2}\/|\/)[a-z@][^'"]*)['"]/g;
+  /^(\s*(?:import|export)\s+.*?\bfrom\s*)['"]((?!npm:|node:|https?:|data:|\.{1,2}\/|\/)[a-z@][^'"]*)['"]/gm;
 
 export function prefixNpmImports<T extends DeploymentFile>(files: T[]): T[] {
   return files.map((file) => ({
     ...file,
     content:
       typeof file.content === "string"
-        ? file.content.replace(npmImportPattern, (match, pkg) => {
+        ? file.content.replace(npmImportPattern, (match, prefix, pkg) => {
             if (pkg.startsWith(".") || pkg.startsWith("npm:")) return match;
-            return `from "npm:${pkg}"`;
+            return `${prefix}"npm:${pkg}"`;
           })
         : file.content,
   }));

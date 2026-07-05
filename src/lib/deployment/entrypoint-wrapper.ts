@@ -1,4 +1,5 @@
 import { ProjectFile, DeploymentTarget } from "../types";
+import { RESERVED_KEYWORDS } from "../data";
 
 export interface GeneratedHandler {
   filename: string;
@@ -14,7 +15,10 @@ const corsHeaders = `const corsHeaders = {
 function toImportAlias(name: string) {
   const alias = name.replace(/[^a-zA-Z0-9_$]/g, "_");
   if (!alias) return "operation";
-  return /^[a-zA-Z_$]/.test(alias) ? alias : `op_${alias}`;
+  if (!/^[a-zA-Z_$]/.test(alias) || RESERVED_KEYWORDS.includes(alias)) {
+    return `op_${alias}`;
+  }
+  return alias;
 }
 
 export function generatePlatformHandlers(

@@ -54,6 +54,8 @@ function createExecutionWorkerClient() {
         activeRun = undefined;
         pendingRun?.reject(new Error("Execution cancelled"));
         pendingRun = undefined;
+        worker?.terminate();
+        worker = undefined;
       };
     }
     return worker;
@@ -62,8 +64,13 @@ function createExecutionWorkerClient() {
   return {
     run(request: Omit<ExecutionWorkerRunRequest, "type" | "runId">) {
       const runId = nanoid();
-      getWorker();
       return new Promise<WorkerRunResult>((resolve, reject) => {
+        try {
+          getWorker();
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
         const run: PendingRun = { runId, request, resolve, reject };
         if (!activeRun) {
           startRun(run);

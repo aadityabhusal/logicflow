@@ -699,6 +699,42 @@ describe("runExecutionInWorker", () => {
     await expect(second).rejects.toThrow("Execution cancelled");
   });
 
+  it("creates a fresh worker after worker error", async () => {
+    const first = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    workers[0].onerror?.({ message: "Worker exploded" } as ErrorEvent);
+    await expect(first).rejects.toThrow("Worker exploded");
+
+    const second = executionWorkerClient.run(makeRequest());
+    await Promise.resolve();
+
+    expect(workerCount).toBe(2);
+    expect(workers[0].terminated).toBe(true);
+    const secondRunId = (workers[1].messages[0] as { runId: string }).runId;
+    respondToWorker(workers[1], secondRunId);
+    await expect(second).resolves.toMatchObject({ results: expect.any(Map) });
+  });
+
+  it("rejects run promise when worker construction fails", async () => {
+    executionWorkerClient.reset();
+    vi.resetModules();
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          throw new Error("Worker unavailable");
+        }
+      }
+    );
+
+    const mod = await import("./worker-client");
+
+    await expect(mod.executionWorkerClient.run(makeRequest())).rejects.toThrow(
+      "Worker unavailable"
+    );
+  });
+
   it("rejects when the worker completes with an error", async () => {
     const promise = executionWorkerClient.run(makeRequest());
     await Promise.resolve();

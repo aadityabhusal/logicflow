@@ -1,12 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+const idbMocks = vi.hoisted(() => ({
+  get: vi.fn<() => Promise<unknown>>(async () => null),
+  put: vi.fn(async () => undefined),
+  delete: vi.fn(async () => undefined),
+  getAllKeys: vi.fn(async () => []),
+}));
+
 vi.mock("idb", () => ({
   openDB: () =>
     Promise.resolve({
-      get: async () => null,
-      put: async () => undefined,
-      delete: async () => undefined,
-      getAllKeys: async () => [],
+      get: idbMocks.get,
+      put: idbMocks.put,
+      delete: idbMocks.delete,
+      getAllKeys: idbMocks.getAllKeys,
     }),
 }));
 
@@ -19,7 +26,22 @@ import { createData, createStatement, createDefaultValue } from "@/lib/utils";
 import { executeStatement } from "@/lib/execution/execution";
 import { getAllInstanceTypes } from "@/lib/packages/registry";
 import type { InstanceDataType, OperationType } from "@/lib/types";
-import { collectFileInstanceIds } from "./file-assets";
+import { getRawValueFromData } from "./utils";
+import {
+  collectFileInstanceIds,
+  deleteFileAsset,
+  getAssetExtension,
+  getFileAsset,
+  getFileMeta,
+  getProjectAssetPath,
+  getPublicAssetPath,
+  isFileInstanceData,
+  saveFileAsset,
+} from "./file-assets";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function createMockFile(content: string, name: string, type: string) {
   const encoder = new TextEncoder();
@@ -44,6 +66,71 @@ function createMockBlob(content: string, type: string) {
     arrayBuffer: () => Promise.resolve(bytes.buffer),
   } as unknown as Blob;
 }
+
+function createFileData(instanceId: string, className = "File") {
+  return createData({
+    type: { kind: "instance", className, constructorArgs: [] },
+    value: { className, instanceId, constructorArgs: [] },
+  });
+}
+
+describe("asset helpers", () => {
+  it("identifies File instance data with a stored instance id", () => {
+    expect(isFileInstanceData(createFileData("file-1"))).toBe(true);
+    expect(isFileInstanceData(createFileData("", "File"))).toBe(false);
+    expect(isFileInstanceData(createFileData("blob-1", "Blob"))).toBe(false);
+  });
+
+  it("derives safe asset extensions from filenames", () => {
+    expect(getAssetExtension("photo.PNG")).toBe(".PNG");
+    expect(getAssetExtension("archive.tar.gz")).toBe(".gz");
+    expect(getAssetExtension("README")).toBe("");
+    expect(getAssetExtension("file.abcdefghijklmnop")).toBe(
+      ".abcdefghijklmnop"
+    );
+    expect(getAssetExtension("file.abcdefghijklmnopq")).toBe("");
+  });
+
+  it("builds project and public asset paths from ids and filenames", () => {
+    expect(getProjectAssetPath("file-1", "photo.png")).toBe(
+      "assets/file-1.png"
+    );
+    expect(getPublicAssetPath("file-1", "photo.png")).toBe(
+      "/assets/file-1.png"
+    );
+    expect(getProjectAssetPath("file-1", "README")).toBe("assets/file-1");
+  });
+
+  it("captures file metadata for manifests", () => {
+    const file = new File(["hello"], "hello.txt", {
+      type: "text/plain",
+      lastModified: 123,
+    });
+
+    expect(getFileMeta("assets/file-1.txt", file)).toEqual({
+      path: "assets/file-1.txt",
+      name: "hello.txt",
+      type: "text/plain",
+      size: 5,
+      lastModified: 123,
+    });
+  });
+
+  it("saves, loads, and deletes file assets through IndexedDB", async () => {
+    const file = new File(["hello"], "hello.txt", { type: "text/plain" });
+    const saved = await saveFileAsset("file-1", file);
+
+    expect(saved.file).toBe(file);
+    expect(idbMocks.put).toHaveBeenCalledWith("fileAssets", saved, "file-1");
+
+    idbMocks.get.mockResolvedValueOnce(saved);
+    await expect(getFileAsset("file-1")).resolves.toBe(saved);
+    expect(idbMocks.get).toHaveBeenCalledWith("fileAssets", "file-1");
+
+    await deleteFileAsset("file-1");
+    expect(idbMocks.delete).toHaveBeenCalledWith("fileAssets", "file-1");
+  });
+});
 
 describe("File instance type", () => {
   it("is registered in InstanceTypes", () => {
@@ -220,7 +307,13 @@ describe("File operations", () => {
       operations: [arrayBufferOp, awaitOp],
     });
     const result = await executeStatement(stmt, ctx);
-    expect(result.type.kind).not.toBe("error");
+    expect(result.type).toMatchObject({
+      kind: "instance",
+      className: "ArrayBuffer",
+    });
+    expect(
+      new TextDecoder().decode(getRawValueFromData(result, ctx) as ArrayBuffer)
+    ).toBe("hello world");
   });
 });
 
@@ -351,5 +444,42 @@ describe("collectProjectFileInstanceIds", () => {
     });
     const ids = collectFileInstanceIds(project.files);
     expect(ids).toEqual([]);
+  });
+
+  it("deduplicates File instance IDs across nested operation data", () => {
+    const fileType: InstanceDataType = {
+      kind: "instance",
+      className: "File",
+      constructorArgs: [],
+    };
+    const fileStmt = createStatement({ data: createFileData("file-1") });
+    const nestedOperation = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: fileType }],
+        result: { kind: "undefined" },
+      },
+      value: { parameters: [fileStmt], statements: [fileStmt] },
+    });
+    const operationFile = createOperationFile("usesFiles");
+    operationFile.content.value.statements = [
+      createStatement({ data: nestedOperation }),
+    ];
+
+    expect(collectFileInstanceIds([operationFile])).toEqual(["file-1"]);
+  });
+
+  it("ignores File instances in non-operation files", () => {
+    expect(
+      collectFileInstanceIds([
+        {
+          id: "globals",
+          name: "globals",
+          type: "globals",
+          createdAt: 0,
+          content: { upload: createFileData("file-1") },
+        },
+      ])
+    ).toEqual([]);
   });
 });

@@ -501,6 +501,31 @@ describe("generateDeployableProject", () => {
     });
   });
 
+  it("records an error and skips output when a referenced file asset is missing", async () => {
+    const project = createTestProject({
+      files: [createOperationFile("op")],
+      deployment: {
+        envVariables: [],
+        platforms: [{ platform: "vercel", deployments: [] }],
+      },
+    });
+    fileAssetMocks.collectFileInstanceIds.mockReturnValue(["missing-file"]);
+    fileAssetMocks.getFileAsset.mockResolvedValue(undefined);
+
+    const { files, errors } = await generateDeployableProject(project, ctx);
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        "Missing file asset for File instance missing-file",
+      ])
+    );
+    expect(files.some((f) => f.path.startsWith("public/assets/"))).toBe(false);
+    expect(generatePlatformHandlers).toHaveBeenCalledWith("vercel", [], {
+      nodejs: false,
+      hasFileAssets: false,
+    });
+  });
+
   it("embeds file assets for Supabase deployments", async () => {
     const project = createTestProject({
       files: [createOperationFile("op")],
@@ -779,7 +804,7 @@ describe("generateDeployableProject", () => {
     );
 
     const { files } = await generateDeployableProject(project, ctx);
-    const opFile = files.find((f) => f.path.startsWith("src/"));
+    const opFile = files.find((f) => f.path === "src/op.js");
     expect(opFile!.content).toBe("raw-code");
   });
 
@@ -791,7 +816,7 @@ describe("generateDeployableProject", () => {
     );
 
     const { files } = await generateDeployableProject(project, ctx);
-    const opFile = files.find((f) => f.path.startsWith("src/"));
+    const opFile = files.find((f) => f.path === "src/op.js");
     expect(opFile!.content).toBe("formatted-code");
   });
 

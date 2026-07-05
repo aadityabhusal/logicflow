@@ -46,9 +46,20 @@ describe("createProjectCheckpoint", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 4, 4, 12, 0));
 
-    expect(createProjectCheckpoint(createTestProject(), "").name).toBe(
-      "Checkpoint May 4, 12:00 PM"
+    for (const name of ["", "   "]) {
+      expect(createProjectCheckpoint(createTestProject(), name).name).toBe(
+        "Checkpoint May 4, 12:00 PM"
+      );
+    }
+  });
+
+  it("trims custom checkpoint names", () => {
+    const checkpoint = createProjectCheckpoint(
+      createTestProject(),
+      "  Before edit  "
     );
+
+    expect(checkpoint.name).toBe("Before edit");
   });
 
   it("does not mutate when project changes after checkpoint creation", () => {

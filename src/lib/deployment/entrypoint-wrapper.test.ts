@@ -118,6 +118,32 @@ describe("generatePlatformHandlers", () => {
       );
       expect(result[0].content).toContain("await op_123_my_op(req)");
     });
+
+    it("uses a safe import alias for reserved operation names", () => {
+      const result = generatePlatformHandlers(
+        "vercel",
+        [createTriggeredOperationFile("class")],
+        { nodejs: true }
+      );
+
+      expect(result[0].content).toContain(
+        "import op_class from '../src/class.js'"
+      );
+      expect(result[0].content).toContain("await op_class(req)");
+    });
+
+    it("configures file assets for Node.js handlers", () => {
+      const result = generatePlatformHandlers("vercel", ops, {
+        nodejs: true,
+        hasFileAssets: true,
+      });
+
+      expect(result[0].content).toContain(
+        "import { configureFileAssets } from '../src/lib/built-in.js'"
+      );
+      expect(result[0].content).toContain("baseUrl: `${req.headers");
+      expect(result[0].content).toContain("headers: req.headers");
+    });
   });
 
   describe("Supabase handlers", () => {
@@ -226,6 +252,30 @@ describe("generatePlatformHandlers", () => {
         "import my_op from '../src/my-op.js'"
       );
       expect(result[0].content).toContain("await my_op(request)");
+    });
+
+    it("uses a safe import alias for reserved operation names (Edge)", () => {
+      const result = generatePlatformHandlers("vercel", [
+        createTriggeredOperationFile("default"),
+      ]);
+
+      expect(result[0].content).toContain(
+        "import op_default from '../src/default.js'"
+      );
+      expect(result[0].content).toContain("await op_default(request)");
+    });
+
+    it("configures file assets for Edge handlers", () => {
+      const result = generatePlatformHandlers("vercel", ops, {
+        hasFileAssets: true,
+      });
+
+      expect(result[0].content).toContain(
+        "import { configureFileAssets } from '../src/lib/built-in.js'"
+      );
+      expect(result[0].content).toContain(
+        "configureFileAssets({ baseUrl: new URL('/', request.url).href, headers: request.headers })"
+      );
     });
   });
 });

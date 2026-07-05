@@ -217,6 +217,66 @@ describe("updateStatements", () => {
     expect(result[0].data.type.kind).toBe("reference");
     if (isDataOfType(result[0].data, "reference")) {
       expect(result[0].data.value.name).toBe("myVar");
+      expect(result[0].data.value.id).toBe(resolvedData.id);
+    }
+  });
+
+  it("updates nested object entries using their own contexts", () => {
+    const ctx = createTestContext();
+    const childCtx = createTestContext();
+    const resolvedData = createData({
+      type: { kind: "string" },
+      value: "scoped",
+    });
+    const nestedReference = createStatement({
+      data: testReference("scopedVar", "stale-id"),
+    });
+    const stmt = createStatement({
+      data: testObject([{ key: "value", value: nestedReference }]),
+    });
+    childCtx.variables.set("scopedVar", { data: resolvedData });
+    ctx.setContext(stmt.id, ctx);
+    ctx.setContext(nestedReference.id, childCtx);
+
+    const result = updateStatements({ statements: [stmt], context: ctx });
+
+    expect(isDataOfType(result[0].data, "object")).toBe(true);
+    if (isDataOfType(result[0].data, "object")) {
+      const nested = result[0].data.value.entries[0].value.data;
+      expect(isDataOfType(nested, "reference")).toBe(true);
+      if (isDataOfType(nested, "reference")) {
+        expect(nested.value.id).toBe(resolvedData.id);
+      }
+    }
+  });
+
+  it("updates condition expressions using their own contexts", () => {
+    const ctx = createTestContext();
+    const conditionCtx = createTestContext();
+    const resolvedData = createData({ type: { kind: "boolean" }, value: true });
+    const condition = createStatement({
+      data: testReference("canRun", "stale-id"),
+    });
+    const stmt = createStatement({
+      data: testCondition(
+        condition,
+        [stringStatement("yes")],
+        [stringStatement("no")]
+      ),
+    });
+    conditionCtx.variables.set("canRun", { data: resolvedData });
+    ctx.setContext(stmt.id, ctx);
+    ctx.setContext(condition.id, conditionCtx);
+
+    const result = updateStatements({ statements: [stmt], context: ctx });
+
+    expect(isDataOfType(result[0].data, "condition")).toBe(true);
+    if (isDataOfType(result[0].data, "condition")) {
+      const nested = result[0].data.value.condition.data;
+      expect(isDataOfType(nested, "reference")).toBe(true);
+      if (isDataOfType(nested, "reference")) {
+        expect(nested.value.id).toBe(resolvedData.id);
+      }
     }
   });
 
@@ -464,18 +524,69 @@ describe("updateFiles", () => {
     expect(history[0].content).toBe(file1.content);
   });
 
-  it("updates dependent files when operation signature changes", () => {
+  it("updates dependent operation calls when an operation signature changes", () => {
     const ctx = createTestContext();
-    const file1 = createProjectFile({ type: "operation", name: "helperOp" });
-    const file2 = createProjectFile({ type: "operation", name: "mainOp" });
+    const helperOperation = testOperation(
+      [stringStatement("", "source")],
+      [stringStatement("ok")],
+      "helperOp"
+    );
+    const changedHelperOperation = testOperation(
+      [stringStatement("", "source"), stringStatement("", "input")],
+      [stringStatement("ok")],
+      "helperOp"
+    );
+    const helperFile = createProjectFile({
+      type: "operation",
+      name: "helperOp",
+      content: { type: helperOperation.type, value: helperOperation.value },
+    });
+    const callStatement = createStatement({
+      data: createData({ type: { kind: "string" }, value: "source" }),
+      operations: [testOperation([], [], "helperOp")],
+    });
+    const mainOperation = testOperation([], [callStatement], "mainOp");
+    const mainFile = createProjectFile({
+      type: "operation",
+      name: "mainOp",
+      tags: ["important"],
+      content: { type: mainOperation.type, value: mainOperation.value },
+    });
+    if (helperFile.type !== "operation" || mainFile.type !== "operation") {
+      throw new Error("Expected operation files");
+    }
+    mainFile.documentation = "Keep me";
     const history: { fileId: string; content: unknown }[] = [];
     const pushHistory = (fileId: string, content: unknown) => {
       history.push({ fileId, content });
     };
-    const changedFile = { ...file1, name: "helperOpUpdated" };
-    const result = updateFiles([file1, file2], pushHistory, ctx, changedFile);
+    const changedFile = {
+      ...helperFile,
+      content: {
+        type: changedHelperOperation.type,
+        value: changedHelperOperation.value,
+      },
+    };
+    const result = updateFiles(
+      [helperFile, mainFile],
+      pushHistory,
+      ctx,
+      changedFile
+    );
+
     expect(result).toHaveLength(2);
-    expect(result[0].name).toBe("helperOpUpdated");
+    expect(result[0]).toBe(changedFile);
+    expect(result[1].type).toBe("operation");
+    if (result[1].type === "operation") {
+      const updatedCall = result[1].content.value.statements[0].operations[0];
+      expect(updatedCall.value.name).toBe("helperOp");
+      expect(updatedCall.value.parameters).toHaveLength(1);
+      expect(updatedCall.value.parameters[0].data.type.kind).toBe("string");
+      expect(result[1].createdAt).toBe(mainFile.createdAt);
+      expect(result[1].tags).toEqual(["important"]);
+      expect(result[1].documentation).toBe("Keep me");
+      expect(result[1].updatedAt).toEqual(expect.any(Number));
+    }
   });
 
   it("returns same files when no changed file", () => {
@@ -487,7 +598,7 @@ describe("updateFiles", () => {
     expect(result[0].name).toBe("op1");
   });
 
-  it("updates dependent files when a file changes", () => {
+  it("keeps file count stable when a file changes", () => {
     const ctx = createTestContext();
     const file1 = createProjectFile({ type: "operation", name: "op1" });
     const file2 = createProjectFile({ type: "operation", name: "op2" });
@@ -497,6 +608,8 @@ describe("updateFiles", () => {
       name: "op1_updated",
     });
     expect(result).toHaveLength(2);
+    expect(result[1].id).toBe(file2.id);
+    expect(result[1].name).toBe(file2.name);
   });
 
   it("pushes history for the changed file before updating", () => {
@@ -594,6 +707,14 @@ describe("updateFiles", () => {
     const changedFile = { ...file1, name: "op1_new" };
     const result = updateFiles([file1, file2], pushHistory, ctx, changedFile);
     expect(result[1].type).toBe("operation");
+    if (result[1].type === "operation" && file2.type === "operation") {
+      expect(result[1].content.value.parameters).toEqual(
+        file2.content.value.parameters
+      );
+      expect(result[1].content.value.statements).toEqual(
+        file2.content.value.statements
+      );
+    }
   });
 
   it("returns unchanged files when changedFile does not exist in array", () => {

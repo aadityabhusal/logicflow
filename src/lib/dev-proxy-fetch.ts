@@ -22,7 +22,15 @@ function proxyFetchInput(input: Parameters<typeof globalThis.fetch>[0]) {
   if (typeof Request !== "undefined" && input instanceof Request) {
     const url = proxyUrl(input.url);
     if (url === input.url) return input;
-    return new Request(new URL(url, globalThis.location.href), input);
+    return new Request(new URL(url, globalThis.location.href), {
+      method: input.method,
+      headers: input.headers,
+      body:
+        input.method === "GET" || input.method === "HEAD"
+          ? undefined
+          : input.body,
+      duplex: "half",
+    } as RequestInit);
   }
 
   return input;

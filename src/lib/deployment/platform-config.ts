@@ -18,10 +18,12 @@ export function generatePlatformConfig(
 }
 
 function generateVercelConfig(triggeredOps: ProjectFile[]): PlatformConfig[] {
-  const triggerNames = triggeredOps.map((op) => op.name);
-  const routes = triggerNames.map((name) => ({
-    src: `/api/${name}`,
-    dest: `/api/${name}`,
+  const routes = triggeredOps.map((op) => ({
+    src:
+      op.type === "operation" && op.trigger?.path
+        ? op.trigger.path
+        : `/api/${op.name}`,
+    dest: `/api/${op.name}`,
   }));
   const vercelConfig = { version: 2, routes };
 
