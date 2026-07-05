@@ -22,6 +22,7 @@ import { LoadingFallback } from "./ui/LoadingFallback";
 import {
   useNavigationStore,
   useProjectStore,
+  useSidebarTabStore,
   waitForHydration,
 } from "./lib/store";
 import { Notifications } from "@mantine/notifications";
@@ -89,23 +90,18 @@ const router = createBrowserRouter([
       const url = new URL(request.url);
       const fileName = url.searchParams.get("file");
       await waitForHydration();
-      useProjectStore.getState().setCurrentProjectId(params.id!);
-      useProjectStore.getState().setCurrentFileId(fileName ?? undefined);
+      const projectStore = useProjectStore.getState();
+      projectStore.setCurrentProjectId(params.id!);
+      projectStore.setCurrentFileId(fileName ?? undefined);
+      if (projectStore.currentProjectId !== params.id) {
+        const activeTab = url.searchParams.get("tab") ?? "operations";
+        useSidebarTabStore.setState({ activeTab });
+      }
       const { useExecutionResultsStore } =
         await import("./lib/execution/store");
       useExecutionResultsStore.getState().removeAll();
       useNavigationStore.getState().setNavigation({ result: undefined });
       return null;
-    },
-    shouldRevalidate: ({ currentUrl, nextUrl, defaultShouldRevalidate }) => {
-      const removeTab = (url: URL) => {
-        const searchParams = new URLSearchParams(url.search);
-        searchParams.delete("tab");
-        return `${url.pathname}?${searchParams.toString()}`;
-      };
-      return (
-        removeTab(currentUrl) !== removeTab(nextUrl) && defaultShouldRevalidate
-      );
     },
     HydrateFallback: LoadingFallback,
   },

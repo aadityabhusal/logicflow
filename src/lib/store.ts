@@ -363,6 +363,29 @@ export const useUiConfigStore = createWithEqualityFn(
   shallow
 );
 
+function replaceTabSearchParam(tab?: string) {
+  const url = new URL(location.href);
+  if (tab) url.searchParams.set("tab", tab);
+  else url.searchParams.delete("tab");
+  history.replaceState(history.state, "", url);
+}
+
+export const useSidebarTabStore = createWithEqualityFn<{
+  activeTab?: string;
+  setActiveTab: (change: SetStateAction<string | undefined>) => void;
+}>(
+  (set) => ({
+    activeTab: "operations",
+    setActiveTab: (val) =>
+      set(({ activeTab }) => {
+        const newActive = typeof val === "function" ? val(activeTab) : val;
+        replaceTabSearchParam(newActive);
+        return { activeTab: newActive };
+      }),
+  }),
+  shallow
+);
+
 type NavigationStore = {
   navigation?: INavigation;
   navigationEntities?: NavigationEntity[];

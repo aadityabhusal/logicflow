@@ -11,6 +11,7 @@ import {
   useNavigationStore,
   useUiConfigStore,
   useProjectStore,
+  useSidebarTabStore,
 } from "@/lib/store";
 import { useExecutionResultsStore } from "@/lib/execution/store";
 import { Context } from "@/lib/execution/types";
@@ -116,6 +117,7 @@ export function useEntityContextMenu({
   const foldedEntities = useUiConfigStore((s) => s.foldedEntities);
   const addFile = useProjectStore((s) => s.addFile);
   const [, setSearchParams] = useSearchParams();
+  const setActiveTab = useSidebarTabStore((s) => s.setActiveTab);
 
   const handleExtractToFile = useCallback(
     async (data: IData<OperationType>) => {
@@ -558,7 +560,7 @@ export function useEntityContextMenu({
                 lockedIds: { ...p.sidebar?.lockedIds, [fileId]: operation.id },
               },
             }));
-            setSearchParams(...handleSearchParams({ tab: "details" }, true));
+            setActiveTab("details");
           },
         },
       ];
@@ -568,6 +570,7 @@ export function useEntityContextMenu({
       handleStatement,
       path,
       setUiConfig,
+      setActiveTab,
       setSearchParams,
       setNavigation,
     ]

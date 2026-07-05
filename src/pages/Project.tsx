@@ -5,6 +5,7 @@ import {
   fileHistoryActions,
   useContextMenuStore,
   useUiConfigStore,
+  useSidebarTabStore,
 } from "@/lib/store";
 import { EntityContextMenu } from "@/components/EntityContextMenu";
 import { Header } from "@/ui/Header";
@@ -16,16 +17,14 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
-  useState,
 } from "react";
 import { useHotkeys, useClickOutside } from "@mantine/hooks";
-import { Navigate, useSearchParams } from "react-router";
+import { Navigate } from "react-router";
 import { useCustomHotkeys } from "@/hooks/useCustomHotkeys";
 import { IData, OperationType } from "@/lib/types";
 import {
   createFileFromOperation,
   createOperationFromFile,
-  handleSearchParams,
   shouldUseNativeContextMenu,
 } from "@/lib/utils";
 import { getOperationEntities } from "@/lib/navigation";
@@ -56,20 +55,8 @@ export default function Project() {
   }, [currentFile]);
   const rootContext = useExecutionResultsStore((s) => s.rootContext);
   const rootPath = useMemo(() => [], []);
-  const [, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTabState] = useState<string | undefined>(
-    () => new URLSearchParams(location.search).get("tab") ?? "operations"
-  );
-  const setActiveTab = useCallback(
-    (value?: string | ((prev?: string) => string | undefined)) => {
-      setActiveTabState((prev) => {
-        const next = typeof value === "function" ? value(prev) : value;
-        setSearchParams(...handleSearchParams({ tab: next }, true));
-        return next;
-      });
-    },
-    [setSearchParams]
-  );
+  const activeTab = useSidebarTabStore((s) => s.activeTab);
+  const setActiveTab = useSidebarTabStore((s) => s.setActiveTab);
   useHotkeys(useCustomHotkeys(setActiveTab), []);
   const operationRef = useClickOutside(() => {
     setNavigation((p) => ({ navigation: { ...p.navigation, disable: true } }));
