@@ -8,6 +8,11 @@ export interface PackageCatalogEntry {
   importKind: "default" | "namespace" | "named";
   packageType?: "npm" | "virtual";
   sourceNames: string[];
+  notice?: {
+    type: "info" | "warning";
+    text: string;
+    links?: { label: string; url: string }[];
+  };
   description?: string;
   links?: { label: string; url: string }[];
   load: () => Promise<{
@@ -119,8 +124,18 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
       "comfyuiCallWrapper",
       "comfyuiWorkflowBuilder",
     ],
+    notice: {
+      type: "info",
+      text: "This package is intended mostly for local development with a local ComfyUI server.",
+      links: [
+        {
+          label: "Local development steps",
+          url: "https://github.com/aadityabhusal/logicflow#getting-started",
+        },
+      ],
+    },
     description:
-      "A TypeScript SDK for building, executing, and managing ComfyUI workflows.",
+      "A TypeScript SDK for building, executing, and managing ComfyUI workflows. Note:",
     links: [
       {
         label: "npm",

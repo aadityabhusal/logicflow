@@ -26,6 +26,25 @@ import {
   importProjectFile,
 } from "@/lib/project-archive";
 
+function ExternalLinks({ links }: { links: { label: string; url: string }[] }) {
+  return (
+    <div className="flex gap-3 flex-wrap">
+      {links.map((link) => (
+        <a
+          key={link.url}
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-sm text-blue-400 hover:underline"
+        >
+          {link.label}
+          <FaArrowUpRightFromSquare size={9} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export function SettingsPanel() {
   const enableMobileWrapping = useUiConfigStore((s) => s.enableMobileWrapping);
   const hideArgumentNames = useUiConfigStore((s) => s.hideArgumentNames);
@@ -218,26 +237,28 @@ export function SettingsPanel() {
                   </div>
                   {isExpanded && (
                     <div className="flex flex-col p-2 gap-2 bg-dropdown-hover/30">
+                      {entry.notice && (
+                        <div
+                          className={[
+                            "rounded border p-2 text-sm",
+                            entry.notice.type === "warning"
+                              ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-100"
+                              : "border-blue-500/40 bg-blue-500/10 text-blue-100",
+                          ].join(" ")}
+                        >
+                          <p>{entry.notice.text}</p>
+                          {entry.notice.links && (
+                            <ExternalLinks links={entry.notice.links} />
+                          )}
+                        </div>
+                      )}
                       {entry.description && (
                         <p className="text-sm text-gray-300">
                           {entry.description}
                         </p>
                       )}
                       {entry.links && entry.links.length > 0 && (
-                        <div className="flex gap-3 flex-wrap">
-                          {entry.links.map((link) => (
-                            <a
-                              key={link.url}
-                              href={link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-sm text-blue-400 hover:underline"
-                            >
-                              {link.label}
-                              <FaArrowUpRightFromSquare size={9} />
-                            </a>
-                          ))}
-                        </div>
+                        <ExternalLinks links={entry.links} />
                       )}
                       <div className="flex flex-col gap-1">
                         <span className="text-sm text-gray-300">Alias</span>

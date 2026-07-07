@@ -552,14 +552,15 @@ export function useEntityContextMenu({
             .getState()
             .results.has(getCacheKey(ctx, operation.id)),
           onClick: () => {
-            const fileId = useProjectStore.getState().currentFileId;
-            if (!fileId) return;
-            setUiConfig((p) => ({
-              sidebar: {
-                ...p.sidebar,
-                lockedIds: { ...p.sidebar?.lockedIds, [fileId]: operation.id },
-              },
-            }));
+            const result = useExecutionResultsStore
+              .getState()
+              .getResult(getCacheKey(ctx, operation.id))?.data;
+            setNavigation({
+              navigation: { id: operation.id },
+              result,
+              skipExecution: ctx.skipExecution,
+              operation,
+            });
             setActiveTab("details");
           },
         },
@@ -569,7 +570,6 @@ export function useEntityContextMenu({
       statement,
       handleStatement,
       path,
-      setUiConfig,
       setActiveTab,
       setSearchParams,
       setNavigation,
