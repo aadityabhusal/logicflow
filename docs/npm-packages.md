@@ -1,10 +1,21 @@
 # NPM Packages
 
-Logicflow supports several npm packages that extend its capabilities with HTTP clients, database access, row-level security, and data generation.
+Logicflow supports several optional packages that extend its capabilities with HTTP clients, database access, row-level security, data generation, image workflow automation, and command building.
 
 ## Managing Packages
 
 Open the **Settings** tab to enable or disable packages for a project. Enabled packages appear in the operation dropdown and are included when generating or exporting code.
+
+Remeda and Immer power many built-in operations, but they are always available and are not managed from the package settings.
+
+## Built-In NPM-Backed Operations
+
+Logicflow includes built-in operations backed by npm libraries:
+
+- **Remeda** — Functional data transformation utilities used for array, object, string, number, and general-purpose operations such as `map`, `filter`, `sortBy`, `groupBy`, `pick`, `omit`, `defaultTo`, and type guards.
+- **Immer** — Immutable update helpers used by object and dictionary mutation-style operations such as `set`, `setPath`, `addProp`, `swapProps`, and `evolve`.
+
+These operations are exported with Logicflow's built-in runtime instead of being enabled as optional package namespaces.
 
 ## Wretch
 
@@ -129,9 +140,9 @@ Calling `from` creates a query builder for a table. Use it to select, insert, up
 
 Supabase query builders support common filters and result modifiers.
 
-**Filters**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `contains`, `containedBy`, `overlaps`, `match`, `not`, `or`, `textSearch`
+**Filters**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `is`, `like`, `ilike`, `likeAllOf`, `likeAnyOf`, `ilikeAllOf`, `ilikeAnyOf`, `regexMatch`, `regexIMatch`, `in`, `notIn`, `contains`, `containedBy`, `overlaps`, `match`, `not`, `filter`, `isDistinct`, `or`, `rangeGt`, `rangeGte`, `rangeLt`, `rangeLte`, `rangeAdjacent`, `textSearch`
 
-**Modifiers**: `order`, `limit`, `range`, `single`, `maybeSingle`, `csv`, `throwOnError`
+**Modifiers**: `order`, `limit`, `range`, `single`, `maybeSingle`, `csv`, `geojson`, `explain`, `throwOnError`, `stripNulls`, `rollback`, `maxAffected`, `retry`, `setHeader`, `abortSignal`
 
 Use `then` to execute a query and receive the result as a Promise.
 
@@ -147,7 +158,7 @@ Connects to a ComfyUI server and exposes its HTTP and WebSocket APIs.
 
 **Value**: A ComfyApi instance created with a host string, optional client ID, and optional options
 
-**Operations**: `init`, `waitForReady`, `destroy`, `ping`, `reconnectWs`, `pollStatus`, `getQueue`, `getHistories`, `getHistory`, `getSystemStats`, `getExtensions`, `getEmbeddings`, `getCheckpoints`, `getLoras`, `getNodeDefs`, `getSettings`, `getSetting`, `storeSettings`, `storeSetting`, `uploadImage`, `uploadMask`, `getPathImage`, `getImage`, `interrupt`, `queuePrompt`, `appendPrompt`, `freeMemory`, `getFeatures`, `getModels`, `getModelFolders`, `getModelFiles`, `getUserData`, `storeUserData`, `deleteUserData`, `moveUserData`, `listUserData`, `getWorkflowTemplates`, `getViewMetadata`, `getUserConfig`, `createUser`, `getSamplerInfo`, `getModelTypes`, `getTerminalLogs`, `setTerminalSubscription`
+**Operations**: `init`, `waitForReady`, `destroy`, `ping`, `reconnectWs`, `pollStatus`, `getQueue`, `getHistories`, `getHistory`, `getSystemStats`, `getExtensions`, `getEmbeddings`, `getCheckpoints`, `getLoras`, `getNodeDefs`, `getSettings`, `getSetting`, `storeSettings`, `storeSetting`, `uploadImage`, `uploadMask`, `getPathImage`, `getImage`, `interrupt`, `queuePrompt`, `appendPrompt`, `freeMemory`, `getFeatures`, `getModels`, `getModelFolders`, `getModelFiles`, `getUserData`, `storeUserData`, `deleteUserData`, `moveUserData`, `listUserData`, `listUserDataV2`, `clearHistory`, `manageQueue`, `getWorkflowTemplates`, `getViewMetadata`, `getUserConfig`, `createUser`, `getSamplerInfo`, `getModelTypes`, `getTerminalLogs`, `setTerminalSubscription`
 
 For the full list, see the [ComfyApi documentation](https://github.com/tctien342/comfyui-sdk#comfyapi).
 
@@ -190,6 +201,16 @@ Constructs a PromptBuilder from a config describing inputs and outputs.
 **Operations**: `build(config?)`
 
 Calling `build` returns a PromptBuilder. For the full list, see the [WorkflowBuilder documentation](https://github.com/tctien342/comfyui-sdk#workflowbuilder).
+
+## FFmpeg
+
+FFmpeg is a virtual package, not an npm dependency. It builds shell-safe FFmpeg command strings and argument arrays without executing FFmpeg.
+
+**Value**: An `ffmpeg.Command` instance created with `command`
+
+**Operations**: `command`, `executable`, `input`, `output`, `option`, `optionValue`, `raw`, `inputOption`, `inputOptionValue`, `outputOption`, `outputOptionValue`, `map`, `videoCodec`, `audioCodec`, `subtitleCodec`, `videoBitrate`, `audioBitrate`, `videoFilter`, `audioFilter`, `filterComplex`, `resolution`, `frameRate`, `pixelFormat`, `audioSampleRate`, `audioChannels`, `format`, `overwrite`, `noOverwrite`, `hideBanner`, `logLevel`, `threads`, `duration`, `startTime`, `disableVideo`, `disableAudio`, `disableSubtitles`, `conform`, `toArgs`, `toCommand`
+
+For the full API and examples, see the [FFmpeg command builder documentation](https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md).
 
 ## Package Aliases
 

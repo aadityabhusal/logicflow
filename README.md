@@ -19,19 +19,21 @@ See [documentation](https://logicflow.dev/docs) for more details.
 - **Undo/Redo**: Per-file history tracking (up to 50 levels) with Undo (`Cmd/Ctrl+Z`) and Redo (`Cmd/Ctrl+Shift+Z`).
 - **Project checkpoints**: Snapshot-based versioning — create, restore, and delete named checkpoints at any point.
 
-### Operations & NPM Packages
+### Operations & Packages
 
-Logicflow ships with a rich set of operations from popular NPM libraries:
+Logicflow ships with a rich set of built-in operations and optional package integrations:
 
-- **Remeda** (`pipe`, `map`, `filter`, `sort`, `groupBy`, `reduce`, `pick`, `omit`, and many more) — functional data transformation utilities.
-- **Immer** (`produce`) — immutable state updates with a mutable API.
+- **Remeda-powered built-ins** (`map`, `filter`, `sort`, `groupBy`, `reduce`, `pick`, `omit`, and many more) — functional data transformation utilities.
+- **Immer-powered built-ins** (`set`, `setPath`, `addProp`, `swapProps`, `evolve`, and related helpers) — immutable state updates with a mutable API.
 - **Wretch** (`url`, `get`, `post`, `headers`, `json`, `body`, `res`) — type-safe HTTP client as chainable operations.
-- **Rowguard** (`table`, `enableRLS`, `policy`, `useSelect`, `useInsert`) — Row-Level Security policy builder for Supabase.
+- **Rowguard** (`column`, `policy`, `from`, `auth.uid`, `session.get`, `policies.userOwned`) — Row-Level Security policy builder for Supabase.
 - **Faker** (261 operations across 28 namespaces: `person`, `string`, `number`, `date`, `location`, etc.) — fake data generation.
 - **date-fns** (243 operations: `format`, `addDays`, `differenceInDays`, `isBefore`, etc.) — date manipulation.
-- **FFmpeg** (virtual package, no npm dependency) — FFmpeg command builder with operations like `input`, `output`, `videoCodec`, `audioCodec`, `format`, `size`, `fps`, and more.
+- **Supabase** (`createClient`, `from`, `select`, `insert`, `update`, `eq`, `order`, `functions.invoke`) — database queries and Edge Function calls.
+- **ComfyUI SDK** (`ComfyApi`, `ComfyPool`, `PromptBuilder`, `CallWrapper`, `WorkflowBuilder`) — image workflow client operations for a ComfyUI server.
+- **FFmpeg** (virtual package, no npm dependency) — FFmpeg command builder with operations like `input`, `output`, `videoCodec`, `audioCodec`, `format`, `resolution`, `frameRate`, and more.
 
-Packages can be enabled or disabled per project and given custom aliases or namespaces.
+Optional packages can be enabled or disabled per project and given custom aliases or namespaces.
 
 ### Code Generation
 

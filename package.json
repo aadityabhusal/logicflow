@@ -2,6 +2,28 @@
   "name": "logicflow",
   "private": true,
   "version": "0.0.0",
+  "description": "A live, block-based visual programming environment built around data transformation through chained operations",
+  "license": "AGPL-3.0-only",
+  "author": "Aaditya Bhusal",
+  "homepage": "https://logicflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aadityabhusal/logicflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aadityabhusal/logicflow/issues"
+  },
+  "keywords": [
+    "visual-programming",
+    "block-based",
+    "data-transformation",
+    "code-generation",
+    "workflow"
+  ],
+  "packageManager": "yarn@1.22.19",
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

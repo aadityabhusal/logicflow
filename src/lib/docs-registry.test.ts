@@ -31,8 +31,8 @@ describe("getDocsUrl", () => {
   });
 
   it("generates standard URL for non-filter non-modifier operations", () => {
-    expect(getDocsUrl({ name: "supabaseBuilder" }, "isDistinct")).toBe(
-      "https://supabase.com/docs/reference/javascript/isdistinct"
+    expect(getDocsUrl({ name: "supabaseBuilder" }, "unknownBuilderOp")).toBe(
+      "https://supabase.com/docs/reference/javascript/unknownbuilderop"
     );
   });
 
@@ -79,6 +79,11 @@ describe("getDocsUrl", () => {
       "rowguardConditionChain",
       "rowguardConditionChain.and",
       "https://supabase-community.github.io/rowguard/classes/ConditionChain.html#and",
+    ],
+    [
+      "rowguardCondition",
+      "rowguardCondition.toSQL",
+      "https://supabase-community.github.io/rowguard/interfaces/Condition.html#tosql",
     ],
     [
       "rowguardPolicyBuilder",
@@ -128,6 +133,15 @@ describe("getDocsUrl", () => {
       "https://supabase.com/docs/reference/javascript/using-filters-eq"
     );
   });
+
+  it.each(["regexMatch", "regexIMatch", "notIn", "isDistinct"])(
+    "generates filter URL for supabaseBuilder %s",
+    (operation) => {
+      expect(getDocsUrl({ name: "supabaseBuilder" }, operation)).toBe(
+        `https://supabase.com/docs/reference/javascript/using-filters-${operation.toLowerCase()}`
+      );
+    }
+  );
 
   it.each([
     ["comfyuiApi", "https://github.com/tctien342/comfyui-sdk#comfyapi"],

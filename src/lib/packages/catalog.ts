@@ -89,6 +89,12 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     importKind: "namespace",
     sourceNames: ["ffmpeg"],
     description: "Build FFmpeg command strings through chainable operations.",
+    links: [
+      {
+        label: "Docs",
+        url: "https://github.com/aadityabhusal/logicflow/blob/main/docs/ffmpeg-package.md",
+      },
+    ],
     load: () => import("../operations/ffmpeg").then((m) => m.default),
   },
   supabase: {
@@ -135,7 +141,7 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
       ],
     },
     description:
-      "A TypeScript SDK for building, executing, and managing ComfyUI workflows. Note:",
+      "A TypeScript SDK for building, executing, and managing ComfyUI workflows.",
     links: [
       {
         label: "npm",

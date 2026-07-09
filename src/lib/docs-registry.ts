@@ -37,6 +37,7 @@ const supabaseFilterOperations = [
   "ilikeAnyOf",
   "in",
   "is",
+  "isDistinct",
   "like",
   "likeAllOf",
   "likeAnyOf",
@@ -45,6 +46,7 @@ const supabaseFilterOperations = [
   "match",
   "neq",
   "not",
+  "notIn",
   "or",
   "overlaps",
   "rangeAdjacent",
@@ -52,6 +54,8 @@ const supabaseFilterOperations = [
   "rangeGte",
   "rangeLt",
   "rangeLte",
+  "regexIMatch",
+  "regexMatch",
   "textSearch",
 ];
 
@@ -84,6 +88,11 @@ export const DOCS_REGISTRY: Record<string, DocsConfig> = {
     urlPattern: (name) =>
       `https://supabase-community.github.io/rowguard/classes/ConditionChain.html#${name.toLowerCase()}`,
     displayName: "Rowguard ConditionChain",
+  },
+  rowguardCondition: {
+    urlPattern: (name) =>
+      `https://supabase-community.github.io/rowguard/interfaces/Condition.html#${name.toLowerCase()}`,
+    displayName: "Rowguard Condition",
   },
   rowguardPolicyBuilder: {
     urlPattern: (name) =>
