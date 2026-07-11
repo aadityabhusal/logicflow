@@ -325,7 +325,7 @@ const OperationComponent = (
         )}
         <span className="self-end">{")"}</span>
       </div>
-      <div className="pl-4 [&>div]:mb-1 w-fit">
+      <div className="pl-4 [&>div]:mb-1 w-full">
         {operation.value.statements.map((statement, i, stmtList) => (
           <Statement
             key={statement.id}

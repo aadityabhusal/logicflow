@@ -270,6 +270,7 @@ const StatementComponent = ({
     <div
       className={[
         "flex items-start gap-1",
+        isTopLevelStatement ? "w-full" : "",
         isHighlighted ? "editor-focus" : "",
       ].join(" ")}
       onContextMenu={handleContextMenu}
@@ -465,6 +466,14 @@ const StatementComponent = ({
           );
         })}
       </div>
+      {isTopLevelStatement ? (
+        <div
+          className="flex-1 self-stretch"
+          onClick={() =>
+            setNavigation({ navigation: { id: statement.data.id } })
+          }
+        />
+      ) : null}
     </div>
   );
 };
