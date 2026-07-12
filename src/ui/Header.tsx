@@ -22,18 +22,7 @@ import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { TbKeyboardOff, TbRefresh } from "react-icons/tb";
 import { MdOutlineFeedback } from "react-icons/md";
 
-const feedbackMailto = `mailto:support@logicflow.dev?subject=${encodeURIComponent(
-  "Logicflow Feedback"
-)}&body=${encodeURIComponent(`Hi,
-
-Feedback:
-
-Steps/context:
-
-Expected:
-
-Actual:
-`)}`;
+const feedbackUrl = "https://github.com/aadityabhusal/logicflow/issues/new";
 
 function HeaderComponent() {
   const currentFileId = useProjectStore((s) => s.getCurrentFile()?.id);
@@ -117,7 +106,9 @@ function HeaderComponent() {
         <Tooltip label="Send Feedback">
           <Button
             component="a"
-            href={feedbackMailto}
+            href={feedbackUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             aria-label="Send feedback"
             className="outline-none p-0.5!"
             leftSection={smallScreen ? null : <MdOutlineFeedback size={18} />}
