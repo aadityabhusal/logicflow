@@ -184,6 +184,11 @@ export default defineConfig({
     port: 3000,
     open: true,
     proxy: {
+      "/api/ai": {
+        target: "http://localhost:8787",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
       "/api/vercel": {
         target: "https://api.vercel.com",
         changeOrigin: true,

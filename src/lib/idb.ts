@@ -1,7 +1,7 @@
 import { openDB } from "idb";
 import { createJSONStorage } from "zustand/middleware";
 
-export const IDbStore = openDB("logicflow", 5, {
+export const IDbStore = openDB("logicflow", 6, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("projects")) {
       db.createObjectStore("projects");
@@ -9,19 +9,19 @@ export const IDbStore = openDB("logicflow", 5, {
     if (!db.objectStoreNames.contains("uiConfig")) {
       db.createObjectStore("uiConfig");
     }
-    if (!db.objectStoreNames.contains("agent")) {
-      db.createObjectStore("agent");
-    }
     if (!db.objectStoreNames.contains("checkpoints")) {
       db.createObjectStore("checkpoints");
     }
     if (!db.objectStoreNames.contains("fileAssets")) {
       db.createObjectStore("fileAssets");
     }
+    if (!db.objectStoreNames.contains("agentProjects")) {
+      db.createObjectStore("agentProjects");
+    }
   },
 });
 
-export const createIDbStorage = <T>(storeName: string) =>
+export const createIDbStorage = <T>(storeName: string, onError?: () => void) =>
   createJSONStorage<T>(() => ({
     getItem: async (key) =>
       (await IDbStore)
@@ -31,6 +31,7 @@ export const createIDbStorage = <T>(storeName: string) =>
     setItem: async (key, value) =>
       (await IDbStore).put(storeName, value, key).catch((e) => {
         console.error(`IndexedDB setItem error:`, e);
+        onError?.();
       }),
     removeItem: async (key) =>
       (await IDbStore).delete(storeName, key).catch((e) => {

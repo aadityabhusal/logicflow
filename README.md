@@ -133,9 +133,17 @@ yarn preview
 
 ### Environment Variables
 
-| Variable             | Description                                         |
-| -------------------- | --------------------------------------------------- |
-| `VITE_API_PROXY_URL` | Proxy URL for deployment platform API requests only |
+| Variable             | Description                                                |
+| -------------------- | ---------------------------------------------------------- |
+| `VITE_API_PROXY_URL` | Base URL for fixed deployment and AI provider proxy routes |
+
+During local agent development, run the sibling `logicflow-proxy` Worker with
+`ALLOWED_ORIGIN=http://localhost:3000`. Vite forwards fixed `/api/ai/*` routes
+to the Worker's default `http://localhost:8787` address.
+
+Production agent requests require `VITE_API_PROXY_URL` to be the absolute URL
+of the deployed `logicflow-proxy` Worker. Vite's local proxy is not included in
+the production build.
 
 ## Tech Stack
 

@@ -1,0 +1,107 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("idb", () => ({
+  openDB: () =>
+    Promise.resolve({
+      get: vi.fn(async () => null),
+      put: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+    }),
+}));
+
+import { useAgentStore } from "../store";
+
+const initialState = useAgentStore.getInitialState();
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  useAgentStore.setState(initialState, true);
+});
+
+describe("agent store", () => {
+  it("keeps agent data scoped to its project", () => {
+    const first = useAgentStore.getState().createThread("project-a");
+    const second = useAgentStore.getState().createThread("project-b");
+
+    useAgentStore.getState().addMessage(first.id, {
+      role: "user",
+      content: "Project A",
+    });
+
+    const projects = useAgentStore.getState().agentProjects;
+    expect(projects["project-a"].threads[0].messages).toHaveLength(1);
+    expect(projects["project-b"].threads[0].messages).toHaveLength(0);
+    expect(projects["project-b"].activeThreadId).toBe(second.id);
+  });
+
+  it("persists only project documents", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+    useAgentStore.getState().setApiKey("openai", "session-secret");
+    useAgentStore.getState().startRun(thread.id);
+
+    const partialize = useAgentStore.persist.getOptions().partialize!;
+    expect(partialize(useAgentStore.getState())).toEqual({
+      agentProjects: useAgentStore.getState().agentProjects,
+    });
+  });
+
+  it("redacts known API keys from messages and drafts", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+    useAgentStore.getState().setApiKey("openai", "session-secret");
+
+    useAgentStore.getState().setDraft(thread.id, "Use session-secret");
+    useAgentStore.getState().addMessage(thread.id, {
+      role: "user",
+      content: "Do not save session-secret",
+    });
+
+    const persistedThread =
+      useAgentStore.getState().agentProjects["project-a"].threads[0];
+    expect(persistedThread.draft).toBe("Use [REDACTED]");
+    expect(persistedThread.messages[0].content).toBe("Do not save [REDACTED]");
+  });
+
+  it("creates a replacement when the last thread is deleted", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+
+    useAgentStore.getState().removeThread(thread.id);
+
+    const project = useAgentStore.getState().agentProjects["project-a"];
+    expect(project.threads).toHaveLength(1);
+    expect(project.threads[0].id).not.toBe(thread.id);
+    expect(project.activeThreadId).toBe(project.threads[0].id);
+  });
+
+  it("removes all agent data when its project is deleted", () => {
+    useAgentStore.getState().createThread("project-a");
+
+    useAgentStore.getState().deleteAgentProject("project-a");
+
+    expect(useAgentStore.getState().agentProjects["project-a"]).toBeUndefined();
+  });
+
+  it("reapplies project deletion after pending hydration", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+    const project = useAgentStore.getState().agentProjects["project-a"];
+    let finishHydration!: Parameters<
+      typeof useAgentStore.persist.onFinishHydration
+    >[0];
+    const unsubscribe = vi.fn();
+    vi.spyOn(useAgentStore.persist, "hasHydrated").mockReturnValue(false);
+    vi.spyOn(useAgentStore.persist, "onFinishHydration").mockImplementation(
+      (listener) => {
+        finishHydration = listener;
+        return unsubscribe;
+      }
+    );
+
+    useAgentStore.getState().deleteAgentProject("project-a");
+    useAgentStore.setState({
+      agentProjects: { "project-a": { ...project, activeThreadId: thread.id } },
+    });
+    finishHydration(useAgentStore.getState());
+
+    expect(useAgentStore.getState().agentProjects["project-a"]).toBeUndefined();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+});

@@ -1,0 +1,141 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  createOpenAI: vi.fn((_options: unknown) => vi.fn()),
+  createAnthropic: vi.fn((_options: unknown) => vi.fn()),
+  createGoogleGenerativeAI: vi.fn((_options: unknown) => vi.fn()),
+}));
+
+vi.mock("@ai-sdk/openai", () => ({ createOpenAI: mocks.createOpenAI }));
+vi.mock("@ai-sdk/anthropic", () => ({
+  createAnthropic: mocks.createAnthropic,
+}));
+vi.mock("@ai-sdk/google", () => ({
+  createGoogleGenerativeAI: mocks.createGoogleGenerativeAI,
+}));
+
+import {
+  AgentTransportError,
+  createProviderModel,
+  toAgentTransportError,
+} from "./transport";
+
+const PROVIDER_KEY_HEADER = "X-LogicFlow-Provider-Key";
+
+function getProviderOptions(provider: "openai" | "anthropic" | "google") {
+  createProviderModel(provider, "model", "secret-key");
+  const factory = {
+    openai: mocks.createOpenAI,
+    anthropic: mocks.createAnthropic,
+    google: mocks.createGoogleGenerativeAI,
+  }[provider];
+  return factory.mock.calls[0][0] as {
+    baseURL: string;
+    fetch: typeof fetch;
+  };
+}
+
+describe("agent provider transport", () => {
+  const originalProxyUrl = import.meta.env.VITE_API_PROXY_URL;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete import.meta.env.VITE_API_PROXY_URL;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalProxyUrl) {
+      import.meta.env.VITE_API_PROXY_URL = originalProxyUrl;
+    } else {
+      delete import.meta.env.VITE_API_PROXY_URL;
+    }
+  });
+
+  it.each([
+    ["openai", "/api/ai/openai"],
+    ["anthropic", "/api/ai/anthropic"],
+    ["google", "/api/ai/google"],
+  ] as const)("uses the fixed %s proxy route", (provider, expected) => {
+    expect(getProviderOptions(provider).baseURL).toBe(expected);
+  });
+
+  it("uses the configured proxy base without a trailing slash", () => {
+    import.meta.env.VITE_API_PROXY_URL = "https://proxy.example.com/v1/";
+
+    expect(getProviderOptions("openai").baseURL).toBe(
+      "https://proxy.example.com/v1/ai/openai"
+    );
+  });
+
+  it.each([
+    ["openai", "authorization"],
+    ["anthropic", "x-api-key"],
+    ["google", "x-goog-api-key"],
+  ] as const)(
+    "replaces %s native credentials with the dedicated header",
+    async (provider, nativeHeader) => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response());
+      vi.stubGlobal("fetch", fetchMock);
+      const { baseURL, fetch: providerFetch } = getProviderOptions(provider);
+
+      await providerFetch(`${baseURL}/request`, {
+        method: "POST",
+        headers: {
+          [nativeHeader]: "native-secret",
+          "Content-Type": "application/json",
+        },
+      });
+
+      const headers = fetchMock.mock.calls[0][1].headers as Headers;
+      expect(headers.get(PROVIDER_KEY_HEADER)).toBe("secret-key");
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("x-api-key")).toBeNull();
+      expect(headers.get("x-goog-api-key")).toBeNull();
+      expect(headers.get("content-type")).toBe("application/json");
+    }
+  );
+
+  it("blocks requests outside the selected provider route", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { fetch: providerFetch } = getProviderOptions("openai");
+
+    await expect(
+      providerFetch("https://api.openai.com/v1/responses")
+    ).rejects.toMatchObject({ code: "request_failed" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("normalizes cancellation without exposing the original error", () => {
+    const error = toAgentTransportError(
+      new DOMException("secret detail", "AbortError")
+    );
+
+    expect(error).toEqual(
+      new AgentTransportError("Request cancelled", "cancelled")
+    );
+    expect(error.message).not.toContain("secret");
+  });
+
+  it("normalizes non-DOM abort errors", () => {
+    expect(toAgentTransportError({ name: "AbortError" }).code).toBe(
+      "cancelled"
+    );
+  });
+
+  it.each([
+    [401, "unauthorized"],
+    [429, "rate_limited"],
+    [503, "unavailable"],
+    [400, "request_failed"],
+  ] as const)("normalizes HTTP %i errors", (statusCode, code) => {
+    expect(toAgentTransportError({ statusCode }).code).toBe(code);
+  });
+
+  it("normalizes timeouts", () => {
+    expect(toAgentTransportError({ name: "TimeoutError" })).toEqual(
+      new AgentTransportError("Provider request timed out", "timeout")
+    );
+  });
+});

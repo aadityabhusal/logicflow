@@ -1,7 +1,4 @@
-import { generateText, Output, zodSchema } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { Output, streamText, zodSchema } from "ai";
 import { LOGICFLOW_SYSTEM_PROMPT, buildContextPrompt } from "./prompts";
 import { operationToLLMFormat, EntityMappingContext } from "./entity-mapper";
 import { IData, IStatement, OperationType, DataType } from "../types";
@@ -9,44 +6,55 @@ import { createData } from "../utils";
 import { nanoid } from "nanoid";
 import { AgentChange, AgentResponseSchema } from "../schemas";
 import { DataTypes } from "../data";
+import { AgentProvider } from "./types";
+import { createProviderModel, toAgentTransportError } from "./transport";
 
-function getProviderModel(modelId: string, apiKey: string) {
-  const [provider, ...modelParts] = modelId.split("/");
-  const modelName = modelParts.join("/");
-  switch (provider) {
-    case "openai":
-      return createOpenAI({ apiKey })(modelName);
-    case "anthropic":
-      return createAnthropic({ apiKey })(modelName);
-    case "google":
-      return createGoogleGenerativeAI({ apiKey })(modelName);
-    default:
-      throw new Error(`Unknown provider: ${provider}`);
-  }
-}
+const AGENT_REQUEST_TIMEOUT = 60_000;
 
 export async function generateOperationChanges({
   apiKey,
   model,
   operation,
   userPrompt,
+  abortSignal,
+  onPartialExplanation,
 }: {
   operation: IData<OperationType>;
   userPrompt: string;
   model: string;
   apiKey: string;
+  abortSignal?: AbortSignal;
+  onPartialExplanation?: (explanation: string) => void;
 }) {
   const { mappedOperation, mappingContext } = operationToLLMFormat(operation);
-  const providerModel = getProviderModel(model, apiKey);
-  const result = await generateText({
-    model: providerModel,
-    output: Output.object({
-      schema: zodSchema(AgentResponseSchema, { useReferences: true }),
-    }),
-    system: LOGICFLOW_SYSTEM_PROMPT,
-    prompt: buildContextPrompt(JSON.stringify(mappedOperation), userPrompt),
-  });
-  return { response: result.output, mappingContext };
+  const [provider, ...modelParts] = model.split("/");
+  if (!(["openai", "anthropic", "google"] as string[]).includes(provider)) {
+    throw new Error(`Unknown provider: ${provider}`);
+  }
+  try {
+    const result = streamText({
+      model: createProviderModel(
+        provider as AgentProvider,
+        modelParts.join("/"),
+        apiKey
+      ),
+      output: Output.object({
+        schema: zodSchema(AgentResponseSchema, { useReferences: true }),
+      }),
+      system: LOGICFLOW_SYSTEM_PROMPT,
+      prompt: buildContextPrompt(JSON.stringify(mappedOperation), userPrompt),
+      abortSignal,
+      timeout: AGENT_REQUEST_TIMEOUT,
+      maxRetries: 0,
+      onError: () => undefined,
+    });
+    for await (const partial of result.partialOutputStream) {
+      if (partial.explanation) onPartialExplanation?.(partial.explanation);
+    }
+    return { response: await result.output, mappingContext };
+  } catch (error) {
+    throw toAgentTransportError(error);
+  }
 }
 
 export function applyChangesToOperation(
