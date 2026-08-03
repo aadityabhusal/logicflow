@@ -1,18 +1,33 @@
 import { Textarea, Button, Menu, Tooltip } from "@mantine/core";
 import { useAgentStore } from "@/lib/store";
-import { useState } from "react";
 import { AVAILABLE_MODELS } from "@/lib/data";
-import { FaArrowUp, FaChevronDown } from "react-icons/fa6";
+import { FaArrowUp, FaChevronDown, FaStop } from "react-icons/fa6";
 import { IconButton } from "../IconButton";
+import { useProjectStore } from "@/lib/store";
 
 interface AgentInputProps {
   onSubmit: (prompt: string) => void;
+  onCancel: () => void;
+  isLoading: boolean;
 }
 
-export function AgentInput({ onSubmit }: AgentInputProps) {
-  const [value, setValue] = useState("");
-  const { isLoading, selectedModel, getApiKey, setSelectedModel } =
-    useAgentStore();
+export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  const {
+    selectedModel,
+    getApiKey,
+    setSelectedModel,
+    agentProjects,
+    setDraft,
+  } = useAgentStore();
+  const agentProject = currentProjectId
+    ? agentProjects[currentProjectId]
+    : undefined;
+  const activeThread = agentProject?.threads.find(
+    (thread) => thread.id === agentProject.activeThreadId
+  );
+  const activeThreadId = activeThread?.id;
+  const value = activeThread?.draft ?? "";
   const selectedModelConfig = AVAILABLE_MODELS.find(
     (m) => m.id === selectedModel
   );
@@ -23,7 +38,7 @@ export function AgentInput({ onSubmit }: AgentInputProps) {
   const handleSubmit = () => {
     if (value.trim() && !isLoading) {
       onSubmit(value.trim());
-      setValue("");
+      if (activeThreadId) setDraft(activeThreadId, "");
     }
   };
 
@@ -31,7 +46,9 @@ export function AgentInput({ onSubmit }: AgentInputProps) {
     <div className="flex flex-col border-t p-1 gap-1">
       <Textarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) =>
+          activeThreadId && setDraft(activeThreadId, e.target.value)
+        }
         placeholder="Describe the changes you want..."
         autosize
         className="p-2"
@@ -52,7 +69,7 @@ export function AgentInput({ onSubmit }: AgentInputProps) {
               leftSection={<FaChevronDown size={12} />}
               className="outline-none"
             >
-              {selectedModelConfig?.name ?? "Select modal"}
+              {selectedModelConfig?.name ?? "Select model"}
             </Button>
           </Menu.Target>
           <Menu.Dropdown>
@@ -77,13 +94,22 @@ export function AgentInput({ onSubmit }: AgentInputProps) {
             ))}
           </Menu.Dropdown>
         </Menu>
-        <IconButton
-          onClick={handleSubmit}
-          icon={FaArrowUp}
-          loading={isLoading}
-          className="px-2 outline"
-          disabled={value.trim() === "" || !modelHasApiKey}
-        />
+        {isLoading ? (
+          <IconButton
+            onClick={onCancel}
+            icon={FaStop}
+            className="px-2 outline"
+            title="Cancel request"
+          />
+        ) : (
+          <IconButton
+            onClick={handleSubmit}
+            icon={FaArrowUp}
+            className="px-2 outline"
+            title="Send"
+            disabled={value.trim() === "" || !modelHasApiKey}
+          />
+        )}
       </div>
     </div>
   );
