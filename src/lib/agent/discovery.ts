@@ -315,7 +315,7 @@ export async function createAgentDiscovery(
       return {
         project: {
           name: project.name,
-          description: project.description,
+          description: project.description?.slice(0, MAX_TEXT_LENGTH),
         },
         files: {
           operations: project.files.filter((file) => file.type === "operation")
@@ -361,6 +361,7 @@ export async function createAgentDiscovery(
         )
         .map((descriptor) => toSummary(descriptor, options.inputType))
         .filter((summary) => {
+          if (query && rankName(summary.name, query) === 3) return false;
           if (
             options.inputType &&
             !isTypeCompatible(options.inputType, summary.inputType, typeContext)

@@ -25,7 +25,14 @@ vi.mock("ai", () => ({
   zodSchema: vi.fn(() => ({ schema: true })),
 }));
 vi.mock("./discovery", () => ({
-  AgentDiscoveryError: class extends Error {},
+  AgentDiscoveryError: class extends Error {
+    constructor(
+      readonly code: string,
+      message: string
+    ) {
+      super(message);
+    }
+  },
   createAgentDiscovery: vi.fn(() => Promise.resolve(mocks.discovery)),
 }));
 vi.mock("./transport", () => ({
@@ -40,6 +47,7 @@ vi.mock("./prompts", () => ({
   buildContextPrompt: vi.fn(() => "prompt"),
 }));
 
+import { AgentDiscoveryError } from "./discovery";
 import { generateOperationChanges } from "./agent-service";
 
 beforeEach(() => {
@@ -128,6 +136,36 @@ describe("generateOperationChanges transport lifecycle", () => {
         code: "tool_limit_reached",
         message: "Discovery tool-call limit reached",
       },
+    });
+  });
+
+  it("returns structured discovery handle errors to the model", async () => {
+    mocks.discovery.inspectOperation.mockImplementation((handle: string) => {
+      const stale = handle === "old-handle";
+      throw new AgentDiscoveryError(
+        stale ? "stale_handle" : "unknown_handle",
+        stale ? "Obsolete handle" : "Unknown handle"
+      );
+    });
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {})(),
+      output: Promise.resolve({ explanation: "", changes: [] }),
+    });
+    await generateOperationChanges({
+      operation: {} as never,
+      project: {} as never,
+      userPrompt: "Update it",
+      model: "openai/gpt-5.1-codex",
+      apiKey: "session-key",
+    });
+    const execute = mocks.streamText.mock.calls[0][0].tools.inspect_operation
+      .execute as (input: { handle: string }) => Promise<unknown>;
+
+    await expect(execute({ handle: "old-handle" })).resolves.toEqual({
+      error: { code: "stale_handle", message: "Obsolete handle" },
+    });
+    await expect(execute({ handle: "invalid" })).resolves.toEqual({
+      error: { code: "unknown_handle", message: "Unknown handle" },
     });
   });
 

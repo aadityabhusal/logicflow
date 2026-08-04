@@ -29,6 +29,7 @@ describe("agent discovery", () => {
         platforms: [],
       },
     });
+    project.description = "x".repeat(2_100);
 
     const discovery = await createAgentDiscovery(project, operation.id);
     const outline = discovery.getProjectOutline();
@@ -36,6 +37,7 @@ describe("agent discovery", () => {
 
     expect(outline.currentOperationHandle).toMatch(/^operation_/);
     expect(outline.operations[0].name).toBe("formatMessage");
+    expect(outline.project.description).toHaveLength(2_000);
     expect(serialized).not.toContain(operation.id);
     expect(serialized).not.toContain("secret-file-id");
     expect(serialized).not.toContain("private document body");
@@ -126,6 +128,39 @@ describe("agent discovery", () => {
         })
         .some((operation) => operation.name.includes("map"))
     ).toBe(true);
+  });
+
+  it("returns no operations when the query does not match", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+
+    expect(
+      discovery.searchOperations({ query: "not-an-operation-name" })
+    ).toEqual([]);
+  });
+
+  it("filters by result type and caps operation results", async () => {
+    const files = Array.from({ length: 25 }, (_, index) => {
+      const operation = createOperationFile(`operation${index}`);
+      operation.content.type.result = {
+        kind: index % 2 === 0 ? "number" : "string",
+      };
+      return operation;
+    });
+    const discovery = await createAgentDiscovery(createTestProject({ files }));
+
+    const results = discovery.searchOperations({
+      source: "project",
+      resultType: { kind: "number" },
+      limit: 100,
+    });
+
+    expect(results).toHaveLength(13);
+    expect(results.every((result) => result.resultType.kind === "number")).toBe(
+      true
+    );
+    expect(
+      discovery.searchOperations({ source: "project", limit: 100 })
+    ).toHaveLength(20);
   });
 
   it("loads operations only from enabled supported packages", async () => {
