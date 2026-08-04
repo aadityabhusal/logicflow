@@ -165,7 +165,7 @@ const InstanceValueSchema = z.object({
   },
 });
 
-const DataTypeSchema = z.union([
+export const DataTypeSchema = z.union([
   UnknownTypeSchema,
   NeverTypeSchema,
   UndefinedTypeSchema,

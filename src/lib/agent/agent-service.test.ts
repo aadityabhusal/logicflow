@@ -8,12 +8,25 @@ const mocks = vi.hoisted(() => ({
     mappedOperation: { id: "O1" },
     mappingContext: { reverseMap: new Map() },
   })),
+  discovery: {
+    getProjectOutline: vi.fn(),
+    inspectOperation: vi.fn(),
+    searchOperations: vi.fn(),
+    describeOperations: vi.fn(),
+    searchPackages: vi.fn(),
+  },
 }));
 
 vi.mock("ai", () => ({
   streamText: mocks.streamText,
   Output: { object: vi.fn(() => ({ output: true })) },
+  stepCountIs: vi.fn((count) => ({ count })),
+  tool: vi.fn((definition) => definition),
   zodSchema: vi.fn(() => ({ schema: true })),
+}));
+vi.mock("./discovery", () => ({
+  AgentDiscoveryError: class extends Error {},
+  createAgentDiscovery: vi.fn(() => Promise.resolve(mocks.discovery)),
 }));
 vi.mock("./transport", () => ({
   createProviderModel: mocks.createProviderModel,
@@ -48,6 +61,7 @@ describe("generateOperationChanges transport lifecycle", () => {
 
     const result = await generateOperationChanges({
       operation: {} as never,
+      project: {} as never,
       userPrompt: "Update it",
       model: "anthropic/claude-sonnet-4-5",
       apiKey: "session-key",
@@ -65,11 +79,56 @@ describe("generateOperationChanges transport lifecycle", () => {
         abortSignal: abortController.signal,
         timeout: 60_000,
         maxRetries: 0,
+        stopWhen: { count: 8 },
+        tools: expect.objectContaining({
+          get_project_outline: expect.any(Object),
+          inspect_operation: expect.any(Object),
+          search_operations: expect.any(Object),
+          describe_operations: expect.any(Object),
+          search_packages: expect.any(Object),
+        }),
       })
     );
     expect(onPartialExplanation).toHaveBeenNthCalledWith(1, "Working");
     expect(onPartialExplanation).toHaveBeenNthCalledWith(2, "Finished");
     expect(result.response).toBe(output);
+
+    const options = mocks.streamText.mock.calls[0][0];
+    await options.tools.search_operations.execute({
+      inputType: { kind: "array", elementType: { kind: "string" } },
+    });
+    expect(mocks.discovery.searchOperations).toHaveBeenCalledWith({
+      inputType: { kind: "array", elementType: { kind: "string" } },
+      resultType: undefined,
+      query: undefined,
+      source: undefined,
+      limit: undefined,
+    });
+  });
+
+  it("bounds discovery calls across the run", async () => {
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {})(),
+      output: Promise.resolve({ explanation: "", changes: [] }),
+    });
+    await generateOperationChanges({
+      operation: {} as never,
+      project: {} as never,
+      userPrompt: "Update it",
+      model: "openai/gpt-5.1-codex",
+      apiKey: "session-key",
+    });
+    const execute = mocks.streamText.mock.calls[0][0].tools.get_project_outline
+      .execute as () => Promise<unknown>;
+
+    for (let index = 0; index < 20; index++) await execute();
+
+    await expect(execute()).resolves.toEqual({
+      error: {
+        code: "tool_limit_reached",
+        message: "Discovery tool-call limit reached",
+      },
+    });
   });
 
   it("normalizes provider and stream failures", async () => {
@@ -81,6 +140,7 @@ describe("generateOperationChanges transport lifecycle", () => {
     await expect(
       generateOperationChanges({
         operation: {} as never,
+        project: {} as never,
         userPrompt: "Update it",
         model: "openai/gpt-5.1-codex",
         apiKey: "session-key",

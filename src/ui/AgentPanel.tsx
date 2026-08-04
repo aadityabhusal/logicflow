@@ -86,6 +86,8 @@ export function AgentPanel() {
       return;
     const submittedProjectId = currentProjectId;
     const submittedFile = currentFile;
+    const submittedProject = useProjectStore.getState().getCurrentProject();
+    if (!submittedProject) return;
 
     const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
     if (!modelConfig) return;
@@ -100,6 +102,7 @@ export function AgentPanel() {
     try {
       const { response, mappingContext } = await generateOperationChanges({
         operation: currentOperation,
+        project: submittedProject,
         userPrompt: prompt,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,

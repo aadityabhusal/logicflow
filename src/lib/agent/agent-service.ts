@@ -1,13 +1,15 @@
-import { Output, streamText, zodSchema } from "ai";
+import { Output, stepCountIs, streamText, tool, zodSchema } from "ai";
+import { z } from "zod";
 import { LOGICFLOW_SYSTEM_PROMPT, buildContextPrompt } from "./prompts";
 import { operationToLLMFormat, EntityMappingContext } from "./entity-mapper";
-import { IData, IStatement, OperationType, DataType } from "../types";
+import { IData, IStatement, OperationType, DataType, Project } from "../types";
 import { createData } from "../utils";
 import { nanoid } from "nanoid";
-import { AgentChange, AgentResponseSchema } from "../schemas";
+import { AgentChange, AgentResponseSchema, DataTypeSchema } from "../schemas";
 import { DataTypes } from "../data";
 import { AgentProvider } from "./types";
 import { createProviderModel, toAgentTransportError } from "./transport";
+import { AgentDiscoveryError, createAgentDiscovery } from "./discovery";
 
 const AGENT_REQUEST_TIMEOUT = 60_000;
 
@@ -15,11 +17,13 @@ export async function generateOperationChanges({
   apiKey,
   model,
   operation,
+  project,
   userPrompt,
   abortSignal,
   onPartialExplanation,
 }: {
   operation: IData<OperationType>;
+  project: Project;
   userPrompt: string;
   model: string;
   apiKey: string;
@@ -27,6 +31,79 @@ export async function generateOperationChanges({
   onPartialExplanation?: (explanation: string) => void;
 }) {
   const { mappedOperation, mappingContext } = operationToLLMFormat(operation);
+  const discovery = await createAgentDiscovery(project, operation.id);
+  let toolCalls = 0;
+  const executeTool = async (action: () => unknown) => {
+    toolCalls++;
+    if (toolCalls > 20) {
+      return {
+        error: {
+          code: "tool_limit_reached",
+          message: "Discovery tool-call limit reached",
+        },
+      };
+    }
+    try {
+      return await action();
+    } catch (error) {
+      if (error instanceof AgentDiscoveryError) {
+        return { error: { code: error.code, message: error.message } };
+      }
+      throw error;
+    }
+  };
+  const tools = {
+    get_project_outline: tool({
+      description: "Return compact current project and operation context",
+      inputSchema: z.object({}),
+      execute: () => executeTool(() => discovery.getProjectOutline()),
+    }),
+    inspect_operation: tool({
+      description: "Inspect an operation using its scoped handle",
+      inputSchema: z.object({ handle: z.string() }),
+      execute: ({ handle }) =>
+        executeTool(() => discovery.inspectOperation(handle)),
+    }),
+    search_operations: tool({
+      description:
+        "Search current core, enabled-package, and project operations",
+      inputSchema: z.object({
+        query: z.string().optional(),
+        inputType: DataTypeSchema.optional(),
+        resultType: DataTypeSchema.optional(),
+        source: z.enum(["core", "package", "project"]).optional(),
+        limit: z.number().int().positive().max(20).optional(),
+      }),
+      execute: ({ query, inputType, resultType, source, limit }) =>
+        executeTool(() =>
+          discovery.searchOperations({
+            query,
+            inputType,
+            resultType,
+            source,
+            limit,
+          })
+        ),
+    }),
+    describe_operations: tool({
+      description: "Return exact details for operation handles",
+      inputSchema: z.object({
+        handles: z.array(z.string()).min(1).max(20),
+        inputType: DataTypeSchema.optional(),
+      }),
+      execute: ({ handles, inputType }) =>
+        executeTool(() => discovery.describeOperations(handles, inputType)),
+    }),
+    search_packages: tool({
+      description: "Search packages supported by the host catalog",
+      inputSchema: z.object({
+        query: z.string().optional(),
+        limit: z.number().int().positive().max(20).optional(),
+      }),
+      execute: ({ query, limit }) =>
+        executeTool(() => discovery.searchPackages(query, limit)),
+    }),
+  };
   const [provider, ...modelParts] = model.split("/");
   if (!(["openai", "anthropic", "google"] as string[]).includes(provider)) {
     throw new Error(`Unknown provider: ${provider}`);
@@ -41,6 +118,8 @@ export async function generateOperationChanges({
       output: Output.object({
         schema: zodSchema(AgentResponseSchema, { useReferences: true }),
       }),
+      tools,
+      stopWhen: stepCountIs(8),
       system: LOGICFLOW_SYSTEM_PROMPT,
       prompt: buildContextPrompt(JSON.stringify(mappedOperation), userPrompt),
       abortSignal,
