@@ -25,6 +25,7 @@ import {
 } from "./checkpoints";
 import { createIDbStorage } from "./idb";
 import { AgentMessage, AgentProject, AgentThread } from "./agent/types";
+import type { AgentProposal } from "./agent/proposal";
 
 /* Files store */
 
@@ -420,6 +421,7 @@ interface AgentStore {
   agentProjects: Record<string, AgentProject>;
   agentReady: boolean;
   activeRun?: { threadId: string; streamingContent: string };
+  pendingProposals: Record<string, AgentProposal>;
 
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
   getApiKey: (provider: keyof ApiKeys) => string | undefined;
@@ -436,6 +438,7 @@ interface AgentStore {
   startRun: (threadId: string) => void;
   setStreamingContent: (content: string) => void;
   finishRun: (threadId: string) => void;
+  setPendingProposal: (threadId: string, proposal?: AgentProposal) => void;
   deleteAgentProject: (projectId: string) => void;
 }
 
@@ -495,6 +498,7 @@ export const useAgentStore = createWithEqualityFn(
         apiKeys: {},
         agentProjects: {},
         agentReady: false,
+        pendingProposals: {},
         setApiKey: (provider, key) => {
           set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
         },
@@ -541,6 +545,11 @@ export const useAgentStore = createWithEqualityFn(
             activeThreadId: remaining[0].id,
             threads: remaining,
           });
+          set((state) => {
+            const { [threadId]: _, ...pendingProposals } =
+              state.pendingProposals;
+            return { pendingProposals };
+          });
         },
         addMessage: (threadId, message) => {
           const project = findProjectByThread(threadId);
@@ -585,11 +594,32 @@ export const useAgentStore = createWithEqualityFn(
               ? { activeRun: undefined }
               : state
           ),
+        setPendingProposal: (threadId, proposal) =>
+          set((state) => {
+            if (proposal) {
+              return {
+                pendingProposals: {
+                  ...state.pendingProposals,
+                  [threadId]: proposal,
+                },
+              };
+            }
+            const { [threadId]: _, ...pendingProposals } =
+              state.pendingProposals;
+            return { pendingProposals };
+          }),
         deleteAgentProject: (projectId) => {
           const remove = () =>
             set((state) => {
               const { [projectId]: _, ...agentProjects } = state.agentProjects;
-              return { agentProjects };
+              return {
+                agentProjects,
+                pendingProposals: Object.fromEntries(
+                  Object.entries(state.pendingProposals).filter(
+                    ([, proposal]) => proposal.projectId !== projectId
+                  )
+                ),
+              };
             });
           remove();
           if (!useAgentStore.persist.hasHydrated()) {

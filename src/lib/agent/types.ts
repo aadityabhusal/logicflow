@@ -1,4 +1,4 @@
-import { AgentChange } from "../schemas";
+import type { AgentDiagnostic, AgentProposalReview } from "./proposal";
 
 export type AgentProvider = "openai" | "anthropic" | "google";
 
@@ -15,7 +15,11 @@ export type AgentMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  changes?: AgentChange[];
+  proposal?: {
+    id: string;
+    review?: AgentProposalReview;
+    diagnostics: AgentDiagnostic[];
+  };
   createdAt: number;
 };
 

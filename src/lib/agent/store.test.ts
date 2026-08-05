@@ -38,11 +38,40 @@ describe("agent store", () => {
     const thread = useAgentStore.getState().createThread("project-a");
     useAgentStore.getState().setApiKey("openai", "session-secret");
     useAgentStore.getState().startRun(thread.id);
+    useAgentStore.getState().setPendingProposal(thread.id, {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: thread.id,
+    } as never);
 
     const partialize = useAgentStore.persist.getOptions().partialize!;
     expect(partialize(useAgentStore.getState())).toEqual({
       agentProjects: useAgentStore.getState().agentProjects,
     });
+  });
+
+  it("keeps proposals transient and clears them with their thread", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+    const second = useAgentStore.getState().createThread("project-a");
+    useAgentStore.getState().setPendingProposal(thread.id, {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: thread.id,
+    } as never);
+    useAgentStore.getState().setPendingProposal(second.id, {
+      id: "proposal-b",
+      projectId: "project-a",
+      threadId: second.id,
+    } as never);
+
+    useAgentStore.getState().removeThread(thread.id);
+
+    expect(
+      useAgentStore.getState().pendingProposals[thread.id]
+    ).toBeUndefined();
+    expect(useAgentStore.getState().pendingProposals[second.id]?.id).toBe(
+      "proposal-b"
+    );
   });
 
   it("redacts known API keys from messages and drafts", () => {

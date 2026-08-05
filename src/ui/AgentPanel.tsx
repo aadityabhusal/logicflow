@@ -2,19 +2,15 @@ import { Button, Menu, PasswordInput, Popover } from "@mantine/core";
 import { FaListUl, FaPen, FaPlus, FaTrash } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
-import {
-  generateOperationChanges,
-  applyChangesToOperation,
-} from "@/lib/agent/agent-service";
+import { generateOperationProposal } from "@/lib/agent/agent-service";
 import {
   useProjectStore,
-  fileHistoryActions,
   useAgentStore,
   useAgentPersistenceErrorStore,
 } from "@/lib/store";
 import { AVAILABLE_MODELS, LLM_PROVIDERS } from "@/lib/data";
 import { IconButton } from "./IconButton";
-import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
+import { createOperationFromFile } from "@/lib/utils";
 import { MdVpnKey } from "react-icons/md";
 import { type FocusEvent, useEffect, useRef, useState } from "react";
 import { AgentTransportError } from "@/lib/agent/transport";
@@ -35,15 +31,18 @@ export function AgentPanel() {
     setStreamingContent,
     finishRun,
     activeRun,
+    pendingProposals,
+    setPendingProposal,
+    setDraft,
   } = useAgentStore();
 
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
-  const updateFile = useProjectStore((s) => s.updateFile);
   const abortController = useRef<AbortController>();
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [editingThreadId, setEditingThreadId] = useState<string>();
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+  const [revisionProposalId, setRevisionProposalId] = useState<string>();
   const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
   const agentProject = currentProjectId
     ? agentProjects[currentProjectId]
@@ -53,6 +52,9 @@ export function AgentPanel() {
     (thread) => thread.id === agentProject?.activeThreadId
   );
   const activeThreadId = activeThread?.id;
+  const pendingProposal = activeThreadId
+    ? pendingProposals[activeThreadId]
+    : undefined;
 
   useEffect(() => {
     abortController.current?.abort();
@@ -73,9 +75,14 @@ export function AgentPanel() {
   useEffect(() => {
     setEditingThreadId(undefined);
     setDeleteConfirmationOpen(false);
-  }, [activeThreadId]);
+    setRevisionProposalId(undefined);
+  }, [activeThreadId, currentFile?.id, currentProjectId]);
 
-  const handleSubmit = async (prompt: string) => {
+  const handleSubmit = async (
+    prompt: string,
+    options?: { regenerate?: boolean }
+  ) => {
+    if (useAgentStore.getState().activeRun) return;
     const currentOperation = createOperationFromFile(currentFile);
     if (
       !currentOperation ||
@@ -84,8 +91,6 @@ export function AgentPanel() {
       !activeThreadId
     )
       return;
-    const submittedProjectId = currentProjectId;
-    const submittedFile = currentFile;
     const submittedProject = useProjectStore.getState().getCurrentProject();
     if (!submittedProject) return;
 
@@ -94,16 +99,30 @@ export function AgentPanel() {
     const apiKey = getApiKey(modelConfig.provider);
     if (!apiKey) return;
 
-    addMessage(activeThreadId, { role: "user", content: prompt });
+    if (!options?.regenerate) {
+      addMessage(activeThreadId, { role: "user", content: prompt });
+    }
+    const revisedProposal =
+      pendingProposal &&
+      pendingProposal.id === revisionProposalId &&
+      pendingProposal.projectId === currentProjectId &&
+      pendingProposal.threadId === activeThreadId &&
+      pendingProposal.fileId === currentFile.id &&
+      !options?.regenerate
+        ? pendingProposal
+        : undefined;
+    const requestPrompt = revisedProposal
+      ? `Original request:\n${revisedProposal.sourcePrompt}\n\nCurrent proposal draft:\n${JSON.stringify(revisedProposal.draft)}\n\nRequested revision:\n${prompt}`
+      : prompt;
     const controller = new AbortController();
     abortController.current = controller;
     startRun(activeThreadId);
 
     try {
-      const { response, mappingContext } = await generateOperationChanges({
+      const { response, proposal } = await generateOperationProposal({
         operation: currentOperation,
         project: submittedProject,
-        userPrompt: prompt,
+        userPrompt: requestPrompt,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
         abortSignal: controller.signal,
@@ -111,41 +130,31 @@ export function AgentPanel() {
       });
 
       if (controller.signal.aborted) return;
-      const projectState = useProjectStore.getState();
-      const liveFile = projectState.projects[submittedProjectId]?.files.find(
-        (file) => file.id === submittedFile.id
-      );
-      if (
-        projectState.currentProjectId !== submittedProjectId ||
-        liveFile !== submittedFile
-      ) {
-        addMessage(activeThreadId, {
-          role: "assistant",
-          content:
-            "Changes were not applied because the project or operation changed while the request was running.",
-        });
-        return;
-      }
-
       addMessage(activeThreadId, {
         role: "assistant",
-        content: response.explanation || "Changes applied successfully.",
-        changes: response.changes,
+        content:
+          response.explanation ||
+          (proposal ? "Proposal ready for review." : "No changes proposed."),
+        proposal: proposal
+          ? {
+              id: proposal.id,
+              review: proposal.review,
+              diagnostics: proposal.diagnostics,
+            }
+          : undefined,
       });
-
-      if (response.changes.length > 0) {
-        const lastContent = createFileFromOperation(currentOperation).content;
-        fileHistoryActions.pushState(currentOperation.id, lastContent);
-        const updatedOperation = applyChangesToOperation(
-          currentOperation,
-          response.changes,
-          mappingContext
-        );
-        updateFile(
-          currentOperation.id,
-          createFileFromOperation(updatedOperation)
-        );
+      if (proposal) {
+        setPendingProposal(activeThreadId, {
+          ...proposal,
+          threadId: activeThreadId,
+          sourcePrompt: options?.regenerate
+            ? prompt
+            : revisedProposal
+              ? revisedProposal.sourcePrompt
+              : prompt,
+        });
       }
+      setRevisionProposalId(undefined);
     } catch (error) {
       if (
         !(error instanceof AgentTransportError) ||
@@ -164,6 +173,36 @@ export function AgentPanel() {
       }
       finishRun(activeThreadId);
     }
+  };
+
+  const handleRejectProposal = () => {
+    if (activeThreadId) setPendingProposal(activeThreadId, undefined);
+    setRevisionProposalId(undefined);
+  };
+
+  const handleReviseProposal = () => {
+    if (
+      !pendingProposal ||
+      !activeThreadId ||
+      pendingProposal.projectId !== currentProjectId ||
+      pendingProposal.threadId !== activeThreadId ||
+      pendingProposal.fileId !== currentFile?.id
+    )
+      return;
+    setRevisionProposalId(pendingProposal.id);
+    setDraft(activeThreadId, "Revise the proposal: ");
+  };
+
+  const handleRegenerateProposal = () => {
+    if (
+      !pendingProposal ||
+      pendingProposal.projectId !== currentProjectId ||
+      pendingProposal.threadId !== activeThreadId ||
+      pendingProposal.fileId !== currentFile?.id ||
+      useAgentStore.getState().activeRun
+    )
+      return;
+    void handleSubmit(pendingProposal.sourcePrompt, { regenerate: true });
   };
 
   const handleRenameThread = ({
@@ -332,7 +371,11 @@ export function AgentPanel() {
           </Button>
         </div>
       ) : null}
-      <AgentChat />
+      <AgentChat
+        onRejectProposal={handleRejectProposal}
+        onReviseProposal={handleReviseProposal}
+        onRegenerateProposal={handleRegenerateProposal}
+      />
       <AgentInput
         onSubmit={handleSubmit}
         onCancel={() => abortController.current?.abort()}

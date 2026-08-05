@@ -4,16 +4,13 @@ const mocks = vi.hoisted(() => ({
   streamText: vi.fn(),
   createProviderModel: vi.fn(() => ({ model: true })),
   toAgentTransportError: vi.fn(() => new Error("Normalized provider error")),
-  operationToLLMFormat: vi.fn(() => ({
-    mappedOperation: { id: "O1" },
-    mappingContext: { reverseMap: new Map() },
-  })),
   discovery: {
     getProjectOutline: vi.fn(),
     inspectOperation: vi.fn(),
     searchOperations: vi.fn(),
     describeOperations: vi.fn(),
     searchPackages: vi.fn(),
+    resolveOperationHandle: vi.fn(),
   },
 }));
 
@@ -39,24 +36,23 @@ vi.mock("./transport", () => ({
   createProviderModel: mocks.createProviderModel,
   toAgentTransportError: mocks.toAgentTransportError,
 }));
-vi.mock("./entity-mapper", () => ({
-  operationToLLMFormat: mocks.operationToLLMFormat,
-}));
 vi.mock("./prompts", () => ({
   LOGICFLOW_SYSTEM_PROMPT: "system",
   buildContextPrompt: vi.fn(() => "prompt"),
 }));
 
 import { AgentDiscoveryError } from "./discovery";
-import { generateOperationChanges } from "./agent-service";
+import { generateOperationProposal } from "./agent-service";
+import { createOperationFile, createTestProject } from "../../tests/helpers";
+import { createOperationFromFile } from "../utils";
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("generateOperationChanges transport lifecycle", () => {
+describe("generateOperationProposal transport lifecycle", () => {
   it("streams partial explanations and returns the validated output", async () => {
-    const output = { explanation: "Finished", changes: [] };
+    const output = { explanation: "Finished" };
     mocks.streamText.mockReturnValue({
       partialOutputStream: (async function* () {
         yield { explanation: "Working" };
@@ -67,7 +63,7 @@ describe("generateOperationChanges transport lifecycle", () => {
     const onPartialExplanation = vi.fn();
     const abortController = new AbortController();
 
-    const result = await generateOperationChanges({
+    const result = await generateOperationProposal({
       operation: {} as never,
       project: {} as never,
       userPrompt: "Update it",
@@ -87,13 +83,14 @@ describe("generateOperationChanges transport lifecycle", () => {
         abortSignal: abortController.signal,
         timeout: 60_000,
         maxRetries: 0,
-        stopWhen: { count: 8 },
+        stopWhen: { count: 12 },
         tools: expect.objectContaining({
           get_project_outline: expect.any(Object),
           inspect_operation: expect.any(Object),
           search_operations: expect.any(Object),
           describe_operations: expect.any(Object),
           search_packages: expect.any(Object),
+          update_proposal: expect.any(Object),
         }),
       })
     );
@@ -117,9 +114,9 @@ describe("generateOperationChanges transport lifecycle", () => {
   it("bounds discovery calls across the run", async () => {
     mocks.streamText.mockReturnValue({
       partialOutputStream: (async function* () {})(),
-      output: Promise.resolve({ explanation: "", changes: [] }),
+      output: Promise.resolve({ explanation: "" }),
     });
-    await generateOperationChanges({
+    await generateOperationProposal({
       operation: {} as never,
       project: {} as never,
       userPrompt: "Update it",
@@ -129,14 +126,48 @@ describe("generateOperationChanges transport lifecycle", () => {
     const execute = mocks.streamText.mock.calls[0][0].tools.get_project_outline
       .execute as () => Promise<unknown>;
 
-    for (let index = 0; index < 20; index++) await execute();
+    for (let index = 0; index < 24; index++) await execute();
 
     await expect(execute()).resolves.toEqual({
       error: {
         code: "tool_limit_reached",
-        message: "Discovery tool-call limit reached",
+        message: "Agent tool-call limit reached",
       },
     });
+  });
+
+  it("builds proposals only through update_proposal", async () => {
+    const file = createOperationFile("target");
+    const project = createTestProject({ files: [file] });
+    let toolResult: unknown;
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {
+        const execute = mocks.streamText.mock.calls[0][0].tools.update_proposal
+          .execute as (draft: unknown) => Promise<unknown>;
+        toolResult = await execute({
+          name: "target",
+          parameters: [],
+          statements: [],
+        });
+        yield {};
+      })(),
+      output: Promise.resolve({ explanation: "Review it" }),
+    });
+
+    const result = await generateOperationProposal({
+      operation: createOperationFromFile(file)!,
+      project,
+      userPrompt: "Clear it",
+      model: "openai/gpt-5.1-codex",
+      apiKey: "session-key",
+    });
+
+    expect(toolResult).toMatchObject({ valid: true, diagnostics: [] });
+    expect(result.proposal).toMatchObject({
+      projectId: project.id,
+      fileId: file.id,
+    });
+    expect(file.content.value.statements).toEqual([]);
   });
 
   it("returns structured discovery handle errors to the model", async () => {
@@ -149,9 +180,9 @@ describe("generateOperationChanges transport lifecycle", () => {
     });
     mocks.streamText.mockReturnValue({
       partialOutputStream: (async function* () {})(),
-      output: Promise.resolve({ explanation: "", changes: [] }),
+      output: Promise.resolve({ explanation: "" }),
     });
-    await generateOperationChanges({
+    await generateOperationProposal({
       operation: {} as never,
       project: {} as never,
       userPrompt: "Update it",
@@ -176,7 +207,7 @@ describe("generateOperationChanges transport lifecycle", () => {
     });
 
     await expect(
-      generateOperationChanges({
+      generateOperationProposal({
         operation: {} as never,
         project: {} as never,
         userPrompt: "Update it",

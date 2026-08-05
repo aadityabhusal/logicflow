@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   afterAll,
   beforeAll,
@@ -12,9 +12,9 @@ import {
 
 const mocks = vi.hoisted(() => {
   const agentState = {
-    selectedModel: undefined,
+    selectedModel: "model-a",
     addMessage: vi.fn(),
-    getApiKey: vi.fn(),
+    getApiKey: vi.fn(() => "key"),
     setApiKey: vi.fn(),
     agentProjects: {
       "project-a": {
@@ -40,11 +40,28 @@ const mocks = vi.hoisted(() => {
     startRun: vi.fn(),
     setStreamingContent: vi.fn(),
     finishRun: vi.fn(),
+    setPendingProposal: vi.fn(),
+    setDraft: vi.fn(),
+    pendingProposals: {} as Record<
+      string,
+      {
+        id: string;
+        projectId: string;
+        threadId: string;
+        fileId: string;
+        sourcePrompt: string;
+        draft: { name: string; parameters: []; statements: [] };
+      }
+    >,
     activeRun: undefined,
   };
   const projectState = {
     currentProjectId: "project-a",
-    getCurrentFile: vi.fn(),
+    getCurrentFile: vi.fn(() => ({ id: "operation-a", type: "operation" })),
+    getCurrentProject: vi.fn(() => ({
+      id: "project-a",
+      files: [{ id: "operation-a", type: "operation" }],
+    })),
     updateFile: vi.fn(),
   };
   const useProjectStore = Object.assign(
@@ -66,26 +83,47 @@ const mocks = vi.hoisted(() => {
     persistenceState,
     useAgentPersistenceErrorStore,
     useProjectStore,
+    generateOperationProposal: vi.fn(),
   };
 });
 
 vi.mock("@/lib/store", () => ({
   fileHistoryActions: { pushState: vi.fn() },
-  useAgentStore: () => mocks.agentState,
+  useAgentStore: Object.assign(() => mocks.agentState, {
+    getState: () => mocks.agentState,
+  }),
   useAgentPersistenceErrorStore: mocks.useAgentPersistenceErrorStore,
   useProjectStore: mocks.useProjectStore,
 }));
-vi.mock("@/lib/data", () => ({ AVAILABLE_MODELS: [], LLM_PROVIDERS: {} }));
+vi.mock("@/lib/data", () => ({
+  AVAILABLE_MODELS: [{ id: "model-a", name: "Model A", provider: "openai" }],
+  LLM_PROVIDERS: {},
+}));
 vi.mock("@/lib/agent/agent-service", () => ({
-  applyChangesToOperation: vi.fn(),
-  generateOperationChanges: vi.fn(),
+  generateOperationProposal: mocks.generateOperationProposal,
 }));
 vi.mock("@/lib/utils", () => ({
-  createFileFromOperation: vi.fn(),
-  createOperationFromFile: vi.fn(),
+  createOperationFromFile: vi.fn(() => ({ id: "operation-a" })),
 }));
-vi.mock("./agent/AgentChat", () => ({ AgentChat: () => null }));
-vi.mock("./agent/AgentInput", () => ({ AgentInput: () => null }));
+vi.mock("./agent/AgentChat", () => ({
+  AgentChat: ({
+    onReviseProposal,
+    onRegenerateProposal,
+  }: {
+    onReviseProposal: () => void;
+    onRegenerateProposal: () => void;
+  }) => (
+    <>
+      <button onClick={onReviseProposal}>Revise proposal</button>
+      <button onClick={onRegenerateProposal}>Regenerate proposal</button>
+    </>
+  ),
+}));
+vi.mock("./agent/AgentInput", () => ({
+  AgentInput: ({ onSubmit }: { onSubmit: (prompt: string) => void }) => (
+    <button onClick={() => onSubmit("Update it")}>Submit prompt</button>
+  ),
+}));
 
 import { AgentPanel } from "./AgentPanel";
 
@@ -118,6 +156,7 @@ function renderPanel() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.agentState.agentProjects["project-a"].activeThreadId = "thread-a";
+  mocks.agentState.pendingProposals = {};
   mocks.persistenceState.error = undefined;
 });
 
@@ -171,5 +210,56 @@ describe("AgentPanel thread header", () => {
     expect(mocks.useAgentPersistenceErrorStore.setState).toHaveBeenCalledWith({
       error: undefined,
     });
+  });
+});
+
+describe("AgentPanel proposal lifecycle", () => {
+  it("stores generated proposals without mutating the project", async () => {
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Review this proposal" },
+      proposal: {
+        id: "proposal-a",
+        projectId: "project-a",
+        fileId: "operation-a",
+        baseFingerprint: "fingerprint",
+        sourcePrompt: "Update it",
+        draft: { name: "operation", parameters: [], statements: [] },
+        diagnostics: [],
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({
+          id: "proposal-a",
+          threadId: "thread-a",
+        })
+      )
+    );
+    expect(mocks.projectState.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("does not revise or regenerate a proposal for another operation", () => {
+    mocks.agentState.pendingProposals = {
+      "thread-a": {
+        id: "proposal-a",
+        projectId: "project-a",
+        threadId: "thread-a",
+        fileId: "another-operation",
+        sourcePrompt: "Secret prior request",
+        draft: { name: "other", parameters: [], statements: [] },
+      },
+    };
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Revise proposal"));
+    fireEvent.click(screen.getByText("Regenerate proposal"));
+
+    expect(mocks.agentState.setDraft).not.toHaveBeenCalled();
+    expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
   });
 });

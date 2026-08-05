@@ -47,9 +47,14 @@ describe("agent discovery", () => {
   it("inspects project structure through a scoped handle", async () => {
     const operation = createOperationFile("formatMessage");
     operation.content.type.parameters = [
-      { name: "message", type: { kind: "string" } },
+      { name: "message", type: { kind: "string" }, isOptional: true },
     ];
-    operation.content.value.statements = [stringStatement("Hello", "result")];
+    operation.content.value.parameters = [
+      { ...stringStatement("Default", "message"), isOptional: true },
+    ];
+    operation.content.value.statements = [
+      { ...stringStatement("Hello", "result"), controlFlow: "return" },
+    ];
     const discovery = await createAgentDiscovery(
       createTestProject({ files: [operation] })
     );
@@ -60,8 +65,11 @@ describe("agent discovery", () => {
     expect(inspection).toMatchObject({
       name: "formatMessage",
       source: "project",
-      parameters: [{ name: "message", type: { kind: "string" } }],
-      statements: [{ name: "result", value: "Hello" }],
+      parameters: [
+        { name: "message", type: { kind: "string" }, isOptional: true },
+      ],
+      parameterValues: [{ name: "message", optional: true, value: "Default" }],
+      statements: [{ name: "result", return: true, value: "Hello" }],
     });
     expect(JSON.stringify(inspection)).not.toContain(
       operation.content.value.statements[0].id

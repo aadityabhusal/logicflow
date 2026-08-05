@@ -1,7 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { Blob as NodeBlob, File as NodeFile } from "node:buffer";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
-import { createOperationFile, createTestProject } from "@/tests/helpers";
+import {
+  createOperationFile,
+  createTestProject,
+  testString,
+} from "@/tests/helpers";
 import { createData, createStatement } from "./utils";
 
 const fileAssetMocks = vi.hoisted(() => ({
@@ -125,6 +129,35 @@ describe("importProjectFile", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("preserves project and operation metadata", async () => {
+    const operation = createOperationFile("request", {
+      name: "wretch.get",
+      packageCallTarget: "member",
+      callStyle: "method",
+    });
+    operation.documentation = "Operation docs";
+    operation.tests = [
+      {
+        name: "returns a value",
+        inputs: [testString("input")],
+        expectedOutput: testString("output"),
+        status: "passed",
+      },
+    ];
+    const project = createTestProject({ files: [operation] });
+    project.userId = "user-1";
+    project.repository = {
+      url: "https://example.com/repository",
+      currentBranch: "main",
+      lastCommit: "abc123",
+    };
+    const file = new File([JSON.stringify(project)], "project.json", {
+      type: "application/json",
+    });
+
+    await expect(importProjectFile(file)).resolves.toEqual(project);
   });
 
   it("restores manifest assets and ignores unmanifested asset files", async () => {

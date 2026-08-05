@@ -218,6 +218,9 @@ function inspectData(data: IData, depth: number): unknown {
 function inspectStatement(statement: IStatement, depth = 3): unknown {
   return {
     name: statement.name,
+    optional: statement.isOptional,
+    rest: statement.isRest,
+    return: statement.controlFlow === "return" || undefined,
     type: statement.data.type,
     value: inspectData(statement.data, depth),
     operations: statement.operations
@@ -343,6 +346,9 @@ export async function createAgentDiscovery(
         ...summary,
         documentation: descriptor.file.documentation?.slice(0, MAX_TEXT_LENGTH),
         parameters: descriptor.file.content.type.parameters,
+        parameterValues: descriptor.file.content.value.parameters
+          .slice(0, MAX_NESTED_ITEMS)
+          .map((parameter) => inspectStatement(parameter)),
         statements: descriptor.file.content.value.statements
           .slice(0, MAX_INSPECTED_STATEMENTS)
           .map((statement) => inspectStatement(statement)),
@@ -411,6 +417,24 @@ export async function createAgentDiscovery(
           ),
         };
       });
+    },
+
+    resolveOperationHandle(
+      handle: string,
+      inputType: DataType = { kind: "unknown" }
+    ) {
+      const descriptor = getDescriptor(handle);
+      const resolved = resolveOperation(descriptor, inputType);
+      return {
+        name: descriptor.name,
+        source: descriptor.source,
+        fileId: descriptor.file?.id,
+        parameters: descriptor.file
+          ? [{ type: descriptor.file.content.type }, ...resolved.parameters]
+          : resolved.parameters,
+        resultType: resolved.resultType,
+        operationSource: descriptor.operation?.source,
+      };
     },
 
     searchPackages(query = "", limit = 10) {

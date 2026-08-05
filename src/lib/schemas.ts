@@ -70,6 +70,11 @@ const OperationTypeSchema = z.object({
     return DataTypeSchema;
   },
 });
+const OperationSourceSchema = z.object({
+  name: z.string(),
+  packageCallTarget: z.enum(["import", "member"]).optional(),
+  callStyle: z.enum(["function", "method"]).optional(),
+});
 export const OperationValueSchema = z.object({
   get statements() {
     return z.array(IStatementSchema);
@@ -79,7 +84,7 @@ export const OperationValueSchema = z.object({
   },
   name: z.string().optional(),
   isAsync: z.boolean().optional(),
-  source: z.object({ name: z.string() }).optional(),
+  source: OperationSourceSchema.optional(),
   instanceId: z.string().optional(),
 });
 
@@ -243,7 +248,15 @@ export const IStatementSchema = z.object({
   },
 });
 
-const ProjectFileSchema = z.discriminatedUnion("type", [
+const TestCaseSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  inputs: z.array(IDataSchema),
+  expectedOutput: IDataSchema,
+  status: z.enum(["pending", "passed", "failed"]).optional(),
+});
+
+export const ProjectFileSchema = z.discriminatedUnion("type", [
   ProjectFileBaseSchema.extend({
     type: z.literal("operation"),
     content: z.object({
@@ -251,6 +264,8 @@ const ProjectFileSchema = z.discriminatedUnion("type", [
       value: OperationValueSchema,
     }),
     trigger: HttpTriggerSchema.optional(),
+    tests: z.array(TestCaseSchema).optional(),
+    documentation: z.string().optional(),
   }),
   ProjectFileBaseSchema.extend({
     type: z.literal("globals"),
@@ -284,49 +299,6 @@ const DependenciesSchema = z.object({
     .array(DependencyBaseSchema.extend({ projectId: z.string() }))
     .optional(),
 });
-
-/* Agent change schemas for LLM operations */
-const AgentDeleteSchema = z.object({
-  action: z.literal("delete"),
-  entity: z.object({ id: z.string() }),
-});
-
-const AgentCreateSchema = z.object({
-  action: z.literal("create"),
-  parentId: z.string(),
-  entity: IStatementSchema,
-});
-
-const AgentUpdateSchema = z.object({
-  action: z.literal("update"),
-  entity: z.union([
-    IStatementSchema.extend({
-      data: IDataSchema.nullable(),
-      operations: z
-        .array(
-          BaseData.extend({
-            type: OperationTypeSchema,
-            value: OperationValueSchema,
-          })
-        )
-        .nullable(),
-    }),
-    ...DataVariants.map((v) => v.extend({ value: v.shape.value.nullable() })),
-  ]),
-});
-
-export const AgentChangeSchema = z.discriminatedUnion("action", [
-  AgentDeleteSchema,
-  AgentCreateSchema,
-  AgentUpdateSchema,
-]);
-
-export const AgentResponseSchema = z.object({
-  changes: z.array(AgentChangeSchema),
-  explanation: z.string().nullable(),
-});
-
-export type AgentChange = z.infer<typeof AgentChangeSchema>;
 
 const DeploymentCredentialsSchema = z.object({
   token: z.string(),
@@ -365,6 +337,14 @@ export const ProjectSchema = z.object({
   updatedAt: z.number().optional(),
   files: z.array(ProjectFileSchema),
   description: z.string().optional(),
+  userId: z.string().optional(),
   dependencies: DependenciesSchema.optional(),
   deployment: DeploymentConfigSchema.optional(),
+  repository: z
+    .object({
+      url: z.string(),
+      currentBranch: z.string().optional(),
+      lastCommit: z.string().optional(),
+    })
+    .optional(),
 });

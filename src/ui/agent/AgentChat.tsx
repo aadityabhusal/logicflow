@@ -1,9 +1,21 @@
 import { useAgentStore, useProjectStore } from "@/lib/store";
 import { NoteText } from "../NoteText";
+import { isAgentProposalStale } from "@/lib/agent/proposal";
+import { AgentProposalReview } from "./AgentProposalReview";
 
-export function AgentChat() {
+export function AgentChat({
+  onRejectProposal,
+  onReviseProposal,
+  onRegenerateProposal,
+}: {
+  onRejectProposal: () => void;
+  onReviseProposal: () => void;
+  onRegenerateProposal: () => void;
+}) {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
-  const { agentProjects, activeRun } = useAgentStore();
+  const currentProject = useProjectStore((s) => s.getCurrentProject());
+  const currentFile = useProjectStore((s) => s.getCurrentFile());
+  const { agentProjects, activeRun, pendingProposals } = useAgentStore();
   const agentProject = currentProjectId
     ? agentProjects[currentProjectId]
     : undefined;
@@ -11,6 +23,9 @@ export function AgentChat() {
     (thread) => thread.id === agentProject.activeThreadId
   );
   const activeThreadId = activeThread?.id;
+  const pendingProposal = activeThreadId
+    ? pendingProposals[activeThreadId]
+    : undefined;
   const threadMessages = activeThread?.messages ?? [];
   const isLoading = activeRun?.threadId === activeThreadId;
 
@@ -33,6 +48,22 @@ export function AgentChat() {
           ].join(" ")}
         >
           <div className="whitespace-pre-wrap">{msg.content}</div>
+          {msg.proposal ? (
+            <AgentProposalReview
+              proposal={msg.proposal}
+              active={pendingProposal?.id === msg.proposal.id}
+              stale={
+                pendingProposal?.id === msg.proposal.id &&
+                (isAgentProposalStale(pendingProposal, currentProject) ||
+                  currentFile?.id !== pendingProposal.fileId)
+              }
+              busy={!!activeRun}
+              recoverable={currentFile?.id === pendingProposal?.fileId}
+              onReject={onRejectProposal}
+              onRevise={onReviseProposal}
+              onRegenerate={onRegenerateProposal}
+            />
+          ) : null}
         </div>
       ))}
       {isLoading ? (
