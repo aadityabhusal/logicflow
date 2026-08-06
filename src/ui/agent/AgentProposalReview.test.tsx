@@ -40,6 +40,7 @@ function renderReview(overrides?: {
   busy?: boolean;
 }) {
   const actions = {
+    onApply: vi.fn(),
     onReject: vi.fn(),
     onRevise: vi.fn(),
     onRegenerate: vi.fn(),
@@ -60,14 +61,13 @@ function renderReview(overrides?: {
 }
 
 describe("AgentProposalReview", () => {
-  it("shows semantic changes and keeps Apply gated", () => {
-    renderReview();
+  it("shows semantic changes and enables Apply", () => {
+    const actions = renderReview();
 
     expect(screen.getByText("formatMessage")).toBeDefined();
     expect(screen.getByText("undefined to string")).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
-    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(actions.onApply).toHaveBeenCalledOnce();
   });
 
   it("supports reject, revise, and regenerate without applying", () => {
@@ -91,10 +91,17 @@ describe("AgentProposalReview", () => {
   it("disables proposal actions during a run", () => {
     renderReview({ busy: true });
 
-    for (const name of ["Reject", "Revise", "Regenerate"]) {
+    for (const name of ["Reject", "Revise", "Regenerate", "Apply"]) {
       expect(
         screen.getByRole("button", { name }).hasAttribute("disabled")
       ).toBe(true);
     }
+  });
+
+  it("disables Apply for stale or invalid proposals", () => {
+    renderReview({ stale: true });
+    expect(
+      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
+    ).toBe(true);
   });
 });

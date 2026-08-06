@@ -38,3 +38,23 @@ export const createIDbStorage = <T>(storeName: string, onError?: () => void) =>
         console.error(`IndexedDB removeItem error:`, e);
       }),
   }));
+
+export async function commitAgentEdit(
+  projects: unknown,
+  agentProjects: unknown
+) {
+  const db = await IDbStore;
+  const transaction = db.transaction(
+    ["projects", "agentProjects"],
+    "readwrite"
+  );
+  await Promise.all([
+    transaction
+      .objectStore("projects")
+      .put(JSON.stringify({ state: { projects }, version: 0 }), "projects"),
+    transaction
+      .objectStore("agentProjects")
+      .put(JSON.stringify({ state: { agentProjects }, version: 0 }), "agent"),
+    transaction.done,
+  ]);
+}

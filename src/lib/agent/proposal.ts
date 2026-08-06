@@ -201,6 +201,14 @@ export type AgentProposal = {
   review?: AgentProposalReview;
 };
 
+export type AgentHistoryState = {
+  operationFiles: {
+    index: number;
+    file: Extract<ProjectFile, { type: "operation" }>;
+  }[];
+  npmDependencies: NonNullable<NonNullable<Project["dependencies"]>["npm"]>;
+};
+
 type OperationResolver = (
   handle: string,
   inputType: DataType
@@ -269,13 +277,17 @@ function countOperationCalls(statements: IStatement[]) {
   );
 }
 
-export function getAgentEditableFingerprint(project: Project) {
-  return JSON.stringify({
+export function getAgentHistoryState(project: Project): AgentHistoryState {
+  return structuredClone({
     operationFiles: project.files.flatMap((file, index) =>
       file.type === "operation" ? [{ index, file }] : []
     ),
     npmDependencies: project.dependencies?.npm ?? [],
   });
+}
+
+export function getAgentEditableFingerprint(project: Project) {
+  return JSON.stringify(getAgentHistoryState(project));
 }
 
 export function isAgentProposalStale(

@@ -7,6 +7,7 @@ export function AgentProposalReview({
   stale,
   busy,
   recoverable,
+  onApply,
   onReject,
   onRevise,
   onRegenerate,
@@ -16,6 +17,7 @@ export function AgentProposalReview({
   stale: boolean;
   busy: boolean;
   recoverable: boolean;
+  onApply: () => void;
   onReject: () => void;
   onRevise: () => void;
   onRegenerate: () => void;
@@ -89,12 +91,17 @@ export function AgentProposalReview({
           </Button>
           <Button
             size="compact-xs"
-            disabled
-            title="Apply becomes available with durable agent history in Phase 4"
+            onClick={onApply}
+            disabled={
+              busy || stale || !recoverable || !review || errors.length > 0
+            }
           >
             Apply
           </Button>
         </div>
+      ) : null}
+      {!active && proposal.applicationId ? (
+        <p className="mt-2 text-xs text-dimmed">Applied previously</p>
       ) : null}
     </div>
   );

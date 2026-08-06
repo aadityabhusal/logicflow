@@ -4,13 +4,17 @@ import { isAgentProposalStale } from "@/lib/agent/proposal";
 import { AgentProposalReview } from "./AgentProposalReview";
 
 export function AgentChat({
+  onApplyProposal,
   onRejectProposal,
   onReviseProposal,
   onRegenerateProposal,
+  historyBusy,
 }: {
+  onApplyProposal: () => void;
   onRejectProposal: () => void;
   onReviseProposal: () => void;
   onRegenerateProposal: () => void;
+  historyBusy: boolean;
 }) {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
@@ -57,8 +61,9 @@ export function AgentChat({
                 (isAgentProposalStale(pendingProposal, currentProject) ||
                   currentFile?.id !== pendingProposal.fileId)
               }
-              busy={!!activeRun}
+              busy={!!activeRun || historyBusy}
               recoverable={currentFile?.id === pendingProposal?.fileId}
+              onApply={onApplyProposal}
               onReject={onRejectProposal}
               onRevise={onReviseProposal}
               onRegenerate={onRegenerateProposal}

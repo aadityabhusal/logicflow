@@ -1,5 +1,12 @@
 import { Button, Menu, PasswordInput, Popover } from "@mantine/core";
-import { FaListUl, FaPen, FaPlus, FaTrash } from "react-icons/fa6";
+import {
+  FaArrowRotateLeft,
+  FaArrowRotateRight,
+  FaListUl,
+  FaPen,
+  FaPlus,
+  FaTrash,
+} from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
 import { generateOperationProposal } from "@/lib/agent/agent-service";
@@ -14,6 +21,13 @@ import { createOperationFromFile } from "@/lib/utils";
 import { MdVpnKey } from "react-icons/md";
 import { type FocusEvent, useEffect, useRef, useState } from "react";
 import { AgentTransportError } from "@/lib/agent/transport";
+import {
+  applyAgentProposal,
+  canRedoAgentEdit,
+  canUndoAgentEdit,
+  redoAgentEdit,
+  undoAgentEdit,
+} from "@/lib/agent/history";
 
 export function AgentPanel() {
   const {
@@ -43,6 +57,8 @@ export function AgentPanel() {
   const [editingThreadId, setEditingThreadId] = useState<string>();
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [revisionProposalId, setRevisionProposalId] = useState<string>();
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
   const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
   const agentProject = currentProjectId
     ? agentProjects[currentProjectId]
@@ -76,6 +92,7 @@ export function AgentPanel() {
     setEditingThreadId(undefined);
     setDeleteConfirmationOpen(false);
     setRevisionProposalId(undefined);
+    setHistoryError(undefined);
   }, [activeThreadId, currentFile?.id, currentProjectId]);
 
   const handleSubmit = async (
@@ -178,6 +195,26 @@ export function AgentPanel() {
   const handleRejectProposal = () => {
     if (activeThreadId) setPendingProposal(activeThreadId, undefined);
     setRevisionProposalId(undefined);
+  };
+
+  const handleHistoryAction = async (action: () => Promise<unknown>) => {
+    if (historyBusy || activeRun) return;
+    setHistoryBusy(true);
+    setHistoryError(undefined);
+    try {
+      await action();
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : "Agent edit failed"
+      );
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const handleApplyProposal = () => {
+    if (!pendingProposal) return;
+    void handleHistoryAction(() => applyAgentProposal(pendingProposal));
   };
 
   const handleReviseProposal = () => {
@@ -283,6 +320,28 @@ export function AgentPanel() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1">
+          <IconButton
+            icon={FaArrowRotateLeft}
+            title="Undo agent edit"
+            disabled={
+              historyBusy || !!activeRun || !canUndoAgentEdit(agentProject)
+            }
+            onClick={() =>
+              currentProjectId &&
+              void handleHistoryAction(() => undoAgentEdit(currentProjectId))
+            }
+          />
+          <IconButton
+            icon={FaArrowRotateRight}
+            title="Redo agent edit"
+            disabled={
+              historyBusy || !!activeRun || !canRedoAgentEdit(agentProject)
+            }
+            onClick={() =>
+              currentProjectId &&
+              void handleHistoryAction(() => redoAgentEdit(currentProjectId))
+            }
+          />
           <Popover
             position="bottom-end"
             offset={1}
@@ -371,15 +430,22 @@ export function AgentPanel() {
           </Button>
         </div>
       ) : null}
+      {historyError ? (
+        <div role="alert" className="border-b p-2 text-xs">
+          {historyError}
+        </div>
+      ) : null}
       <AgentChat
+        onApplyProposal={handleApplyProposal}
         onRejectProposal={handleRejectProposal}
         onReviseProposal={handleReviseProposal}
         onRegenerateProposal={handleRegenerateProposal}
+        historyBusy={historyBusy}
       />
       <AgentInput
         onSubmit={handleSubmit}
         onCancel={() => abortController.current?.abort()}
-        isLoading={!!activeRun}
+        isLoading={!!activeRun || historyBusy}
       />
     </div>
   );

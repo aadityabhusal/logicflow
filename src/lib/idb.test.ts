@@ -4,6 +4,7 @@ const idb = vi.hoisted(() => ({
   get: vi.fn(),
   put: vi.fn(),
   delete: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("idb", async (importOriginal) => {
@@ -11,13 +12,14 @@ vi.mock("idb", async (importOriginal) => {
   return { ...actual, openDB: vi.fn(() => Promise.resolve(idb)) };
 });
 
-import { createIDbStorage } from "./idb";
+import { commitAgentEdit, createIDbStorage } from "./idb";
 
 beforeEach(() => {
   vi.clearAllMocks();
   idb.get.mockResolvedValue(undefined);
   idb.put.mockResolvedValue(undefined);
   idb.delete.mockResolvedValue(undefined);
+  idb.transaction.mockReset();
 });
 
 describe("IndexedDB storage", () => {
@@ -33,5 +35,51 @@ describe("IndexedDB storage", () => {
 
     expect(onError).toHaveBeenCalledOnce();
     consoleError.mockRestore();
+  });
+
+  it("commits project and agent documents in one transaction", async () => {
+    const put = vi.fn(async () => undefined);
+    const transaction = {
+      objectStore: vi.fn(() => ({ put })),
+      done: Promise.resolve(),
+    };
+    idb.transaction.mockReturnValue(transaction);
+
+    await commitAgentEdit({ project: true }, { agent: true });
+
+    expect(idb.transaction).toHaveBeenCalledWith(
+      ["projects", "agentProjects"],
+      "readwrite"
+    );
+    expect(put).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({
+        state: { projects: { project: true } },
+        version: 0,
+      }),
+      "projects"
+    );
+    expect(put).toHaveBeenNthCalledWith(
+      2,
+      JSON.stringify({
+        state: { agentProjects: { agent: true } },
+        version: 0,
+      }),
+      "agent"
+    );
+  });
+
+  it("surfaces transaction failures", async () => {
+    const transaction = {
+      objectStore: vi.fn(() => ({
+        put: vi.fn(async () => {
+          throw new Error("write failed");
+        }),
+      })),
+      done: Promise.resolve(),
+    };
+    idb.transaction.mockReturnValue(transaction);
+
+    await expect(commitAgentEdit({}, {})).rejects.toThrow("write failed");
   });
 });

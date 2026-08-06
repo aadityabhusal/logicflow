@@ -84,6 +84,9 @@ const mocks = vi.hoisted(() => {
     useAgentPersistenceErrorStore,
     useProjectStore,
     generateOperationProposal: vi.fn(),
+    applyAgentProposal: vi.fn(async () => undefined),
+    undoAgentEdit: vi.fn(async () => undefined),
+    redoAgentEdit: vi.fn(async () => undefined),
   };
 });
 
@@ -102,18 +105,28 @@ vi.mock("@/lib/data", () => ({
 vi.mock("@/lib/agent/agent-service", () => ({
   generateOperationProposal: mocks.generateOperationProposal,
 }));
+vi.mock("@/lib/agent/history", () => ({
+  applyAgentProposal: mocks.applyAgentProposal,
+  undoAgentEdit: mocks.undoAgentEdit,
+  redoAgentEdit: mocks.redoAgentEdit,
+  canUndoAgentEdit: vi.fn(() => false),
+  canRedoAgentEdit: vi.fn(() => false),
+}));
 vi.mock("@/lib/utils", () => ({
   createOperationFromFile: vi.fn(() => ({ id: "operation-a" })),
 }));
 vi.mock("./agent/AgentChat", () => ({
   AgentChat: ({
+    onApplyProposal,
     onReviseProposal,
     onRegenerateProposal,
   }: {
+    onApplyProposal: () => void;
     onReviseProposal: () => void;
     onRegenerateProposal: () => void;
   }) => (
     <>
+      <button onClick={onApplyProposal}>Apply proposal</button>
       <button onClick={onReviseProposal}>Revise proposal</button>
       <button onClick={onRegenerateProposal}>Regenerate proposal</button>
     </>
@@ -261,5 +274,24 @@ describe("AgentPanel proposal lifecycle", () => {
 
     expect(mocks.agentState.setDraft).not.toHaveBeenCalled();
     expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
+  });
+
+  it("applies the active proposal through durable agent history", async () => {
+    const proposal = {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: "thread-a",
+      fileId: "operation-a",
+      sourcePrompt: "Update it",
+      draft: { name: "operation", parameters: [] as [], statements: [] as [] },
+    };
+    mocks.agentState.pendingProposals = { "thread-a": proposal };
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Apply proposal"));
+
+    await waitFor(() =>
+      expect(mocks.applyAgentProposal).toHaveBeenCalledWith(proposal)
+    );
   });
 });
