@@ -65,15 +65,32 @@ function updateOperationCalls(
       const foundOperation = getFilteredOperations(data, _context).find(
         (op) => op.name === operation.value.name
       );
+      let referencedOperation: IData<OperationType> | undefined;
+      if (operation.value.name === "call" && isDataOfType(data, "reference")) {
+        for (const { data: variable } of _context.variables.values()) {
+          if (
+            variable.id === data.value.id &&
+            isDataOfType(variable, "operation")
+          ) {
+            referencedOperation = variable;
+            break;
+          }
+        }
+      }
       const sourceParameters =
         operation.value.name === "call" &&
         selfOperation &&
         isDataOfType(data, "reference") &&
         data.value.name === selfOperation.value.name
           ? [{ type: selfOperation.type }, ...selfOperation.type.parameters]
-          : foundOperation
-            ? resolveParameters(foundOperation, data, _context)
-            : undefined;
+          : operation.value.name === "call" && referencedOperation
+            ? [
+                { type: referencedOperation.type },
+                ...referencedOperation.type.parameters,
+              ]
+            : foundOperation
+              ? resolveParameters(foundOperation, data, _context)
+              : undefined;
 
       let updatedParameters = operation.value.parameters;
       let updatedTypeParameters = operation.type.parameters;
@@ -113,7 +130,16 @@ function updateOperationCalls(
         ...accOperations,
         {
           ...operation,
-          type: { ...operation.type, parameters: updatedTypeParameters },
+          type: {
+            ...operation.type,
+            parameters: updatedTypeParameters,
+            result:
+              (operation.value.name === "call" &&
+              isDataOfType(data, "reference") &&
+              selfOperation?.value.name === data.value.name
+                ? selfOperation.type.result
+                : referencedOperation?.type.result) ?? operation.type.result,
+          },
           value: {
             ...operation.value,
             name: foundOperation?.id

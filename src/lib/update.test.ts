@@ -487,7 +487,7 @@ describe("updateStatement - operation call updates", () => {
       "recur"
     );
     draftOperation.id = savedOperation.id;
-    draftOperation.type.result = { kind: "undefined" };
+    draftOperation.type.result = { kind: "string" };
 
     const changedStatement = stringStatement("after", "label");
     changedStatement.id = editableStatement.id;
@@ -504,6 +504,58 @@ describe("updateStatement - operation call updates", () => {
     expect(result[1].operations[0].value.name).toBe("call");
     expect(result[1].operations[0].value.parameters).toHaveLength(2);
     expect(result[1].operations[0].value.parameters[1].data.value).toBe(99);
+    expect(result[1].operations[0].type.result).toEqual({ kind: "string" });
+  });
+
+  it("uses the draft signature for recursive calls with a different saved id", () => {
+    const ctx = createTestContext();
+    const savedOperation = testOperation([], [], "recur");
+    savedOperation.id = "saved-operation";
+    ctx.variables.set("recur", { data: savedOperation });
+    const recursiveCall = testOperation([], [], "call");
+    const statement = createStatement({
+      data: testReference("recur", savedOperation.id),
+      operations: [recursiveCall],
+    });
+    const draftOperation = testOperation(
+      [stringStatement("", "input")],
+      [statement],
+      "recur"
+    );
+    draftOperation.id = "draft-operation";
+    draftOperation.type.result = { kind: "string" };
+
+    const result = updateStatements({
+      statements: draftOperation.value.statements,
+      context: ctx,
+      options: { selfOperation: draftOperation },
+    });
+
+    expect(result[0].operations[0].value.parameters).toHaveLength(1);
+    expect(result[0].operations[0].type.result).toEqual({ kind: "string" });
+  });
+
+  it("preserves non-call result types chained from a self-reference", () => {
+    const ctx = createTestContext();
+    const savedOperation = testOperation([], [], "recur");
+    ctx.variables.set("recur", { data: savedOperation });
+    const toStringOperation = testOperation([], [], "toString");
+    toStringOperation.type.result = { kind: "string" };
+    const statement = createStatement({
+      data: testReference("recur", savedOperation.id),
+      operations: [toStringOperation],
+    });
+    const draftOperation = testOperation([], [statement], "recur");
+    draftOperation.id = savedOperation.id;
+    draftOperation.type.result = { kind: "number" };
+
+    const result = updateStatements({
+      statements: draftOperation.value.statements,
+      context: ctx,
+      options: { selfOperation: draftOperation },
+    });
+
+    expect(result[0].operations[0].type.result).toEqual({ kind: "string" });
   });
 });
 
@@ -586,6 +638,57 @@ describe("updateFiles", () => {
       expect(result[1].tags).toEqual(["important"]);
       expect(result[1].documentation).toBe("Keep me");
       expect(result[1].updatedAt).toEqual(expect.any(Number));
+    }
+  });
+
+  it("updates dependent operation calls when only the result type changes", () => {
+    const ctx = createTestContext();
+    const helperFile = createProjectFile({
+      type: "operation",
+      name: "helper",
+    });
+    const callerFile = createProjectFile({
+      type: "operation",
+      name: "caller",
+    });
+    if (helperFile.type !== "operation" || callerFile.type !== "operation") {
+      throw new Error("Expected operation files");
+    }
+    helperFile.content.type.result = { kind: "number" };
+    const callOperation = testOperation([], [], "call");
+    callOperation.type.parameters = [{ type: helperFile.content.type }];
+    callOperation.type.result = { kind: "number" };
+    callerFile.content.type.result = { kind: "number" };
+    callerFile.content.value.statements = [
+      createStatement({
+        data: testReference(helperFile.name, helperFile.id),
+        operations: [callOperation],
+        controlFlow: "return",
+      }),
+    ];
+    const changedFile = {
+      ...helperFile,
+      content: {
+        ...helperFile.content,
+        type: {
+          ...helperFile.content.type,
+          result: { kind: "string" } as const,
+        },
+      },
+    };
+
+    const result = updateFiles(
+      [helperFile, callerFile],
+      () => undefined,
+      ctx,
+      changedFile
+    );
+
+    expect(result[1].type).toBe("operation");
+    if (result[1].type === "operation") {
+      expect(
+        result[1].content.value.statements[0].operations[0].type.result
+      ).toEqual({ kind: "string" });
     }
   });
 
