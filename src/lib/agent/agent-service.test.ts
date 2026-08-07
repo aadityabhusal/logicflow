@@ -44,7 +44,10 @@ vi.mock("./prompts", () => ({
 }));
 
 import { AgentDiscoveryError } from "./discovery";
-import { generateOperationProposal } from "./agent-service";
+import {
+  generateExecutionFeedbackResponse,
+  generateOperationProposal,
+} from "./agent-service";
 import { createOperationFile, createTestProject } from "../../tests/helpers";
 import { createOperationFromFile } from "../utils";
 import {
@@ -56,6 +59,40 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.createAgentDiscovery.mockResolvedValue(mocks.discovery);
+});
+
+describe("generateExecutionFeedbackResponse", () => {
+  it("returns feedback to the provider without mutation tools", async () => {
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {
+        yield { explanation: "Execution succeeded" };
+      })(),
+      output: Promise.resolve({ explanation: "Execution succeeded" }),
+    });
+    const onPartialExplanation = vi.fn();
+
+    const response = await generateExecutionFeedbackResponse({
+      model: "openai/gpt-5",
+      apiKey: "session-key",
+      feedback: {
+        status: "succeeded",
+        resultType: { kind: "string" },
+        resultPreview: "done",
+        errors: [],
+        truncated: false,
+      },
+      onPartialExplanation,
+    });
+
+    expect(mocks.streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining('"status":"succeeded"'),
+      })
+    );
+    expect(mocks.streamText.mock.calls[0][0]).not.toHaveProperty("tools");
+    expect(onPartialExplanation).toHaveBeenCalledWith("Execution succeeded");
+    expect(response).toEqual({ explanation: "Execution succeeded" });
+  });
 });
 
 describe("generateOperationProposal transport lifecycle", () => {

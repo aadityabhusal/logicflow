@@ -12,6 +12,7 @@ import {
 
 const mocks = vi.hoisted(() => {
   const agentState = {
+    apiKeys: { openai: "key" },
     selectedModel: "model-a",
     addMessage: vi.fn(),
     getApiKey: vi.fn(() => "key"),
@@ -52,12 +53,17 @@ const mocks = vi.hoisted(() => {
         sourcePrompt: string;
         draft: { name: string; parameters: []; statements: [] };
         proposedState?: unknown;
+        repairAttempt?: number;
       }
     >,
     activeRun: undefined,
   };
   const projectState = {
     currentProjectId: "project-a",
+    projects: {} as Record<
+      string,
+      { id: string; files: { id: string; type: string }[] }
+    >,
     getCurrentFile: vi.fn(() => ({ id: "operation-a", type: "operation" })),
     getCurrentProject: vi.fn(() => ({
       id: "project-a",
@@ -88,7 +94,15 @@ const mocks = vi.hoisted(() => {
       file ? { id: file.id } : undefined
     ),
     generateOperationProposal: vi.fn(),
-    applyAgentProposal: vi.fn(async () => undefined),
+    generateExecutionFeedbackResponse: vi.fn(),
+    applyAgentProposal:
+      vi.fn<() => Promise<{ id: string; afterSelectedFileId?: string }>>(),
+    waitForApplication:
+      vi.fn<
+        () => Promise<
+          import("@/lib/execution/controller").AgentExecutionOutcome
+        >
+      >(),
     undoAgentEdit: vi.fn(async () => undefined),
     redoAgentEdit: vi.fn(async () => undefined),
   };
@@ -108,6 +122,7 @@ vi.mock("@/lib/data", () => ({
 }));
 vi.mock("@/lib/agent/agent-service", () => ({
   generateOperationProposal: mocks.generateOperationProposal,
+  generateExecutionFeedbackResponse: mocks.generateExecutionFeedbackResponse,
 }));
 vi.mock("@/lib/agent/history", () => ({
   applyAgentProposal: mocks.applyAgentProposal,
@@ -115,6 +130,11 @@ vi.mock("@/lib/agent/history", () => ({
   redoAgentEdit: mocks.redoAgentEdit,
   canUndoAgentEdit: vi.fn(() => false),
   canRedoAgentEdit: vi.fn(() => false),
+}));
+vi.mock("@/lib/execution/controller", () => ({
+  executionController: {
+    waitForApplication: mocks.waitForApplication,
+  },
 }));
 vi.mock("@/lib/utils", () => ({
   createOperationFromFile: mocks.createOperationFromFile,
@@ -175,17 +195,41 @@ beforeEach(() => {
   mocks.agentState.agentProjects["project-a"].activeThreadId = "thread-a";
   mocks.agentState.pendingProposals = {};
   mocks.persistenceState.error = undefined;
+  mocks.applyAgentProposal.mockResolvedValue({
+    id: "application-a",
+    afterSelectedFileId: "operation-a",
+  });
+  mocks.waitForApplication.mockResolvedValue({
+    projectId: "project-a",
+    applicationId: "application-a",
+    status: "not_run",
+  });
+  mocks.generateExecutionFeedbackResponse.mockResolvedValue({
+    explanation: "The operation did not run.",
+  });
   mocks.projectState.getCurrentFile.mockReturnValue({
     id: "operation-a",
     type: "operation",
   });
-  mocks.projectState.getCurrentProject.mockReturnValue({
+  const project = {
     id: "project-a",
     files: [{ id: "operation-a", type: "operation" }],
-  });
+  };
+  mocks.projectState.projects = { "project-a": project };
+  mocks.projectState.getCurrentProject.mockReturnValue(project);
 });
 
 describe("AgentPanel thread header", () => {
+  it("discloses provider sharing of sanitized execution feedback", () => {
+    renderPanel();
+
+    expect(
+      screen.getByText(
+        "Sanitized execution feedback may be sent to the selected model provider."
+      )
+    ).toBeDefined();
+  });
+
   it("renames the active chat inline", () => {
     renderPanel();
 
@@ -316,6 +360,84 @@ describe("AgentPanel proposal lifecycle", () => {
     await waitFor(() =>
       expect(mocks.applyAgentProposal).toHaveBeenCalledWith(proposal)
     );
+    await waitFor(() =>
+      expect(mocks.generateExecutionFeedbackResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feedback: expect.objectContaining({ status: "not_run" }),
+        })
+      )
+    );
+  });
+
+  it("requests a bounded repair after failed execution feedback", async () => {
+    const proposal = {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: "thread-a",
+      fileId: "operation-a",
+      sourcePrompt: "Update it",
+      draft: { name: "operation", parameters: [] as [], statements: [] as [] },
+    };
+    mocks.agentState.pendingProposals = { "thread-a": proposal };
+    mocks.waitForApplication.mockResolvedValue({
+      projectId: "project-a",
+      applicationId: "application-a",
+      executionId: "execution-a",
+      operationId: "operation-a",
+      status: "failed",
+      error: "Runtime failed",
+    });
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Repair ready" },
+      proposal: undefined,
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Apply proposal"));
+
+    await waitFor(() =>
+      expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userPrompt: expect.stringContaining("sanitized execution feedback"),
+        })
+      )
+    );
+    expect(mocks.applyAgentProposal).toHaveBeenCalledOnce();
+  });
+
+  it("stops repair proposals after two attempts", async () => {
+    mocks.agentState.pendingProposals = {
+      "thread-a": {
+        id: "proposal-a",
+        projectId: "project-a",
+        threadId: "thread-a",
+        fileId: "operation-a",
+        sourcePrompt: "Repair it",
+        repairAttempt: 2,
+        draft: { name: "operation", parameters: [], statements: [] },
+      },
+    };
+    mocks.waitForApplication.mockResolvedValue({
+      projectId: "project-a",
+      applicationId: "application-a",
+      executionId: "execution-a",
+      operationId: "operation-a",
+      status: "failed",
+      error: "Still failing",
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Apply proposal"));
+
+    await waitFor(() =>
+      expect(mocks.generateExecutionFeedbackResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feedback: expect.objectContaining({ status: "failed" }),
+        })
+      )
+    );
+    expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
+    expect(mocks.applyAgentProposal).toHaveBeenCalledOnce();
   });
 
   it("revises against the proposal anchor after navigation", async () => {
@@ -325,6 +447,7 @@ describe("AgentPanel proposal lifecycle", () => {
       threadId: "thread-a",
       fileId: "operation-a",
       sourcePrompt: "Original request",
+      repairAttempt: 1,
       draft: { name: "anchor", parameters: [] as [], statements: [] as [] },
       proposedState: {
         operationFiles: [{ index: 1, file: { id: "created-operation" } }],
@@ -374,7 +497,10 @@ describe("AgentPanel proposal lifecycle", () => {
     );
     expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
       "thread-a",
-      expect.objectContaining({ sourcePrompt: "Original request" })
+      expect.objectContaining({
+        sourcePrompt: "Original request",
+        repairAttempt: 1,
+      })
     );
   });
 

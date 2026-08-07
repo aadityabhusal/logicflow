@@ -220,6 +220,7 @@ export type AgentProposal = {
   revisionState?: AgentHistoryState;
   diagnostics: AgentDiagnostic[];
   review?: AgentProposalReview;
+  repairAttempt?: number;
 };
 
 export type AgentHistoryState = {

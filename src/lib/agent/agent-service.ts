@@ -14,7 +14,7 @@ import {
 } from "./proposal";
 import { LOGICFLOW_SYSTEM_PROMPT, buildContextPrompt } from "./prompts";
 import { createProviderModel, toAgentTransportError } from "./transport";
-import type { AgentProvider } from "./types";
+import type { AgentExecutionFeedback, AgentProvider } from "./types";
 
 const AGENT_REQUEST_TIMEOUT = 60_000;
 const MAX_TOOL_CALLS = 24;
@@ -45,6 +45,18 @@ const UpdateProposalSchema = z.discriminatedUnion("action", [
 const SetPackageEnabledSchema = z
   .object({ name: z.string().min(1), enabled: z.boolean() })
   .strict();
+
+function resolveProviderModel(model: string, apiKey: string) {
+  const [provider, ...modelParts] = model.split("/");
+  if (!("openai anthropic google".split(" ") as string[]).includes(provider)) {
+    throw new Error(`Unknown provider: ${provider}`);
+  }
+  return createProviderModel(
+    provider as AgentProvider,
+    modelParts.join("/"),
+    apiKey
+  );
+}
 
 export async function generateOperationProposal({
   apiKey,
@@ -273,17 +285,9 @@ export async function generateOperationProposal({
         }),
     }),
   };
-  const [provider, ...modelParts] = model.split("/");
-  if (!("openai anthropic google".split(" ") as string[]).includes(provider)) {
-    throw new Error(`Unknown provider: ${provider}`);
-  }
   try {
     const result = streamText({
-      model: createProviderModel(
-        provider as AgentProvider,
-        modelParts.join("/"),
-        apiKey
-      ),
+      model: resolveProviderModel(model, apiKey),
       output: Output.object({
         schema: zodSchema(AgentResponseSchema, { useReferences: true }),
       }),
@@ -300,6 +304,41 @@ export async function generateOperationProposal({
       if (partial.explanation) onPartialExplanation?.(partial.explanation);
     }
     return { response: await result.output, proposal };
+  } catch (error) {
+    throw toAgentTransportError(error);
+  }
+}
+
+export async function generateExecutionFeedbackResponse({
+  apiKey,
+  model,
+  feedback,
+  abortSignal,
+  onPartialExplanation,
+}: {
+  apiKey: string;
+  model: string;
+  feedback: AgentExecutionFeedback;
+  abortSignal?: AbortSignal;
+  onPartialExplanation?: (explanation: string) => void;
+}) {
+  try {
+    const result = streamText({
+      model: resolveProviderModel(model, apiKey),
+      output: Output.object({
+        schema: zodSchema(AgentResponseSchema, { useReferences: true }),
+      }),
+      system: LOGICFLOW_SYSTEM_PROMPT,
+      prompt: `Report this sanitized post-Apply execution outcome concisely. Do not propose edits or actions:\n${JSON.stringify(feedback)}`,
+      abortSignal,
+      timeout: AGENT_REQUEST_TIMEOUT,
+      maxRetries: 0,
+      onError: () => undefined,
+    });
+    for await (const partial of result.partialOutputStream) {
+      if (partial.explanation) onPartialExplanation?.(partial.explanation);
+    }
+    return await result.output;
   } catch (error) {
     throw toAgentTransportError(error);
   }

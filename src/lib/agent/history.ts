@@ -12,6 +12,9 @@ import {
 } from "../store";
 import { useExecutionResultsStore } from "../execution/store";
 import { executionWorkerClient } from "../execution/worker-client";
+import { executionController } from "../execution/controller";
+import { createOperationFromFile } from "../utils";
+import { getAgentExecutionSecrets } from "./execution-feedback";
 import {
   getAgentHistoryState,
   isAgentProposalStale,
@@ -172,7 +175,8 @@ async function commit(
   previousProject: Project,
   previousAgentProject: AgentProject,
   selectedFileId?: string,
-  proposal?: AgentProposal
+  proposal?: AgentProposal,
+  applicationId?: string
 ) {
   await withSyncedPackageRegistry(getEnabledPackages(project), async () => {
     const currentProjectState = useProjectStore.getState();
@@ -204,6 +208,20 @@ async function commit(
       throw new Error(
         "The project or chat changed while the edit was being saved"
       );
+    }
+    if (applicationId) {
+      const selectedFile = project.files.find(
+        (file) => file.id === selectedFileId && file.type === "operation"
+      );
+      executionController.expectApplication({
+        applicationId,
+        projectId: project.id,
+        operationId: createOperationFromFile(selectedFile)?.id,
+        redactionValues: getAgentExecutionSecrets(
+          project,
+          useAgentStore.getState().apiKeys
+        ),
+      });
     }
     installProject(previousProject, project, selectedFileId);
     useAgentStore.setState((state) => {
@@ -293,7 +311,8 @@ async function applyProposal(proposal: AgentProposal) {
     project,
     agentProject,
     afterSelectedFileId,
-    proposal
+    proposal,
+    entry.id
   );
   return entry;
 }

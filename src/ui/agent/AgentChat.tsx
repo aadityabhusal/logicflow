@@ -57,6 +57,33 @@ export function AgentChat({
           ].join(" ")}
         >
           <div className="whitespace-pre-wrap">{msg.content}</div>
+          {msg.executionFeedback ? (
+            <div
+              aria-label={`Execution ${msg.executionFeedback.status.replace("_", " ")}`}
+              className="mt-2 border-l-2 pl-2 text-sm"
+            >
+              {msg.executionFeedback.resultType ? (
+                <div>Result type: {msg.executionFeedback.resultType.kind}</div>
+              ) : null}
+              {msg.executionFeedback.resultPreview !== undefined ? (
+                <pre className="whitespace-pre-wrap break-words">
+                  {JSON.stringify(msg.executionFeedback.resultPreview, null, 2)}
+                </pre>
+              ) : null}
+              {msg.executionFeedback.errors.map((error, index) => (
+                <div key={`${error.type ?? "error"}-${index}`} role="alert">
+                  {error.type ? `${error.type}: ` : ""}
+                  {error.message}
+                </div>
+              ))}
+              {msg.executionFeedback.reason ? (
+                <div>Reason: {msg.executionFeedback.reason}</div>
+              ) : null}
+              {msg.executionFeedback.truncated ? (
+                <div>Feedback was truncated.</div>
+              ) : null}
+            </div>
+          ) : null}
           {msg.proposal ? (
             <AgentProposalReview
               proposal={msg.proposal}

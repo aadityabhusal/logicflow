@@ -9,7 +9,10 @@ import {
 } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
-import { generateOperationProposal } from "@/lib/agent/agent-service";
+import {
+  generateExecutionFeedbackResponse,
+  generateOperationProposal,
+} from "@/lib/agent/agent-service";
 import {
   useProjectStore,
   useAgentStore,
@@ -28,6 +31,11 @@ import {
   redoAgentEdit,
   undoAgentEdit,
 } from "@/lib/agent/history";
+import { executionController } from "@/lib/execution/controller";
+import {
+  createAgentExecutionFeedback,
+  getAgentExecutionSecrets,
+} from "@/lib/agent/execution-feedback";
 
 export function AgentPanel() {
   const {
@@ -58,6 +66,7 @@ export function AgentPanel() {
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [revisionProposalId, setRevisionProposalId] = useState<string>();
   const [historyBusy, setHistoryBusy] = useState(false);
+  const [executionPending, setExecutionPending] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
   const agentProject = currentProjectId
@@ -97,7 +106,11 @@ export function AgentPanel() {
 
   const handleSubmit = async (
     prompt: string,
-    options?: { regenerate?: boolean; sourceFileId?: string }
+    options?: {
+      regenerate?: boolean;
+      sourceFileId?: string;
+      repairAttempt?: number;
+    }
   ) => {
     if (useAgentStore.getState().activeRun) return;
     const submittedProject = useProjectStore.getState().getCurrentProject();
@@ -120,7 +133,7 @@ export function AgentPanel() {
     const apiKey = getApiKey(modelConfig.provider);
     if (!apiKey) return;
 
-    if (!options?.regenerate) {
+    if (!options?.regenerate && !options?.repairAttempt) {
       addMessage(activeThreadId, { role: "user", content: prompt });
     }
     const revisedProposal =
@@ -169,6 +182,10 @@ export function AgentPanel() {
         setPendingProposal(activeThreadId, {
           ...proposal,
           threadId: activeThreadId,
+          repairAttempt:
+            options?.repairAttempt ??
+            revisedProposal?.repairAttempt ??
+            (options?.regenerate ? pendingProposal?.repairAttempt : undefined),
           sourcePrompt: options?.regenerate
             ? prompt
             : revisedProposal
@@ -202,6 +219,53 @@ export function AgentPanel() {
     setRevisionProposalId(undefined);
   };
 
+  const handleExecutionFeedback = async (
+    feedback: Parameters<
+      typeof generateExecutionFeedbackResponse
+    >[0]["feedback"],
+    threadId: string
+  ) => {
+    const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
+    if (!modelConfig) return;
+    const apiKey = getApiKey(modelConfig.provider);
+    if (!apiKey) return;
+    const controller = new AbortController();
+    abortController.current = controller;
+    startRun(threadId);
+    try {
+      const response = await generateExecutionFeedbackResponse({
+        feedback,
+        model: `${modelConfig.provider}/${modelConfig.id}`,
+        apiKey,
+        abortSignal: controller.signal,
+        onPartialExplanation: setStreamingContent,
+      });
+      if (!controller.signal.aborted) {
+        addMessage(threadId, {
+          role: "assistant",
+          content: response.explanation || `Execution ${feedback.status}.`,
+        });
+      }
+    } catch (error) {
+      if (
+        !(error instanceof AgentTransportError) ||
+        error.code !== "cancelled"
+      ) {
+        addMessage(threadId, {
+          role: "assistant",
+          content: `Error: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        });
+      }
+    } finally {
+      if (abortController.current === controller) {
+        abortController.current = undefined;
+      }
+      finishRun(threadId);
+    }
+  };
+
   const handleHistoryAction = async (action: () => Promise<unknown>) => {
     if (historyBusy || activeRun) return;
     setHistoryBusy(true);
@@ -219,7 +283,65 @@ export function AgentPanel() {
 
   const handleApplyProposal = () => {
     if (!pendingProposal) return;
-    void handleHistoryAction(() => applyAgentProposal(pendingProposal));
+    const proposal = pendingProposal;
+    void handleHistoryAction(async () => {
+      setExecutionPending(true);
+      try {
+        const application = await applyAgentProposal(proposal);
+        const outcome = await executionController.waitForApplication(
+          application.id
+        );
+        if (outcome.projectId !== proposal.projectId) {
+          throw new Error("Execution feedback belongs to another project");
+        }
+        const projectState = useProjectStore.getState();
+        const project = projectState.projects[proposal.projectId];
+        if (!project) return;
+        const selectedFile = project?.files.find(
+          (file) =>
+            file.id === application.afterSelectedFileId &&
+            file.type === "operation"
+        );
+        const operation = createOperationFromFile(selectedFile);
+        const feedback = createAgentExecutionFeedback({
+          outcome,
+          operation,
+          secrets: getAgentExecutionSecrets(
+            project,
+            useAgentStore.getState().apiKeys
+          ).concat(outcome.redactionValues ?? []),
+        });
+        addMessage(proposal.threadId!, {
+          role: "assistant",
+          content: `Execution ${feedback.status.replace("_", " ")}.`,
+          executionFeedback: feedback,
+        });
+
+        const repairAttempt = (proposal.repairAttempt ?? 0) + 1;
+        const canContinue =
+          projectState.currentProjectId === proposal.projectId &&
+          useAgentStore.getState().agentProjects[proposal.projectId]
+            ?.activeThreadId === proposal.threadId;
+        if (
+          feedback.status === "failed" &&
+          repairAttempt <= 2 &&
+          application.afterSelectedFileId &&
+          canContinue
+        ) {
+          await handleSubmit(
+            `The previous proposal was applied. Use this sanitized execution feedback to propose a focused repair. Do not apply it:\n${JSON.stringify(feedback)}`,
+            {
+              sourceFileId: application.afterSelectedFileId,
+              repairAttempt,
+            }
+          );
+        } else if (canContinue) {
+          await handleExecutionFeedback(feedback, proposal.threadId!);
+        }
+      } finally {
+        setExecutionPending(false);
+      }
+    });
   };
 
   const handleReviseProposal = () => {
@@ -446,6 +568,14 @@ export function AgentPanel() {
           {historyError}
         </div>
       ) : null}
+      {executionPending ? (
+        <div role="status" className="border-b p-2 text-xs">
+          Running the selected operation...
+        </div>
+      ) : null}
+      <p className="border-b p-2 text-xs text-dimmed">
+        Sanitized execution feedback may be sent to the selected model provider.
+      </p>
       <AgentChat
         onApplyProposal={handleApplyProposal}
         onRejectProposal={handleRejectProposal}

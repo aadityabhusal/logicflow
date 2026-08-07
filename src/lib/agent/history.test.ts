@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     currentFileId: "operation-a" as string | undefined,
   };
   const agentState = {
+    apiKeys: {},
     agentProjects: {} as Record<string, import("./types").AgentProject>,
     pendingProposals: {} as Record<string, AgentProposal>,
   };
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => {
     clearHistory: vi.fn(),
     editorHistories: new Set<string>(),
     resetWorker: vi.fn(),
+    expectApplication: vi.fn(),
     removeAll: vi.fn(),
     setNavigation: vi.fn(),
     setState,
@@ -65,6 +67,9 @@ vi.mock("../execution/store", () => ({
 }));
 vi.mock("../execution/worker-client", () => ({
   executionWorkerClient: { reset: mocks.resetWorker },
+}));
+vi.mock("../execution/controller", () => ({
+  executionController: { expectApplication: mocks.expectApplication },
 }));
 vi.mock("../operations/built-in", async (importOriginal) => {
   const actual =
@@ -206,6 +211,12 @@ describe("agent edit history", () => {
     const entry = await applyAgentProposal(proposal);
 
     expect(mocks.commitAgentEdit).toHaveBeenCalledOnce();
+    expect(mocks.expectApplication).toHaveBeenCalledWith({
+      applicationId: entry.id,
+      projectId: "project-a",
+      operationId: "operation-a",
+      redactionValues: [],
+    });
     expect(mocks.projectState.projects["project-a"].files[0]).toMatchObject({
       id: "docs",
       content: "Keep",

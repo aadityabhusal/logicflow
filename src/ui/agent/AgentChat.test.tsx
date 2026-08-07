@@ -26,6 +26,13 @@ const mocks = vi.hoisted(() => ({
                 id: "message-a",
                 role: "assistant",
                 content: "Review this",
+                executionFeedback: {
+                  status: "succeeded",
+                  resultType: { kind: "string" },
+                  resultPreview: "done",
+                  errors: [],
+                  truncated: true,
+                },
                 proposal: {
                   id: "proposal-a",
                   diagnostics: [],
@@ -102,5 +109,23 @@ describe("AgentChat proposal navigation", () => {
     expect(
       screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
     ).toBe(false);
+  });
+
+  it("shows bounded execution feedback distinctly", () => {
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    expect(screen.getByLabelText("Execution succeeded")).toBeDefined();
+    expect(screen.getByText("Result type: string")).toBeDefined();
+    expect(screen.getByText("Feedback was truncated.")).toBeDefined();
   });
 });
