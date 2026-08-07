@@ -136,6 +136,13 @@ type PackageLoadResult = {
   instanceTypes?: Record<string, InstanceTypeConfig>;
 };
 
+export type PackageDescriptor = PackageLoadResult & { name: string };
+
+export type PackageRegistrySnapshot = {
+  operations: Map<string, OperationListItem[]>;
+  instanceTypes: Map<string, InstanceTypeConfig>;
+};
+
 export const loadedPackageOperations = new Map<string, OperationListItem[]>();
 const loadedInstanceTypes = new Map<string, InstanceTypeConfig>();
 
@@ -151,26 +158,69 @@ export function resolveDisplayName(
   return alias + fullName.substring(dotIndex);
 }
 
-export async function loadPackage(packageName: string): Promise<void> {
-  if (loadedPackageOperations.has(packageName)) return;
+export async function loadPackageDescriptor(
+  packageName: string
+): Promise<PackageDescriptor> {
   const entry = PACKAGE_CATALOG[packageName];
-  if (!entry) return;
+  if (!entry) throw new Error(`Unsupported package: ${packageName}`);
 
   const result: PackageLoadResult = await entry.load();
 
-  const prefixedOps = result.operations.map((op) => ({
-    ...op,
-    name:
-      op.source?.packageCallTarget === "import"
-        ? op.name
-        : `${packageName}.${op.name}`,
-    source: op.source ? op.source : { name: packageName },
-  }));
+  return {
+    name: packageName,
+    operations: result.operations.map((op) => ({
+      ...op,
+      name:
+        op.source?.packageCallTarget === "import"
+          ? op.name
+          : `${packageName}.${op.name}`,
+      source: op.source ? op.source : { name: packageName },
+    })),
+    instanceTypes: result.instanceTypes,
+  };
+}
 
-  loadedPackageOperations.set(packageName, prefixedOps);
+export function replacePackageRegistry(descriptors: PackageDescriptor[]): void {
+  resetPackageRegistry();
 
-  if (result.instanceTypes) {
-    for (const [key, config] of Object.entries(result.instanceTypes)) {
+  for (const descriptor of descriptors) {
+    loadedPackageOperations.set(descriptor.name, descriptor.operations);
+    for (const [key, config] of Object.entries(
+      descriptor.instanceTypes ?? {}
+    )) {
+      loadedInstanceTypes.set(key, config);
+    }
+  }
+}
+
+export function getPackageRegistrySnapshot(): PackageRegistrySnapshot {
+  return {
+    operations: new Map(loadedPackageOperations),
+    instanceTypes: new Map(loadedInstanceTypes),
+  };
+}
+
+export function restorePackageRegistry(
+  snapshot: PackageRegistrySnapshot
+): void {
+  resetPackageRegistry();
+  for (const [name, operations] of snapshot.operations) {
+    loadedPackageOperations.set(name, operations);
+  }
+  for (const [name, config] of snapshot.instanceTypes) {
+    loadedInstanceTypes.set(name, config);
+  }
+}
+
+export async function loadPackage(packageName: string): Promise<void> {
+  if (loadedPackageOperations.has(packageName)) return;
+  if (!PACKAGE_CATALOG[packageName]) return;
+
+  const descriptor = await loadPackageDescriptor(packageName);
+  loadedPackageOperations.set(packageName, descriptor.operations);
+
+  if (descriptor.instanceTypes) {
+    for (const [key, config] of Object.entries(descriptor.instanceTypes)) {
       loadedInstanceTypes.set(key, config);
     }
   }

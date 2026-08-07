@@ -207,7 +207,7 @@ describe("agent discovery", () => {
         source: "package",
       })[0]
     ).toMatchObject({
-      name: "packageOperation",
+      name: "wretch.packageOperation",
       source: "package",
       packageName: "wretch",
     });
@@ -227,6 +227,45 @@ describe("agent discovery", () => {
     ).toEqual([]);
   });
 
+  it("discovers normalized proposal-local package operations in the same run", async () => {
+    vi.spyOn(PACKAGE_CATALOG.wretch, "load").mockResolvedValue({
+      operations: [
+        {
+          name: "request",
+          parameters: [{ type: { kind: "string" } }],
+          expectedType: { kind: "boolean" },
+          handler: () => ({
+            id: "result",
+            type: { kind: "boolean" },
+            value: true,
+          }),
+        },
+      ],
+    });
+    const discovery = await createAgentDiscovery(createTestProject());
+
+    await discovery.setPackageEnabled("wretch", true);
+    const enabled = discovery.searchOperations({
+      query: "request",
+      source: "package",
+    })[0];
+    expect(enabled).toMatchObject({
+      name: "wretch.request",
+      source: "package",
+      packageName: "wretch",
+    });
+    expect(loadedPackageOperations.has("wretch")).toBe(false);
+
+    await discovery.setPackageEnabled("wretch", false);
+    expect(discovery.searchOperations({ source: "package" })).toEqual([]);
+    expect(() => discovery.inspectOperation(enabled.handle)).toThrowError(
+      expect.objectContaining({ code: "unknown_handle" })
+    );
+    await expect(
+      discovery.setPackageEnabled("unsupported", true)
+    ).rejects.toEqual(expect.objectContaining({ code: "unsupported_package" }));
+  });
+
   it("reports duplicate project operation names", async () => {
     const duplicate = createOperationFile("duplicate");
     duplicate.id = "second-operation";
@@ -242,6 +281,19 @@ describe("agent discovery", () => {
         code: "duplicate_operation_name",
       })
     );
+  });
+
+  it("reports proposal-local package load failures explicitly", async () => {
+    vi.spyOn(PACKAGE_CATALOG.wretch, "load").mockRejectedValue(
+      new Error("load failed")
+    );
+    const discovery = await createAgentDiscovery(createTestProject());
+
+    await expect(discovery.setPackageEnabled("wretch", true)).rejects.toEqual(
+      expect.objectContaining({ code: "package_load_failed" })
+    );
+    expect(discovery.searchOperations({ source: "package" })).toEqual([]);
+    expect(loadedPackageOperations.has("wretch")).toBe(false);
   });
 
   it("searches only the supported package catalog with bounded results", async () => {

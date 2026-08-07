@@ -1,7 +1,9 @@
 import { nanoid } from "nanoid";
 import isEqual from "react-fast-compare";
 import { commitAgentEdit } from "../idb";
-import type { Project, ProjectFile } from "../types";
+import type { Project } from "../types";
+import { withSyncedPackageRegistry } from "../operations/built-in";
+import { getEnabledPackages } from "../packages/catalog";
 import {
   fileHistoryActions,
   useAgentStore,
@@ -40,50 +42,91 @@ function restoreAgentHistoryState(
   project: Project,
   snapshot: AgentHistoryState
 ) {
-  const operations = new Map(
-    snapshot.operationFiles.map(({ file }) => [file.id, file])
-  );
+  const files: Project["files"] = project.files
+    .filter((file) => file.type !== "operation")
+    .map((file) => structuredClone(file));
+  for (const { index, file } of [...snapshot.operationFiles].sort(
+    (a, b) => a.index - b.index
+  )) {
+    files.splice(Math.min(index, files.length), 0, structuredClone(file));
+  }
   return {
     ...project,
-    files: project.files.map((file) =>
-      file.type === "operation"
-        ? structuredClone(operations.get(file.id) ?? file)
-        : file
-    ),
+    files,
     dependencies: {
-      ...project.dependencies,
+      ...structuredClone(project.dependencies),
       npm: structuredClone(snapshot.npmDependencies),
     },
     updatedAt: Date.now(),
   };
 }
 
-function reconcileProject(previousProject: Project, project: Project) {
-  const projectStore = useProjectStore.getState();
-  for (const file of project.files) {
-    if (
-      file.type === "operation" &&
-      !isEqual(
-        previousProject.files.find((previous) => previous.id === file.id),
-        file
-      )
-    ) {
-      fileHistoryActions.clearHistory(file.id);
-    }
+function getReconciledFileId(
+  previousProject: Project,
+  project: Project,
+  selectedFileId?: string
+) {
+  if (!selectedFileId) return undefined;
+  if (project.files.some((file) => file.id === selectedFileId)) {
+    return selectedFileId;
   }
+  const previousIndex = previousProject.files.findIndex(
+    (file) => file.id === selectedFileId
+  );
+  if (previousIndex < 0) return undefined;
+  return project.files[previousIndex]?.id ?? project.files.at(-1)?.id;
+}
+
+function updateFileSearchParam(fileName?: string) {
+  if (typeof location === "undefined" || typeof history === "undefined") return;
+  const url = new URL(location.href);
+  if (fileName) url.searchParams.set("file", fileName);
+  else url.searchParams.delete("file");
+  history.replaceState(history.state, "", url);
+}
+
+function installProject(
+  previousProject: Project,
+  project: Project,
+  selectedFileId?: string
+) {
+  const active = useProjectStore.getState().currentProjectId === project.id;
   useProjectStore.setState((state) => ({
     projects: { ...state.projects, [project.id]: project },
-    currentFileId:
-      state.currentProjectId !== project.id
-        ? state.currentFileId
-        : project.files.some((file) => file.id === state.currentFileId)
-          ? state.currentFileId
-          : undefined,
+    currentFileId: active ? selectedFileId : state.currentFileId,
   }));
-  if (projectStore.currentProjectId === project.id) {
+  if (active) {
+    updateFileSearchParam(
+      project.files.find((file) => file.id === selectedFileId)?.name
+    );
+  }
+}
+
+function reconcileProject(previousProject: Project, project: Project) {
+  const previousOperations = new Map(
+    previousProject.files
+      .filter((file) => file.type === "operation")
+      .map((file) => [file.id, file])
+  );
+  const operations = new Map(
+    project.files
+      .filter((file) => file.type === "operation")
+      .map((file) => [file.id, file])
+  );
+  for (const id of new Set([
+    ...previousOperations.keys(),
+    ...operations.keys(),
+  ])) {
+    if (!isEqual(previousOperations.get(id), operations.get(id))) {
+      fileHistoryActions.clearHistory(id);
+    }
+  }
+  if (useProjectStore.getState().currentProjectId === project.id) {
     useNavigationStore.getState().setNavigation({
       navigation: undefined,
       navigationEntities: undefined,
+      skipExecution: undefined,
+      type: undefined,
       result: undefined,
       operation: undefined,
     });
@@ -105,80 +148,102 @@ function updateProposalApplication(
   return {
     ...agentProject,
     history,
-    threads: agentProject.threads.map((thread) => ({
-      ...thread,
-      messages: thread.messages.map((message) =>
-        message.proposal?.id === proposal.id
-          ? {
-              ...message,
-              proposal: { ...message.proposal, applicationId },
-            }
-          : message
-      ),
-    })),
+    threads: agentProject.threads.map((thread) =>
+      thread.id !== proposal.threadId
+        ? thread
+        : {
+            ...thread,
+            messages: thread.messages.map((message) =>
+              message.proposal?.id === proposal.id
+                ? {
+                    ...message,
+                    proposal: { ...message.proposal, applicationId },
+                  }
+                : message
+            ),
+          }
+    ),
   };
 }
 
 async function commit(
   project: Project,
   agentProject: AgentProject,
+  previousProject: Project,
+  previousAgentProject: AgentProject,
+  selectedFileId?: string,
   proposal?: AgentProposal
 ) {
-  const currentProjects = useProjectStore.getState().projects;
-  const currentAgentProjects = useAgentStore.getState().agentProjects;
-  const previousProject = currentProjects[project.id];
-  await commitAgentEdit(
-    { ...currentProjects, [project.id]: project },
-    { ...currentAgentProjects, [project.id]: agentProject }
-  );
-  const latestProjectState = useProjectStore.getState();
-  const latestAgentState = useAgentStore.getState();
-  if (
-    latestProjectState.projects !== currentProjects ||
-    latestAgentState.agentProjects !== currentAgentProjects
-  ) {
-    await commitAgentEdit(
-      latestProjectState.projects,
-      latestAgentState.agentProjects
-    );
-    throw new Error(
-      "The project or chat changed while the edit was being saved"
-    );
-  }
-  reconcileProject(previousProject, project);
-  useAgentStore.setState((state) => {
-    const nextAgentProjects = {
-      ...state.agentProjects,
-      [project.id]: agentProject,
-    };
-    const threadId = proposal?.threadId;
-    if (!threadId || state.pendingProposals[threadId]?.id !== proposal.id) {
-      return { agentProjects: nextAgentProjects };
+  await withSyncedPackageRegistry(getEnabledPackages(project), async () => {
+    const currentProjectState = useProjectStore.getState();
+    const currentAgentState = useAgentStore.getState();
+    if (
+      currentProjectState.projects[project.id] !== previousProject ||
+      currentAgentState.agentProjects[project.id] !== previousAgentProject
+    ) {
+      throw new Error(
+        "The project or chat changed while packages were loading"
+      );
     }
-    const { [threadId]: _, ...pendingProposals } = state.pendingProposals;
-    return { agentProjects: nextAgentProjects, pendingProposals };
+    const currentProjects = currentProjectState.projects;
+    const currentAgentProjects = currentAgentState.agentProjects;
+    await commitAgentEdit(
+      { ...currentProjects, [project.id]: project },
+      { ...currentAgentProjects, [project.id]: agentProject }
+    );
+    const latestProjectState = useProjectStore.getState();
+    const latestAgentState = useAgentStore.getState();
+    if (
+      latestProjectState.projects !== currentProjects ||
+      latestAgentState.agentProjects !== currentAgentProjects
+    ) {
+      await commitAgentEdit(
+        latestProjectState.projects,
+        latestAgentState.agentProjects
+      );
+      throw new Error(
+        "The project or chat changed while the edit was being saved"
+      );
+    }
+    installProject(previousProject, project, selectedFileId);
+    useAgentStore.setState((state) => {
+      const nextAgentProjects = {
+        ...state.agentProjects,
+        [project.id]: agentProject,
+      };
+      const threadId = proposal?.threadId;
+      if (!threadId || state.pendingProposals[threadId] !== proposal) {
+        return { agentProjects: nextAgentProjects };
+      }
+      const { [threadId]: _, ...pendingProposals } = state.pendingProposals;
+      return { agentProjects: nextAgentProjects, pendingProposals };
+    });
+    reconcileProject(previousProject, project);
   });
 }
 
 async function applyProposal(proposal: AgentProposal) {
   const projectState = useProjectStore.getState();
   const project = projectState.projects[proposal.projectId];
-  const agentProject =
-    useAgentStore.getState().agentProjects[proposal.projectId];
+  const agentState = useAgentStore.getState();
+  const agentProject = agentState.agentProjects[proposal.projectId];
   if (
     !project ||
     !agentProject ||
     !proposal.threadId ||
     projectState.currentProjectId !== proposal.projectId ||
-    projectState.currentFileId !== proposal.fileId
+    agentProject.activeThreadId !== proposal.threadId
   ) {
     throw new Error("This proposal no longer belongs to the current project");
+  }
+  if (agentState.pendingProposals[proposal.threadId] !== proposal) {
+    throw new Error("This proposal is no longer pending");
   }
   if (!agentProject.threads.some((thread) => thread.id === proposal.threadId)) {
     throw new Error("This proposal's chat no longer exists");
   }
   if (
-    !proposal.proposedFile ||
+    !proposal.proposedState ||
     proposal.diagnostics.some((diagnostic) => diagnostic.severity === "error")
   ) {
     throw new Error("This proposal has validation errors");
@@ -186,30 +251,16 @@ async function applyProposal(proposal: AgentProposal) {
   if (isAgentProposalStale(proposal, project)) {
     throw new Error("This proposal is stale because the project changed");
   }
-  const currentFile = project.files.find(
-    (file) => file.id === proposal.fileId && file.type === "operation"
-  );
-  if (
-    !currentFile ||
-    proposal.proposedFile.id !== currentFile.id ||
-    proposal.proposedFile.name !== currentFile.name
-  ) {
-    throw new Error("The selected operation no longer matches this proposal");
-  }
-
   const before = getAgentHistoryState(project);
   const updatedAt = Date.now();
-  const proposedFile: Extract<ProjectFile, { type: "operation" }> = {
-    ...structuredClone(proposal.proposedFile),
-    updatedAt,
-  };
-  const nextProject = {
-    ...project,
-    files: project.files.map((file) =>
-      file.id === currentFile.id ? proposedFile : file
-    ),
-    updatedAt,
-  };
+  const nextProject = restoreAgentHistoryState(project, proposal.proposedState);
+  nextProject.updatedAt = updatedAt;
+  const beforeSelectedFileId = projectState.currentFileId;
+  const afterSelectedFileId = getReconciledFileId(
+    project,
+    nextProject,
+    beforeSelectedFileId
+  );
   const currentHistory = getHistory(agentProject);
   const entry: AgentEditHistoryEntry = {
     id: nanoid(),
@@ -219,6 +270,8 @@ async function applyProposal(proposal: AgentProposal) {
     createdAt: updatedAt,
     before,
     after: getAgentHistoryState(nextProject),
+    beforeSelectedFileId,
+    afterSelectedFileId,
   };
   const retainedEntries = currentHistory.entries.slice(
     0,
@@ -237,6 +290,9 @@ async function applyProposal(proposal: AgentProposal) {
   await commit(
     nextProject,
     updateProposalApplication(agentProject, proposal, entry.id, history),
+    project,
+    agentProject,
+    afterSelectedFileId,
     proposal
   );
   return entry;
@@ -272,7 +328,26 @@ async function restoreAgentEdit(projectId: string, direction: "undo" | "redo") {
       cursor: history.cursor + (direction === "undo" ? -1 : 1),
     },
   };
-  await commit(nextProject, nextAgentProject);
+  const recordedSelection =
+    direction === "undo"
+      ? entry.beforeSelectedFileId
+      : entry.afterSelectedFileId;
+  const selectedFileId =
+    recordedSelection &&
+    nextProject.files.some((file) => file.id === recordedSelection)
+      ? recordedSelection
+      : getReconciledFileId(
+          project,
+          nextProject,
+          useProjectStore.getState().currentFileId
+        );
+  await commit(
+    nextProject,
+    nextAgentProject,
+    project,
+    agentProject,
+    selectedFileId
+  );
   return entry;
 }
 

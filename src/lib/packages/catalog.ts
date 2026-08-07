@@ -1,4 +1,4 @@
-import { InstanceTypeConfig } from "./registry";
+import type { InstanceTypeConfig } from "./registry";
 import type { OperationListItem } from "../execution/types";
 import type { PackageNamespace, Project } from "../types";
 
@@ -152,6 +152,37 @@ export const PACKAGE_CATALOG: Record<string, PackageCatalogEntry> = {
     load: () => import("../operations/comfyui").then((m) => m.default),
   },
 };
+
+type NpmDependency = NonNullable<
+  NonNullable<Project["dependencies"]>["npm"]
+>[number];
+
+export type SupportedPackageChange = {
+  name: string;
+  enabled: boolean;
+};
+
+export function applySupportedPackageChanges(
+  dependencies: readonly NpmDependency[],
+  changes: readonly SupportedPackageChange[]
+): NpmDependency[] {
+  for (const { name } of changes) {
+    if (!PACKAGE_CATALOG[name]) throw new Error(`Unsupported package: ${name}`);
+  }
+
+  const result = [...dependencies];
+  for (const { name, enabled } of changes) {
+    const index = result.findIndex((dependency) => dependency.name === name);
+    if (enabled && index === -1) {
+      result.push({ name, version: "latest", exports: [] });
+    } else if (!enabled && index !== -1) {
+      for (let i = result.length - 1; i >= 0; i--) {
+        if (result[i].name === name) result.splice(i, 1);
+      }
+    }
+  }
+  return result;
+}
 
 export function getEnabledPackages(project?: Project): PackageNamespace[] {
   return (project?.dependencies?.npm ?? [])

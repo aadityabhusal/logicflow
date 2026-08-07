@@ -38,11 +38,14 @@ import * as _ from "./runtime";
 import { Context, OperationListItem, Variable } from "../execution/types";
 import {
   loadedPackageOperations,
-  loadPackage,
-  resetPackageRegistry,
+  getPackageRegistrySnapshot,
+  loadPackageDescriptor,
+  replacePackageRegistry,
+  restorePackageRegistry,
   SOURCE_PACKAGE_MAP,
   InstanceTypes,
 } from "../packages/registry";
+import { PACKAGE_CATALOG } from "../packages/catalog";
 
 const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   name: FunctionKeys<typeof _>;
@@ -821,15 +824,48 @@ export function rebuildIndexes() {
   }
 }
 
+let packageRegistryTransaction = Promise.resolve();
+
+function serializePackageRegistryAction<T>(
+  action: () => Promise<T>
+): Promise<T> {
+  const result = packageRegistryTransaction.then(action, action);
+  packageRegistryTransaction = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
+
+export function withSyncedPackageRegistry<T>(
+  packages: PackageNamespace[],
+  action: () => T | Promise<T>
+): Promise<T> {
+  return serializePackageRegistryAction(async () => {
+    const names = [
+      ...new Set(
+        packages.map(({ name }) => name).filter((name) => PACKAGE_CATALOG[name])
+      ),
+    ];
+    const descriptors = await Promise.all(names.map(loadPackageDescriptor));
+    const previous = getPackageRegistrySnapshot();
+
+    try {
+      replacePackageRegistry(descriptors);
+      rebuildIndexes();
+      return await action();
+    } catch (error) {
+      restorePackageRegistry(previous);
+      rebuildIndexes();
+      throw error;
+    }
+  });
+}
+
 export async function syncPackageRegistry(
   packages: PackageNamespace[] = []
-): Promise<PromiseSettledResult<void>[]> {
-  resetPackageRegistry();
-  const results = await Promise.allSettled(
-    packages.map(({ name }) => loadPackage(name))
-  );
-  rebuildIndexes();
-  return results;
+): Promise<void> {
+  await withSyncedPackageRegistry(packages, () => undefined);
 }
 
 export const coreOperations: OperationListItem[] = [

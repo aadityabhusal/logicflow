@@ -3,6 +3,7 @@ import type { AgentMessage } from "@/lib/agent/types";
 
 export function AgentProposalReview({
   proposal,
+  diagnosticFileNames,
   active,
   stale,
   busy,
@@ -13,6 +14,7 @@ export function AgentProposalReview({
   onRegenerate,
 }: {
   proposal: NonNullable<AgentMessage["proposal"]>;
+  diagnosticFileNames?: (string | undefined)[];
   active: boolean;
   stale: boolean;
   busy: boolean;
@@ -27,39 +29,105 @@ export function AgentProposalReview({
     (diagnostic) => diagnostic.severity === "error"
   );
 
+  const renderChanges = (changes: {
+    parameters: { before: number; after: number };
+    statements: { before: number; after: number };
+    operationCalls: { before: number; after: number };
+    returnType: { before: string; after: string };
+    generatedSyntax?: "valid" | "invalid";
+  }) => (
+    <dl className="grid grid-cols-2 gap-x-2 text-xs">
+      <dt>Parameters</dt>
+      <dd>
+        {changes.parameters.before} to {changes.parameters.after}
+      </dd>
+      <dt>Statements</dt>
+      <dd>
+        {changes.statements.before} to {changes.statements.after}
+      </dd>
+      <dt>Operation calls</dt>
+      <dd>
+        {changes.operationCalls.before} to {changes.operationCalls.after}
+      </dd>
+      <dt>Return type</dt>
+      <dd>
+        {changes.returnType.before} to {changes.returnType.after}
+      </dd>
+      <dt>Generated syntax</dt>
+      <dd>{changes.generatedSyntax ?? "not applicable"}</dd>
+    </dl>
+  );
+
   return (
     <div className="mt-2 rounded-xs border p-2 text-sm">
       <div className="font-medium">Proposal review</div>
-      {review ? (
-        <dl className="mt-1 grid grid-cols-2 gap-x-2 text-xs">
-          <dt>Operation</dt>
-          <dd>{review.operationName}</dd>
-          <dt>Parameters</dt>
-          <dd>
-            {review.parameters.before} to {review.parameters.after}
-          </dd>
-          <dt>Statements</dt>
-          <dd>
-            {review.statements.before} to {review.statements.after}
-          </dd>
-          <dt>Operation calls</dt>
-          <dd>
-            {review.operationCalls.before} to {review.operationCalls.after}
-          </dd>
-          <dt>Return type</dt>
-          <dd>
-            {review.returnType.before} to {review.returnType.after}
-          </dd>
-          <dt>Generated syntax</dt>
-          <dd>{review.generatedSyntax}</dd>
-        </dl>
+      {review?.files ? (
+        review.files.length > 0 ? (
+          <section className="mt-2">
+            <h3 className="text-xs font-medium">Affected operations</h3>
+            <ul className="mt-1 space-y-2">
+              {review.files.map((file, index) => (
+                <li key={`${file.change}-${file.operationName}-${index}`}>
+                  <div className="text-xs font-medium capitalize">
+                    {file.change} {file.operationName}
+                  </div>
+                  {renderChanges(file)}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null
+      ) : review ? (
+        <section className="mt-1">
+          <h3 className="text-xs font-medium">Operation</h3>
+          <div className="text-xs">{review.operationName}</div>
+          {renderChanges(review)}
+        </section>
       ) : null}
-      {errors.length > 0 ? (
-        <ul className="mt-2 text-xs text-red-300">
-          {errors.map((diagnostic, index) => (
-            <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>
-          ))}
-        </ul>
+      {review?.packages &&
+      (review.packages.enabled.length > 0 ||
+        review.packages.disabled.length > 0) ? (
+        <section className="mt-2">
+          <h3 className="text-xs font-medium">Supported packages</h3>
+          <dl className="mt-1 grid grid-cols-2 gap-x-2 text-xs">
+            {review.packages.enabled.length > 0 ? (
+              <>
+                <dt>Enabled</dt>
+                <dd>{review.packages.enabled.join(", ")}</dd>
+              </>
+            ) : null}
+            {review.packages.disabled.length > 0 ? (
+              <>
+                <dt>Disabled</dt>
+                <dd>{review.packages.disabled.join(", ")}</dd>
+              </>
+            ) : null}
+          </dl>
+        </section>
+      ) : null}
+      {diagnostics.length > 0 ? (
+        <section className="mt-2">
+          <h3 className="text-xs font-medium">Diagnostics</h3>
+          <ul className="mt-1 text-xs">
+            {diagnostics.map((diagnostic, index) => (
+              <li
+                key={`${diagnostic.code}-${index}`}
+                className={
+                  diagnostic.severity === "error"
+                    ? "text-red-300"
+                    : "text-yellow-100"
+                }
+              >
+                {diagnosticFileNames?.[index]
+                  ? `Operation ${diagnosticFileNames[index]}: `
+                  : diagnostic.packageName
+                    ? `Package ${diagnostic.packageName}: `
+                    : ""}
+                {diagnostic.message}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
       {active && stale ? (
         <p

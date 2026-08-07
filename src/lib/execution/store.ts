@@ -201,6 +201,7 @@ export const useExecutionResultsStore =
             results: new Map(),
             instances: new Map(),
             rootContext,
+            isExecuting: false,
             runVersion: state.runVersion + 1,
           };
         }),

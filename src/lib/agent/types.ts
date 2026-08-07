@@ -43,6 +43,8 @@ export type AgentEditHistoryEntry = {
   createdAt: number;
   before: AgentHistoryState;
   after: AgentHistoryState;
+  beforeSelectedFileId?: string;
+  afterSelectedFileId?: string;
 };
 
 export type ProjectAgentHistory = {

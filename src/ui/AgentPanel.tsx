@@ -93,23 +93,27 @@ export function AgentPanel() {
     setDeleteConfirmationOpen(false);
     setRevisionProposalId(undefined);
     setHistoryError(undefined);
-  }, [activeThreadId, currentFile?.id, currentProjectId]);
+  }, [activeThreadId, currentProjectId]);
 
   const handleSubmit = async (
     prompt: string,
-    options?: { regenerate?: boolean }
+    options?: { regenerate?: boolean; sourceFileId?: string }
   ) => {
     if (useAgentStore.getState().activeRun) return;
-    const currentOperation = createOperationFromFile(currentFile);
+    const submittedProject = useProjectStore.getState().getCurrentProject();
+    const sourceFileId = options?.sourceFileId ?? currentFile?.id;
+    const sourceFile = submittedProject?.files.find(
+      (file) => file.id === sourceFileId && file.type === "operation"
+    );
+    const currentOperation = createOperationFromFile(sourceFile);
     if (
       !currentOperation ||
-      !currentFile ||
+      !sourceFile ||
+      !submittedProject ||
       !currentProjectId ||
       !activeThreadId
     )
       return;
-    const submittedProject = useProjectStore.getState().getCurrentProject();
-    if (!submittedProject) return;
 
     const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
     if (!modelConfig) return;
@@ -124,7 +128,7 @@ export function AgentPanel() {
       pendingProposal.id === revisionProposalId &&
       pendingProposal.projectId === currentProjectId &&
       pendingProposal.threadId === activeThreadId &&
-      pendingProposal.fileId === currentFile.id &&
+      pendingProposal.fileId === sourceFile.id &&
       !options?.regenerate
         ? pendingProposal
         : undefined;
@@ -142,6 +146,7 @@ export function AgentPanel() {
         userPrompt: requestPrompt,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
+        initialProposal: revisedProposal,
         abortSignal: controller.signal,
         onPartialExplanation: setStreamingContent,
       });
@@ -218,12 +223,16 @@ export function AgentPanel() {
   };
 
   const handleReviseProposal = () => {
+    const project = useProjectStore.getState().getCurrentProject();
     if (
       !pendingProposal ||
       !activeThreadId ||
       pendingProposal.projectId !== currentProjectId ||
       pendingProposal.threadId !== activeThreadId ||
-      pendingProposal.fileId !== currentFile?.id
+      !project?.files.some(
+        (file) =>
+          file.id === pendingProposal.fileId && file.type === "operation"
+      )
     )
       return;
     setRevisionProposalId(pendingProposal.id);
@@ -235,11 +244,13 @@ export function AgentPanel() {
       !pendingProposal ||
       pendingProposal.projectId !== currentProjectId ||
       pendingProposal.threadId !== activeThreadId ||
-      pendingProposal.fileId !== currentFile?.id ||
       useAgentStore.getState().activeRun
     )
       return;
-    void handleSubmit(pendingProposal.sourcePrompt, { regenerate: true });
+    void handleSubmit(pendingProposal.sourcePrompt, {
+      regenerate: true,
+      sourceFileId: pendingProposal.fileId,
+    });
   };
 
   const handleRenameThread = ({
@@ -443,7 +454,16 @@ export function AgentPanel() {
         historyBusy={historyBusy}
       />
       <AgentInput
-        onSubmit={handleSubmit}
+        onSubmit={(prompt) =>
+          handleSubmit(prompt, {
+            sourceFileId:
+              revisionProposalId &&
+              pendingProposal &&
+              revisionProposalId === pendingProposal.id
+                ? pendingProposal.fileId
+                : undefined,
+          })
+        }
         onCancel={() => abortController.current?.abort()}
         isLoading={!!activeRun || historyBusy}
       />

@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { coreOperations } from "../operations/built-in";
 import { getEnabledPackages, PACKAGE_CATALOG } from "../packages/catalog";
+import { loadPackageDescriptor } from "../packages/registry";
 import type { Context, OperationListItem } from "../execution/types";
 import type {
   DataType,
@@ -17,6 +18,7 @@ import {
   isTypeCompatible,
   resolveParameters,
 } from "../utils";
+import type { AgentHistoryState } from "./proposal";
 
 const MAX_RESULTS = 20;
 const MAX_OUTLINE_OPERATIONS = 50;
@@ -30,6 +32,7 @@ export class AgentDiscoveryError extends Error {
       | "duplicate_operation_name"
       | "invalid_limit"
       | "package_load_failed"
+      | "unsupported_package"
       | "stale_handle"
       | "unknown_handle",
     message: string
@@ -261,41 +264,83 @@ export async function createAgentDiscovery(
   const enabledPackageNames = new Set(
     getEnabledPackages(project).map((dependency) => dependency.name)
   );
-  for (const packageName of [...enabledPackageNames].sort()) {
+  const loadPackage = async (packageName: string) => {
     const entry = PACKAGE_CATALOG[packageName];
-    let operations: OperationListItem[];
+    if (!entry) {
+      throw new AgentDiscoveryError(
+        "unsupported_package",
+        `Unsupported package: ${packageName}`
+      );
+    }
     try {
-      operations = (await entry.load()).operations;
+      const descriptor = await loadPackageDescriptor(packageName);
+      for (const operation of descriptor.operations) {
+        createDescriptor({
+          name: operation.name,
+          source: "package",
+          packageKey: packageName,
+          packageName: entry.packageName,
+          importKind: entry.importKind,
+          operation,
+        });
+      }
     } catch {
       throw new AgentDiscoveryError(
         "package_load_failed",
         `Could not load enabled package ${entry.displayName}`
       );
     }
-    for (const operation of operations) {
-      createDescriptor({
-        name: operation.name,
-        source: "package",
-        packageKey: packageName,
-        packageName: entry.packageName,
-        importKind: entry.importKind,
-        operation,
-      });
+  };
+  const removePackage = (packageName: string) => {
+    for (const [handle, descriptor] of descriptors) {
+      if (descriptor.packageKey === packageName) descriptors.delete(handle);
     }
+  };
+  for (const packageName of [...enabledPackageNames].sort()) {
+    await loadPackage(packageName);
   }
 
   const projectNames = new Set<string>();
-  for (const file of project.files) {
-    if (file.type !== "operation") continue;
-    if (projectNames.has(file.name)) {
-      throw new AgentDiscoveryError(
-        "duplicate_operation_name",
-        `Project contains more than one operation named ${file.name}`
-      );
+  const syncProjectFiles = (
+    files: Extract<ProjectFile, { type: "operation" }>[]
+  ) => {
+    const byId = new Map(
+      [...descriptors.values()]
+        .filter((descriptor) => descriptor.file)
+        .map((descriptor) => [descriptor.file!.id, descriptor])
+    );
+    projectNames.clear();
+    for (const [handle, descriptor] of descriptors) {
+      if (
+        descriptor.file &&
+        !files.some((file) => file.id === descriptor.file!.id)
+      ) {
+        descriptors.delete(handle);
+      }
     }
-    projectNames.add(file.name);
-    createDescriptor({ name: file.name, source: "project", file });
-  }
+    for (const file of files) {
+      if (projectNames.has(file.name)) {
+        throw new AgentDiscoveryError(
+          "duplicate_operation_name",
+          `Project contains more than one operation named ${file.name}`
+        );
+      }
+      projectNames.add(file.name);
+      const existing = byId.get(file.id);
+      if (existing) {
+        existing.name = file.name;
+        existing.file = file;
+      } else {
+        createDescriptor({ name: file.name, source: "project", file });
+      }
+    }
+  };
+  syncProjectFiles(
+    project.files.filter(
+      (file): file is Extract<ProjectFile, { type: "operation" }> =>
+        file.type === "operation"
+    )
+  );
 
   const getDescriptor = (handle: string) => {
     const descriptor = descriptors.get(handle);
@@ -321,8 +366,7 @@ export async function createAgentDiscovery(
           description: project.description?.slice(0, MAX_TEXT_LENGTH),
         },
         files: {
-          operations: project.files.filter((file) => file.type === "operation")
-            .length,
+          operations: projectNames.size,
           globals: project.files.filter((file) => file.type === "globals")
             .length,
           documentation: project.files.filter(
@@ -463,6 +507,44 @@ export async function createAgentDiscovery(
             first.name.localeCompare(second.name)
         )
         .slice(0, getLimit(limit));
+    },
+
+    async setPackageEnabled(name: string, enabled: boolean) {
+      if (!PACKAGE_CATALOG[name]) {
+        throw new AgentDiscoveryError(
+          "unsupported_package",
+          `Unsupported package: ${name}`
+        );
+      }
+      if (enabled === enabledPackageNames.has(name)) return;
+      if (enabled) {
+        await loadPackage(name);
+        enabledPackageNames.add(name);
+      } else {
+        removePackage(name);
+        enabledPackageNames.delete(name);
+      }
+    },
+
+    async updateProposedState(state: AgentHistoryState) {
+      const nextPackages = new Set(
+        state.npmDependencies
+          .map((dependency) => dependency.name)
+          .filter((name) => PACKAGE_CATALOG[name])
+      );
+      for (const name of [...enabledPackageNames]) {
+        if (!nextPackages.has(name)) {
+          removePackage(name);
+          enabledPackageNames.delete(name);
+        }
+      }
+      for (const name of [...nextPackages].sort()) {
+        if (!enabledPackageNames.has(name)) {
+          await loadPackage(name);
+          enabledPackageNames.add(name);
+        }
+      }
+      syncProjectFiles(state.operationFiles.map(({ file }) => file));
     },
   };
 }

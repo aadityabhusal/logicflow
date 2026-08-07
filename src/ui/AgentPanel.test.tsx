@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
         fileId: string;
         sourcePrompt: string;
         draft: { name: string; parameters: []; statements: [] };
+        proposedState?: unknown;
       }
     >,
     activeRun: undefined,
@@ -83,6 +84,9 @@ const mocks = vi.hoisted(() => {
     persistenceState,
     useAgentPersistenceErrorStore,
     useProjectStore,
+    createOperationFromFile: vi.fn((file?: { id: string }) =>
+      file ? { id: file.id } : undefined
+    ),
     generateOperationProposal: vi.fn(),
     applyAgentProposal: vi.fn(async () => undefined),
     undoAgentEdit: vi.fn(async () => undefined),
@@ -113,7 +117,7 @@ vi.mock("@/lib/agent/history", () => ({
   canRedoAgentEdit: vi.fn(() => false),
 }));
 vi.mock("@/lib/utils", () => ({
-  createOperationFromFile: vi.fn(() => ({ id: "operation-a" })),
+  createOperationFromFile: mocks.createOperationFromFile,
 }));
 vi.mock("./agent/AgentChat", () => ({
   AgentChat: ({
@@ -171,6 +175,14 @@ beforeEach(() => {
   mocks.agentState.agentProjects["project-a"].activeThreadId = "thread-a";
   mocks.agentState.pendingProposals = {};
   mocks.persistenceState.error = undefined;
+  mocks.projectState.getCurrentFile.mockReturnValue({
+    id: "operation-a",
+    type: "operation",
+  });
+  mocks.projectState.getCurrentProject.mockReturnValue({
+    id: "project-a",
+    files: [{ id: "operation-a", type: "operation" }],
+  });
 });
 
 describe("AgentPanel thread header", () => {
@@ -256,7 +268,7 @@ describe("AgentPanel proposal lifecycle", () => {
     expect(mocks.projectState.updateFile).not.toHaveBeenCalled();
   });
 
-  it("does not revise or regenerate a proposal for another operation", () => {
+  it("does not revise or regenerate when the proposal anchor is missing", () => {
     mocks.agentState.pendingProposals = {
       "thread-a": {
         id: "proposal-a",
@@ -276,7 +288,7 @@ describe("AgentPanel proposal lifecycle", () => {
     expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
   });
 
-  it("applies the active proposal through durable agent history", async () => {
+  it("applies the active proposal while another file is selected", async () => {
     const proposal = {
       id: "proposal-a",
       projectId: "project-a",
@@ -286,12 +298,122 @@ describe("AgentPanel proposal lifecycle", () => {
       draft: { name: "operation", parameters: [] as [], statements: [] as [] },
     };
     mocks.agentState.pendingProposals = { "thread-a": proposal };
+    mocks.projectState.getCurrentFile.mockReturnValue({
+      id: "operation-b",
+      type: "operation",
+    });
+    mocks.projectState.getCurrentProject.mockReturnValue({
+      id: "project-a",
+      files: [
+        { id: "operation-a", type: "operation" },
+        { id: "operation-b", type: "operation" },
+      ],
+    });
     renderPanel();
 
     fireEvent.click(screen.getByText("Apply proposal"));
 
     await waitFor(() =>
       expect(mocks.applyAgentProposal).toHaveBeenCalledWith(proposal)
+    );
+  });
+
+  it("revises against the proposal anchor after navigation", async () => {
+    const pendingProposal = {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: "thread-a",
+      fileId: "operation-a",
+      sourcePrompt: "Original request",
+      draft: { name: "anchor", parameters: [] as [], statements: [] as [] },
+      proposedState: {
+        operationFiles: [{ index: 1, file: { id: "created-operation" } }],
+        npmDependencies: [{ name: "wretch" }],
+      },
+    };
+    mocks.agentState.pendingProposals = {
+      "thread-a": {
+        ...pendingProposal,
+      },
+    };
+    mocks.projectState.getCurrentFile.mockReturnValue({
+      id: "operation-b",
+      type: "operation",
+    });
+    mocks.projectState.getCurrentProject.mockReturnValue({
+      id: "project-a",
+      files: [
+        { id: "operation-a", type: "operation" },
+        { id: "operation-b", type: "operation" },
+      ],
+    });
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Revised" },
+      proposal: {
+        id: "proposal-b",
+        projectId: "project-a",
+        fileId: "operation-a",
+        sourcePrompt: "unused",
+        draft: { name: "anchor", parameters: [], statements: [] },
+        diagnostics: [],
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Revise proposal"));
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: { id: "operation-a" },
+          userPrompt: expect.stringContaining("Original request"),
+          initialProposal: pendingProposal,
+        })
+      )
+    );
+    expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
+      "thread-a",
+      expect.objectContaining({ sourcePrompt: "Original request" })
+    );
+  });
+
+  it("regenerates against the proposal anchor after navigation", async () => {
+    mocks.agentState.pendingProposals = {
+      "thread-a": {
+        id: "proposal-a",
+        projectId: "project-a",
+        threadId: "thread-a",
+        fileId: "operation-a",
+        sourcePrompt: "Original request",
+        draft: { name: "anchor", parameters: [], statements: [] },
+      },
+    };
+    mocks.projectState.getCurrentFile.mockReturnValue({
+      id: "operation-b",
+      type: "operation",
+    });
+    mocks.projectState.getCurrentProject.mockReturnValue({
+      id: "project-a",
+      files: [
+        { id: "operation-a", type: "operation" },
+        { id: "operation-b", type: "operation" },
+      ],
+    });
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Regenerated" },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Regenerate proposal"));
+
+    await waitFor(() =>
+      expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: { id: "operation-a" },
+          userPrompt: "Original request",
+        })
+      )
     );
   });
 });

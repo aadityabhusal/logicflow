@@ -2,9 +2,12 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { formatCode, generateOperation } from "../format-code";
 import {
+  applySupportedPackageChanges,
   getAliasesFromPackages,
   getEnabledPackages,
+  PACKAGE_CATALOG,
 } from "../packages/catalog";
+import { SOURCE_PACKAGE_MAP } from "../packages/registry";
 import { ProjectFileSchema } from "../schemas";
 import type {
   DataType,
@@ -17,6 +20,7 @@ import type {
 import {
   createData,
   createFileVariables,
+  createProjectFile,
   createOperationFromFile,
   createStatement,
   getIsAsync,
@@ -28,6 +32,9 @@ import {
   resolveUnionType,
 } from "../utils";
 import type { Context } from "../execution/types";
+import { updateFiles } from "../update";
+import { walkData, walkStatement } from "../walk";
+import isEqual from "react-fast-compare";
 
 const MAX_PARAMETERS = 20;
 const MAX_STATEMENTS = 50;
@@ -168,6 +175,8 @@ export type AgentDiagnostic = {
   severity: "error" | "warning";
   message: string;
   repairable: boolean;
+  fileId?: string;
+  packageName?: string;
 };
 
 export type ResolvedAgentOperation = {
@@ -186,6 +195,16 @@ export type AgentProposalReview = {
   operationCalls: { before: number; after: number };
   returnType: { before: string; after: string };
   generatedSyntax: "valid" | "invalid";
+  files?: {
+    change: "create" | "update" | "delete";
+    operationName: string;
+    parameters: { before: number; after: number };
+    statements: { before: number; after: number };
+    operationCalls: { before: number; after: number };
+    returnType: { before: string; after: string };
+    generatedSyntax?: "valid" | "invalid";
+  }[];
+  packages?: { enabled: string[]; disabled: string[] };
 };
 
 export type AgentProposal = {
@@ -197,6 +216,8 @@ export type AgentProposal = {
   sourcePrompt: string;
   draft: OperationDraft;
   proposedFile?: Extract<ProjectFile, { type: "operation" }>;
+  proposedState?: AgentHistoryState;
+  revisionState?: AgentHistoryState;
   diagnostics: AgentDiagnostic[];
   review?: AgentProposalReview;
 };
@@ -208,6 +229,11 @@ export type AgentHistoryState = {
   }[];
   npmDependencies: NonNullable<NonNullable<Project["dependencies"]>["npm"]>;
 };
+
+export type AgentProposalAction =
+  | { action: "create"; draft: unknown }
+  | { action: "replace"; fileId: string; draft: unknown }
+  | { action: "delete"; fileId: string };
 
 type OperationResolver = (
   handle: string,
@@ -271,19 +297,272 @@ function isTypeDraftTooDeep(draft: TypeDraft, depth = 0): boolean {
 }
 
 function countOperationCalls(statements: IStatement[]) {
-  return statements.reduce(
-    (count, statement) => count + statement.operations.length,
-    0
-  );
+  let count = 0;
+  const visited = new WeakSet<IStatement>();
+  for (const statement of statements) {
+    walkStatement(
+      statement,
+      {
+        onStatement: (nested) => {
+          if (visited.has(nested)) return;
+          visited.add(nested);
+          count += nested.operations.length;
+        },
+      },
+      { nestedOperations: true }
+    );
+  }
+  return count;
+}
+
+function propagateOperationFiles(
+  files: ProjectFile[],
+  changedFile: Extract<ProjectFile, { type: "operation" }>,
+  context: Context
+) {
+  let propagated = updateFiles(files, () => undefined, context, changedFile);
+  const operationCount = files.filter(
+    (file) => file.type === "operation"
+  ).length;
+  for (let pass = 1; pass < operationCount; pass++) {
+    const next = updateFiles(propagated, () => undefined, context);
+    if (isEqual(next, propagated)) break;
+    propagated = next;
+  }
+  return propagated;
 }
 
 export function getAgentHistoryState(project: Project): AgentHistoryState {
   return structuredClone({
-    operationFiles: project.files.flatMap((file, index) =>
+    operationFiles: (project.files ?? []).flatMap((file, index) =>
       file.type === "operation" ? [{ index, file }] : []
     ),
     npmDependencies: project.dependencies?.npm ?? [],
   });
+}
+
+function projectWithAgentState(project: Project, state?: AgentHistoryState) {
+  if (!state) return structuredClone(project);
+  const operationFiles = new Map(
+    state.operationFiles.map(({ file }) => [file.id, structuredClone(file)])
+  );
+  const files: ProjectFile[] = project.files
+    .filter((file) => file.type !== "operation")
+    .map((file) => structuredClone(file));
+  for (const { index, file } of state.operationFiles) {
+    files.splice(
+      Math.min(index, files.length),
+      0,
+      operationFiles.get(file.id)!
+    );
+  }
+  return {
+    ...structuredClone(project),
+    files,
+    dependencies: {
+      ...structuredClone(project.dependencies),
+      npm: structuredClone(state.npmDependencies),
+    },
+  };
+}
+
+function getPackageChanges(project: Project, state: AgentHistoryState) {
+  const before = new Set(
+    (project.dependencies?.npm ?? []).map((dependency) => dependency.name)
+  );
+  const after = new Set(
+    state.npmDependencies.map((dependency) => dependency.name)
+  );
+  return {
+    enabled: [...after].filter((name) => !before.has(name)).sort(),
+    disabled: [...before].filter((name) => !after.has(name)).sort(),
+  };
+}
+
+function deriveProposalReview({
+  project,
+  state,
+  primaryFileId,
+  fallbackName,
+  invalidOperationIds = new Set<string>(),
+}: {
+  project: Project;
+  state: AgentHistoryState;
+  primaryFileId?: string;
+  fallbackName: string;
+  invalidOperationIds?: Set<string>;
+}) {
+  const finalProject = projectWithAgentState(project, state);
+  const beforeContext = createValidationContext(project);
+  const afterContext = createValidationContext(finalProject);
+  const beforeFiles = new Map(
+    project.files.flatMap((file) =>
+      file.type === "operation" ? [[file.id, file] as const] : []
+    )
+  );
+  const afterFiles = new Map(
+    state.operationFiles.map(({ file }) => [file.id, file] as const)
+  );
+  const changed = [
+    ...state.operationFiles
+      .map(({ file }) => file.id)
+      .filter((id) => !isEqual(beforeFiles.get(id), afterFiles.get(id))),
+    ...project.files.flatMap((file) =>
+      file.type === "operation" && !afterFiles.has(file.id) ? [file.id] : []
+    ),
+  ];
+  const reviews: Array<{
+    id: string;
+    review: NonNullable<AgentProposalReview["files"]>[number];
+  }> = [];
+
+  for (const id of changed) {
+    const beforeFile = beforeFiles.get(id);
+    const afterFile = afterFiles.get(id);
+    const beforeOperation = beforeFile && createOperationFromFile(beforeFile);
+    const afterOperation = afterFile && createOperationFromFile(afterFile);
+    const generatedSyntax = afterOperation
+      ? invalidOperationIds.has(id)
+        ? "invalid"
+        : "valid"
+      : undefined;
+    reviews.push({
+      id,
+      review: {
+        change: beforeFile ? (afterFile ? "update" : "delete") : "create",
+        operationName: afterFile?.name ?? beforeFile?.name ?? fallbackName,
+        parameters: {
+          before: beforeOperation?.value.parameters.length ?? 0,
+          after: afterOperation?.value.parameters.length ?? 0,
+        },
+        statements: {
+          before: beforeOperation?.value.statements.length ?? 0,
+          after: afterOperation?.value.statements.length ?? 0,
+        },
+        operationCalls: {
+          before: beforeOperation
+            ? countOperationCalls([
+                ...beforeOperation.value.parameters,
+                ...beforeOperation.value.statements,
+              ])
+            : 0,
+          after: afterOperation
+            ? countOperationCalls([
+                ...afterOperation.value.parameters,
+                ...afterOperation.value.statements,
+              ])
+            : 0,
+        },
+        returnType: {
+          before: beforeOperation
+            ? getTypeSignature(beforeOperation.type.result, beforeContext)
+            : "undefined",
+          after: afterOperation
+            ? getTypeSignature(afterOperation.type.result, afterContext)
+            : "undefined",
+        },
+        generatedSyntax,
+      },
+    });
+  }
+
+  const primaryReview = reviews.find(({ id }) => id === primaryFileId)?.review;
+  const primaryFile =
+    (primaryFileId &&
+      (afterFiles.get(primaryFileId) ?? beforeFiles.get(primaryFileId))) ||
+    undefined;
+  const primaryOperation = primaryFile && createOperationFromFile(primaryFile);
+  const unchangedCount = primaryOperation
+    ? countOperationCalls([
+        ...primaryOperation.value.parameters,
+        ...primaryOperation.value.statements,
+      ])
+    : 0;
+  const unchangedReturn = primaryOperation
+    ? getTypeSignature(
+        primaryOperation.type.result,
+        afterFiles.has(primaryFile.id) ? afterContext : beforeContext
+      )
+    : "undefined";
+  const primary =
+    primaryReview ??
+    ({
+      operationName: primaryFile?.name ?? fallbackName,
+      parameters: {
+        before: primaryOperation?.value.parameters.length ?? 0,
+        after: primaryOperation?.value.parameters.length ?? 0,
+      },
+      statements: {
+        before: primaryOperation?.value.statements.length ?? 0,
+        after: primaryOperation?.value.statements.length ?? 0,
+      },
+      operationCalls: { before: unchangedCount, after: unchangedCount },
+      returnType: { before: unchangedReturn, after: unchangedReturn },
+      generatedSyntax: "valid" as const,
+    } satisfies Omit<AgentProposalReview, "files" | "packages">);
+
+  return {
+    ...primary,
+    generatedSyntax: primary.generatedSyntax ?? "valid",
+    files: reviews.map(({ review }) => review),
+    packages: getPackageChanges(project, state),
+  } satisfies AgentProposalReview;
+}
+
+const walkProjectFileData = (
+  file: ProjectFile,
+  visitors: Parameters<typeof walkData>[1]
+) => {
+  const walk = (data: IData) =>
+    walkData(data, visitors, {
+      dataTypes: true,
+      nestedOperations: true,
+      operationCalls: true,
+    });
+
+  if (file.type === "operation") {
+    const operation = createOperationFromFile(file);
+    if (operation) walk(operation);
+    for (const test of file.tests ?? []) {
+      for (const input of test.inputs) walk(input);
+      walk(test.expectedOutput);
+    }
+  } else if (file.type === "globals") {
+    for (const data of Object.values(file.content)) walk(data);
+  }
+};
+
+function referencesProjectFile(file: ProjectFile, fileId: string) {
+  let referenced = false;
+  walkProjectFileData(file, {
+    onReference: (data) => {
+      referenced ||= data.value.id === fileId;
+    },
+  });
+  return referenced;
+}
+
+function referencesPackage(file: ProjectFile, packageName: string) {
+  let referenced = false;
+  const matchesSource = (name?: string) =>
+    !!name &&
+    (name === packageName || SOURCE_PACKAGE_MAP[name] === packageName);
+  walkProjectFileData(file, {
+    onOperation: (data) => {
+      referenced ||=
+        matchesSource(data.value.source?.name) ||
+        !!data.value.name?.startsWith(`${packageName}.`);
+    },
+    onInstance: (data) => {
+      referenced ||= matchesSource(data.value.className);
+    },
+    onDataType: (type) => {
+      if (type.kind === "instance") {
+        referenced ||= matchesSource(type.className);
+      }
+    },
+  });
+  return referenced;
 }
 
 export function getAgentEditableFingerprint(project: Project) {
@@ -304,20 +583,27 @@ export function isAgentProposalStale(
 export async function createAgentProposal({
   project,
   fileId,
+  anchorFileId,
+  previousState,
+  create,
   draft: input,
   sourcePrompt,
   resolveOperation,
 }: {
   project: Project;
-  fileId: string;
+  fileId?: string;
+  anchorFileId?: string;
+  previousState?: AgentHistoryState;
+  create?: boolean;
   draft: unknown;
   sourcePrompt: string;
   resolveOperation: OperationResolver;
 }): Promise<AgentProposal> {
+  const workingProject = projectWithAgentState(project, previousState);
   const base = {
     id: nanoid(),
     projectId: project.id,
-    fileId,
+    fileId: anchorFileId ?? fileId ?? "",
     baseFingerprint: getAgentEditableFingerprint(project),
     sourcePrompt,
   };
@@ -338,10 +624,16 @@ export async function createAgentProposal({
   }
 
   const draft = parsed.data;
-  const file = project.files.find(
+  const existingFile = workingProject.files.find(
     (candidate): candidate is Extract<ProjectFile, { type: "operation" }> =>
       candidate.id === fileId && candidate.type === "operation"
   );
+  const file = create
+    ? (createProjectFile({ type: "operation", name: draft.name }) as Extract<
+        ProjectFile,
+        { type: "operation" }
+      >)
+    : existingFile;
   const diagnostics: AgentDiagnostic[] = [];
   const addError = (code: string, message: string) => {
     if (diagnostics.length < MAX_DIAGNOSTICS) {
@@ -362,9 +654,6 @@ export async function createAgentProposal({
       ],
     };
   }
-  if (draft.name !== file.name) {
-    addError("unsupported_rename", "Renaming operations is not supported yet");
-  }
   if (
     file.content.value.parameters.some(
       (parameter) => parameter.operations.length > 0
@@ -382,7 +671,21 @@ export async function createAgentProposal({
     );
   }
 
-  const context = createValidationContext(project);
+  if (
+    workingProject.files.some(
+      (candidate) =>
+        candidate.type === "operation" &&
+        candidate.id !== file.id &&
+        candidate.name === draft.name
+    )
+  ) {
+    addError(
+      "duplicate_operation_name",
+      `Operation ${draft.name} already exists`
+    );
+  }
+
+  const context = createValidationContext(workingProject);
   context.variables.delete(file.name);
   const scope = context.variables;
   const names = new Set<string>();
@@ -647,7 +950,11 @@ export async function createAgentProposal({
     (statement) => statement.controlFlow === "return"
   );
   const last = returned[0] ?? statements.at(-1);
-  const lastResult = last?.operations.at(-1)?.type.result ?? last?.data.type;
+  const lastResult =
+    last?.operations.at(-1)?.type.result ??
+    (last && isDataOfType(last.data, "reference")
+      ? scope.get(last.data.value.name)?.data.type
+      : last?.data.type);
   const isAsync = getIsAsync([...parameters, ...statements]);
   const operationType: OperationType = {
     kind: "operation",
@@ -668,68 +975,258 @@ export async function createAgentProposal({
   };
   const proposedFile: Extract<ProjectFile, { type: "operation" }> = {
     ...file,
+    name: draft.name,
     content: {
       type: operationType,
       value: {
         ...file.content.value,
         parameters,
         statements,
-        name: file.name,
+        name: draft.name,
         isAsync,
       },
     },
   };
 
-  const structural = ProjectFileSchema.safeParse(proposedFile);
-  if (!structural.success) {
-    addError(
-      "invalid_operation",
-      structural.error.issues[0]?.message ?? "Invalid operation"
-    );
+  const inputFiles = create
+    ? [...workingProject.files, proposedFile]
+    : workingProject.files;
+  const finalFiles = propagateOperationFiles(inputFiles, proposedFile, context);
+  const finalProject = { ...workingProject, files: finalFiles };
+  const proposedState = getAgentHistoryState(finalProject);
+  const ids = new Set<string>();
+  const operationNames = new Set<string>();
+  for (const candidate of proposedState.operationFiles.map(
+    ({ file }) => file
+  )) {
+    const structural = ProjectFileSchema.safeParse(candidate);
+    if (!structural.success) {
+      addError(
+        "invalid_operation",
+        structural.error.issues[0]?.message ?? "Invalid operation"
+      );
+    }
+    if (ids.has(candidate.id))
+      addError("duplicate_operation_id", "Operation IDs must be unique");
+    if (operationNames.has(candidate.name)) {
+      addError("duplicate_operation_name", "Operation names must be unique");
+    }
+    ids.add(candidate.id);
+    operationNames.add(candidate.name);
   }
 
-  let generatedSyntax: AgentProposalReview["generatedSyntax"] = "valid";
-  try {
-    const operation = createOperationFromFile(proposedFile)!;
-    await formatCode(generateOperation(operation, context));
-  } catch {
-    generatedSyntax = "invalid";
-    addError(
-      "invalid_generated_syntax",
-      "The proposed operation does not produce valid generated syntax"
-    );
+  const invalidOperationIds = new Set<string>();
+  for (const { file: candidate } of proposedState.operationFiles) {
+    const previous = project.files.find((file) => file.id === candidate.id);
+    if (isEqual(previous, candidate)) continue;
+    try {
+      await formatCode(
+        generateOperation(
+          createOperationFromFile(candidate)!,
+          createValidationContext(finalProject)
+        )
+      );
+    } catch {
+      invalidOperationIds.add(candidate.id);
+      addError(
+        "invalid_generated_syntax",
+        `Operation ${candidate.name} does not produce valid generated syntax`
+      );
+    }
   }
-
-  const before = createOperationFromFile(file)!;
-  const proposed = createOperationFromFile(proposedFile)!;
-  const review: AgentProposalReview = {
-    operationName: file.name,
-    parameters: {
-      before: before.value.parameters.length,
-      after: parameters.length,
-    },
-    statements: {
-      before: before.value.statements.length,
-      after: statements.length,
-    },
-    operationCalls: {
-      before: countOperationCalls([
-        ...before.value.parameters,
-        ...before.value.statements,
-      ]),
-      after: countOperationCalls([...parameters, ...statements]),
-    },
-    returnType: {
-      before: getTypeSignature(before.type.result, context),
-      after: getTypeSignature(proposed.type.result, context),
-    },
-    generatedSyntax,
-  };
+  const review = deriveProposalReview({
+    project,
+    state: proposedState,
+    primaryFileId: proposedFile.id,
+    fallbackName: draft.name,
+    invalidOperationIds,
+  });
+  if (
+    review.files?.length === 0 &&
+    review.packages?.enabled.length === 0 &&
+    review.packages.disabled.length === 0
+  ) {
+    addError("no_changes", "The replacement does not change the project");
+  }
 
   return {
     ...base,
     draft,
-    proposedFile,
+    proposedFile: finalFiles.find(
+      (candidate): candidate is Extract<ProjectFile, { type: "operation" }> =>
+        candidate.id === proposedFile.id && candidate.type === "operation"
+    ),
+    proposedState,
+    diagnostics,
+    review,
+  };
+}
+
+export function deleteAgentOperationProposal({
+  project,
+  anchorFileId,
+  fileId,
+  previousState,
+  sourcePrompt,
+}: {
+  project: Project;
+  anchorFileId: string;
+  fileId: string;
+  previousState?: AgentHistoryState;
+  sourcePrompt: string;
+}): AgentProposal {
+  const workingProject = projectWithAgentState(project, previousState);
+  const target = workingProject.files.find(
+    (file): file is Extract<ProjectFile, { type: "operation" }> =>
+      file.id === fileId && file.type === "operation"
+  );
+  const base = {
+    id: nanoid(),
+    projectId: project.id,
+    fileId: anchorFileId,
+    baseFingerprint: getAgentEditableFingerprint(project),
+    sourcePrompt,
+    draft: {
+      name: target?.name ?? "invalid",
+      parameters: [],
+      statements: [],
+    },
+  };
+  if (!target) {
+    return {
+      ...base,
+      diagnostics: [
+        {
+          code: "unknown_operation",
+          severity: "error",
+          message: "The target operation no longer exists",
+          repairable: true,
+        },
+      ],
+    };
+  }
+  const remainingFiles = workingProject.files.filter(
+    (file) => file.id !== target.id
+  );
+  const referencing = remainingFiles
+    .filter((file) => referencesProjectFile(file, target.id))
+    .map((file) => file.name)
+    .sort();
+  if (referencing.length > 0) {
+    return {
+      ...base,
+      diagnostics: [
+        {
+          code: "operation_in_use",
+          severity: "error",
+          message: `Cannot delete ${target.name}; referenced by ${referencing.join(", ")}`,
+          repairable: true,
+          fileId: target.id,
+        },
+      ],
+    };
+  }
+  const finalProject = {
+    ...workingProject,
+    files: remainingFiles,
+  };
+  const proposedState = getAgentHistoryState(finalProject);
+  return {
+    ...base,
+    proposedState,
+    proposedFile: proposedState.operationFiles.find(
+      ({ file }) => file.id === anchorFileId
+    )?.file,
+    diagnostics: [],
+    review: deriveProposalReview({
+      project,
+      state: proposedState,
+      primaryFileId: target.id,
+      fallbackName: target.name,
+    }),
+  };
+}
+
+export function createAgentPackageProposal({
+  project,
+  anchorFileId,
+  previousState,
+  sourcePrompt,
+  name,
+  enabled,
+}: {
+  project: Project;
+  anchorFileId: string;
+  previousState?: AgentHistoryState;
+  sourcePrompt: string;
+  name: string;
+  enabled: boolean;
+}): AgentProposal {
+  if (!PACKAGE_CATALOG[name]) throw new Error(`Unsupported package: ${name}`);
+  const workingProject = projectWithAgentState(project, previousState);
+  const currentState = getAgentHistoryState(workingProject);
+  const anchor = currentState.operationFiles.find(
+    ({ file }) => file.id === anchorFileId
+  )?.file;
+  const base = {
+    id: nanoid(),
+    projectId: project.id,
+    fileId: anchorFileId,
+    baseFingerprint: getAgentEditableFingerprint(project),
+    sourcePrompt,
+    draft: {
+      name: anchor?.name ?? "packageChange",
+      parameters: [],
+      statements: [],
+    },
+  };
+  if (
+    !enabled &&
+    workingProject.files.some((file) => referencesPackage(file, name))
+  ) {
+    return {
+      ...base,
+      diagnostics: [
+        {
+          code: "package_in_use",
+          severity: "error",
+          message: `Cannot disable ${name}; proposed operations still reference it`,
+          repairable: true,
+          packageName: name,
+        },
+      ],
+    };
+  }
+  const proposedState = {
+    ...currentState,
+    npmDependencies: applySupportedPackageChanges(
+      currentState.npmDependencies,
+      [{ name, enabled }]
+    ),
+  };
+  const review = deriveProposalReview({
+    project,
+    state: proposedState,
+    primaryFileId: anchorFileId,
+    fallbackName: "Packages",
+  });
+  const diagnostics: AgentDiagnostic[] = [];
+  if (
+    review.files?.length === 0 &&
+    review.packages?.enabled.length === 0 &&
+    review.packages.disabled.length === 0
+  ) {
+    diagnostics.push({
+      code: "no_changes",
+      severity: "error",
+      message: "The replacement does not change the project",
+      repairable: true,
+    });
+  }
+  return {
+    ...base,
+    proposedState,
+    proposedFile: anchor,
     diagnostics,
     review,
   };

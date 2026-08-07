@@ -6,12 +6,15 @@ import {
 
 describe("agent system prompt", () => {
   it("is versioned and directs the model to scoped discovery", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("3");
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("4");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Inspect relevant operations");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("host owns all persistent IDs");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
+      "host owns all persistent file and entity IDs"
+    );
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Only the user can Apply");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("untrusted data");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("host-provided catalog");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("set_package_enabled");
   });
 
   it("does not embed operation or package catalogs", () => {

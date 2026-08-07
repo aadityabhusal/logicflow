@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   streamText: vi.fn(),
+  createAgentDiscovery: vi.fn(),
   createProviderModel: vi.fn(() => ({ model: true })),
   toAgentTransportError: vi.fn(() => new Error("Normalized provider error")),
   discovery: {
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     describeOperations: vi.fn(),
     searchPackages: vi.fn(),
     resolveOperationHandle: vi.fn(),
+    updateProposedState: vi.fn(),
   },
 }));
 
@@ -30,7 +32,7 @@ vi.mock("./discovery", () => ({
       super(message);
     }
   },
-  createAgentDiscovery: vi.fn(() => Promise.resolve(mocks.discovery)),
+  createAgentDiscovery: mocks.createAgentDiscovery,
 }));
 vi.mock("./transport", () => ({
   createProviderModel: mocks.createProviderModel,
@@ -45,9 +47,15 @@ import { AgentDiscoveryError } from "./discovery";
 import { generateOperationProposal } from "./agent-service";
 import { createOperationFile, createTestProject } from "../../tests/helpers";
 import { createOperationFromFile } from "../utils";
+import {
+  getAgentEditableFingerprint,
+  getAgentHistoryState,
+  type AgentProposal,
+} from "./proposal";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.createAgentDiscovery.mockResolvedValue(mocks.discovery);
 });
 
 describe("generateOperationProposal transport lifecycle", () => {
@@ -90,6 +98,7 @@ describe("generateOperationProposal transport lifecycle", () => {
           search_operations: expect.any(Object),
           describe_operations: expect.any(Object),
           search_packages: expect.any(Object),
+          set_package_enabled: expect.any(Object),
           update_proposal: expect.any(Object),
         }),
       })
@@ -139,15 +148,23 @@ describe("generateOperationProposal transport lifecycle", () => {
   it("builds proposals only through update_proposal", async () => {
     const file = createOperationFile("target");
     const project = createTestProject({ files: [file] });
+    mocks.discovery.resolveOperationHandle.mockReturnValue({
+      source: "project",
+      fileId: file.id,
+    });
     let toolResult: unknown;
     mocks.streamText.mockReturnValue({
       partialOutputStream: (async function* () {
         const execute = mocks.streamText.mock.calls[0][0].tools.update_proposal
           .execute as (draft: unknown) => Promise<unknown>;
         toolResult = await execute({
-          name: "target",
-          parameters: [],
-          statements: [],
+          action: "replace",
+          operationHandle: "target-handle",
+          draft: {
+            name: "target",
+            parameters: [],
+            statements: [],
+          },
         });
         yield {};
       })(),
@@ -162,12 +179,198 @@ describe("generateOperationProposal transport lifecycle", () => {
       apiKey: "session-key",
     });
 
+    expect(mocks.discovery.resolveOperationHandle).toHaveBeenCalledWith(
+      "target-handle"
+    );
+
     expect(toolResult).toMatchObject({ valid: true, diagnostics: [] });
     expect(result.proposal).toMatchObject({
       projectId: project.id,
       fileId: file.id,
     });
     expect(file.content.value.statements).toEqual([]);
+  });
+
+  it("seeds revisions with the pending progressive proposal state", async () => {
+    const anchor = createOperationFile("anchor");
+    const helper = createOperationFile("helper");
+    const project = createTestProject({ files: [anchor] });
+    const proposedState = getAgentHistoryState({
+      ...project,
+      files: [anchor, helper],
+      dependencies: {
+        npm: [{ name: "wretch", version: "latest", exports: [] }],
+      },
+    });
+    const initialProposal: AgentProposal = {
+      id: "pending-proposal",
+      projectId: project.id,
+      fileId: anchor.id,
+      baseFingerprint: getAgentEditableFingerprint(project),
+      sourcePrompt: "Original request",
+      draft: { name: anchor.name, parameters: [], statements: [] },
+      proposedState,
+      diagnostics: [],
+    };
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {
+        const execute = mocks.streamText.mock.calls[0][0].tools
+          .set_package_enabled.execute as (input: {
+          name: string;
+          enabled: boolean;
+        }) => Promise<unknown>;
+        await execute({ name: "dateFns", enabled: true });
+        yield {};
+      })(),
+      output: Promise.resolve({ explanation: "Revised" }),
+    });
+
+    const result = await generateOperationProposal({
+      operation: createOperationFromFile(anchor)!,
+      project,
+      initialProposal,
+      userPrompt: "Also enable date-fns",
+      model: "openai/gpt-5.1-codex",
+      apiKey: "session-key",
+    });
+
+    expect(mocks.discovery.updateProposedState).toHaveBeenNthCalledWith(
+      1,
+      proposedState
+    );
+    expect(
+      result.proposal?.proposedState?.operationFiles.map(
+        ({ file }) => file.name
+      )
+    ).toEqual(["anchor", "helper"]);
+    expect(
+      result.proposal?.proposedState?.npmDependencies.map(({ name }) => name)
+    ).toEqual(["wretch", "dateFns"]);
+    expect(result.proposal?.review?.files).toMatchObject([
+      { change: "create", operationName: "helper" },
+    ]);
+  });
+
+  it.each([
+    {
+      name: "stale",
+      change: (proposal: AgentProposal) => ({
+        ...proposal,
+        baseFingerprint: "stale-fingerprint",
+      }),
+      message: "Cannot revise proposal: proposal is stale",
+    },
+    {
+      name: "mismatched",
+      change: (proposal: AgentProposal) => ({
+        ...proposal,
+        fileId: "other-operation",
+      }),
+      message:
+        "Cannot revise proposal: it does not belong to this project and operation",
+    },
+  ])(
+    "rejects $name initial proposals before discovery",
+    async ({ change, message }) => {
+      const anchor = createOperationFile("anchor");
+      const project = createTestProject({ files: [anchor] });
+      const initialProposal: AgentProposal = {
+        id: "pending-proposal",
+        projectId: project.id,
+        fileId: anchor.id,
+        baseFingerprint: getAgentEditableFingerprint(project),
+        sourcePrompt: "Original request",
+        draft: { name: anchor.name, parameters: [], statements: [] },
+        proposedState: getAgentHistoryState(project),
+        diagnostics: [],
+      };
+
+      await expect(
+        generateOperationProposal({
+          operation: createOperationFromFile(anchor)!,
+          project,
+          initialProposal: change(initialProposal),
+          userPrompt: "Revise it",
+          model: "openai/gpt-5.1-codex",
+          apiKey: "session-key",
+        })
+      ).rejects.toThrow(message);
+      expect(mocks.createAgentDiscovery).not.toHaveBeenCalled();
+      expect(mocks.discovery.updateProposedState).not.toHaveBeenCalled();
+      expect(mocks.streamText).not.toHaveBeenCalled();
+    }
+  );
+
+  it("revises invalid proposals from their last valid progressive state", async () => {
+    const anchor = createOperationFile("anchor");
+    const helper = createOperationFile("helper");
+    const invalid = createOperationFile("invalidCandidate");
+    const project = createTestProject({ files: [anchor] });
+    const revisionState = getAgentHistoryState({
+      ...project,
+      files: [anchor, helper],
+      dependencies: {
+        npm: [{ name: "wretch", version: "latest", exports: [] }],
+      },
+    });
+    const initialProposal: AgentProposal = {
+      id: "invalid-proposal",
+      projectId: project.id,
+      fileId: anchor.id,
+      baseFingerprint: getAgentEditableFingerprint(project),
+      sourcePrompt: "Original request",
+      draft: { name: "invalidCandidate", parameters: [], statements: [] },
+      proposedState: getAgentHistoryState({
+        ...project,
+        files: [anchor, invalid],
+      }),
+      revisionState,
+      diagnostics: [
+        {
+          code: "invalid_operation",
+          severity: "error",
+          message: "Invalid operation",
+          repairable: true,
+        },
+      ],
+    };
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {
+        const execute = mocks.streamText.mock.calls[0][0].tools
+          .set_package_enabled.execute as (input: {
+          name: string;
+          enabled: boolean;
+        }) => Promise<unknown>;
+        await execute({ name: "dateFns", enabled: true });
+        yield {};
+      })(),
+      output: Promise.resolve({ explanation: "Repaired" }),
+    });
+
+    const result = await generateOperationProposal({
+      operation: createOperationFromFile(anchor)!,
+      project,
+      initialProposal,
+      userPrompt: "Repair it",
+      model: "openai/gpt-5.1-codex",
+      apiKey: "session-key",
+    });
+
+    expect(mocks.discovery.updateProposedState).toHaveBeenNthCalledWith(
+      1,
+      revisionState
+    );
+    expect(
+      result.proposal?.proposedState?.operationFiles.map(
+        ({ file }) => file.name
+      )
+    ).toEqual(["anchor", "helper"]);
+    expect(
+      result.proposal?.proposedState?.npmDependencies.map(({ name }) => name)
+    ).toEqual(["wretch", "dateFns"]);
+    expect(result.proposal?.revisionState).toEqual(
+      result.proposal?.proposedState
+    );
   });
 
   it("returns structured discovery handle errors to the model", async () => {
@@ -197,6 +400,59 @@ describe("generateOperationProposal transport lifecycle", () => {
     });
     await expect(execute({ handle: "invalid" })).resolves.toEqual({
       error: { code: "unknown_handle", message: "Unknown handle" },
+    });
+  });
+
+  it("exposes strict host-owned proposal and package tool inputs", async () => {
+    const file = createOperationFile("target");
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {})(),
+      output: Promise.resolve({ explanation: "" }),
+    });
+    await generateOperationProposal({
+      operation: createOperationFromFile(file)!,
+      project: createTestProject({ files: [file] }),
+      userPrompt: "Change it",
+      model: "openai/gpt-5.1-codex",
+      apiKey: "session-key",
+    });
+    const tools = mocks.streamText.mock.calls[0][0].tools;
+
+    expect(
+      tools.update_proposal.inputSchema.safeParse({
+        action: "create",
+        draft: {
+          id: "model-file-id",
+          name: "created",
+          parameters: [],
+          statements: [],
+        },
+      }).success
+    ).toBe(false);
+    expect(
+      tools.update_proposal.inputSchema.safeParse({
+        name: "target",
+        parameters: [],
+        statements: [],
+      }).success
+    ).toBe(false);
+    expect(
+      tools.set_package_enabled.inputSchema.safeParse({
+        name: "wretch",
+        enabled: true,
+        version: "model-version",
+      }).success
+    ).toBe(false);
+    await expect(
+      tools.set_package_enabled.execute({
+        name: "arbitrary-package",
+        enabled: true,
+      })
+    ).resolves.toEqual({
+      error: {
+        code: "unsupported_package",
+        message: "Unsupported package: arbitrary-package",
+      },
     });
   });
 

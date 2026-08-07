@@ -4,7 +4,11 @@ import { DataTypeSchema } from "../schemas";
 import type { IData, OperationType, Project } from "../types";
 import { AgentDiscoveryError, createAgentDiscovery } from "./discovery";
 import {
+  createAgentPackageProposal,
   createAgentProposal,
+  deleteAgentOperationProposal,
+  getAgentHistoryState,
+  isAgentProposalStale,
   OperationDraftSchema,
   type AgentProposal,
 } from "./proposal";
@@ -19,12 +23,36 @@ const AgentResponseSchema = z.object({
   explanation: z.string().nullable(),
 });
 
+const UpdateProposalSchema = z.discriminatedUnion("action", [
+  z
+    .object({ action: z.literal("create"), draft: OperationDraftSchema })
+    .strict(),
+  z
+    .object({
+      action: z.literal("replace"),
+      operationHandle: z.string().min(1),
+      draft: OperationDraftSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("delete"),
+      operationHandle: z.string().min(1),
+    })
+    .strict(),
+]);
+
+const SetPackageEnabledSchema = z
+  .object({ name: z.string().min(1), enabled: z.boolean() })
+  .strict();
+
 export async function generateOperationProposal({
   apiKey,
   model,
   operation,
   project,
   userPrompt,
+  initialProposal,
   abortSignal,
   onPartialExplanation,
 }: {
@@ -33,11 +61,38 @@ export async function generateOperationProposal({
   userPrompt: string;
   model: string;
   apiKey: string;
+  initialProposal?: AgentProposal;
   abortSignal?: AbortSignal;
   onPartialExplanation?: (explanation: string) => void;
 }) {
+  if (initialProposal) {
+    if (
+      initialProposal.projectId !== project.id ||
+      initialProposal.fileId !== operation.id
+    ) {
+      throw new Error(
+        "Cannot revise proposal: it does not belong to this project and operation"
+      );
+    }
+    if (isAgentProposalStale(initialProposal, project)) {
+      throw new Error("Cannot revise proposal: proposal is stale");
+    }
+  }
+  const initialHasErrors = initialProposal?.diagnostics.some(
+    (diagnostic) => diagnostic.severity === "error"
+  );
+  const initialState = initialHasErrors
+    ? initialProposal?.revisionState
+    : (initialProposal?.proposedState ?? initialProposal?.revisionState);
+  if (initialProposal && !initialState) {
+    throw new Error("Cannot revise proposal: revision state is missing");
+  }
   const discovery = await createAgentDiscovery(project, operation.id);
-  let proposal: AgentProposal | undefined;
+  let proposal = initialProposal;
+  let proposedState = initialState ?? getAgentHistoryState(project);
+  if (initialState) {
+    await discovery.updateProposedState(initialState);
+  }
   let toolCalls = 0;
   const executeTool = async (action: () => unknown) => {
     toolCalls++;
@@ -54,6 +109,14 @@ export async function generateOperationProposal({
     } catch (error) {
       if (error instanceof AgentDiscoveryError) {
         return { error: { code: error.code, message: error.message } };
+      }
+      if (
+        error instanceof Error &&
+        error.message.startsWith("Unsupported package:")
+      ) {
+        return {
+          error: { code: "unsupported_package", message: error.message },
+        };
       }
       throw error;
     }
@@ -111,25 +174,101 @@ export async function generateOperationProposal({
     }),
     update_proposal: tool({
       description:
-        "Replace the selected operation in the current reviewable proposal",
-      inputSchema: OperationDraftSchema,
-      execute: (draft) =>
+        "Create, replace, rename, or delete an operation in the progressive cross-file proposal",
+      inputSchema: UpdateProposalSchema,
+      execute: (input) =>
         executeTool(async () => {
-          proposal = await createAgentProposal({
-            project,
-            fileId: operation.id,
-            draft,
-            sourcePrompt: userPrompt,
-            resolveOperation: (handle, inputType) =>
-              discovery.resolveOperationHandle(handle, inputType),
-          });
+          if (input.action === "create") {
+            proposal = await createAgentProposal({
+              project,
+              anchorFileId: operation.id,
+              previousState: proposedState,
+              create: true,
+              draft: input.draft,
+              sourcePrompt: userPrompt,
+              resolveOperation: (handle, inputType) =>
+                discovery.resolveOperationHandle(handle, inputType),
+            });
+          } else {
+            const target = discovery.resolveOperationHandle(
+              input.operationHandle
+            );
+            if (target.source !== "project" || !target.fileId) {
+              throw new AgentDiscoveryError(
+                "unknown_handle",
+                "Proposal targets must be project-operation handles"
+              );
+            }
+            proposal =
+              input.action === "delete"
+                ? deleteAgentOperationProposal({
+                    project,
+                    anchorFileId: operation.id,
+                    fileId: target.fileId,
+                    previousState: proposedState,
+                    sourcePrompt: userPrompt,
+                  })
+                : await createAgentProposal({
+                    project,
+                    anchorFileId: operation.id,
+                    fileId: target.fileId,
+                    previousState: proposedState,
+                    draft: input.draft,
+                    sourcePrompt: userPrompt,
+                    resolveOperation: (handle, inputType) =>
+                      discovery.resolveOperationHandle(handle, inputType),
+                  });
+          }
+          const valid = !proposal.diagnostics.some(
+            (diagnostic) => diagnostic.severity === "error"
+          );
+          proposal.revisionState =
+            valid && proposal.proposedState
+              ? proposal.proposedState
+              : proposedState;
+          if (valid && proposal.proposedState) {
+            proposedState = proposal.proposedState;
+            await discovery.updateProposedState(proposedState);
+          }
           return {
             proposalId: proposal.id,
-            valid: !proposal.diagnostics.some(
-              (diagnostic) => diagnostic.severity === "error"
-            ),
+            valid,
             diagnostics: proposal.diagnostics,
             review: proposal.review,
+          };
+        }),
+    }),
+    set_package_enabled: tool({
+      description:
+        "Idempotently enable or disable one supported package in the proposal",
+      inputSchema: SetPackageEnabledSchema,
+      execute: ({ name, enabled }) =>
+        executeTool(async () => {
+          const candidate = createAgentPackageProposal({
+            project,
+            anchorFileId: operation.id,
+            previousState: proposedState,
+            sourcePrompt: userPrompt,
+            name,
+            enabled,
+          });
+          const valid = !candidate.diagnostics.some(
+            (diagnostic) => diagnostic.severity === "error"
+          );
+          candidate.revisionState =
+            valid && candidate.proposedState
+              ? candidate.proposedState
+              : proposedState;
+          if (valid && candidate.proposedState) {
+            await discovery.updateProposedState(candidate.proposedState);
+            proposedState = candidate.proposedState;
+          }
+          proposal = candidate;
+          return {
+            proposalId: candidate.id,
+            valid,
+            diagnostics: candidate.diagnostics,
+            review: candidate.review,
           };
         }),
     }),

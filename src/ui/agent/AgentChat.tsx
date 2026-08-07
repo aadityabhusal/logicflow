@@ -18,7 +18,6 @@ export function AgentChat({
 }) {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
-  const currentFile = useProjectStore((s) => s.getCurrentFile());
   const { agentProjects, activeRun, pendingProposals } = useAgentStore();
   const agentProject = currentProjectId
     ? agentProjects[currentProjectId]
@@ -30,6 +29,12 @@ export function AgentChat({
   const pendingProposal = activeThreadId
     ? pendingProposals[activeThreadId]
     : undefined;
+  const recoverable = !!(
+    pendingProposal &&
+    currentProject?.files.some(
+      (file) => file.id === pendingProposal.fileId && file.type === "operation"
+    )
+  );
   const threadMessages = activeThread?.messages ?? [];
   const isLoading = activeRun?.threadId === activeThreadId;
 
@@ -58,11 +63,22 @@ export function AgentChat({
               active={pendingProposal?.id === msg.proposal.id}
               stale={
                 pendingProposal?.id === msg.proposal.id &&
-                (isAgentProposalStale(pendingProposal, currentProject) ||
-                  currentFile?.id !== pendingProposal.fileId)
+                isAgentProposalStale(pendingProposal, currentProject)
               }
               busy={!!activeRun || historyBusy}
-              recoverable={currentFile?.id === pendingProposal?.fileId}
+              recoverable={recoverable}
+              diagnosticFileNames={msg.proposal.diagnostics.map((diagnostic) =>
+                diagnostic.fileId
+                  ? ((pendingProposal && pendingProposal.id === msg.proposal?.id
+                      ? pendingProposal.proposedState?.operationFiles.find(
+                          ({ file }) => file.id === diagnostic.fileId
+                        )?.file.name
+                      : undefined) ??
+                    currentProject?.files.find(
+                      (file) => file.id === diagnostic.fileId
+                    )?.name)
+                  : undefined
+              )}
               onApply={onApplyProposal}
               onReject={onRejectProposal}
               onRevise={onReviseProposal}
