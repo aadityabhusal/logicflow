@@ -271,9 +271,9 @@ function DeploymentPanelComponent() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0 min-w-0">
       <div className="flex justify-between items-center p-1 border-b gap-4 bg-dropdown-default">
-        <p className="font-bold">Deployment</p>
+        <h2 className="font-bold">Deployment</h2>
       </div>
       <div className="flex-1 min-h-0 overflow-auto dropdown-scrollbar">
         <div className="border-b p-1">
@@ -313,16 +313,23 @@ function DeploymentPanelComponent() {
                 className="border-b border-border last:border-b-0"
               >
                 <div className="flex items-center gap-1">
-                  <span
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    aria-controls={
+                      isExpanded
+                        ? `deployment-${target.platform}-details`
+                        : undefined
+                    }
                     className={[
-                      "flex items-center gap-2 py-1 flex-1 truncate text-sm cursor-pointer hover:bg-dropdown-hover",
+                      "flex min-h-9 min-w-0 flex-1 items-center gap-2 truncate py-1 text-left text-sm hover:bg-dropdown-hover focus-visible:outline-2",
                       isExpanded ? "" : "text-gray-300",
                     ].join(" ")}
                     onClick={() => togglePlatformExpanded(target.platform)}
                   >
                     {isExpanded ? <FaChevronDown /> : <FaChevronRight />}
                     {PLATFORMS[target.platform].label}
-                  </span>
+                  </button>
                   <Popover position="bottom-start" withinPortal={false}>
                     <Popover.Target>
                       <IconButton
@@ -398,7 +405,10 @@ function DeploymentPanelComponent() {
                 </div>
 
                 {isExpanded && (
-                  <div className="flex flex-col">
+                  <div
+                    id={`deployment-${target.platform}-details`}
+                    className="flex flex-col"
+                  >
                     <div className="flex items-center gap-3 p-1 justify-between">
                       {latestDeploy?.dashboardUrl && (
                         <Button
@@ -552,6 +562,7 @@ function DeploymentPanelComponent() {
           </div>
           <IconButton
             icon={FaDownload}
+            title="Export code"
             onClick={handleExport}
             loading={isExporting}
           />

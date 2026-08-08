@@ -125,7 +125,11 @@ vi.mock("@/lib/store", () => ({
 }));
 vi.mock("@/lib/data", () => ({
   AVAILABLE_MODELS: [{ id: "model-a", name: "Model A", provider: "openai" }],
-  LLM_PROVIDERS: {},
+  LLM_PROVIDERS: {
+    google: { name: "Gemini", Icon: () => null },
+    openai: { name: "OpenAI", Icon: () => null },
+    anthropic: { name: "Anthropic", Icon: () => null },
+  },
 }));
 vi.mock("@/lib/agent/agent-service", () => ({
   generateOperationProposal: mocks.generateOperationProposal,
@@ -233,14 +237,18 @@ beforeEach(() => {
 });
 
 describe("AgentPanel thread header", () => {
-  it("discloses provider sharing of sanitized runtime feedback", () => {
+  it("discloses project content and runtime feedback sent to the provider", () => {
     renderPanel();
 
     expect(
       screen.getByText(
-        "Sanitized execution feedback may be sent to the selected model provider."
+        "Relevant operation content, including literal values, and sanitized execution feedback may be sent to the selected model provider."
       )
     ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Undo agent edit" })
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Add API keys" })).toBeDefined();
   });
 
   it("renames the active chat inline", () => {
@@ -269,6 +277,9 @@ describe("AgentPanel thread header", () => {
 
     expect(screen.queryByRole("textbox", { name: "Chat name" })).toBeNull();
     expect(mocks.agentState.renameThread).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Rename chat" })
+    );
   });
 
   it("confirms before deleting the active chat", async () => {
@@ -277,16 +288,39 @@ describe("AgentPanel thread header", () => {
     const deleteButton = screen.getByRole("button", { name: "Delete chat" });
     fireEvent.click(deleteButton);
     expect(await screen.findByText("Delete this chat?")).toBeDefined();
+    expect(
+      screen
+        .getByRole("dialog", { hidden: true })
+        .getAttribute("aria-labelledby")
+    ).toBe("delete-chat-title");
     fireEvent.click(screen.getByText("Yes, delete."));
 
     expect(mocks.agentState.removeThread).toHaveBeenCalledWith("thread-a");
     expect(deleteButton.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("labels the API key dialog and provider inputs", async () => {
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add API keys" }));
+
+    expect(await screen.findByLabelText("Gemini API key")).toBeDefined();
+    expect(
+      screen
+        .getByRole("dialog", { hidden: true })
+        .getAttribute("aria-labelledby")
+    ).toBe("agent-api-keys-title");
+    expect(screen.getByLabelText("OpenAI API key")).toBeDefined();
+    expect(screen.getByLabelText("Anthropic API key")).toBeDefined();
+  });
+
   it("shows and dismisses persistence errors", () => {
     mocks.persistenceState.error = "Agent chats could not be saved.";
 
     renderPanel();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Agent chats could not be saved."
+    );
     fireEvent.click(screen.getByText("Dismiss"));
 
     expect(mocks.useAgentPersistenceErrorStore.setState).toHaveBeenCalledWith({

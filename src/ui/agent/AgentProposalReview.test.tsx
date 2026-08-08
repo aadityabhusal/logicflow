@@ -69,6 +69,9 @@ describe("AgentProposalReview", () => {
   it("renders legacy single-operation reviews and enables Apply", () => {
     const actions = renderReview();
 
+    expect(
+      screen.getByRole("region", { name: "Proposal review" })
+    ).toBeDefined();
     expect(screen.getByText("formatMessage")).toBeDefined();
     expect(screen.getByText("undefined to string")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -142,6 +145,7 @@ describe("AgentProposalReview", () => {
     expect(screen.getByText("date-fns")).toBeDefined();
     expect(screen.getByText(/Operation formatMessage:/)).toBeDefined();
     expect(screen.getByText(/Package wretch:/)).toBeDefined();
+    expect(screen.getAllByText(/warning:/i)).toHaveLength(2);
     expect(screen.queryByText(/private-file-id/)).toBeNull();
   });
 
@@ -201,6 +205,7 @@ describe("AgentProposalReview", () => {
     expect(
       screen.getByRole("button", { name: "Revise" }).hasAttribute("disabled")
     ).toBe(false);
+    expect(screen.getByText(/Apply is unavailable/)).toBeDefined();
   });
 
   it("disables Apply when the proposal anchor is not recoverable", () => {
@@ -209,5 +214,6 @@ describe("AgentProposalReview", () => {
     expect(
       screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
     ).toBe(true);
+    expect(screen.getByText(/source operation no longer exists/)).toBeDefined();
   });
 });

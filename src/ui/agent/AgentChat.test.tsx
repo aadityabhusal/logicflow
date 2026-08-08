@@ -107,6 +107,10 @@ describe("AgentChat proposal navigation", () => {
     );
 
     expect(mocks.isAgentProposalStale).toHaveBeenCalled();
+    expect(
+      screen.getByRole("log", { name: "Agent conversation" })
+    ).toBeDefined();
+    expect(screen.getAllByRole("article").length).toBeGreaterThan(0);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")

@@ -64,6 +64,8 @@ export function AgentPanel() {
   const currentFile = useProjectStore((s) => s.getCurrentFile());
   const abortController = useRef<AbortController>();
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreRenameFocus = useRef(false);
   const [editingThreadId, setEditingThreadId] = useState<string>();
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [revisionProposalId, setRevisionProposalId] = useState<string>();
@@ -102,6 +104,10 @@ export function AgentPanel() {
 
   useEffect(() => {
     if (editingThreadId) renameInputRef.current?.focus();
+    else if (restoreRenameFocus.current) {
+      renameButtonRef.current?.focus();
+      restoreRenameFocus.current = false;
+    }
   }, [editingThreadId]);
 
   useEffect(() => {
@@ -242,6 +248,7 @@ export function AgentPanel() {
   const handleRejectProposal = () => {
     if (activeThreadId) setPendingProposal(activeThreadId, undefined);
     setRevisionProposalId(undefined);
+    document.getElementById("agent-prompt-input")?.focus();
   };
 
   const handleExecutionFeedback = async (
@@ -395,6 +402,7 @@ export function AgentPanel() {
       return;
     setRevisionProposalId(pendingProposal.id);
     setDraft(activeThreadId, "Revise the proposal: ");
+    document.getElementById("agent-prompt-input")?.focus();
   };
 
   const handleRegenerateProposal = () => {
@@ -419,8 +427,8 @@ export function AgentPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between items-center p-1 border-b gap-1 bg-dropdown-default">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-editor">
+      <div className="flex min-w-0 flex-wrap items-center p-1 border-b gap-1 bg-dropdown-default">
         <Menu position="bottom-start">
           <Menu.Target>
             <IconButton
@@ -434,6 +442,8 @@ export function AgentPanel() {
             {projectThreads.map((thread) => (
               <Menu.Item
                 key={thread.id}
+                role="menuitemradio"
+                aria-checked={thread.id === activeThreadId}
                 onClick={() =>
                   currentProjectId && selectThread(currentProjectId, thread.id)
                 }
@@ -447,7 +457,7 @@ export function AgentPanel() {
             ))}
           </Menu.Dropdown>
         </Menu>
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
           {editingThreadId === activeThreadId && activeThread ? (
             <input
               ref={renameInputRef}
@@ -461,6 +471,7 @@ export function AgentPanel() {
                   event.currentTarget.blur();
                 } else if (event.key === "Escape") {
                   event.preventDefault();
+                  restoreRenameFocus.current = true;
                   setEditingThreadId(undefined);
                 }
               }}
@@ -475,11 +486,11 @@ export function AgentPanel() {
           )}
           {!editingThreadId ? (
             <IconButton
+              ref={renameButtonRef}
               icon={FaPen}
               onClick={() =>
                 activeThread && setEditingThreadId(activeThread.id)
               }
-              size={14}
               title="Rename chat"
               aria-label="Rename chat"
               className="px-0.5 hover:outline hover:outline-border"
@@ -487,8 +498,7 @@ export function AgentPanel() {
             />
           ) : null}
         </div>
-        <div className="flex-1" />
-        <div className="flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1">
           <IconButton
             icon={FaArrowRotateLeft}
             title="Undo agent edit"
@@ -523,16 +533,20 @@ export function AgentPanel() {
               <IconButton
                 icon={FaTrash}
                 title="Delete chat"
-                size={14}
                 aria-label="Delete chat"
                 className="p-0.5 hover:outline hover:outline-border"
                 disabled={!activeThread || !!activeRun}
                 onClick={() => setDeleteConfirmationOpen((opened) => !opened)}
               />
             </Popover.Target>
-            <Popover.Dropdown classNames={{ dropdown: "border" }}>
+            <Popover.Dropdown
+              aria-labelledby="delete-chat-title"
+              classNames={{ dropdown: "border" }}
+            >
               <div className="flex flex-col gap-2 p-1">
-                <span className="text-sm">Delete this chat?</span>
+                <span id="delete-chat-title" className="text-sm">
+                  Delete this chat?
+                </span>
                 <Button
                   leftSection={<FaTrash className="text-red-400" />}
                   className="text-sm self-end"
@@ -553,21 +567,29 @@ export function AgentPanel() {
             title="New chat"
             disabled={!!activeRun || !currentProjectId || !agentProject}
           />
-          <Popover position="top-start">
+          <Popover position="top-start" trapFocus returnFocus>
             <Popover.Target>
               <IconButton icon={MdVpnKey} title="Add API keys" />
             </Popover.Target>
-            <Popover.Dropdown classNames={{ dropdown: "border" }}>
+            <Popover.Dropdown
+              aria-labelledby="agent-api-keys-title"
+              classNames={{ dropdown: "border" }}
+            >
               <div className="flex flex-col gap-1">
-                <p className="px-1 text-xs text-dimmed">
+                <p
+                  id="agent-api-keys-title"
+                  className="px-1 text-xs text-dimmed"
+                >
                   Keys stay in this browser tab and are not saved.
                 </p>
                 {Object.entries(LLM_PROVIDERS).map(([id, { name, Icon }]) => (
                   <PasswordInput
                     key={id}
                     leftSection={<Icon />}
+                    label={`${name} API key`}
                     placeholder={`Enter ${name} key`}
                     classNames={{
+                      label: "sr-only",
                       wrapper: "p-1",
                       innerInput: "focus:outline outline-white p-0.5",
                     }}
@@ -586,7 +608,7 @@ export function AgentPanel() {
         </div>
       </div>
       {persistenceError ? (
-        <div className="border-b p-2 text-xs">
+        <div role="alert" className="border-b p-2 text-xs">
           <p>{persistenceError}</p>
           <Button
             size="compact-xs"
@@ -610,16 +632,20 @@ export function AgentPanel() {
         </div>
       ) : null}
       <p className="border-b p-2 text-xs text-dimmed">
-        Sanitized execution feedback may be sent to the selected model provider.
+        Relevant operation content, including literal values, and sanitized
+        execution feedback may be sent to the selected model provider.
       </p>
       <AgentChat
         onApplyProposal={handleApplyProposal}
         onRejectProposal={handleRejectProposal}
         onReviseProposal={handleReviseProposal}
         onRegenerateProposal={handleRegenerateProposal}
-        onOpenDeploymentPanel={() =>
-          useSidebarTabStore.getState().setActiveTab("deployment")
-        }
+        onOpenDeploymentPanel={() => {
+          useSidebarTabStore.getState().setActiveTab("deployment");
+          requestAnimationFrame(() =>
+            document.getElementById("sidebar-tab-deployment")?.focus()
+          );
+        }}
         historyBusy={historyBusy}
       />
       <AgentInput

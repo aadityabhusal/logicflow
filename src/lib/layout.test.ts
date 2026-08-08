@@ -15,6 +15,7 @@ import {
   WRAP_THRESHOLD,
   SEPARATOR_WIDTH,
   MAX_STRING_DISPLAY_LENGTH,
+  getSidebarPanelLimits,
 } from "@/lib/layout";
 import {
   testString,
@@ -124,6 +125,35 @@ describe("constants", () => {
   it("SEPARATOR_WIDTH is 1", () => expect(SEPARATOR_WIDTH).toBe(1));
   it("MAX_STRING_DISPLAY_LENGTH is 28", () =>
     expect(MAX_STRING_DISPLAY_LENGTH).toBe(28));
+});
+
+describe("getSidebarPanelLimits", () => {
+  it("gives the agent enough desktop width for its controls", () => {
+    expect(getSidebarPanelLimits("agent", 1024, 768)).toEqual({
+      minWidth: 360,
+      maxWidth: 512,
+      minHeight: 384,
+      maxHeight: 576,
+    });
+  });
+
+  it("keeps a short landscape agent panel resizable", () => {
+    expect(getSidebarPanelLimits("agent", 667, 375)).toEqual({
+      minWidth: 360,
+      maxWidth: 360,
+      minHeight: 240,
+      maxHeight: 281.25,
+    });
+  });
+
+  it("preserves compact limits for other panels", () => {
+    expect(getSidebarPanelLimits("details", 1024, 768)).toEqual({
+      minWidth: 200,
+      maxWidth: 512,
+      minHeight: 150,
+      maxHeight: 576,
+    });
+  });
 });
 
 describe("getEntityWidth — string content length", () => {

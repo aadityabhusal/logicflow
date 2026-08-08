@@ -42,19 +42,27 @@ export function AgentChat({
 
   if (threadMessages.length === 0 && !isLoading) {
     return (
-      <NoteText center className="py-4">
+      <NoteText center className="flex-1 min-h-0 py-4">
         Ask the AI to help modify your operation
       </NoteText>
     );
   }
 
   return (
-    <div className="p-2 h-full overflow-y-auto">
+    <div
+      role="log"
+      aria-label="Agent conversation"
+      aria-live="polite"
+      aria-relevant="additions text"
+      aria-busy={isLoading}
+      className="flex-1 min-h-0 min-w-0 overflow-y-auto p-2"
+    >
       {threadMessages.map((msg) => (
-        <div
+        <article
           key={msg.id}
+          aria-label={msg.role === "user" ? "You" : "Agent"}
           className={[
-            "rounded-xs p-2 mb-2",
+            "min-w-0 rounded-xs p-2 mb-2 wrap-anywhere",
             msg.role === "user" ? "bg-dropdown-scrollbar" : "",
           ].join(" ")}
         >
@@ -89,7 +97,7 @@ export function AgentChat({
           {msg.deploymentAction === "open-deployment-panel" ? (
             <button
               type="button"
-              className="mt-2 rounded-xs border px-2 py-1 text-sm underline"
+              className="mt-2 min-h-9 rounded-xs border px-2 py-1 text-sm underline"
               onClick={onOpenDeploymentPanel}
               disabled={!!activeRun || historyBusy}
             >
@@ -124,10 +132,12 @@ export function AgentChat({
               onRegenerate={onRegenerateProposal}
             />
           ) : null}
-        </div>
+        </article>
       ))}
       {isLoading ? (
-        <NoteText>{activeRun?.streamingContent || "Loading..."}</NoteText>
+        <div>
+          <NoteText>{activeRun?.streamingContent || "Loading..."}</NoteText>
+        </div>
       ) : null}
     </div>
   );

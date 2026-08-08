@@ -1,0 +1,217 @@
+import { MantineProvider } from "@mantine/core";
+import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  apiKey: "",
+  draft: "Keep this draft",
+  setDraft: vi.fn(),
+  setSelectedModel: vi.fn(),
+  smallScreen: false,
+}));
+
+vi.mock("@mantine/hooks", async () => ({
+  ...(await vi.importActual<typeof import("@mantine/hooks")>("@mantine/hooks")),
+  useMediaQuery: () => mocks.smallScreen,
+}));
+
+vi.mock("@/lib/store", () => ({
+  useProjectStore: (
+    selector: (state: { currentProjectId: string }) => unknown
+  ) => selector({ currentProjectId: "project-a" }),
+  useAgentStore: () => ({
+    selectedModel: "gemini-2.5-flash",
+    getApiKey: () => mocks.apiKey,
+    setSelectedModel: mocks.setSelectedModel,
+    setDraft: mocks.setDraft,
+    agentProjects: {
+      "project-a": {
+        activeThreadId: "thread-a",
+        threads: [{ id: "thread-a", draft: mocks.draft }],
+      },
+    },
+  }),
+}));
+
+import { AgentInput } from "./AgentInput";
+
+beforeAll(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  );
+});
+
+afterAll(() => vi.unstubAllGlobals());
+
+function renderInput({
+  isLoading = false,
+  onSubmit = vi.fn(),
+}: {
+  isLoading?: boolean;
+  onSubmit?: (prompt: string) => void;
+} = {}) {
+  return {
+    onSubmit,
+    ...render(
+      <MantineProvider>
+        <AgentInput
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          isLoading={isLoading}
+        />
+      </MantineProvider>
+    ),
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.apiKey = "";
+  mocks.draft = "Keep this draft";
+  mocks.smallScreen = false;
+});
+
+describe("AgentInput accessibility", () => {
+  it("preserves the draft when Enter is pressed without an API key", () => {
+    const { onSubmit } = renderInput();
+    const input = screen.getByRole("textbox", { name: "Message the agent" });
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(mocks.setDraft).not.toHaveBeenCalledWith("thread-a", "");
+    expect(input).toHaveProperty("value", "Keep this draft");
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+    ).toBe(true);
+    expect(screen.getByText(/Add an API key/)).toBeDefined();
+  });
+
+  it("submits with Enter on desktop when the selected model has a key", () => {
+    mocks.apiKey = "key";
+    const { onSubmit } = renderInput();
+
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { key: "Enter" }
+    );
+
+    expect(onSubmit).toHaveBeenCalledWith("Keep this draft");
+    expect(mocks.setDraft).toHaveBeenCalledWith("thread-a", "");
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+    ).toBe(false);
+  });
+
+  it("uses Enter for new lines on mobile and Ctrl+Enter to submit", () => {
+    mocks.apiKey = "key";
+    mocks.smallScreen = true;
+    const { onSubmit } = renderInput();
+    const input = screen.getByRole("textbox", { name: "Message the agent" });
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    expect(onSubmit).toHaveBeenCalledWith("Keep this draft");
+  });
+
+  it("returns focus to the composer when a request finishes", () => {
+    mocks.apiKey = "key";
+    const onSubmit = vi.fn();
+    const { rerender } = renderInput({ onSubmit });
+
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { key: "Enter" }
+    );
+
+    rerender(
+      <MantineProvider>
+        <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading />
+      </MantineProvider>
+    );
+
+    rerender(
+      <MantineProvider>
+        <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading={false} />
+      </MantineProvider>
+    );
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Message the agent" })
+    );
+  });
+
+  it("does not steal focus from another control when a request finishes", () => {
+    mocks.apiKey = "key";
+    const onSubmit = vi.fn();
+    const { rerender } = renderInput({ onSubmit });
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { key: "Enter" }
+    );
+    rerender(
+      <MantineProvider>
+        <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading />
+      </MantineProvider>
+    );
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+
+    rerender(
+      <MantineProvider>
+        <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading={false} />
+      </MantineProvider>
+    );
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it("does not move focus from the model selector when a request finishes", () => {
+    mocks.apiKey = "key";
+    const onSubmit = vi.fn();
+    const { rerender } = renderInput({ onSubmit });
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { key: "Enter" }
+    );
+    rerender(
+      <MantineProvider>
+        <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading />
+      </MantineProvider>
+    );
+    const modelSelector = screen.getByRole("button", {
+      name: "Model: Gemini 2.5 Flash",
+    });
+    modelSelector.focus();
+
+    rerender(
+      <MantineProvider>
+        <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading={false} />
+      </MantineProvider>
+    );
+
+    expect(document.activeElement).toBe(modelSelector);
+  });
+});

@@ -25,9 +25,17 @@ export function AgentProposalReview({
   onRegenerate: () => void;
 }) {
   const { review, diagnostics } = proposal;
+  const titleId = `proposal-${proposal.id}-title`;
+  const staleId = `proposal-${proposal.id}-stale`;
+  const actionStatusId = `proposal-${proposal.id}-action-status`;
   const errors = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error"
   );
+  const actionStatus = !recoverable
+    ? "Proposal actions are unavailable because the source operation no longer exists."
+    : errors.length > 0
+      ? "Apply is unavailable until proposal errors are resolved."
+      : undefined;
 
   const renderChanges = (changes: {
     parameters: { before: number; after: number };
@@ -36,31 +44,38 @@ export function AgentProposalReview({
     returnType: { before: string; after: string };
     generatedSyntax?: "valid" | "invalid";
   }) => (
-    <dl className="grid grid-cols-2 gap-x-2 text-xs">
+    <dl className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-xs">
       <dt>Parameters</dt>
-      <dd>
+      <dd className="min-w-0 wrap-anywhere">
         {changes.parameters.before} to {changes.parameters.after}
       </dd>
       <dt>Statements</dt>
-      <dd>
+      <dd className="min-w-0 wrap-anywhere">
         {changes.statements.before} to {changes.statements.after}
       </dd>
       <dt>Operation calls</dt>
-      <dd>
+      <dd className="min-w-0 wrap-anywhere">
         {changes.operationCalls.before} to {changes.operationCalls.after}
       </dd>
       <dt>Return type</dt>
-      <dd>
+      <dd className="min-w-0 wrap-anywhere">
         {changes.returnType.before} to {changes.returnType.after}
       </dd>
       <dt>Generated syntax</dt>
-      <dd>{changes.generatedSyntax ?? "not applicable"}</dd>
+      <dd className="min-w-0 wrap-anywhere">
+        {changes.generatedSyntax ?? "not applicable"}
+      </dd>
     </dl>
   );
 
   return (
-    <div className="mt-2 rounded-xs border p-2 text-sm">
-      <div className="font-medium">Proposal review</div>
+    <section
+      aria-labelledby={titleId}
+      className="mt-2 min-w-0 rounded-xs border p-2 text-sm wrap-anywhere"
+    >
+      <h2 id={titleId} className="font-medium">
+        Proposal review
+      </h2>
       {review?.files ? (
         review.files.length > 0 ? (
           <section className="mt-2">
@@ -89,17 +104,21 @@ export function AgentProposalReview({
         review.packages.disabled.length > 0) ? (
         <section className="mt-2">
           <h3 className="text-xs font-medium">Supported packages</h3>
-          <dl className="mt-1 grid grid-cols-2 gap-x-2 text-xs">
+          <dl className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-xs">
             {review.packages.enabled.length > 0 ? (
               <>
                 <dt>Enabled</dt>
-                <dd>{review.packages.enabled.join(", ")}</dd>
+                <dd className="min-w-0 wrap-anywhere">
+                  {review.packages.enabled.join(", ")}
+                </dd>
               </>
             ) : null}
             {review.packages.disabled.length > 0 ? (
               <>
                 <dt>Disabled</dt>
-                <dd>{review.packages.disabled.join(", ")}</dd>
+                <dd className="min-w-0 wrap-anywhere">
+                  {review.packages.disabled.join(", ")}
+                </dd>
               </>
             ) : null}
           </dl>
@@ -118,6 +137,9 @@ export function AgentProposalReview({
                     : "text-yellow-100"
                 }
               >
+                <span className="font-medium capitalize">
+                  {diagnostic.severity}:{" "}
+                </span>
                 {diagnosticFileNames?.[index]
                   ? `Operation ${diagnosticFileNames[index]}: `
                   : diagnostic.packageName
@@ -131,6 +153,7 @@ export function AgentProposalReview({
       ) : null}
       {active && stale ? (
         <p
+          id={staleId}
           role="alert"
           className="mt-2 border border-yellow-500/40 bg-yellow-500/10 p-1 text-xs text-yellow-100"
         >
@@ -138,28 +161,46 @@ export function AgentProposalReview({
           against the current operation.
         </p>
       ) : null}
+      {active && actionStatus ? (
+        <p id={actionStatusId} className="mt-2 text-xs text-dimmed">
+          {actionStatus}
+        </p>
+      ) : null}
       {active ? (
         <div className="mt-2 flex flex-wrap justify-end gap-1">
-          <Button size="compact-xs" onClick={onReject} disabled={busy}>
+          <Button
+            size="compact-xs"
+            className="min-h-9"
+            onClick={onReject}
+            disabled={busy}
+          >
             Reject
           </Button>
           <Button
             size="compact-xs"
+            className="min-h-9"
             onClick={onRevise}
             disabled={busy || !recoverable}
+            aria-describedby={!recoverable ? actionStatusId : undefined}
           >
             Revise
           </Button>
           <Button
             size="compact-xs"
+            className="min-h-9"
             onClick={onRegenerate}
             disabled={busy || !recoverable}
+            aria-describedby={!recoverable ? actionStatusId : undefined}
           >
             Regenerate
           </Button>
           <Button
             size="compact-xs"
+            className="min-h-9"
             onClick={onApply}
+            aria-describedby={
+              stale ? staleId : actionStatus ? actionStatusId : undefined
+            }
             disabled={
               busy || stale || !recoverable || !review || errors.length > 0
             }
@@ -171,6 +212,6 @@ export function AgentProposalReview({
       {!active && proposal.applicationId ? (
         <p className="mt-2 text-xs text-dimmed">Applied previously</p>
       ) : null}
-    </div>
+    </section>
   );
 }
