@@ -221,6 +221,7 @@ export type AgentProposal = {
   diagnostics: AgentDiagnostic[];
   review?: AgentProposalReview;
   repairAttempt?: number;
+  manualDeploymentAfterApply?: boolean;
 };
 
 export type AgentHistoryState = {

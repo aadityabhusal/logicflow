@@ -38,6 +38,7 @@ export type AgentMessage = {
     applicationId?: string;
   };
   executionFeedback?: AgentExecutionFeedback;
+  deploymentAction?: "open-deployment-panel";
   createdAt: number;
 };
 

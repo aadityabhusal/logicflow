@@ -46,6 +46,34 @@ const SetPackageEnabledSchema = z
   .object({ name: z.string().min(1), enabled: z.boolean() })
   .strict();
 
+export function getExplicitDeploymentIntent(prompt: string) {
+  if (
+    /\b(?:avoid|do not|don't|never|not to)\s+(?:ever\s+)?deploy\b/i.test(prompt)
+  )
+    return;
+  if (
+    /\bdeploy\b[\s\S]{0,50}\b(?:only\s+)?(?:after|when|if)\s+i\b/i.test(prompt)
+  )
+    return;
+  if (
+    !/(?:^|[.!?]\s+)(?:please\s+)?deploy\b/i.test(prompt.trim()) &&
+    !/\bi\s+(?:want|need|would like)\s+(?:you\s+)?to\s+deploy\b/i.test(
+      prompt
+    ) &&
+    !/^\s*(?:please\s+)?(?:fix|update|change|build|create|implement|add|remove|rename)\b[\s\S]*\band\s+deploy\b/i.test(
+      prompt
+    ) &&
+    !/\b(?:start|run|create|perform)\s+(?:a\s+)?deployment\b/i.test(prompt)
+  )
+    return;
+  return {
+    afterChanges:
+      /^\s*(?:please\s+)?(?:fix|update|change|build|create|implement|add|remove|rename)\b[\s\S]*\band\s+deploy\b/i.test(
+        prompt
+      ),
+  };
+}
+
 function resolveProviderModel(model: string, apiKey: string) {
   const [provider, ...modelParts] = model.split("/");
   if (!("openai anthropic google".split(" ") as string[]).includes(provider)) {

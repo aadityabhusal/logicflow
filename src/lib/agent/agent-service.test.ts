@@ -47,6 +47,7 @@ import { AgentDiscoveryError } from "./discovery";
 import {
   generateExecutionFeedbackResponse,
   generateOperationProposal,
+  getExplicitDeploymentIntent,
 } from "./agent-service";
 import { createOperationFile, createTestProject } from "../../tests/helpers";
 import { createOperationFromFile } from "../utils";
@@ -92,6 +93,48 @@ describe("generateExecutionFeedbackResponse", () => {
     expect(mocks.streamText.mock.calls[0][0]).not.toHaveProperty("tools");
     expect(onPartialExplanation).toHaveBeenCalledWith("Execution succeeded");
     expect(response).toEqual({ explanation: "Execution succeeded" });
+  });
+});
+
+describe("deployment intent", () => {
+  it("detects only explicit non-negated deployment intent", () => {
+    expect(getExplicitDeploymentIntent("Deploy this to Vercel")).toEqual({
+      afterChanges: false,
+    });
+    expect(getExplicitDeploymentIntent("Do not deploy this")).toBeUndefined();
+    expect(
+      getExplicitDeploymentIntent("Prepare this for Vercel")
+    ).toBeUndefined();
+    expect(
+      getExplicitDeploymentIntent("Explain the deployment settings")
+    ).toBeUndefined();
+    expect(
+      getExplicitDeploymentIntent("How do I deploy this?")
+    ).toBeUndefined();
+    expect(
+      getExplicitDeploymentIntent("Could you deploy this?")
+    ).toBeUndefined();
+    expect(
+      getExplicitDeploymentIntent("Should I deploy this?")
+    ).toBeUndefined();
+    expect(getExplicitDeploymentIntent("Was this deployed?")).toBeUndefined();
+    expect(getExplicitDeploymentIntent("Avoid deploying this")).toBeUndefined();
+    expect(
+      getExplicitDeploymentIntent("Deploy only after I approve")
+    ).toBeUndefined();
+    expect(getExplicitDeploymentIntent("Start a deployment")).toEqual({
+      afterChanges: false,
+    });
+    expect(
+      getExplicitDeploymentIntent("Fix the handler and deploy to Supabase")
+    ).toEqual({
+      afterChanges: true,
+    });
+    expect(
+      getExplicitDeploymentIntent("Migrate from Vercel. Deploy to Supabase")
+    ).toEqual({
+      afterChanges: false,
+    });
   });
 });
 

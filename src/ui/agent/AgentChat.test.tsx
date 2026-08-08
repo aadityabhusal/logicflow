@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
                   errors: [],
                   truncated: true,
                 },
+                deploymentAction: "open-deployment-panel",
                 proposal: {
                   id: "proposal-a",
                   diagnostics: [],
@@ -99,6 +100,7 @@ describe("AgentChat proposal navigation", () => {
           onRejectProposal={vi.fn()}
           onReviseProposal={vi.fn()}
           onRegenerateProposal={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>
@@ -119,6 +121,7 @@ describe("AgentChat proposal navigation", () => {
           onRejectProposal={vi.fn()}
           onReviseProposal={vi.fn()}
           onRegenerateProposal={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>
@@ -127,5 +130,26 @@ describe("AgentChat proposal navigation", () => {
     expect(screen.getByLabelText("Execution succeeded")).toBeDefined();
     expect(screen.getByText("Result type: string")).toBeDefined();
     expect(screen.getByText("Feedback was truncated.")).toBeDefined();
+  });
+
+  it("shows a manual deployment action", () => {
+    const onOpenDeploymentPanel = vi.fn();
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onOpenDeploymentPanel={onOpenDeploymentPanel}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Deployment panel" })
+    );
+    expect(onOpenDeploymentPanel).toHaveBeenCalledOnce();
   });
 });

@@ -36,7 +36,8 @@ export async function deployToSupabase(
 
   if (envVars?.length) {
     onProgress?.({ stage: "uploading", message: "Setting secrets" });
-    await setSupabaseSecrets(projectId, token, envVars);
+    const error = await setSupabaseSecrets(projectId, token, envVars);
+    if (error) return { success: false, error, projectId };
   }
 
   const handlerFiles = files.filter((f) =>
@@ -65,7 +66,7 @@ export async function deployToSupabase(
     })
     .filter(Boolean);
 
-  if (errors.length === fnNames.length) {
+  if (errors.length > 0) {
     const errorMsg = errors.join("; ");
     onProgress?.({ stage: "error", message: errorMsg });
     return { success: false, error: errorMsg, projectId };
@@ -76,12 +77,7 @@ export async function deployToSupabase(
   );
   const url = triggerUrls[0];
 
-  if (errors.length > 0) {
-    const message = `Failed to deploy ${errors.length} function(s): ${errors.join("; ")}`;
-    onProgress?.({ stage: "ready", url, message });
-  } else {
-    onProgress?.({ stage: "ready", url });
-  }
+  onProgress?.({ stage: "ready", url });
 
   return {
     success: true,
@@ -155,18 +151,25 @@ async function setSupabaseSecrets(
   projectRef: string,
   token: string,
   envVars: { key: string; value: string }[]
-): Promise<void> {
+): Promise<string | undefined> {
   const secrets = envVars
     .filter((v) => v.value)
     .map((v) => ({ name: v.key, value: v.value }));
   if (secrets.length === 0) return;
 
   try {
-    await supabaseFetch(`/v1/projects/${projectRef}/secrets`, token, {
-      method: "POST",
-      body: JSON.stringify(secrets),
-    });
-  } catch {
-    console.error("Couldn't set Supabase environment variables");
+    const response = await supabaseFetch(
+      `/v1/projects/${projectRef}/secrets`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(secrets),
+      }
+    );
+    if (!response.ok) return await parseError(response);
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "Couldn't set Supabase environment variables";
   }
 }

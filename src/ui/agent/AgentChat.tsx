@@ -8,12 +8,14 @@ export function AgentChat({
   onRejectProposal,
   onReviseProposal,
   onRegenerateProposal,
+  onOpenDeploymentPanel,
   historyBusy,
 }: {
   onApplyProposal: () => void;
   onRejectProposal: () => void;
   onReviseProposal: () => void;
   onRegenerateProposal: () => void;
+  onOpenDeploymentPanel: () => void;
   historyBusy: boolean;
 }) {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
@@ -83,6 +85,16 @@ export function AgentChat({
                 <div>Feedback was truncated.</div>
               ) : null}
             </div>
+          ) : null}
+          {msg.deploymentAction === "open-deployment-panel" ? (
+            <button
+              type="button"
+              className="mt-2 rounded-xs border px-2 py-1 text-sm underline"
+              onClick={onOpenDeploymentPanel}
+              disabled={!!activeRun || historyBusy}
+            >
+              Open Deployment panel
+            </button>
           ) : null}
           {msg.proposal ? (
             <AgentProposalReview

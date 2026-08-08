@@ -70,6 +70,7 @@ const mocks = vi.hoisted(() => {
       files: [{ id: "operation-a", type: "operation" }],
     })),
     updateFile: vi.fn(),
+    updateProject: vi.fn(),
   };
   const useProjectStore = Object.assign(
     vi.fn((selector: (state: typeof projectState) => unknown) =>
@@ -95,6 +96,9 @@ const mocks = vi.hoisted(() => {
     ),
     generateOperationProposal: vi.fn(),
     generateExecutionFeedbackResponse: vi.fn(),
+    getExplicitDeploymentIntent: vi.fn(),
+    submitPrompt: "Update it",
+    setActiveTab: vi.fn(),
     applyAgentProposal:
       vi.fn<() => Promise<{ id: string; afterSelectedFileId?: string }>>(),
     waitForApplication:
@@ -115,6 +119,9 @@ vi.mock("@/lib/store", () => ({
   }),
   useAgentPersistenceErrorStore: mocks.useAgentPersistenceErrorStore,
   useProjectStore: mocks.useProjectStore,
+  useSidebarTabStore: {
+    getState: () => ({ setActiveTab: mocks.setActiveTab }),
+  },
 }));
 vi.mock("@/lib/data", () => ({
   AVAILABLE_MODELS: [{ id: "model-a", name: "Model A", provider: "openai" }],
@@ -123,6 +130,7 @@ vi.mock("@/lib/data", () => ({
 vi.mock("@/lib/agent/agent-service", () => ({
   generateOperationProposal: mocks.generateOperationProposal,
   generateExecutionFeedbackResponse: mocks.generateExecutionFeedbackResponse,
+  getExplicitDeploymentIntent: mocks.getExplicitDeploymentIntent,
 }));
 vi.mock("@/lib/agent/history", () => ({
   applyAgentProposal: mocks.applyAgentProposal,
@@ -144,21 +152,24 @@ vi.mock("./agent/AgentChat", () => ({
     onApplyProposal,
     onReviseProposal,
     onRegenerateProposal,
+    onOpenDeploymentPanel,
   }: {
     onApplyProposal: () => void;
     onReviseProposal: () => void;
     onRegenerateProposal: () => void;
+    onOpenDeploymentPanel: () => void;
   }) => (
     <>
       <button onClick={onApplyProposal}>Apply proposal</button>
       <button onClick={onReviseProposal}>Revise proposal</button>
       <button onClick={onRegenerateProposal}>Regenerate proposal</button>
+      <button onClick={onOpenDeploymentPanel}>Open Deployment panel</button>
     </>
   ),
 }));
 vi.mock("./agent/AgentInput", () => ({
   AgentInput: ({ onSubmit }: { onSubmit: (prompt: string) => void }) => (
-    <button onClick={() => onSubmit("Update it")}>Submit prompt</button>
+    <button onClick={() => onSubmit(mocks.submitPrompt)}>Submit prompt</button>
   ),
 }));
 
@@ -207,6 +218,8 @@ beforeEach(() => {
   mocks.generateExecutionFeedbackResponse.mockResolvedValue({
     explanation: "The operation did not run.",
   });
+  mocks.getExplicitDeploymentIntent.mockReturnValue(undefined);
+  mocks.submitPrompt = "Update it";
   mocks.projectState.getCurrentFile.mockReturnValue({
     id: "operation-a",
     type: "operation",
@@ -220,7 +233,7 @@ beforeEach(() => {
 });
 
 describe("AgentPanel thread header", () => {
-  it("discloses provider sharing of sanitized execution feedback", () => {
+  it("discloses provider sharing of sanitized runtime feedback", () => {
     renderPanel();
 
     expect(
@@ -283,6 +296,80 @@ describe("AgentPanel thread header", () => {
 });
 
 describe("AgentPanel proposal lifecycle", () => {
+  it("opens the Deployment panel for deployment-only requests", async () => {
+    mocks.submitPrompt = "Deploy this to Vercel";
+    mocks.getExplicitDeploymentIntent.mockReturnValue({ afterChanges: false });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
+    expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+      "thread-a",
+      expect.objectContaining({
+        deploymentAction: "open-deployment-panel",
+      })
+    );
+    fireEvent.click(screen.getByText("Open Deployment panel"));
+    expect(mocks.setActiveTab).toHaveBeenCalledWith("deployment");
+  });
+
+  it("defers the Deployment panel action for combined edit-and-deploy requests", async () => {
+    mocks.submitPrompt = "Fix the handler and deploy to Supabase";
+    mocks.getExplicitDeploymentIntent.mockReturnValue({ afterChanges: true });
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Proposal ready" },
+      proposal: {
+        id: "proposal-a",
+        projectId: "project-a",
+        fileId: "operation-a",
+        baseFingerprint: "fingerprint",
+        sourcePrompt: "Fix it and deploy",
+        draft: { name: "operation", parameters: [], statements: [] },
+        diagnostics: [],
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userPrompt: "Fix the handler and deploy to Supabase",
+        })
+      )
+    );
+    expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
+      "thread-a",
+      expect.objectContaining({ manualDeploymentAfterApply: true })
+    );
+  });
+
+  it("does not offer deployment when a combined request produces no proposal", async () => {
+    mocks.submitPrompt = "Fix the handler and deploy to Supabase";
+    mocks.getExplicitDeploymentIntent.mockReturnValue({ afterChanges: true });
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "No changes proposed" },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({ content: "No changes proposed" })
+      )
+    );
+    expect(mocks.agentState.addMessage).not.toHaveBeenCalledWith(
+      "thread-a",
+      expect.objectContaining({
+        deploymentAction: "open-deployment-panel",
+      })
+    );
+  });
+
   it("stores generated proposals without mutating the project", async () => {
     mocks.generateOperationProposal.mockResolvedValue({
       response: { explanation: "Review this proposal" },
@@ -364,6 +451,42 @@ describe("AgentPanel proposal lifecycle", () => {
       expect(mocks.generateExecutionFeedbackResponse).toHaveBeenCalledWith(
         expect.objectContaining({
           feedback: expect.objectContaining({ status: "not_run" }),
+        })
+      )
+    );
+  });
+
+  it("offers the Deployment panel after a requested edit succeeds", async () => {
+    const proposal = {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: "thread-a",
+      fileId: "operation-a",
+      sourcePrompt: "Fix it and deploy",
+      manualDeploymentAfterApply: true,
+      draft: { name: "operation", parameters: [] as [], statements: [] as [] },
+    };
+    mocks.agentState.pendingProposals = { "thread-a": proposal };
+    mocks.waitForApplication.mockResolvedValue({
+      projectId: "project-a",
+      applicationId: "application-a",
+      executionId: "execution-a",
+      operationId: "operation-a",
+      status: "completed",
+      results: new Map(),
+    });
+    mocks.createOperationFromFile.mockImplementationOnce((file) =>
+      file ? ({ id: file.id, value: { statements: [] } } as never) : undefined
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Apply proposal"));
+
+    await waitFor(() =>
+      expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({
+          deploymentAction: "open-deployment-panel",
         })
       )
     );

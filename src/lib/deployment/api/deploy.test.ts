@@ -27,6 +27,7 @@ import {
 import { deployToVercel } from "@/lib/deployment/api/vercel";
 import { deployToSupabase } from "@/lib/deployment/api/supabase";
 import type { deployToSupabase as realDeployToSupabase } from "@/lib/deployment/api/supabase";
+import type { deployToVercel as realDeployToVercel } from "@/lib/deployment/api/vercel";
 
 describe("deployToPlatform", () => {
   const ctx = createTestContext();
@@ -435,5 +436,103 @@ describe("deployToSupabase", () => {
       .map(([, value]) => (value as File).name);
 
     expect(uploadedFileNames).toContain("src/lib/ffmpeg.js");
+  });
+});
+
+describe("deployment adapter failures", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("does not create a Vercel project after an uncertain lookup", async () => {
+    const { deployToVercel } = await vi.importActual<{
+      deployToVercel: typeof realDeployToVercel;
+    }>("@/lib/deployment/api/vercel");
+    const fetchMock = vi.fn(
+      async () => new Response("Lookup failed", { status: 503 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deployToVercel([], "token", {
+      projectName: "app",
+      triggerNames: ["main"],
+    });
+
+    expect(result).toMatchObject({ success: false });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("fails when Vercel environment synchronization fails", async () => {
+    const { deployToVercel } = await vi.importActual<{
+      deployToVercel: typeof realDeployToVercel;
+    }>("@/lib/deployment/api/vercel");
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/v9/projects?")) {
+          return Response.json({
+            projects: [{ id: "project-a", name: "app" }],
+          });
+        }
+        if (url.endsWith("/v9/projects/project-a/env") && !init?.method) {
+          return Response.json({ envs: [] });
+        }
+        return new Response("Environment update rejected", { status: 400 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deployToVercel([], "token", {
+      projectName: "app",
+      triggerNames: ["main"],
+      envVars: [{ key: "API_KEY", value: "secret" }],
+    });
+
+    expect(result).toMatchObject({ success: false });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails when Supabase secret synchronization fails", async () => {
+    const { deployToSupabase } = await vi.importActual<{
+      deployToSupabase: typeof realDeployToSupabase;
+    }>("@/lib/deployment/api/supabase");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Secret rejected", { status: 400 }))
+    );
+
+    const result = await deployToSupabase(
+      [{ path: "supabase/functions/main/index.js", content: "export {};" }],
+      "token",
+      {
+        projectId: "project-a",
+        triggerNames: ["main"],
+        envVars: [{ key: "API_KEY", value: "secret" }],
+      }
+    );
+
+    expect(result).toMatchObject({ success: false, projectId: "project-a" });
+  });
+
+  it("reports partial Supabase function deployment as failure", async () => {
+    const { deployToSupabase } = await vi.importActual<{
+      deployToSupabase: typeof realDeployToSupabase;
+    }>("@/lib/deployment/api/supabase");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response("Rejected", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deployToSupabase(
+      [
+        { path: "supabase/functions/one/index.js", content: "export {};" },
+        { path: "supabase/functions/two/index.js", content: "export {};" },
+      ],
+      "token",
+      { projectId: "project-a", triggerNames: ["one", "two"] }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("two");
+    expect(result.triggerUrls).toBeUndefined();
   });
 });

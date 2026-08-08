@@ -12,11 +12,13 @@ import { AgentInput } from "./agent/AgentInput";
 import {
   generateExecutionFeedbackResponse,
   generateOperationProposal,
+  getExplicitDeploymentIntent,
 } from "@/lib/agent/agent-service";
 import {
   useProjectStore,
   useAgentStore,
   useAgentPersistenceErrorStore,
+  useSidebarTabStore,
 } from "@/lib/store";
 import { AVAILABLE_MODELS, LLM_PROVIDERS } from "@/lib/data";
 import { IconButton } from "./IconButton";
@@ -91,7 +93,12 @@ export function AgentPanel() {
     }
   }, [agentProject, agentReady, createThread, currentProjectId]);
 
-  useEffect(() => () => abortController.current?.abort(), []);
+  useEffect(
+    () => () => {
+      abortController.current?.abort();
+    },
+    []
+  );
 
   useEffect(() => {
     if (editingThreadId) renameInputRef.current?.focus();
@@ -110,23 +117,34 @@ export function AgentPanel() {
       regenerate?: boolean;
       sourceFileId?: string;
       repairAttempt?: number;
+      manualDeploymentAfterApply?: boolean;
     }
   ) => {
     if (useAgentStore.getState().activeRun) return;
     const submittedProject = useProjectStore.getState().getCurrentProject();
+    const deploymentIntent =
+      !options?.regenerate && !options?.repairAttempt
+        ? getExplicitDeploymentIntent(prompt)
+        : undefined;
+    if (!submittedProject || !currentProjectId || !activeThreadId) return;
+    if (deploymentIntent && !deploymentIntent.afterChanges) {
+      if (!options?.regenerate && !options?.repairAttempt) {
+        addMessage(activeThreadId, { role: "user", content: prompt });
+      }
+      addMessage(activeThreadId, {
+        role: "assistant",
+        content:
+          "Open the Deployment panel to configure and deploy this project.",
+        deploymentAction: "open-deployment-panel",
+      });
+      return;
+    }
     const sourceFileId = options?.sourceFileId ?? currentFile?.id;
-    const sourceFile = submittedProject?.files.find(
+    const sourceFile = submittedProject.files.find(
       (file) => file.id === sourceFileId && file.type === "operation"
     );
     const currentOperation = createOperationFromFile(sourceFile);
-    if (
-      !currentOperation ||
-      !sourceFile ||
-      !submittedProject ||
-      !currentProjectId ||
-      !activeThreadId
-    )
-      return;
+    if (!currentOperation || !sourceFile || !submittedProject) return;
 
     const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
     if (!modelConfig) return;
@@ -165,6 +183,12 @@ export function AgentPanel() {
       });
 
       if (controller.signal.aborted) return;
+      const manualDeploymentAfterApply =
+        options?.manualDeploymentAfterApply ??
+        revisedProposal?.manualDeploymentAfterApply ??
+        (options?.regenerate
+          ? pendingProposal?.manualDeploymentAfterApply
+          : deploymentIntent?.afterChanges);
       addMessage(activeThreadId, {
         role: "assistant",
         content:
@@ -191,6 +215,7 @@ export function AgentPanel() {
             : revisedProposal
               ? revisedProposal.sourcePrompt
               : prompt,
+          manualDeploymentAfterApply,
         });
       }
       setRevisionProposalId(undefined);
@@ -333,10 +358,21 @@ export function AgentPanel() {
             {
               sourceFileId: application.afterSelectedFileId,
               repairAttempt,
+              manualDeploymentAfterApply: proposal.manualDeploymentAfterApply,
             }
           );
         } else if (canContinue) {
           await handleExecutionFeedback(feedback, proposal.threadId!);
+          if (
+            proposal.manualDeploymentAfterApply &&
+            feedback.status === "succeeded"
+          ) {
+            addMessage(proposal.threadId!, {
+              role: "assistant",
+              content: "The proposal was applied successfully.",
+              deploymentAction: "open-deployment-panel",
+            });
+          }
         }
       } finally {
         setExecutionPending(false);
@@ -581,6 +617,9 @@ export function AgentPanel() {
         onRejectProposal={handleRejectProposal}
         onReviseProposal={handleReviseProposal}
         onRegenerateProposal={handleRegenerateProposal}
+        onOpenDeploymentPanel={() =>
+          useSidebarTabStore.getState().setActiveTab("deployment")
+        }
         historyBusy={historyBusy}
       />
       <AgentInput
