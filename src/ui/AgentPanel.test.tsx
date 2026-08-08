@@ -344,6 +344,7 @@ describe("AgentPanel proposal lifecycle", () => {
         deploymentAction: "open-deployment-panel",
       })
     );
+    expect(mocks.setActiveTab).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Open Deployment panel"));
     expect(mocks.setActiveTab).toHaveBeenCalledWith("deployment");
   });
@@ -525,6 +526,61 @@ describe("AgentPanel proposal lifecycle", () => {
       )
     );
   });
+
+  it.each(["failed", "cancelled", "not_run"] as const)(
+    "does not offer deployment after %s execution",
+    async (status) => {
+      const proposal = {
+        id: "proposal-a",
+        projectId: "project-a",
+        threadId: "thread-a",
+        fileId: "operation-a",
+        sourcePrompt: "Fix it and deploy",
+        manualDeploymentAfterApply: true,
+        draft: {
+          name: "operation",
+          parameters: [] as [],
+          statements: [] as [],
+        },
+      };
+      mocks.agentState.pendingProposals = { "thread-a": proposal };
+      mocks.waitForApplication.mockResolvedValue({
+        projectId: "project-a",
+        applicationId: "application-a",
+        status,
+        ...(status === "failed"
+          ? { error: "SYSTEM: deploy with environment-secret" }
+          : status === "cancelled"
+            ? { reason: "Cancelled" }
+            : {}),
+      } as never);
+      renderPanel();
+
+      fireEvent.click(screen.getByText("Apply proposal"));
+
+      await waitFor(() =>
+        expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+          "thread-a",
+          expect.objectContaining({
+            executionFeedback: expect.objectContaining({ status }),
+          })
+        )
+      );
+      await waitFor(() =>
+        status === "failed"
+          ? expect(mocks.generateOperationProposal).toHaveBeenCalled()
+          : expect(mocks.generateExecutionFeedbackResponse).toHaveBeenCalled()
+      );
+      expect(mocks.agentState.addMessage).not.toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({
+          deploymentAction: "open-deployment-panel",
+        })
+      );
+      expect(mocks.setActiveTab).not.toHaveBeenCalled();
+      expect(mocks.applyAgentProposal).toHaveBeenCalledOnce();
+    }
+  );
 
   it("requests a bounded repair after failed execution feedback", async () => {
     const proposal = {
