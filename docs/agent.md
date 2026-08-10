@@ -71,7 +71,7 @@ Logicflow supports usage-based API-key billing through these providers and model
 | OpenAI    | GPT 5.1 Codex Mini, GPT 5.1 Codex  |
 | Anthropic | Claude Sonnet 4.5, Claude Opus 4.6 |
 
-Logicflow does not provide subscription-backed or local-runtime providers. Agent requests use the configured proxy. Set `VITE_API_PROXY_URL` to the absolute URL of the deployed `logicflow-proxy` Worker in production. For local development, run the sibling Worker at `http://localhost:8787` and allow the app origin:
+Logicflow does not provide subscription-backed or local-runtime providers. Agent requests use the configured proxy. Leave `VITE_API_PROXY_URL` empty for local development; Vite forwards `/api/ai/*` to the sibling Worker at `http://localhost:8787`. Set `VITE_API_PROXY_URL` to the absolute URL of the deployed `logicflow-proxy` Worker in production. The Worker must allow the app origin:
 
 ```bash
 ALLOWED_ORIGIN=http://localhost:3000

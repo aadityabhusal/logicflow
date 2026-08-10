@@ -127,6 +127,8 @@ describe("agent provider transport", () => {
   it.each([
     [401, "unauthorized"],
     [429, "rate_limited"],
+    [408, "timeout"],
+    [504, "timeout"],
     [503, "unavailable"],
     [400, "request_failed"],
   ] as const)("normalizes HTTP %i errors", (statusCode, code) => {

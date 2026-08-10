@@ -137,9 +137,10 @@ yarn preview
 | -------------------- | ---------------------------------------------------------- |
 | `VITE_API_PROXY_URL` | Base URL for fixed deployment and AI provider proxy routes |
 
-During local agent development, run the sibling `logicflow-proxy` Worker with
-`ALLOWED_ORIGIN=http://localhost:3000`. Vite forwards fixed `/api/ai/*` routes
-to the Worker's default `http://localhost:8787` address.
+During local agent development, leave `VITE_API_PROXY_URL` empty, run the
+sibling `logicflow-proxy` Worker with `ALLOWED_ORIGIN=http://localhost:3000`,
+and start Vite. Vite forwards fixed `/api/ai/*` routes to the Worker's default
+`http://localhost:8787` address, preserving streaming and cancellation.
 
 Production agent requests require `VITE_API_PROXY_URL` to be the absolute URL
 of the deployed `logicflow-proxy` Worker. Vite's local proxy is not included in

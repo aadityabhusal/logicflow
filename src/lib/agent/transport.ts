@@ -116,6 +116,9 @@ export function toAgentTransportError(error: unknown) {
       "rate_limited"
     );
   }
+  if (status === 408 || status === 504) {
+    return new AgentTransportError("Provider request timed out", "timeout");
+  }
   if (status && status >= 500) {
     return new AgentTransportError(
       "Provider is temporarily unavailable",
