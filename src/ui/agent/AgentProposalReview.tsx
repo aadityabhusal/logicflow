@@ -1,5 +1,6 @@
 import { Button } from "@mantine/core";
 import type { AgentMessage } from "@/lib/agent/types";
+import type { AgentApplicationStatus } from "@/lib/agent/history";
 
 export function AgentProposalReview({
   proposal,
@@ -8,10 +9,13 @@ export function AgentProposalReview({
   stale,
   busy,
   recoverable,
+  applicationStatus,
   onApply,
   onReject,
   onRevise,
   onRegenerate,
+  onUndo,
+  onRedo,
 }: {
   proposal: NonNullable<AgentMessage["proposal"]>;
   diagnosticFileNames?: (string | undefined)[];
@@ -19,10 +23,13 @@ export function AgentProposalReview({
   stale: boolean;
   busy: boolean;
   recoverable: boolean;
+  applicationStatus?: AgentApplicationStatus;
   onApply: () => void;
   onReject: () => void;
   onRevise: () => void;
   onRegenerate: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
 }) {
   const { review, diagnostics } = proposal;
   const titleId = `proposal-${proposal.id}-title`;
@@ -209,8 +216,26 @@ export function AgentProposalReview({
           </Button>
         </div>
       ) : null}
-      {!active && proposal.applicationId ? (
-        <p className="mt-2 text-xs text-dimmed">Applied previously</p>
+      {!active && proposal.applicationId && applicationStatus ? (
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-dimmed">
+          <span>
+            {applicationStatus === "applied"
+              ? "Applied"
+              : applicationStatus === "undone"
+                ? "Undone"
+                : "History unavailable"}
+          </span>
+          {applicationStatus !== "unavailable" ? (
+            <Button
+              size="compact-xs"
+              className="min-h-9"
+              disabled={busy}
+              onClick={applicationStatus === "applied" ? onUndo : onRedo}
+            >
+              {applicationStatus === "applied" ? "Undo" : "Redo"}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );

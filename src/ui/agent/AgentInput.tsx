@@ -1,4 +1,4 @@
-import { Textarea, Button, Menu, Tooltip } from "@mantine/core";
+import { Textarea, Button, Menu } from "@mantine/core";
 import { useAgentStore } from "@/lib/store";
 import { AVAILABLE_MODELS } from "@/lib/data";
 import { FaArrowUp, FaChevronDown, FaStop } from "react-icons/fa6";
@@ -70,9 +70,6 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
         id="agent-prompt-input"
         ref={inputRef}
         aria-label="Message the agent"
-        aria-describedby={
-          !modelHasApiKey ? "agent-api-key-required" : undefined
-        }
         value={value}
         onChange={(e) =>
           activeThreadId && setDraft(activeThreadId, e.target.value)
@@ -96,17 +93,12 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
           input: "focus-visible:outline-2 outline-white",
         }}
       />
-      {!modelHasApiKey ? (
-        <p id="agent-api-key-required" className="px-1 text-xs text-dimmed">
-          Add an API key for the selected model to send a message.
-        </p>
-      ) : null}
       <div className="flex min-w-0 justify-between p-1 gap-2">
         <Menu position="top-start">
           <Menu.Target>
             <Button
               leftSection={<FaChevronDown size={12} />}
-              className="min-w-0 flex-1 focus-visible:outline-2"
+              className="min-w-0 flex-1 focus-visible:outline-2 outline-white"
               aria-label={`Model: ${selectedModelConfig?.name ?? "Select model"}`}
             >
               {selectedModelConfig?.name ?? "Select model"}
@@ -114,28 +106,19 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
           </Menu.Target>
           <Menu.Dropdown>
             {AVAILABLE_MODELS.map((model) => (
-              <Tooltip
+              <Menu.Item
                 key={model.id}
-                label={!getApiKey(model.provider) ? "Add API key" : ""}
-                position="right"
-                disabled={!!getApiKey(model.provider)}
+                onClick={() => setSelectedModel(model.id)}
+                role="menuitemradio"
+                aria-checked={model.id === selectedModel}
+                classNames={{
+                  item:
+                    model.id === selectedModel ? "bg-dropdown-selected" : "",
+                }}
+                disabled={!getApiKey(model.provider)}
               >
-                <Menu.Item
-                  onClick={() => setSelectedModel(model.id)}
-                  role="menuitemradio"
-                  aria-checked={model.id === selectedModel}
-                  aria-label={`${model.name}${
-                    getApiKey(model.provider) ? "" : ", API key required"
-                  }`}
-                  classNames={{
-                    item:
-                      model.id === selectedModel ? "bg-dropdown-selected" : "",
-                  }}
-                  disabled={!getApiKey(model.provider)}
-                >
-                  {model.name}
-                </Menu.Item>
-              </Tooltip>
+                {model.name}
+              </Menu.Item>
             ))}
           </Menu.Dropdown>
         </Menu>

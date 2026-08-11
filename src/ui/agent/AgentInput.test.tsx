@@ -102,7 +102,7 @@ describe("AgentInput accessibility", () => {
     expect(
       screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
     ).toBe(true);
-    expect(screen.getByText(/Add an API key/)).toBeDefined();
+    expect(screen.queryByText(/Add an API key/)).toBeNull();
   });
 
   it("submits with Enter on desktop when the selected model has a key", () => {

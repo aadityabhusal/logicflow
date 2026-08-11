@@ -13,7 +13,7 @@ export function getSidebarPanelLimits(
   viewportWidth: number,
   viewportHeight: number
 ) {
-  const minWidth = activeTab === "agent" ? 360 : 200;
+  const minWidth = 200;
   const maxWidth = Math.max(minWidth, viewportWidth / 2);
   const maxHeight = Math.max(150, viewportHeight * 0.75);
   const minHeight =

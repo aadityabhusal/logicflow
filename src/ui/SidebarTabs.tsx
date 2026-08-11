@@ -113,7 +113,7 @@ function SidebarTabsComponent({
                 title={tab.label}
                 classNames={{
                   tab: [
-                    "flex gap-1 items-center justify-center p-0 w-full text-sm focus-visible:outline-2 hover:bg-dropdown-hover",
+                    "flex gap-1 items-center justify-center p-0 w-full text-sm focus-visible:outline-2 outline-white hover:bg-dropdown-hover",
                     activeTab ? "data-active:bg-dropdown-selected" : "",
                   ].join(" "),
                   tabSection: smallScreen ? "p-2" : "p-3",

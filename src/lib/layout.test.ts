@@ -128,9 +128,9 @@ describe("constants", () => {
 });
 
 describe("getSidebarPanelLimits", () => {
-  it("gives the agent enough desktop width for its controls", () => {
+  it("uses the shared desktop width limits for the agent", () => {
     expect(getSidebarPanelLimits("agent", 1024, 768)).toEqual({
-      minWidth: 360,
+      minWidth: 200,
       maxWidth: 512,
       minHeight: 384,
       maxHeight: 576,
@@ -139,8 +139,8 @@ describe("getSidebarPanelLimits", () => {
 
   it("keeps a short landscape agent panel resizable", () => {
     expect(getSidebarPanelLimits("agent", 667, 375)).toEqual({
-      minWidth: 360,
-      maxWidth: 360,
+      minWidth: 200,
+      maxWidth: 333.5,
       minHeight: 240,
       maxHeight: 281.25,
     });

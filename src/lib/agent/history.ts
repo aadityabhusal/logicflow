@@ -378,6 +378,87 @@ export function redoAgentEdit(projectId: string) {
   return runAgentEdit(() => restoreAgentEdit(projectId, "redo"));
 }
 
+export type AgentApplicationStatus = "applied" | "undone" | "unavailable";
+
+export function getAgentApplicationStatus(
+  agentProject: AgentProject | undefined,
+  applicationId: string
+): AgentApplicationStatus {
+  const history = agentProject?.history;
+  const index =
+    history?.entries.findIndex(({ id }) => id === applicationId) ?? -1;
+  if (!history || index < 0) return "unavailable";
+  return index < history.cursor ? "applied" : "undone";
+}
+
+async function restoreAgentApplication(
+  projectId: string,
+  applicationId: string,
+  direction: "undo" | "redo"
+) {
+  const project = useProjectStore.getState().projects[projectId];
+  const agentProject = useAgentStore.getState().agentProjects[projectId];
+  if (!project || !agentProject)
+    throw new Error("Project history is unavailable");
+  const history = getHistory(agentProject);
+  const index = history.entries.findIndex(({ id }) => id === applicationId);
+  const entry = history.entries[index];
+  if (!entry) throw new Error("This agent edit is no longer in history");
+  if (direction === "undo" ? index >= history.cursor : index < history.cursor) {
+    throw new Error(
+      `This agent edit is already ${direction === "undo" ? "undone" : "applied"}`
+    );
+  }
+  const currentEntry = history.entries[history.cursor - 1];
+  const expected = currentEntry?.after ?? history.entries[0]?.before;
+  if (!expected || !isEqual(getAgentHistoryState(project), expected)) {
+    throw new Error(
+      `Cannot ${direction} because the project changed after this agent edit`
+    );
+  }
+  const snapshot = direction === "undo" ? entry.before : entry.after;
+  const nextProject = restoreAgentHistoryState(project, snapshot);
+  const recordedSelection =
+    direction === "undo"
+      ? entry.beforeSelectedFileId
+      : entry.afterSelectedFileId;
+  const selectedFileId =
+    recordedSelection &&
+    nextProject.files.some((file) => file.id === recordedSelection)
+      ? recordedSelection
+      : getReconciledFileId(
+          project,
+          nextProject,
+          useProjectStore.getState().currentFileId
+        );
+  await commit(
+    nextProject,
+    {
+      ...agentProject,
+      history: {
+        ...history,
+        cursor: direction === "undo" ? index : index + 1,
+      },
+    },
+    project,
+    agentProject,
+    selectedFileId
+  );
+  return entry;
+}
+
+export function undoAgentApplication(projectId: string, applicationId: string) {
+  return runAgentEdit(() =>
+    restoreAgentApplication(projectId, applicationId, "undo")
+  );
+}
+
+export function redoAgentApplication(projectId: string, applicationId: string) {
+  return runAgentEdit(() =>
+    restoreAgentApplication(projectId, applicationId, "redo")
+  );
+}
+
 export function canUndoAgentEdit(agentProject?: AgentProject) {
   return !!agentProject?.history?.cursor;
 }

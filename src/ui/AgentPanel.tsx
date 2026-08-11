@@ -1,12 +1,5 @@
 import { Button, Menu, PasswordInput, Popover } from "@mantine/core";
-import {
-  FaArrowRotateLeft,
-  FaArrowRotateRight,
-  FaListUl,
-  FaPen,
-  FaPlus,
-  FaTrash,
-} from "react-icons/fa6";
+import { FaListUl, FaPen, FaPlus, FaTrash } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
 import {
@@ -28,10 +21,8 @@ import { type FocusEvent, useEffect, useRef, useState } from "react";
 import { AgentTransportError } from "@/lib/agent/transport";
 import {
   applyAgentProposal,
-  canRedoAgentEdit,
-  canUndoAgentEdit,
-  redoAgentEdit,
-  undoAgentEdit,
+  redoAgentApplication,
+  undoAgentApplication,
 } from "@/lib/agent/history";
 import { executionController } from "@/lib/execution/controller";
 import {
@@ -70,7 +61,6 @@ export function AgentPanel() {
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [revisionProposalId, setRevisionProposalId] = useState<string>();
   const [historyBusy, setHistoryBusy] = useState(false);
-  const [executionPending, setExecutionPending] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
   const agentProject = currentProjectId
@@ -317,74 +307,81 @@ export function AgentPanel() {
     if (!pendingProposal) return;
     const proposal = pendingProposal;
     void handleHistoryAction(async () => {
-      setExecutionPending(true);
-      try {
-        const application = await applyAgentProposal(proposal);
-        const outcome = await executionController.waitForApplication(
-          application.id
-        );
-        if (outcome.projectId !== proposal.projectId) {
-          throw new Error("Execution feedback belongs to another project");
-        }
-        const projectState = useProjectStore.getState();
-        const project = projectState.projects[proposal.projectId];
-        if (!project) return;
-        const selectedFile = project?.files.find(
-          (file) =>
-            file.id === application.afterSelectedFileId &&
-            file.type === "operation"
-        );
-        const operation = createOperationFromFile(selectedFile);
-        const feedback = createAgentExecutionFeedback({
-          outcome,
-          operation,
-          secrets: getAgentExecutionSecrets(
-            project,
-            useAgentStore.getState().apiKeys
-          ).concat(outcome.redactionValues ?? []),
-        });
-        addMessage(proposal.threadId!, {
-          role: "assistant",
-          content: `Execution ${feedback.status.replace("_", " ")}.`,
-          executionFeedback: feedback,
-        });
+      const application = await applyAgentProposal(proposal);
+      const outcome = await executionController.waitForApplication(
+        application.id
+      );
+      if (outcome.projectId !== proposal.projectId) {
+        throw new Error("Execution feedback belongs to another project");
+      }
+      const projectState = useProjectStore.getState();
+      const project = projectState.projects[proposal.projectId];
+      if (!project) return;
+      const selectedFile = project?.files.find(
+        (file) =>
+          file.id === application.afterSelectedFileId &&
+          file.type === "operation"
+      );
+      const operation = createOperationFromFile(selectedFile);
+      const feedback = createAgentExecutionFeedback({
+        outcome,
+        operation,
+        secrets: getAgentExecutionSecrets(
+          project,
+          useAgentStore.getState().apiKeys
+        ).concat(outcome.redactionValues ?? []),
+      });
+      addMessage(proposal.threadId!, {
+        role: "assistant",
+        content: `Execution ${feedback.status.replace("_", " ")}.`,
+        executionFeedback: feedback,
+      });
 
-        const repairAttempt = (proposal.repairAttempt ?? 0) + 1;
-        const canContinue =
-          projectState.currentProjectId === proposal.projectId &&
-          useAgentStore.getState().agentProjects[proposal.projectId]
-            ?.activeThreadId === proposal.threadId;
-        if (
-          feedback.status === "failed" &&
-          repairAttempt <= 2 &&
-          application.afterSelectedFileId &&
-          canContinue
-        ) {
-          await handleSubmit(
-            `The previous proposal was applied. Use this sanitized execution feedback to propose a focused repair. Do not apply it:\n${JSON.stringify(feedback)}`,
-            {
-              sourceFileId: application.afterSelectedFileId,
-              repairAttempt,
-              manualDeploymentAfterApply: proposal.manualDeploymentAfterApply,
-            }
-          );
-        } else if (canContinue) {
-          await handleExecutionFeedback(feedback, proposal.threadId!);
-          if (
-            proposal.manualDeploymentAfterApply &&
-            feedback.status === "succeeded"
-          ) {
-            addMessage(proposal.threadId!, {
-              role: "assistant",
-              content: "The proposal was applied successfully.",
-              deploymentAction: "open-deployment-panel",
-            });
+      const repairAttempt = (proposal.repairAttempt ?? 0) + 1;
+      const canContinue =
+        projectState.currentProjectId === proposal.projectId &&
+        useAgentStore.getState().agentProjects[proposal.projectId]
+          ?.activeThreadId === proposal.threadId;
+      if (
+        feedback.status === "failed" &&
+        repairAttempt <= 2 &&
+        application.afterSelectedFileId &&
+        canContinue
+      ) {
+        await handleSubmit(
+          `The previous proposal was applied. Use this sanitized execution feedback to propose a focused repair. Do not apply it:\n${JSON.stringify(feedback)}`,
+          {
+            sourceFileId: application.afterSelectedFileId,
+            repairAttempt,
+            manualDeploymentAfterApply: proposal.manualDeploymentAfterApply,
           }
+        );
+      } else if (canContinue) {
+        await handleExecutionFeedback(feedback, proposal.threadId!);
+        if (
+          proposal.manualDeploymentAfterApply &&
+          feedback.status === "succeeded"
+        ) {
+          addMessage(proposal.threadId!, {
+            role: "assistant",
+            content: "The proposal was applied successfully.",
+            deploymentAction: "open-deployment-panel",
+          });
         }
-      } finally {
-        setExecutionPending(false);
       }
     });
+  };
+
+  const handleRestoreApplication = (
+    applicationId: string,
+    direction: "undo" | "redo"
+  ) => {
+    if (!currentProjectId) return;
+    void handleHistoryAction(() =>
+      direction === "undo"
+        ? undoAgentApplication(currentProjectId, applicationId)
+        : redoAgentApplication(currentProjectId, applicationId)
+    );
   };
 
   const handleReviseProposal = () => {
@@ -499,28 +496,6 @@ export function AgentPanel() {
           ) : null}
         </div>
         <div className="ml-auto flex items-center gap-1">
-          <IconButton
-            icon={FaArrowRotateLeft}
-            title="Undo agent edit"
-            disabled={
-              historyBusy || !!activeRun || !canUndoAgentEdit(agentProject)
-            }
-            onClick={() =>
-              currentProjectId &&
-              void handleHistoryAction(() => undoAgentEdit(currentProjectId))
-            }
-          />
-          <IconButton
-            icon={FaArrowRotateRight}
-            title="Redo agent edit"
-            disabled={
-              historyBusy || !!activeRun || !canRedoAgentEdit(agentProject)
-            }
-            onClick={() =>
-              currentProjectId &&
-              void handleHistoryAction(() => redoAgentEdit(currentProjectId))
-            }
-          />
           <Popover
             position="bottom-end"
             offset={1}
@@ -576,12 +551,9 @@ export function AgentPanel() {
               classNames={{ dropdown: "border" }}
             >
               <div className="flex flex-col gap-1">
-                <p
-                  id="agent-api-keys-title"
-                  className="px-1 text-xs text-dimmed"
-                >
-                  Keys stay in this browser tab and are not saved.
-                </p>
+                <span id="agent-api-keys-title" className="sr-only">
+                  API keys
+                </span>
                 {Object.entries(LLM_PROVIDERS).map(([id, { name, Icon }]) => (
                   <PasswordInput
                     key={id}
@@ -626,20 +598,17 @@ export function AgentPanel() {
           {historyError}
         </div>
       ) : null}
-      {executionPending ? (
-        <div role="status" className="border-b p-2 text-xs">
-          Running the selected operation...
-        </div>
-      ) : null}
-      <p className="border-b p-2 text-xs text-dimmed">
-        Relevant operation content, including literal values, and sanitized
-        execution feedback may be sent to the selected model provider.
-      </p>
       <AgentChat
         onApplyProposal={handleApplyProposal}
         onRejectProposal={handleRejectProposal}
         onReviseProposal={handleReviseProposal}
         onRegenerateProposal={handleRegenerateProposal}
+        onUndoApplication={(applicationId) =>
+          handleRestoreApplication(applicationId, "undo")
+        }
+        onRedoApplication={(applicationId) =>
+          handleRestoreApplication(applicationId, "redo")
+        }
         onOpenDeploymentPanel={() => {
           useSidebarTabStore.getState().setActiveTab("deployment");
           requestAnimationFrame(() =>

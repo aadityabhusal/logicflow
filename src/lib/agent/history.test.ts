@@ -97,7 +97,10 @@ import {
   applyAgentProposal,
   canRedoAgentEdit,
   canUndoAgentEdit,
+  getAgentApplicationStatus,
+  redoAgentApplication,
   redoAgentEdit,
+  undoAgentApplication,
   undoAgentEdit,
 } from "./history";
 
@@ -310,6 +313,79 @@ describe("agent edit history", () => {
       ],
     };
     await expect(redoAgentEdit("project-a")).rejects.toThrow("project changed");
+  });
+
+  it("rewinds to an older application and replays through a selected turn", async () => {
+    const baseProposal = setup();
+    const first = await applyAgentProposal(baseProposal);
+    const current = mocks.projectState.projects["project-a"];
+    const secondProposal = {
+      ...baseProposal,
+      id: "proposal-b",
+      baseFingerprint: getAgentEditableFingerprint(current),
+      proposedFile: operationFile("latest"),
+      proposedState: getAgentHistoryState({
+        ...current,
+        files: current.files.map((file) =>
+          file.id === "operation-a" ? operationFile("latest") : file
+        ),
+      }),
+    } as AgentProposal;
+    mocks.projectState.projects["project-a"] = current;
+    mocks.agentState.pendingProposals["thread-a"] = secondProposal;
+    const message =
+      mocks.agentState.agentProjects["project-a"].threads[0].messages[0];
+    message.proposal = { id: secondProposal.id, diagnostics: [] };
+    const second = await applyAgentProposal(secondProposal);
+
+    await undoAgentApplication("project-a", first.id);
+
+    let agentProject = mocks.agentState.agentProjects["project-a"];
+    expect(agentProject.history?.cursor).toBe(0);
+    expect(getAgentApplicationStatus(agentProject, first.id)).toBe("undone");
+    expect(getAgentApplicationStatus(agentProject, second.id)).toBe("undone");
+    expect(
+      (
+        mocks.projectState.projects["project-a"].files[1] as ReturnType<
+          typeof operationFile
+        >
+      ).content.value.statements[0].id
+    ).toBe("before");
+
+    await redoAgentApplication("project-a", second.id);
+
+    agentProject = mocks.agentState.agentProjects["project-a"];
+    expect(agentProject.history?.cursor).toBe(2);
+    expect(getAgentApplicationStatus(agentProject, first.id)).toBe("applied");
+    expect(getAgentApplicationStatus(agentProject, second.id)).toBe("applied");
+    expect(
+      (
+        mocks.projectState.projects["project-a"].files[1] as ReturnType<
+          typeof operationFile
+        >
+      ).content.value.statements[0].id
+    ).toBe("latest");
+  });
+
+  it("rejects stale or conflicting application actions", async () => {
+    const entry = await applyAgentProposal(setup());
+    await expect(redoAgentApplication("project-a", entry.id)).rejects.toThrow(
+      "already applied"
+    );
+
+    const current = mocks.projectState.projects["project-a"];
+    mocks.projectState.projects["project-a"] = {
+      ...current,
+      files: current.files.map((file) =>
+        file.id === "operation-a" ? operationFile("manual") : file
+      ),
+    };
+    await expect(undoAgentApplication("project-a", entry.id)).rejects.toThrow(
+      "project changed"
+    );
+    await expect(undoAgentApplication("project-a", "missing")).rejects.toThrow(
+      "no longer in history"
+    );
   });
 
   it("invalidates redo without reusing sequence numbers", async () => {

@@ -107,8 +107,8 @@ const mocks = vi.hoisted(() => {
           import("@/lib/execution/controller").AgentExecutionOutcome
         >
       >(),
-    undoAgentEdit: vi.fn(async () => undefined),
-    redoAgentEdit: vi.fn(async () => undefined),
+    undoAgentApplication: vi.fn(async () => undefined),
+    redoAgentApplication: vi.fn(async () => undefined),
   };
 });
 
@@ -138,10 +138,8 @@ vi.mock("@/lib/agent/agent-service", () => ({
 }));
 vi.mock("@/lib/agent/history", () => ({
   applyAgentProposal: mocks.applyAgentProposal,
-  undoAgentEdit: mocks.undoAgentEdit,
-  redoAgentEdit: mocks.redoAgentEdit,
-  canUndoAgentEdit: vi.fn(() => false),
-  canRedoAgentEdit: vi.fn(() => false),
+  undoAgentApplication: mocks.undoAgentApplication,
+  redoAgentApplication: mocks.redoAgentApplication,
 }));
 vi.mock("@/lib/execution/controller", () => ({
   executionController: {
@@ -156,17 +154,27 @@ vi.mock("./agent/AgentChat", () => ({
     onApplyProposal,
     onReviseProposal,
     onRegenerateProposal,
+    onUndoApplication,
+    onRedoApplication,
     onOpenDeploymentPanel,
   }: {
     onApplyProposal: () => void;
     onReviseProposal: () => void;
     onRegenerateProposal: () => void;
+    onUndoApplication: (applicationId: string) => void;
+    onRedoApplication: (applicationId: string) => void;
     onOpenDeploymentPanel: () => void;
   }) => (
     <>
       <button onClick={onApplyProposal}>Apply proposal</button>
       <button onClick={onReviseProposal}>Revise proposal</button>
       <button onClick={onRegenerateProposal}>Regenerate proposal</button>
+      <button onClick={() => onUndoApplication("application-a")}>
+        Undo turn
+      </button>
+      <button onClick={() => onRedoApplication("application-a")}>
+        Redo turn
+      </button>
       <button onClick={onOpenDeploymentPanel}>Open Deployment panel</button>
     </>
   ),
@@ -237,18 +245,33 @@ beforeEach(() => {
 });
 
 describe("AgentPanel thread header", () => {
-  it("discloses project content and runtime feedback sent to the provider", () => {
+  it("keeps history out of the header and API key guidance concise", () => {
     renderPanel();
 
+    expect(screen.queryByText(/may be sent to/)).toBeNull();
     expect(
-      screen.getByText(
-        "Relevant operation content, including literal values, and sanitized execution feedback may be sent to the selected model provider."
-      )
-    ).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: "Undo agent edit" })
-    ).toBeDefined();
+      screen.queryByRole("button", { name: "Undo agent edit" })
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Add API keys" })).toBeDefined();
+  });
+
+  it("handles history actions from chat turns", async () => {
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo turn" }));
+    await waitFor(() =>
+      expect(mocks.undoAgentApplication).toHaveBeenCalledWith(
+        "project-a",
+        "application-a"
+      )
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Redo turn" }));
+    await waitFor(() =>
+      expect(mocks.redoAgentApplication).toHaveBeenCalledWith(
+        "project-a",
+        "application-a"
+      )
+    );
   });
 
   it("renames the active chat inline", () => {

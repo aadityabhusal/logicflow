@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => ({
     agentProjects: {
       "project-a": {
         activeThreadId: "thread-a",
+        history: {
+          entries: [] as { id: string }[],
+          cursor: 0,
+          lastSequence: 0,
+        },
         threads: [
           {
             id: "thread-a",
@@ -37,6 +42,7 @@ const mocks = vi.hoisted(() => ({
                 proposal: {
                   id: "proposal-a",
                   diagnostics: [],
+                  applicationId: undefined as string | undefined,
                   review: {
                     operationName: "anchorOperation",
                     parameters: { before: 0, after: 0 },
@@ -58,7 +64,7 @@ const mocks = vi.hoisted(() => ({
         id: "proposal-a",
         fileId: "anchor-file",
       },
-    },
+    } as Record<string, { id: string; fileId: string }>,
   },
 }));
 
@@ -69,6 +75,18 @@ vi.mock("@/lib/store", () => ({
 }));
 vi.mock("@/lib/agent/proposal", () => ({
   isAgentProposalStale: mocks.isAgentProposalStale,
+}));
+vi.mock("@/lib/agent/history", () => ({
+  getAgentApplicationStatus: (
+    agentProject: (typeof mocks.agentState.agentProjects)["project-a"],
+    applicationId: string
+  ) => {
+    const index = agentProject.history.entries.findIndex(
+      ({ id }) => id === applicationId
+    );
+    if (index < 0) return "unavailable";
+    return index < agentProject.history.cursor ? "applied" : "undone";
+  },
 }));
 
 import { AgentChat } from "./AgentChat";
@@ -100,6 +118,8 @@ describe("AgentChat proposal navigation", () => {
           onRejectProposal={vi.fn()}
           onReviseProposal={vi.fn()}
           onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
           historyBusy={false}
         />
@@ -125,6 +145,8 @@ describe("AgentChat proposal navigation", () => {
           onRejectProposal={vi.fn()}
           onReviseProposal={vi.fn()}
           onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
           historyBusy={false}
         />
@@ -145,6 +167,8 @@ describe("AgentChat proposal navigation", () => {
           onRejectProposal={vi.fn()}
           onReviseProposal={vi.fn()}
           onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
           onOpenDeploymentPanel={onOpenDeploymentPanel}
           historyBusy={false}
         />
@@ -155,5 +179,36 @@ describe("AgentChat proposal navigation", () => {
       screen.getByRole("button", { name: "Open Deployment panel" })
     );
     expect(onOpenDeploymentPanel).toHaveBeenCalledOnce();
+  });
+
+  it("routes inline history actions to the selected proposal turn", () => {
+    const onUndoApplication = vi.fn();
+    const message =
+      mocks.agentState.agentProjects["project-a"].threads[0].messages[0];
+    message.proposal.applicationId = "application-a";
+    mocks.agentState.agentProjects["project-a"].history = {
+      entries: [{ id: "application-a" }],
+      cursor: 1,
+      lastSequence: 1,
+    };
+    delete mocks.agentState.pendingProposals["thread-a"];
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={onUndoApplication}
+          onRedoApplication={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(onUndoApplication).toHaveBeenCalledWith("application-a");
   });
 });

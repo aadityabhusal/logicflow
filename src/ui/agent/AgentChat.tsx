@@ -2,12 +2,15 @@ import { useAgentStore, useProjectStore } from "@/lib/store";
 import { NoteText } from "../NoteText";
 import { isAgentProposalStale } from "@/lib/agent/proposal";
 import { AgentProposalReview } from "./AgentProposalReview";
+import { getAgentApplicationStatus } from "@/lib/agent/history";
 
 export function AgentChat({
   onApplyProposal,
   onRejectProposal,
   onReviseProposal,
   onRegenerateProposal,
+  onUndoApplication,
+  onRedoApplication,
   onOpenDeploymentPanel,
   historyBusy,
 }: {
@@ -15,6 +18,8 @@ export function AgentChat({
   onRejectProposal: () => void;
   onReviseProposal: () => void;
   onRegenerateProposal: () => void;
+  onUndoApplication: (applicationId: string) => void;
+  onRedoApplication: (applicationId: string) => void;
   onOpenDeploymentPanel: () => void;
   historyBusy: boolean;
 }) {
@@ -39,14 +44,6 @@ export function AgentChat({
   );
   const threadMessages = activeThread?.messages ?? [];
   const isLoading = activeRun?.threadId === activeThreadId;
-
-  if (threadMessages.length === 0 && !isLoading) {
-    return (
-      <NoteText center className="flex-1 min-h-0 py-4">
-        Ask the AI to help modify your operation
-      </NoteText>
-    );
-  }
 
   return (
     <div
@@ -114,6 +111,14 @@ export function AgentChat({
               }
               busy={!!activeRun || historyBusy}
               recoverable={recoverable}
+              applicationStatus={
+                msg.proposal.applicationId
+                  ? getAgentApplicationStatus(
+                      agentProject,
+                      msg.proposal.applicationId
+                    )
+                  : undefined
+              }
               diagnosticFileNames={msg.proposal.diagnostics.map((diagnostic) =>
                 diagnostic.fileId
                   ? ((pendingProposal && pendingProposal.id === msg.proposal?.id
@@ -130,6 +135,14 @@ export function AgentChat({
               onReject={onRejectProposal}
               onRevise={onReviseProposal}
               onRegenerate={onRegenerateProposal}
+              onUndo={() =>
+                msg.proposal?.applicationId &&
+                onUndoApplication(msg.proposal.applicationId)
+              }
+              onRedo={() =>
+                msg.proposal?.applicationId &&
+                onRedoApplication(msg.proposal.applicationId)
+              }
             />
           ) : null}
         </article>

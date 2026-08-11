@@ -40,6 +40,7 @@ function renderReview(overrides?: {
   stale?: boolean;
   busy?: boolean;
   recoverable?: boolean;
+  applicationStatus?: "applied" | "undone" | "unavailable";
   proposal?: NonNullable<AgentMessage["proposal"]>;
   diagnosticFileNames?: (string | undefined)[];
 }) {
@@ -48,6 +49,8 @@ function renderReview(overrides?: {
     onReject: vi.fn(),
     onRevise: vi.fn(),
     onRegenerate: vi.fn(),
+    onUndo: vi.fn(),
+    onRedo: vi.fn(),
   };
   render(
     <MantineProvider>
@@ -57,6 +60,7 @@ function renderReview(overrides?: {
         stale={overrides?.stale ?? false}
         busy={overrides?.busy ?? false}
         recoverable={overrides?.recoverable ?? true}
+        applicationStatus={overrides?.applicationStatus}
         diagnosticFileNames={overrides?.diagnosticFileNames}
         {...actions}
       />
@@ -215,5 +219,35 @@ describe("AgentProposalReview", () => {
       screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
     ).toBe(true);
     expect(screen.getByText(/source operation no longer exists/)).toBeDefined();
+  });
+
+  it("shows inline undo and redo for applied proposal turns", () => {
+    const appliedActions = renderReview({
+      active: false,
+      applicationStatus: "applied",
+      proposal: { ...proposal, applicationId: "application-1" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(appliedActions.onUndo).toHaveBeenCalledOnce();
+
+    const undoneActions = renderReview({
+      active: false,
+      applicationStatus: "undone",
+      proposal: { ...proposal, applicationId: "application-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    expect(undoneActions.onRedo).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer an action when application history is unavailable", () => {
+    renderReview({
+      active: false,
+      applicationStatus: "unavailable",
+      proposal: { ...proposal, applicationId: "application-1" },
+    });
+
+    expect(screen.getByText("History unavailable")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Undo|Redo/ })).toBeNull();
   });
 });
