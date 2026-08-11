@@ -412,12 +412,12 @@ export const useNavigationStore = createWithEqualityFn<NavigationStore>(
 interface ApiKeys {
   openai?: string;
   anthropic?: string;
-  google?: string;
 }
 
 interface AgentStore {
   apiKeys: ApiKeys;
   selectedModel?: string;
+  thinkingLevel: import("./agent/types").AgentThinkingLevel;
   agentProjects: Record<string, AgentProject>;
   agentReady: boolean;
   activeRun?: { threadId: string; streamingContent: string };
@@ -426,6 +426,7 @@ interface AgentStore {
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
   getApiKey: (provider: keyof ApiKeys) => string | undefined;
   setSelectedModel: (model: string) => void;
+  setThinkingLevel: (level: import("./agent/types").AgentThinkingLevel) => void;
   createThread: (projectId: string, title?: string) => AgentThread;
   renameThread: (threadId: string, title: string) => void;
   selectThread: (projectId: string, threadId: string) => void;
@@ -496,6 +497,8 @@ export const useAgentStore = createWithEqualityFn(
 
       return {
         apiKeys: {},
+        selectedModel: "gpt-5.6-sol",
+        thinkingLevel: "medium",
         agentProjects: {},
         agentReady: false,
         pendingProposals: {},
@@ -504,6 +507,7 @@ export const useAgentStore = createWithEqualityFn(
         },
         getApiKey: (provider) => get().apiKeys[provider],
         setSelectedModel: (model) => set({ selectedModel: model }),
+        setThinkingLevel: (thinkingLevel) => set({ thinkingLevel }),
         createThread: (projectId, title) => {
           const thread = createAgentThread(title);
           const current = get().agentProjects[projectId];
@@ -641,6 +645,9 @@ export const useAgentStore = createWithEqualityFn(
       ),
       partialize: (state) =>
         ({
+          apiKeys: state.apiKeys,
+          selectedModel: state.selectedModel,
+          thinkingLevel: state.thinkingLevel,
           agentProjects: state.agentProjects,
         }) as AgentStore,
       onRehydrateStorage: () => () =>

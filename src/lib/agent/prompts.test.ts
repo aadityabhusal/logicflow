@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   AGENT_SYSTEM_PROMPT_VERSION,
+  buildContextPrompt,
   LOGICFLOW_SYSTEM_PROMPT,
 } from "./prompts";
 
 describe("agent system prompt", () => {
   it("is versioned and directs the model to scoped discovery", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("8");
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("9");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Inspect relevant operations");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
       "host owns all persistent file and entity IDs"
@@ -23,6 +24,9 @@ describe("agent system prompt", () => {
       "manually through the host Deployment panel"
     );
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Never request, repeat");
+    expect(buildContextPrompt("Update it")).toContain(
+      "once all requested changes have a valid proposal"
+    );
   });
 
   it("does not embed operation or package catalogs", () => {

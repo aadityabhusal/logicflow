@@ -70,24 +70,33 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   {
     name: "mod",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "number" },
   },
   {
     name: "lessThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
   {
     name: "lessThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
   {
     name: "greaterThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
   {
     name: "greaterThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
-  { name: "not", parameters: [{ type: { kind: "boolean" } }] },
+  {
+    name: "not",
+    parameters: [{ type: { kind: "boolean" } }],
+    expectedType: { kind: "boolean" },
+  },
   {
     name: "at",
     parameters: [

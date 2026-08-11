@@ -75,6 +75,7 @@ describe("generateExecutionFeedbackResponse", () => {
     const response = await generateExecutionFeedbackResponse({
       model: "openai/gpt-5",
       apiKey: "session-key",
+      thinkingLevel: "xhigh",
       feedback: {
         status: "succeeded",
         resultType: { kind: "string" },
@@ -89,6 +90,7 @@ describe("generateExecutionFeedbackResponse", () => {
     expect(mocks.streamText).toHaveBeenCalledWith(
       expect.objectContaining({
         system: "system",
+        providerOptions: { openai: { reasoningEffort: "xhigh" } },
         prompt: expect.stringContaining('"status":"succeeded"'),
       })
     );
@@ -160,23 +162,27 @@ describe("generateOperationProposal transport lifecycle", () => {
       operation: {} as never,
       project: {} as never,
       userPrompt: "Update it",
-      model: "anthropic/claude-sonnet-4-5",
+      model: "anthropic/claude-sonnet-5",
       apiKey: "session-key",
+      thinkingLevel: "max",
       abortSignal: abortController.signal,
       onPartialExplanation,
     });
 
     expect(mocks.createProviderModel).toHaveBeenCalledWith(
       "anthropic",
-      "claude-sonnet-4-5",
+      "claude-sonnet-5",
       "session-key"
     );
     expect(mocks.streamText).toHaveBeenCalledWith(
       expect.objectContaining({
         abortSignal: abortController.signal,
-        timeout: 60_000,
+        timeout: { stepMs: 60_000 },
         maxRetries: 0,
-        stopWhen: { count: 12 },
+        stopWhen: { count: 40 },
+        providerOptions: {
+          anthropic: { thinking: { type: "adaptive" }, effort: "max" },
+        },
       })
     );
     expect(Object.keys(mocks.streamText.mock.calls[0][0].tools).sort()).toEqual(
@@ -195,6 +201,19 @@ describe("generateOperationProposal transport lifecycle", () => {
     expect(result.response).toBe(output);
 
     const options = mocks.streamText.mock.calls[0][0];
+    expect(
+      options.prepareStep({
+        stepNumber: 39,
+        steps: [],
+        instructions: "system",
+      })
+    ).toMatchObject({
+      activeTools: [],
+      toolChoice: "none",
+      instructions: expect.stringContaining(
+        "Return the final structured response"
+      ),
+    });
     await options.tools.search_operations.execute({
       inputType: { kind: "array", elementType: { kind: "string" } },
     });
@@ -216,13 +235,13 @@ describe("generateOperationProposal transport lifecycle", () => {
       operation: {} as never,
       project: {} as never,
       userPrompt: "Update it",
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
     });
     const execute = mocks.streamText.mock.calls[0][0].tools.get_project_outline
       .execute as () => Promise<unknown>;
 
-    for (let index = 0; index < 24; index++) await execute();
+    for (let index = 0; index < 128; index++) await execute();
 
     await expect(execute()).resolves.toEqual({
       error: {
@@ -230,6 +249,32 @@ describe("generateOperationProposal transport lifecycle", () => {
         message: "Agent tool-call limit reached",
       },
     });
+  });
+
+  it("finalizes after three repeated tool-call batches", async () => {
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {})(),
+      output: Promise.resolve({ explanation: "" }),
+    });
+    await generateOperationProposal({
+      operation: {} as never,
+      project: {} as never,
+      userPrompt: "Update it",
+      model: "openai/gpt-5.6-sol",
+      apiKey: "session-key",
+    });
+    const prepareStep = mocks.streamText.mock.calls[0][0].prepareStep;
+    const repeatedStep = {
+      toolCalls: [{ toolName: "search_operations", input: { query: "even" } }],
+    };
+
+    expect(
+      prepareStep({
+        stepNumber: 3,
+        steps: [repeatedStep, repeatedStep, repeatedStep],
+        instructions: "system",
+      })
+    ).toMatchObject({ activeTools: [], toolChoice: "none" });
   });
 
   it("builds proposals only through update_proposal", async () => {
@@ -262,7 +307,7 @@ describe("generateOperationProposal transport lifecycle", () => {
       operation: createOperationFromFile(file)!,
       project,
       userPrompt: "Clear it",
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
     });
 
@@ -317,7 +362,7 @@ describe("generateOperationProposal transport lifecycle", () => {
       project,
       initialProposal,
       userPrompt: "Also enable date-fns",
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
     });
 
@@ -378,7 +423,7 @@ describe("generateOperationProposal transport lifecycle", () => {
           project,
           initialProposal: change(initialProposal),
           userPrompt: "Revise it",
-          model: "openai/gpt-5.1-codex",
+          model: "openai/gpt-5.6-sol",
           apiKey: "session-key",
         })
       ).rejects.toThrow(message);
@@ -439,7 +484,7 @@ describe("generateOperationProposal transport lifecycle", () => {
       project,
       initialProposal,
       userPrompt: "Repair it",
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
     });
 
@@ -476,7 +521,7 @@ describe("generateOperationProposal transport lifecycle", () => {
       operation: {} as never,
       project: {} as never,
       userPrompt: "Update it",
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
     });
     const execute = mocks.streamText.mock.calls[0][0].tools.inspect_operation
@@ -500,7 +545,7 @@ describe("generateOperationProposal transport lifecycle", () => {
       operation: createOperationFromFile(file)!,
       project: createTestProject({ files: [file] }),
       userPrompt: "Change it",
-      model: "openai/gpt-5.1-codex",
+      model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
     });
     const tools = mocks.streamText.mock.calls[0][0].tools;
@@ -554,7 +599,34 @@ describe("generateOperationProposal transport lifecycle", () => {
         operation: {} as never,
         project: {} as never,
         userPrompt: "Update it",
-        model: "openai/gpt-5.1-codex",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).rejects.toThrow("Normalized provider error");
+    expect(mocks.toAgentTransportError).toHaveBeenCalledWith(providerError);
+  });
+
+  it("preserves the original stream error", async () => {
+    const providerError = { name: "TimeoutError" };
+    const wrapperError = new Error("No output generated");
+    mocks.streamText.mockImplementation((options) => {
+      options.onError({ error: providerError });
+      return {
+        partialOutputStream: {
+          [Symbol.asyncIterator]: () => ({
+            next: () => Promise.reject(wrapperError),
+          }),
+        },
+        output: Promise.resolve({ explanation: null }),
+      } as never;
+    });
+
+    await expect(
+      generateOperationProposal({
+        operation: {} as never,
+        project: {} as never,
+        userPrompt: "Update it",
+        model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
       })
     ).rejects.toThrow("Normalized provider error");

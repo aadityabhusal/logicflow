@@ -32,9 +32,8 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.44",
-    "@ai-sdk/google": "^3.0.29",
-    "@ai-sdk/openai": "^3.0.29",
+    "@ai-sdk/anthropic": "^4.0.38",
+    "@ai-sdk/openai": "^4.0.40",
     "@faker-js/faker": "^10.4.0",
     "@mantine/core": "^8.3.10",
     "@mantine/hooks": "^8.3.10",
@@ -42,7 +41,7 @@
     "@saintno/comfyui-sdk": "^0.3.1",
     "@supabase/supabase-js": "^2.107.0",
     "@szhsin/react-menu": "^4.5.1",
-    "ai": "^6.0.86",
+    "ai": "^7.0.62",
     "date-fns": "^4.2.1",
     "fflate": "^0.8.3",
     "idb": "^8.0.2",

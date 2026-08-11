@@ -1,5 +1,6 @@
 import { DataType, ErrorType, OperationType } from "./types";
-import { SiAnthropic, SiOpenai, SiGooglegemini } from "react-icons/si";
+import { SiAnthropic, SiOpenai } from "react-icons/si";
+import type { AgentThinkingLevel } from "./agent/types";
 
 export const DataTypes: {
   [K in DataType["kind"]]: {
@@ -123,19 +124,29 @@ export const ErrorTypesData: {
 export const MAX_SCREEN_WIDTH = 767;
 
 export const LLM_PROVIDERS = {
-  google: { name: "Gemini", Icon: SiGooglegemini },
   openai: { name: "OpenAI", Icon: SiOpenai },
   anthropic: { name: "Anthropic", Icon: SiAnthropic },
 } as const;
 
 export const AVAILABLE_MODELS = [
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "google" },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
-  { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini", provider: "openai" },
-  { id: "gpt-5.1-codex", name: "GPT 5.1 Codex", provider: "openai" },
-  { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic" },
-  { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic" },
+  { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", provider: "openai" },
+  { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", provider: "openai" },
+  { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "openai" },
+  { id: "claude-fable-5", name: "Claude Fable 5", provider: "anthropic" },
+  { id: "claude-opus-5", name: "Claude Opus 5", provider: "anthropic" },
+  { id: "claude-sonnet-5", name: "Claude Sonnet 5", provider: "anthropic" },
 ] as const;
+
+export const AGENT_THINKING_LEVELS: {
+  value: AgentThinkingLevel;
+  label: string;
+}[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "XHigh" },
+  { value: "max", label: "Max" },
+];
 
 export const OBJECT_TYPES: DataType["kind"][] = [
   "array",

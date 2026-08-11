@@ -4,7 +4,9 @@ import type {
   AgentProposalReview,
 } from "./proposal";
 
-export type AgentProvider = "openai" | "anthropic" | "google";
+export type AgentProvider = "openai" | "anthropic";
+
+export type AgentThinkingLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type AgentExecutionError = { type?: string; message: string };
 

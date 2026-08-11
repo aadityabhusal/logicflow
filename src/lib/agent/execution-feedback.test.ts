@@ -32,18 +32,17 @@ describe("agent execution feedback", () => {
     const secrets = [
       "openai-secret",
       "anthropic-secret",
-      "google-secret",
       "environment-secret",
       "deployment-secret",
       "runtime-secret",
     ];
     const project = createTestProject({
       deployment: {
-        envVariables: [{ key: "SECRET", value: secrets[3] }],
+        envVariables: [{ key: "SECRET", value: secrets[2] }],
         platforms: [
           {
             platform: "vercel",
-            credentials: { token: secrets[4] },
+            credentials: { token: secrets[3] },
             deployments: [],
           },
         ],
@@ -52,8 +51,7 @@ describe("agent execution feedback", () => {
     const knownSecrets = getAgentExecutionSecrets(project, {
       openai: secrets[0],
       anthropic: secrets[1],
-      google: secrets[2],
-    }).concat(secrets[5]);
+    }).concat(secrets[4]);
     const feedback = createAgentExecutionFeedback({
       outcome: completed(
         new Map([

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => {
   };
   const agentState = {
     apiKeys: {},
+    selectedModel: "gpt-5.6-terra",
+    thinkingLevel: "high",
     agentProjects: {} as Record<string, import("./types").AgentProject>,
     pendingProposals: {} as Record<string, AgentProposal>,
   };
@@ -214,6 +216,15 @@ describe("agent edit history", () => {
     const entry = await applyAgentProposal(proposal);
 
     expect(mocks.commitAgentEdit).toHaveBeenCalledOnce();
+    expect(mocks.commitAgentEdit).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      {
+        apiKeys: {},
+        selectedModel: "gpt-5.6-terra",
+        thinkingLevel: "high",
+      }
+    );
     expect(mocks.expectApplication).toHaveBeenCalledWith({
       applicationId: entry.id,
       projectId: "project-a",
@@ -280,6 +291,33 @@ describe("agent edit history", () => {
       "Concurrent edit"
     );
     expect(mocks.agentState.pendingProposals["thread-a"]).toBe(proposal);
+  });
+
+  it("preserves a preference changed while saving", async () => {
+    const proposal = setup();
+    let finishCommit!: () => void;
+    mocks.commitAgentEdit
+      .mockImplementationOnce(
+        () =>
+          new Promise<undefined>((resolve) => {
+            finishCommit = () => resolve(undefined);
+          })
+      )
+      .mockResolvedValueOnce(undefined);
+
+    const application = applyAgentProposal(proposal);
+    await vi.waitFor(() => expect(finishCommit).toBeTypeOf("function"));
+    mocks.agentState.selectedModel = "claude-opus-5";
+    finishCommit();
+
+    await expect(application).rejects.toThrow(
+      "changed while the edit was being saved"
+    );
+    expect(mocks.commitAgentEdit).toHaveBeenLastCalledWith(
+      mocks.projectState.projects,
+      mocks.agentState.agentProjects,
+      expect.objectContaining({ selectedModel: "claude-opus-5" })
+    );
   });
 
   it("undoes and redoes only when the current state matches history", async () => {

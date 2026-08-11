@@ -14,10 +14,15 @@ import {
 } from "./proposal";
 import { LOGICFLOW_SYSTEM_PROMPT, buildContextPrompt } from "./prompts";
 import { createProviderModel, toAgentTransportError } from "./transport";
-import type { AgentExecutionFeedback, AgentProvider } from "./types";
+import type {
+  AgentExecutionFeedback,
+  AgentProvider,
+  AgentThinkingLevel,
+} from "./types";
 
-const AGENT_REQUEST_TIMEOUT = 60_000;
-const MAX_TOOL_CALLS = 24;
+const AGENT_STEP_TIMEOUT = 60_000;
+const MAX_AGENT_STEPS = 40;
+const MAX_TOOL_CALLS = 128;
 
 const AgentResponseSchema = z.object({
   explanation: z.string().nullable(),
@@ -45,6 +50,17 @@ const UpdateProposalSchema = z.discriminatedUnion("action", [
 const SetPackageEnabledSchema = z
   .object({ name: z.string().min(1), enabled: z.boolean() })
   .strict();
+
+function getToolCallsSignature(
+  toolCalls: { toolName: string; input: unknown }[]
+) {
+  if (!toolCalls.length) return;
+  return JSON.stringify(
+    toolCalls
+      .map(({ toolName, input }) => `${toolName}:${JSON.stringify(input)}`)
+      .sort()
+  );
+}
 
 export function getExplicitDeploymentIntent(prompt: string) {
   if (
@@ -76,7 +92,7 @@ export function getExplicitDeploymentIntent(prompt: string) {
 
 function resolveProviderModel(model: string, apiKey: string) {
   const [provider, ...modelParts] = model.split("/");
-  if (!("openai anthropic google".split(" ") as string[]).includes(provider)) {
+  if (!("openai anthropic".split(" ") as string[]).includes(provider)) {
     throw new Error(`Unknown provider: ${provider}`);
   }
   return createProviderModel(
@@ -86,6 +102,21 @@ function resolveProviderModel(model: string, apiKey: string) {
   );
 }
 
+function getThinkingProviderOptions(
+  provider: AgentProvider,
+  thinkingLevel: AgentThinkingLevel
+): NonNullable<Parameters<typeof streamText>[0]["providerOptions"]> {
+  if (provider === "openai") {
+    return { openai: { reasoningEffort: thinkingLevel } };
+  }
+  return {
+    anthropic: {
+      thinking: { type: "adaptive" },
+      effort: thinkingLevel,
+    },
+  };
+}
+
 export async function generateOperationProposal({
   apiKey,
   model,
@@ -93,6 +124,7 @@ export async function generateOperationProposal({
   project,
   userPrompt,
   initialProposal,
+  thinkingLevel = "medium",
   abortSignal,
   onPartialExplanation,
 }: {
@@ -101,6 +133,7 @@ export async function generateOperationProposal({
   userPrompt: string;
   model: string;
   apiKey: string;
+  thinkingLevel?: AgentThinkingLevel;
   initialProposal?: AgentProposal;
   abortSignal?: AbortSignal;
   onPartialExplanation?: (explanation: string) => void;
@@ -313,27 +346,49 @@ export async function generateOperationProposal({
         }),
     }),
   };
+  let streamError: unknown;
   try {
+    const provider = model.split("/")[0] as AgentProvider;
     const result = streamText({
       model: resolveProviderModel(model, apiKey),
+      providerOptions: getThinkingProviderOptions(provider, thinkingLevel),
       output: Output.object({
         schema: zodSchema(AgentResponseSchema, { useReferences: true }),
       }),
       tools,
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(MAX_AGENT_STEPS),
+      prepareStep: ({ stepNumber, steps, instructions }) => {
+        const recentSignatures = steps
+          .slice(-3)
+          .map((step) => getToolCallsSignature(step.toolCalls));
+        const repeatedToolCalls =
+          recentSignatures.length === 3 &&
+          recentSignatures[0] !== undefined &&
+          recentSignatures.every(
+            (signature) => signature === recentSignatures[0]
+          );
+        if (stepNumber < MAX_AGENT_STEPS - 1 && !repeatedToolCalls) return;
+        return {
+          activeTools: [],
+          toolChoice: "none" as const,
+          instructions: `${instructions}\n\nDo not call more tools. Return the final structured response now, explaining the valid proposal produced so far or the specific limitation that prevented completion.`,
+        };
+      },
       system: LOGICFLOW_SYSTEM_PROMPT,
       prompt: buildContextPrompt(userPrompt),
       abortSignal,
-      timeout: AGENT_REQUEST_TIMEOUT,
+      timeout: { stepMs: AGENT_STEP_TIMEOUT },
       maxRetries: 0,
-      onError: () => undefined,
+      onError: ({ error }) => {
+        streamError = error;
+      },
     });
     for await (const partial of result.partialOutputStream) {
       if (partial.explanation) onPartialExplanation?.(partial.explanation);
     }
     return { response: await result.output, proposal };
   } catch (error) {
-    throw toAgentTransportError(error);
+    throw toAgentTransportError(streamError ?? error);
   }
 }
 
@@ -341,33 +396,40 @@ export async function generateExecutionFeedbackResponse({
   apiKey,
   model,
   feedback,
+  thinkingLevel = "medium",
   abortSignal,
   onPartialExplanation,
 }: {
   apiKey: string;
   model: string;
   feedback: AgentExecutionFeedback;
+  thinkingLevel?: AgentThinkingLevel;
   abortSignal?: AbortSignal;
   onPartialExplanation?: (explanation: string) => void;
 }) {
+  let streamError: unknown;
   try {
+    const provider = model.split("/")[0] as AgentProvider;
     const result = streamText({
       model: resolveProviderModel(model, apiKey),
+      providerOptions: getThinkingProviderOptions(provider, thinkingLevel),
       output: Output.object({
         schema: zodSchema(AgentResponseSchema, { useReferences: true }),
       }),
       system: LOGICFLOW_SYSTEM_PROMPT,
       prompt: `Report this sanitized post-Apply execution outcome concisely. Do not propose edits or actions:\n${JSON.stringify(feedback)}`,
       abortSignal,
-      timeout: AGENT_REQUEST_TIMEOUT,
+      timeout: { stepMs: AGENT_STEP_TIMEOUT },
       maxRetries: 0,
-      onError: () => undefined,
+      onError: ({ error }) => {
+        streamError = error;
+      },
     });
     for await (const partial of result.partialOutputStream) {
       if (partial.explanation) onPartialExplanation?.(partial.explanation);
     }
     return await result.output;
   } catch (error) {
-    throw toAgentTransportError(error);
+    throw toAgentTransportError(streamError ?? error);
   }
 }

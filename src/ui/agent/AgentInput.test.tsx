@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   draft: "Keep this draft",
   setDraft: vi.fn(),
   setSelectedModel: vi.fn(),
+  setThinkingLevel: vi.fn(),
   smallScreen: false,
 }));
 
@@ -28,9 +29,11 @@ vi.mock("@/lib/store", () => ({
     selector: (state: { currentProjectId: string }) => unknown
   ) => selector({ currentProjectId: "project-a" }),
   useAgentStore: () => ({
-    selectedModel: "gemini-2.5-flash",
+    selectedModel: "gpt-5.6-sol",
+    thinkingLevel: "medium",
     getApiKey: () => mocks.apiKey,
     setSelectedModel: mocks.setSelectedModel,
+    setThinkingLevel: mocks.setThinkingLevel,
     setDraft: mocks.setDraft,
     agentProjects: {
       "project-a": {
@@ -121,6 +124,20 @@ describe("AgentInput accessibility", () => {
     ).toBe(false);
   });
 
+  it("offers current models and thinking levels", async () => {
+    mocks.apiKey = "key";
+    renderInput();
+
+    fireEvent.click(screen.getByRole("button", { name: "Model: GPT-5.6 Sol" }));
+    expect(await screen.findByText("Claude Opus 5")).toBeDefined();
+    expect(screen.queryByText(/Gemini/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Model: GPT-5.6 Sol" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thinking: Medium" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "XHigh" }));
+    expect(mocks.setThinkingLevel).toHaveBeenCalledWith("xhigh");
+  });
+
   it("uses Enter for new lines on mobile and Ctrl+Enter to submit", () => {
     mocks.apiKey = "key";
     mocks.smallScreen = true;
@@ -202,7 +219,7 @@ describe("AgentInput accessibility", () => {
       </MantineProvider>
     );
     const modelSelector = screen.getByRole("button", {
-      name: "Model: Gemini 2.5 Flash",
+      name: "Model: GPT-5.6 Sol",
     });
     modelSelector.focus();
 

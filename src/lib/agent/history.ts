@@ -191,19 +191,34 @@ async function commit(
     }
     const currentProjects = currentProjectState.projects;
     const currentAgentProjects = currentAgentState.agentProjects;
+    const currentAgentPreferences = {
+      apiKeys: currentAgentState.apiKeys,
+      selectedModel: currentAgentState.selectedModel,
+      thinkingLevel: currentAgentState.thinkingLevel,
+    };
     await commitAgentEdit(
       { ...currentProjects, [project.id]: project },
-      { ...currentAgentProjects, [project.id]: agentProject }
+      { ...currentAgentProjects, [project.id]: agentProject },
+      currentAgentPreferences
     );
     const latestProjectState = useProjectStore.getState();
     const latestAgentState = useAgentStore.getState();
     if (
       latestProjectState.projects !== currentProjects ||
-      latestAgentState.agentProjects !== currentAgentProjects
+      latestAgentState.agentProjects !== currentAgentProjects ||
+      latestAgentState.apiKeys !== currentAgentPreferences.apiKeys ||
+      latestAgentState.selectedModel !==
+        currentAgentPreferences.selectedModel ||
+      latestAgentState.thinkingLevel !== currentAgentPreferences.thinkingLevel
     ) {
       await commitAgentEdit(
         latestProjectState.projects,
-        latestAgentState.agentProjects
+        latestAgentState.agentProjects,
+        {
+          apiKeys: latestAgentState.apiKeys,
+          selectedModel: latestAgentState.selectedModel,
+          thinkingLevel: latestAgentState.thinkingLevel,
+        }
       );
       throw new Error(
         "The project or chat changed while the edit was being saved"

@@ -3,15 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createOpenAI: vi.fn((_options: unknown) => vi.fn()),
   createAnthropic: vi.fn((_options: unknown) => vi.fn()),
-  createGoogleGenerativeAI: vi.fn((_options: unknown) => vi.fn()),
 }));
 
 vi.mock("@ai-sdk/openai", () => ({ createOpenAI: mocks.createOpenAI }));
 vi.mock("@ai-sdk/anthropic", () => ({
   createAnthropic: mocks.createAnthropic,
-}));
-vi.mock("@ai-sdk/google", () => ({
-  createGoogleGenerativeAI: mocks.createGoogleGenerativeAI,
 }));
 
 import {
@@ -22,12 +18,11 @@ import {
 
 const PROVIDER_KEY_HEADER = "X-LogicFlow-Provider-Key";
 
-function getProviderOptions(provider: "openai" | "anthropic" | "google") {
+function getProviderOptions(provider: "openai" | "anthropic") {
   createProviderModel(provider, "model", "secret-key");
   const factory = {
     openai: mocks.createOpenAI,
     anthropic: mocks.createAnthropic,
-    google: mocks.createGoogleGenerativeAI,
   }[provider];
   return factory.mock.calls[0][0] as {
     baseURL: string;
@@ -55,7 +50,6 @@ describe("agent provider transport", () => {
   it.each([
     ["openai", "/api/ai/openai"],
     ["anthropic", "/api/ai/anthropic"],
-    ["google", "/api/ai/google"],
   ] as const)("uses the fixed %s proxy route", (provider, expected) => {
     expect(getProviderOptions(provider).baseURL).toBe(expected);
   });
@@ -71,7 +65,6 @@ describe("agent provider transport", () => {
   it.each([
     ["openai", "authorization"],
     ["anthropic", "x-api-key"],
-    ["google", "x-goog-api-key"],
   ] as const)(
     "replaces %s native credentials with the dedicated header",
     async (provider, nativeHeader) => {
@@ -138,6 +131,34 @@ describe("agent provider transport", () => {
   it("normalizes timeouts", () => {
     expect(toAgentTransportError({ name: "TimeoutError" })).toEqual(
       new AgentTransportError("Provider request timed out", "timeout")
+    );
+  });
+
+  it("normalizes wrapped provider errors", () => {
+    expect(
+      toAgentTransportError({
+        name: "NoOutputGeneratedError",
+        cause: { lastError: { statusCode: 429 } },
+      })
+    ).toEqual(
+      new AgentTransportError("Provider rate limit reached", "rate_limited")
+    );
+    expect(toAgentTransportError({ cause: { name: "TimeoutError" } })).toEqual(
+      new AgentTransportError("Provider request timed out", "timeout")
+    );
+  });
+
+  it("reports step exhaustion instead of a provider failure", () => {
+    expect(
+      toAgentTransportError({
+        name: "AI_NoObjectGeneratedError",
+        finishReason: "tool-calls",
+      })
+    ).toEqual(
+      new AgentTransportError(
+        "Agent reached its step limit before completing the proposal. Please retry",
+        "request_failed"
+      )
     );
   });
 });

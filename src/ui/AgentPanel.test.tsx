@@ -14,8 +14,9 @@ const mocks = vi.hoisted(() => {
   const agentState = {
     apiKeys: { openai: "key" },
     selectedModel: "model-a",
+    thinkingLevel: "medium",
     addMessage: vi.fn(),
-    getApiKey: vi.fn(() => "key"),
+    getApiKey: vi.fn((): string | undefined => "key"),
     setApiKey: vi.fn(),
     agentProjects: {
       "project-a": {
@@ -126,7 +127,6 @@ vi.mock("@/lib/store", () => ({
 vi.mock("@/lib/data", () => ({
   AVAILABLE_MODELS: [{ id: "model-a", name: "Model A", provider: "openai" }],
   LLM_PROVIDERS: {
-    google: { name: "Gemini", Icon: () => null },
     openai: { name: "OpenAI", Icon: () => null },
     anthropic: { name: "Anthropic", Icon: () => null },
   },
@@ -216,6 +216,7 @@ function renderPanel() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.agentState.agentProjects["project-a"].activeThreadId = "thread-a";
+  mocks.agentState.getApiKey.mockReturnValue("key");
   mocks.agentState.pendingProposals = {};
   mocks.persistenceState.error = undefined;
   mocks.applyAgentProposal.mockResolvedValue({
@@ -327,14 +328,20 @@ describe("AgentPanel thread header", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add API keys" }));
 
-    expect(await screen.findByLabelText("Gemini API key")).toBeDefined();
-    expect(
-      screen
-        .getByRole("dialog", { hidden: true })
-        .getAttribute("aria-labelledby")
-    ).toBe("agent-api-keys-title");
-    expect(screen.getByLabelText("OpenAI API key")).toBeDefined();
+    expect(screen.queryByLabelText("Gemini API key")).toBeNull();
+    expect(await screen.findByLabelText("OpenAI API key")).toBeDefined();
     expect(screen.getByLabelText("Anthropic API key")).toBeDefined();
+  });
+
+  it("keeps empty API key inputs controlled", async () => {
+    mocks.agentState.getApiKey.mockReturnValue(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add API keys" }));
+
+    expect(
+      (await screen.findByLabelText("OpenAI API key")).getAttribute("value")
+    ).toBe("");
   });
 
   it("shows and dismisses persistence errors", () => {

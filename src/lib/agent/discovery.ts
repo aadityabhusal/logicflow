@@ -152,12 +152,26 @@ function getLimit(limit = 10) {
   return Math.min(limit, MAX_RESULTS);
 }
 
+const OPERATION_SEARCH_TERMS: Record<string, string[]> = {
+  filter: ["predicate", "select", "keep"],
+  isDeepEqual: ["equal", "equals", "equality", "even", "odd"],
+  isShallowEqual: ["equal", "equals", "equality"],
+  mod: ["modulo", "remainder", "even", "odd"],
+};
+
 function rankName(name: string, query: string) {
   if (!query) return 3;
   const normalized = name.toLowerCase();
   if (normalized === query) return 0;
   if (normalized.includes(query)) return 1;
-  if (query.split(/\s+/).some((word) => normalized.includes(word))) return 2;
+  const aliases = Object.hasOwn(OPERATION_SEARCH_TERMS, name)
+    ? OPERATION_SEARCH_TERMS[name]
+    : [];
+  const terms = [normalized, ...aliases];
+  if (
+    query.split(/\s+/).some((word) => terms.some((term) => term.includes(word)))
+  )
+    return 2;
   return 3;
 }
 

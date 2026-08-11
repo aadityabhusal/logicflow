@@ -599,7 +599,12 @@ export const remedaOperationList: (Omit<
       }),
   },
   { name: "map", parameters: getArrayCallbackParams },
-  { name: "filter", parameters: getArrayCallbackParams },
+  {
+    name: "filter",
+    parameters: (data) =>
+      getArrayCallbackParams(data, { returnType: { kind: "boolean" } }),
+    expectedType: (data) => data.type,
+  },
   { name: "find", parameters: getArrayCallbackParams },
   { name: "findIndex", parameters: getArrayCallbackParams },
   { name: "findLast", parameters: getArrayCallbackParams },
@@ -1034,11 +1039,13 @@ export const remedaOperationList: (Omit<
   {
     name: "isDeepEqual",
     parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+    expectedType: { kind: "boolean" },
     narrowType: (_, _data, param) => param.type,
   },
   {
     name: "isShallowEqual",
     parameters: [{ type: { kind: "unknown" } }, { type: { kind: "unknown" } }],
+    expectedType: { kind: "boolean" },
     narrowType: (_, _data, param) => param.type,
   },
   {

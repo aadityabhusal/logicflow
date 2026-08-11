@@ -34,9 +34,11 @@ describe("agent store", () => {
     expect(projects["project-b"].activeThreadId).toBe(second.id);
   });
 
-  it("persists only project documents", () => {
+  it("persists preferences, API keys, and project documents", () => {
     const thread = useAgentStore.getState().createThread("project-a");
     useAgentStore.getState().setApiKey("openai", "session-secret");
+    useAgentStore.getState().setSelectedModel("claude-opus-5");
+    useAgentStore.getState().setThinkingLevel("high");
     useAgentStore.getState().startRun(thread.id);
     useAgentStore.getState().setPendingProposal(thread.id, {
       id: "proposal-a",
@@ -46,6 +48,9 @@ describe("agent store", () => {
 
     const partialize = useAgentStore.persist.getOptions().partialize!;
     expect(partialize(useAgentStore.getState())).toEqual({
+      apiKeys: { openai: "session-secret" },
+      selectedModel: "claude-opus-5",
+      thinkingLevel: "high",
       agentProjects: useAgentStore.getState().agentProjects,
     });
   });

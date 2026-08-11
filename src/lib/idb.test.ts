@@ -45,7 +45,15 @@ describe("IndexedDB storage", () => {
     };
     idb.transaction.mockReturnValue(transaction);
 
-    await commitAgentEdit({ project: true }, { agent: true });
+    await commitAgentEdit(
+      { project: true },
+      { agent: true },
+      {
+        apiKeys: { openai: "key" },
+        selectedModel: "gpt-5.6-terra",
+        thinkingLevel: "high",
+      }
+    );
 
     expect(idb.transaction).toHaveBeenCalledWith(
       ["projects", "agentProjects"],
@@ -62,7 +70,12 @@ describe("IndexedDB storage", () => {
     expect(put).toHaveBeenNthCalledWith(
       2,
       JSON.stringify({
-        state: { agentProjects: { agent: true } },
+        state: {
+          apiKeys: { openai: "key" },
+          selectedModel: "gpt-5.6-terra",
+          thinkingLevel: "high",
+          agentProjects: { agent: true },
+        },
         version: 0,
       }),
       "agent"
@@ -80,6 +93,16 @@ describe("IndexedDB storage", () => {
     };
     idb.transaction.mockReturnValue(transaction);
 
-    await expect(commitAgentEdit({}, {})).rejects.toThrow("write failed");
+    await expect(
+      commitAgentEdit(
+        {},
+        {},
+        {
+          apiKeys: {},
+          selectedModel: "gpt-5.6-sol",
+          thinkingLevel: "medium",
+        }
+      )
+    ).rejects.toThrow("write failed");
   });
 });

@@ -167,6 +167,53 @@ describe("agent discovery", () => {
     ).toBe(true);
   });
 
+  it("discovers the operations needed for an even-number filter", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const arrayType = {
+      kind: "array",
+      elementType: { kind: "number" },
+    } as const;
+
+    expect(
+      discovery.searchOperations({
+        query: "filter",
+        inputType: arrayType,
+        resultType: arrayType,
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "filter", resultType: arrayType }),
+      ])
+    );
+    expect(
+      discovery.searchOperations({
+        query: "even",
+        inputType: { kind: "number" },
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "mod",
+          resultType: { kind: "number" },
+        }),
+        expect.objectContaining({
+          name: "isDeepEqual",
+          resultType: { kind: "boolean" },
+        }),
+      ])
+    );
+
+    const filter = discovery.searchOperations({
+      query: "filter",
+      inputType: arrayType,
+    })[0];
+    expect(
+      discovery.describeOperations([filter.handle])[0].parameters[1]
+    ).toMatchObject({
+      type: { kind: "operation", result: { kind: "boolean" } },
+    });
+  });
+
   it("returns no operations when the query does not match", async () => {
     const discovery = await createAgentDiscovery(createTestProject());
 

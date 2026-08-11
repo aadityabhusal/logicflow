@@ -13,7 +13,6 @@ export function getAgentExecutionSecrets(
   providerKeys: {
     openai?: string;
     anthropic?: string;
-    google?: string;
   }
 ) {
   return [

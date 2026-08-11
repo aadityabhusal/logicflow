@@ -41,7 +41,12 @@ export const createIDbStorage = <T>(storeName: string, onError?: () => void) =>
 
 export async function commitAgentEdit(
   projects: unknown,
-  agentProjects: unknown
+  agentProjects: unknown,
+  agentPreferences: {
+    apiKeys: unknown;
+    selectedModel: unknown;
+    thinkingLevel: unknown;
+  }
 ) {
   const db = await IDbStore;
   const transaction = db.transaction(
@@ -52,9 +57,13 @@ export async function commitAgentEdit(
     transaction
       .objectStore("projects")
       .put(JSON.stringify({ state: { projects }, version: 0 }), "projects"),
-    transaction
-      .objectStore("agentProjects")
-      .put(JSON.stringify({ state: { agentProjects }, version: 0 }), "agent"),
+    transaction.objectStore("agentProjects").put(
+      JSON.stringify({
+        state: { ...agentPreferences, agentProjects },
+        version: 0,
+      }),
+      "agent"
+    ),
     transaction.done,
   ]);
 }

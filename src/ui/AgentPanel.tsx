@@ -33,6 +33,7 @@ import {
 export function AgentPanel() {
   const {
     selectedModel,
+    thinkingLevel,
     addMessage,
     getApiKey,
     setApiKey,
@@ -173,6 +174,7 @@ export function AgentPanel() {
         userPrompt: requestPrompt,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
+        thinkingLevel,
         initialProposal: revisedProposal,
         abortSignal: controller.signal,
         onPartialExplanation: setStreamingContent,
@@ -259,6 +261,7 @@ export function AgentPanel() {
         feedback,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
+        thinkingLevel,
         abortSignal: controller.signal,
         onPartialExplanation: setStreamingContent,
       });
@@ -565,7 +568,7 @@ export function AgentPanel() {
                       wrapper: "p-1",
                       innerInput: "focus:outline outline-white p-0.5",
                     }}
-                    value={getApiKey(id as keyof typeof LLM_PROVIDERS)}
+                    value={getApiKey(id as keyof typeof LLM_PROVIDERS) ?? ""}
                     onChange={(e) =>
                       setApiKey(
                         id as keyof typeof LLM_PROVIDERS,

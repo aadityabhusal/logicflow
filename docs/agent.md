@@ -12,7 +12,7 @@ VITE_APP_ENABLE_AGENT_PANEL=true
 
 Open the **Agent** tab, choose a model, add the API key for that provider, and send a request. Drafts, messages, and multiple chat threads are scoped to the current project. Active runs can be cancelled; a new request can be submitted after cancellation.
 
-Keys stay in this browser tab and are not saved. The selected provider may receive the user prompt, relevant project context, and sanitized execution feedback.
+Keys, model selection, and thinking level are stored in this browser's IndexedDB and persist across tabs and browser sessions. The selected provider may receive the user prompt, relevant project context, and sanitized execution feedback.
 
 ## Capabilities and Limitations
 
@@ -59,17 +59,18 @@ Failed execution may produce a focused repair proposal, but every repair require
 
 Each project can have multiple independent agent threads. Threads, drafts, messages, active-thread selection, proposal links, and agent edit history are stored in the browser's IndexedDB.
 
-Active runs are cancelled on reload and are not resumed. Agent edit history keeps up to 50 entries per project. Undo and redo require the current project to match the recorded state; a conflicting manual change blocks the action. A new edit after undo clears the redo branch.
+Active runs are cancelled on reload and are not resumed. Each provider step has a 60-second timeout; multi-step tool runs may take longer overall and can be stopped from the composer. Proposal runs are bounded to 40 provider steps and 128 tool calls. The final step is reserved for a structured response, and three repeated equivalent tool-call batches also trigger finalization. Agent edit history keeps up to 50 entries per project. Undo and redo require the current project to match the recorded state; a conflicting manual change blocks the action. A new edit after undo clears the redo branch.
 
 ## Providers, API Keys, and Proxy
 
 Logicflow supports usage-based API-key billing through these providers and models:
 
-| Provider  | Models                             |
-| --------- | ---------------------------------- |
-| Google    | Gemini 2.5 Flash, Gemini 2.5 Pro   |
-| OpenAI    | GPT 5.1 Codex Mini, GPT 5.1 Codex  |
-| Anthropic | Claude Sonnet 4.5, Claude Opus 4.6 |
+| Provider  | Models                                         |
+| --------- | ---------------------------------------------- |
+| OpenAI    | GPT-5.6 Sol, GPT-5.6 Terra, GPT-5.6 Luna       |
+| Anthropic | Claude Fable 5, Claude Opus 5, Claude Sonnet 5 |
+
+The composer exposes Low, Medium, High, XHigh, and Max thinking levels. Higher levels can improve difficult coding and reasoning work at the cost of greater latency and token usage. The level applies to the whole provider request; Logicflow does not display raw chain-of-thought.
 
 Logicflow does not provide subscription-backed or local-runtime providers. Agent requests use the configured proxy. Leave `VITE_API_PROXY_URL` empty for local development; Vite forwards `/api/ai/*` to the sibling Worker at `http://localhost:8787`. Set `VITE_API_PROXY_URL` to the absolute URL of the deployed `logicflow-proxy` Worker in production. The Worker must allow the app origin:
 
@@ -77,7 +78,7 @@ Logicflow does not provide subscription-backed or local-runtime providers. Agent
 ALLOWED_ORIGIN=http://localhost:3000
 ```
 
-The client uses fixed provider routes: `/ai/openai`, `/ai/anthropic`, and `/ai/google`. The proxy must allow the app origin through CORS, preserve streaming responses, and support request cancellation. The client reports cancellation, timeouts, unauthorized keys, rate limits, unavailable providers, and other request failures without silently falling back to a direct provider request.
+The client uses fixed provider routes: `/ai/openai` and `/ai/anthropic`. The proxy must allow the app origin through CORS, preserve streaming responses, and support request cancellation. The client reports cancellation, timeouts, unauthorized keys, rate limits, unavailable providers, and other request failures without silently falling back to a direct provider request.
 
 ## Data Sharing and Security
 
@@ -113,7 +114,7 @@ See [Deployment](#deployment) for platform setup and environment variables.
 ## Troubleshooting
 
 - **Agent tab is missing:** Set `VITE_APP_ENABLE_AGENT_PANEL=true` and restart the development server.
-- **API key required:** Add a key for the selected model's provider. Keys are tab-local and must be entered again in a new tab or session.
+- **API key required:** Add a key for the selected model's provider. Keys are stored locally in IndexedDB and persist across tabs and browser sessions.
 - **Unauthorized or rate-limited:** Check the provider key, provider account, and usage limits.
 - **Timeout, cancellation, or unavailable provider:** Retry after checking the provider status and network connection. No direct-provider fallback is used.
 - **Proxy or CORS failure:** Check `VITE_API_PROXY_URL`, the proxy's fixed routes, and its allowed app origin. Production builds do not use Vite's local proxy.

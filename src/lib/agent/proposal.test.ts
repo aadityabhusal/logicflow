@@ -396,6 +396,60 @@ describe("agent proposal", () => {
     });
   });
 
+  it("accepts a project helper operation as a filter predicate", async () => {
+    const anchor = createOperationFile("anchor");
+    const predicate = createOperationFile("isEven");
+    predicate.content.type = {
+      kind: "operation",
+      parameters: [{ name: "item", type: { kind: "number" } }],
+      result: { kind: "boolean" },
+    };
+    const project = createTestProject({ files: [anchor, predicate] });
+    const discovery = await createAgentDiscovery(project, anchor.id);
+    const filter = discovery.searchOperations({
+      query: "filter",
+      inputType: { kind: "array", elementType: { kind: "number" } },
+    })[0];
+
+    const proposal = await createAgentProposal({
+      project,
+      fileId: anchor.id,
+      sourcePrompt: "Keep even numbers",
+      resolveOperation: (handle, inputType) =>
+        discovery.resolveOperationHandle(handle, inputType),
+      draft: {
+        name: "anchor",
+        parameters: [],
+        statements: [
+          {
+            value: {
+              kind: "array",
+              items: [
+                { kind: "number", value: 1 },
+                { kind: "number", value: 2 },
+              ],
+            },
+            operations: [
+              {
+                operationHandle: filter.handle,
+                arguments: [{ kind: "reference", name: "isEven" }],
+              },
+            ],
+            return: true,
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).toEqual([]);
+    expect(proposal.proposedFile?.content.type.result).toMatchObject({
+      kind: "union",
+      types: expect.arrayContaining([
+        { kind: "array", elementType: { kind: "number" } },
+      ]),
+    });
+  });
+
   it("propagates a renamed signature and result type into stable-ID callers", async () => {
     const helper = createOperationFile("helper");
     helper.content.type.result = { kind: "number" };

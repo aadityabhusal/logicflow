@@ -1,12 +1,10 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { AgentProvider } from "./types";
+import type { AgentProvider } from "./types";
 
 const PROVIDER_ROUTES: Record<AgentProvider, string> = {
   openai: "/ai/openai",
   anthropic: "/ai/anthropic",
-  google: "/ai/google",
 };
 
 const PROVIDER_KEY_HEADER = "X-LogicFlow-Provider-Key";
@@ -85,18 +83,47 @@ export function createProviderModel(
       return createOpenAI(options)(model);
     case "anthropic":
       return createAnthropic(options)(model);
-    case "google":
-      return createGoogleGenerativeAI(options)(model);
   }
 }
 
 export function toAgentTransportError(error: unknown) {
   if (error instanceof AgentTransportError) return error;
-  const value = error as {
+  if (
+    error &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "AI_NoObjectGeneratedError" &&
+    "finishReason" in error &&
+    error.finishReason === "tool-calls"
+  ) {
+    return new AgentTransportError(
+      "Agent reached its step limit before completing the proposal. Please retry",
+      "request_failed"
+    );
+  }
+  const seen = new Set<unknown>();
+  let value = error as {
     name?: string;
     statusCode?: number;
     status?: number;
+    cause?: unknown;
+    lastError?: unknown;
+    error?: unknown;
   };
+  while (
+    value &&
+    typeof value === "object" &&
+    !seen.has(value) &&
+    value.name !== "AbortError" &&
+    value.name !== "TimeoutError" &&
+    value.statusCode === undefined &&
+    value.status === undefined
+  ) {
+    seen.add(value);
+    const nested = value.lastError ?? value.cause ?? value.error;
+    if (!nested || typeof nested !== "object") break;
+    value = nested;
+  }
   if (value?.name === "AbortError") {
     return new AgentTransportError("Request cancelled", "cancelled");
   }
@@ -118,6 +145,18 @@ export function toAgentTransportError(error: unknown) {
   }
   if (status === 408 || status === 504) {
     return new AgentTransportError("Provider request timed out", "timeout");
+  }
+  if (status === 413) {
+    return new AgentTransportError(
+      "Provider request is too large",
+      "request_failed"
+    );
+  }
+  if (status && status >= 400 && status < 500) {
+    return new AgentTransportError(
+      "Provider rejected the request",
+      "request_failed"
+    );
   }
   if (status && status >= 500) {
     return new AgentTransportError(

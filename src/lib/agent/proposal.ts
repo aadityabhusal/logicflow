@@ -884,10 +884,13 @@ export async function createAgentProposal({
       }
       const args = call.arguments.map((argument, index) => {
         const value = createValue(argument) ?? createData();
+        const valueType = isDataOfType(value, "reference")
+          ? (scope.get(value.value.name)?.data.type ?? value.type)
+          : value.type;
         const expected = rest
           ? argumentParameters[Math.min(index, argumentParameters.length - 1)]
           : argumentParameters[index];
-        if (expected && !isTypeCompatible(value.type, expected.type, context)) {
+        if (expected && !isTypeCompatible(valueType, expected.type, context)) {
           addError(
             "invalid_argument_type",
             `Argument ${index + 1} of ${descriptor.name} has the wrong type`
