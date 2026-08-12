@@ -41,21 +41,21 @@ describe("native agent proposals", () => {
             statement,
           },
         ],
-      }).success,
+      }).success
     ).toBe(true);
     expect(
       AgentOperationUpdateSchema.safeParse({
         explanation: "bad",
         enablePackages: [],
         changes: [{ kind: "set_statement_name", statementId: "x", name: "y" }],
-      }).success,
+      }).success
     ).toBe(false);
     expect(
       AgentOperationUpdateSchema.safeParse({
         explanation: "bad",
         enablePackages: ["not-supported"],
         changes: [],
-      }).success,
+      }).success
     ).toBe(false);
     expect(
       AgentOperationUpdateSchema.safeParse({
@@ -63,7 +63,7 @@ describe("native agent proposals", () => {
         enablePackages: [],
         changes: [],
         extra: true,
-      }).success,
+      }).success
     ).toBe(false);
   });
 
@@ -108,6 +108,269 @@ describe("native agent proposals", () => {
     });
   });
 
+  it("fills host-owned IDs and empty operation arrays for an empty-operation update", () => {
+    const parsed = AgentOperationUpdateSchema.safeParse({
+      explanation: "Add BMI inputs and calculation",
+      enablePackages: [],
+      changes: [
+        {
+          kind: "insert_statement",
+          container: "parameters",
+          beforeStatementId: null,
+          statement: {
+            name: "weightKg",
+            data: { type: { kind: "number" }, value: 70 },
+          },
+        },
+        {
+          kind: "insert_statement",
+          container: "parameters",
+          beforeStatementId: null,
+          statement: {
+            name: "heightM",
+            data: { type: { kind: "number" }, value: 1.75 },
+          },
+        },
+        {
+          kind: "insert_statement",
+          container: "body",
+          beforeStatementId: null,
+          statement: {
+            name: "bmi",
+            data: { type: { kind: "number" }, value: 22.86 },
+          },
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const statements = parsed.data.changes.flatMap((change) =>
+      change.kind === "insert_statement" ? [change.statement] : []
+    );
+    expect(statements).toHaveLength(3);
+    expect(statements.every(({ id }) => id.length > 0)).toBe(true);
+    expect(new Set(statements.map(({ id }) => id)).size).toBe(3);
+    expect(
+      statements.every(
+        ({ data, operations }) => data.id.length > 0 && operations.length === 0
+      )
+    ).toBe(true);
+  });
+
+  it("canonicalizes stale reference IDs in an empty-operation BMI update", async () => {
+    const file = createOperationFile("main");
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "add the logic to calculate body mass index (bmi)",
+      update: {
+        explanation: "Add BMI inputs and calculation",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "parameters",
+            beforeStatementId: null,
+            statement: {
+              id: "weight-statement",
+              name: "weightKg",
+              data: {
+                id: "weight-data",
+                type: { kind: "number" },
+                value: 70,
+              },
+              operations: [],
+            },
+          },
+          {
+            kind: "insert_statement",
+            container: "parameters",
+            beforeStatementId: null,
+            statement: {
+              id: "height-statement",
+              name: "heightM",
+              data: {
+                id: "height-data",
+                type: { kind: "number" },
+                value: 1.75,
+              },
+              operations: [],
+            },
+          },
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: {
+              id: "bmi-statement",
+              name: "bmi",
+              data: {
+                id: "bmi-data",
+                type: { kind: "reference", name: "heightM" },
+                value: { name: "heightM", id: "height-data" },
+              },
+              operations: [],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).not.toContainEqual(
+      expect.objectContaining({
+        code: "unresolved_reference",
+        message: expect.stringContaining("heightM"),
+      })
+    );
+    const height = proposal.proposedFile!.content.value.parameters.find(
+      ({ name }) => name === "heightM"
+    )!;
+    const bmi = proposal.proposedFile!.content.value.statements[0];
+    expect(bmi.data.value).toEqual({ name: "heightM", id: height.id });
+  });
+
+  it("repairs named arithmetic calls returned inside statement data", async () => {
+    const file = createOperationFile("operation1");
+    const referenceStatement = (id: string, name: string, referenceId = id) =>
+      createStatement({
+        id,
+        name,
+        data: createData({
+          id: `${id}-data`,
+          type: { kind: "reference", name },
+          value: { name, id: referenceId },
+        }),
+      });
+    const arithmeticCall = (
+      id: string,
+      name: string,
+      parameters: IStatement[]
+    ) =>
+      createData<OperationType>({
+        id,
+        type: {
+          kind: "operation",
+          parameters: [
+            { type: { kind: "number" } },
+            { type: { kind: "number" } },
+          ],
+          result: { kind: "number" },
+        },
+        value: { name, parameters, statements: [] },
+      });
+    const update = {
+      explanation: "Calculate BMI",
+      enablePackages: [],
+      changes: [
+        {
+          kind: "insert_statement" as const,
+          container: "parameters" as const,
+          beforeStatementId: null,
+          statement: createStatement({
+            id: "weightKg",
+            name: "weightKg",
+            data: createData({
+              id: "weightKgData",
+              type: { kind: "number" },
+              value: 70,
+            }),
+          }),
+        },
+        {
+          kind: "insert_statement" as const,
+          container: "parameters" as const,
+          beforeStatementId: null,
+          statement: createStatement({
+            id: "heightM",
+            name: "heightM",
+            data: createData({
+              id: "heightMData",
+              type: { kind: "number" },
+              value: 1.75,
+            }),
+          }),
+        },
+        {
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement: createStatement({
+            id: "heightSquared",
+            name: "heightSquared",
+            data: arithmeticCall("heightSquaredData", "multiply", [
+              referenceStatement("heightM-ref-1", "heightM", "heightM"),
+              referenceStatement("heightM-ref-2", "heightM", "heightM"),
+            ]),
+          }),
+        },
+        {
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement: createStatement({
+            id: "bmi",
+            name: "bmi",
+            data: arithmeticCall("bmiData", "divide", [
+              referenceStatement("weightKg-ref", "weightKg", "weightKg"),
+              referenceStatement(
+                "heightSquared-ref",
+                "heightSquared",
+                "heightSquared"
+              ),
+            ]),
+          }),
+        },
+      ],
+    };
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "add the logic to calculate body mass index (bmi)",
+      update,
+    });
+
+    expect(proposal.diagnostics).toEqual([]);
+    const proposedStatements = proposal.proposedFile!.content.value.statements;
+    expect(proposedStatements).toHaveLength(2);
+    expect(proposedStatements.map(({ name }) => name)).toEqual([
+      "heightSquared",
+      "bmi",
+    ]);
+    expect(proposedStatements.map(({ data }) => data.type.kind)).toEqual([
+      "reference",
+      "reference",
+    ]);
+    expect(
+      proposedStatements.map(({ operations }) => operations[0].value.name)
+    ).toEqual(["multiply", "divide"]);
+    expect(
+      proposedStatements.map(({ operations }) =>
+        operations[0].value.parameters.map(({ name }) => name)
+      )
+    ).toEqual([["heightM"], ["heightSquared"]]);
+  });
+
+  it("does not repair explicit invalid statement fields", () => {
+    const parsed = AgentOperationUpdateSchema.safeParse({
+      explanation: "bad",
+      enablePackages: [],
+      changes: [
+        {
+          kind: "insert_statement",
+          container: "body",
+          beforeStatementId: null,
+          statement: {
+            data: { type: { kind: "number" }, value: 1 },
+            operations: null,
+          },
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
   it("inserts only into the selected operation and preserves metadata", async () => {
     const file = createOperationFile("main");
     file.documentation = "keep";
@@ -143,7 +406,7 @@ describe("native agent proposals", () => {
       tags: ["public"],
     });
     expect(proposal.proposedFile!.content.value.statements[0].id).not.toBe(
-      payload.id,
+      payload.id
     );
     expect(proposal.proposedState!.operationFiles[1].file).toEqual(other);
     expect(file.content.value.statements).toEqual([]);
@@ -230,7 +493,8 @@ describe("native agent proposals", () => {
     });
 
     expect(proposal.diagnostics).toEqual([]);
-    const [inserted, replaced] = proposal.proposedFile!.content.value.statements;
+    const [inserted, replaced] =
+      proposal.proposedFile!.content.value.statements;
     expect(inserted.id).not.toBe(callback.id);
     expect(replaced.id).toBe(target.id);
     expect(replaced.data.value).toMatchObject({
@@ -263,7 +527,7 @@ describe("native agent proposals", () => {
     });
     expect(moved.diagnostics).toEqual([]);
     expect(
-      moved.proposedFile!.content.value.statements.map(({ id }) => id),
+      moved.proposedFile!.content.value.statements.map(({ id }) => id)
     ).toEqual([second.id, first.id]);
     const invalid = await createAgentProposal({
       project,
@@ -283,7 +547,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(invalid.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid_anchor" }),
+      expect.objectContaining({ code: "invalid_anchor" })
     );
   });
 
@@ -308,7 +572,7 @@ describe("native agent proposals", () => {
       expect.objectContaining({
         code: "invalid_statement_target",
         message: expect.stringContaining(nested.id),
-      }),
+      })
     );
   });
 
@@ -339,7 +603,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(proposal.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid_statement_order" }),
+      expect.objectContaining({ code: "invalid_statement_order" })
     );
   });
 
@@ -368,7 +632,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(deleted.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "statement_in_use" }),
+      expect.objectContaining({ code: "statement_in_use" })
     );
     const conflict = await createAgentProposal({
       project,
@@ -388,7 +652,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(conflict.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "conflicting_actions" }),
+      expect.objectContaining({ code: "conflicting_actions" })
     );
   });
 
@@ -425,7 +689,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(proposal.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "unknown_operation" }),
+      expect.objectContaining({ code: "unknown_operation" })
     );
   });
 
@@ -464,7 +728,7 @@ describe("native agent proposals", () => {
         data: testCondition(
           createStatement({ data: createData({ value: true }) }),
           [invalidCall()],
-          [],
+          []
         ),
       }),
       createStatement({ data: testOperation([], [invalidCall()]) }),
@@ -520,7 +784,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(
-      proposal.diagnostics.filter(({ code }) => code === "unknown_operation"),
+      proposal.diagnostics.filter(({ code }) => code === "unknown_operation")
     ).toHaveLength(6);
   });
 
@@ -568,7 +832,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(proposal.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid_argument_type" }),
+      expect.objectContaining({ code: "invalid_argument_type" })
     );
     const proposedCall =
       proposal.proposedFile!.content.value.statements[0].operations[0];
@@ -651,15 +915,15 @@ describe("native agent proposals", () => {
       },
     });
     const proposedCaller = proposal.proposedState!.operationFiles.find(
-      ({ file }) => file.id === caller.id,
+      ({ file }) => file.id === caller.id
     )!.file;
     const calls = proposedCaller.content.value.statements[0].data
       .value as IStatement[];
     expect(calls[0].operations[0].value.parameters.map(({ id }) => id)).toEqual(
-      [selectedArgs[1].id, selectedArgs[0].id],
+      [selectedArgs[1].id, selectedArgs[0].id]
     );
     expect(calls[1].operations[0].value.parameters.map(({ id }) => id)).toEqual(
-      [otherArg.id],
+      [otherArg.id]
     );
   });
 
@@ -762,7 +1026,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(proposal.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "unresolved_reference" }),
+      expect.objectContaining({ code: "unresolved_reference" })
     );
   });
 
@@ -780,7 +1044,7 @@ describe("native agent proposals", () => {
     const closure = createStatement({
       data: testOperation(
         [],
-        [local, createStatement({ data: testReference("local", local.id) })],
+        [local, createStatement({ data: testReference("local", local.id) })]
       ),
     });
     const escaped = createStatement({ data: testReference("local", local.id) });
@@ -800,9 +1064,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(
-      proposal.diagnostics.filter(
-        ({ code }) => code === "unresolved_reference",
-      ),
+      proposal.diagnostics.filter(({ code }) => code === "unresolved_reference")
     ).toHaveLength(1);
   });
 
@@ -854,13 +1116,13 @@ describe("native agent proposals", () => {
     expect(
       proposal
         .proposedFile!.content.value.statements.slice(0, 2)
-        .map(({ data }) => data.value),
+        .map(({ data }) => data.value)
     ).toEqual([
       { name: selected.name, id: selected.id },
       { name: helper.name, id: helper.id },
     ]);
     const proposedCaller = proposal.proposedState!.operationFiles.find(
-      ({ file }) => file.id === caller.id,
+      ({ file }) => file.id === caller.id
     )!.file;
     expect(proposedCaller.content.value.statements[0].data.value).toEqual({
       name: selected.name,
@@ -921,11 +1183,11 @@ describe("native agent proposals", () => {
       },
     });
     expect(proposal.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "invalid_argument_count" }),
+      expect.objectContaining({ code: "invalid_argument_count" })
     );
     expect(
       proposal.proposedFile!.content.value.statements[1].operations[0].type
-        .result,
+        .result
     ).toEqual({ kind: "number" });
   });
 
@@ -1037,7 +1299,7 @@ describe("native agent proposals", () => {
     expect(proposal.proposedFile!.content.type.result).toEqual(arrayType);
     expect(
       proposal.proposedFile!.content.value.statements[1].operations[0].type
-        .result,
+        .result
     ).toEqual(arrayType);
   });
 
@@ -1132,7 +1394,7 @@ describe("native agent proposals", () => {
     });
 
     expect(proposal.diagnostics).not.toContainEqual(
-      expect.objectContaining({ code: "invalid_argument_type" }),
+      expect.objectContaining({ code: "invalid_argument_type" })
     );
   });
 
@@ -1149,7 +1411,7 @@ describe("native agent proposals", () => {
     selected.content.value.parameters = [rest];
     selected.content.type.parameters = [{ type: rest.data.type, isRest: true }];
     const args = [1, 2, 3].map((value) =>
-      createStatement({ data: createData({ value }) }),
+      createStatement({ data: createData({ value }) })
     );
     const caller = createOperationFile("caller");
     caller.content.value.statements = [
@@ -1187,12 +1449,12 @@ describe("native agent proposals", () => {
       },
     });
     const proposedCaller = proposal.proposedState!.operationFiles.find(
-      ({ file }) => file.id === caller.id,
+      ({ file }) => file.id === caller.id
     )!.file;
     expect(
       proposedCaller.content.value.statements[0].operations[0].value.parameters.map(
-        ({ id }) => id,
-      ),
+        ({ id }) => id
+      )
     ).toEqual(args.map(({ id }) => id));
   });
 
@@ -1241,11 +1503,11 @@ describe("native agent proposals", () => {
     const directResult = files.find(({ file }) => file.id === direct.id)!.file
       .content.type.result;
     const proposedTransitive = files.find(
-      ({ file }) => file.id === transitive.id,
+      ({ file }) => file.id === transitive.id
     )!.file;
     expect(proposedTransitive.content.type.result).toEqual(directResult);
     expect(
-      proposedTransitive.content.value.statements[0].operations[0].type.result,
+      proposedTransitive.content.value.statements[0].operations[0].type.result
     ).toEqual(directResult);
   });
 
@@ -1272,7 +1534,7 @@ describe("native agent proposals", () => {
       },
     });
     expect(proposal.diagnostics).toContainEqual(
-      expect.objectContaining({ code: "conflicting_actions" }),
+      expect.objectContaining({ code: "conflicting_actions" })
     );
   });
 
@@ -1307,10 +1569,10 @@ describe("native agent proposals", () => {
     });
     const statements = proposal.proposedFile!.content.value.statements;
     expect(
-      (statements[0].data.value as { instanceId: string }).instanceId,
+      (statements[0].data.value as { instanceId: string }).instanceId
     ).not.toBe("runtime-id");
     expect(
-      (statements[1].data.value as { instanceId: string }).instanceId,
+      (statements[1].data.value as { instanceId: string }).instanceId
     ).toBe("asset-id");
   });
 
@@ -1341,12 +1603,12 @@ describe("native agent proposals", () => {
       },
     });
     const ids = proposal.proposedFile!.content.value.statements.map(
-      ({ data }) => (data.value as { instanceId: string }).instanceId,
+      ({ data }) => (data.value as { instanceId: string }).instanceId
     );
     expect(new Set(ids).size).toBe(2);
     expect(ids).not.toContain("shared-runtime-id");
     expect(proposal.diagnostics).not.toContainEqual(
-      expect.objectContaining({ code: "duplicate_instance_id" }),
+      expect.objectContaining({ code: "duplicate_instance_id" })
     );
   });
 

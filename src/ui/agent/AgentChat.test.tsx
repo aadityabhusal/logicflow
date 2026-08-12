@@ -1,6 +1,14 @@
 import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const mocks = vi.hoisted(() => ({
   isAgentProposalStale: vi.fn(() => false),
@@ -104,6 +112,55 @@ beforeAll(() => {
 });
 
 afterAll(() => vi.unstubAllGlobals());
+
+afterEach(() => {
+  Object.assign(mocks.agentState, { activeRun: undefined });
+});
+
+describe("AgentChat request progress", () => {
+  it("shows request milestones and streamed explanation instead of a loading label", () => {
+    Object.assign(mocks.agentState, {
+      activeRun: {
+        threadId: "thread-a",
+        streamingContent: "I found the relevant operation.",
+        traces: [
+          {
+            id: "trace-a",
+            label: "Reading project context",
+            status: "complete",
+          },
+          {
+            id: "trace-b",
+            label: "Planning the requested change",
+            status: "active",
+          },
+        ],
+      },
+    });
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    const progress = screen.getByRole("status", { name: "Agent progress" });
+    expect(progress.textContent).toContain("Reading project context");
+    expect(progress.textContent).toContain("Planning the requested change");
+    expect(progress.textContent).toContain("I found the relevant operation.");
+    expect(progress.textContent).not.toContain("Loading...");
+  });
+});
 
 describe("AgentChat proposal navigation", () => {
   it("keeps an anchored proposal recoverable when another file is selected", () => {

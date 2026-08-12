@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => {
     removeThread: vi.fn(),
     deleteThreadTurn: vi.fn(),
     startRun: vi.fn(),
+    setRunTrace: vi.fn(),
     setStreamingContent: vi.fn(),
     finishRun: vi.fn(),
     setPendingProposal: vi.fn(),
@@ -423,18 +424,27 @@ describe("AgentPanel proposal lifecycle", () => {
   });
 
   it("stores generated proposals without mutating the project", async () => {
-    mocks.generateOperationProposal.mockResolvedValue({
-      response: { explanation: "Review this proposal" },
-      proposal: {
-        id: "proposal-a",
-        projectId: "project-a",
-        fileId: "operation-a",
-        baseFingerprint: "fingerprint",
-        sourcePrompt: "Update it",
-        update: { explanation: "Update it", enablePackages: [], changes: [] },
-        diagnostics: [],
-      },
-    });
+    mocks.generateOperationProposal.mockImplementation(
+      async ({ onProgress }) => {
+        onProgress?.("Preparing an implementation");
+        return {
+          response: { explanation: "Review this proposal" },
+          proposal: {
+            id: "proposal-a",
+            projectId: "project-a",
+            fileId: "operation-a",
+            baseFingerprint: "fingerprint",
+            sourcePrompt: "Update it",
+            update: {
+              explanation: "Update it",
+              enablePackages: [],
+              changes: [],
+            },
+            diagnostics: [],
+          },
+        };
+      }
+    );
     renderPanel();
 
     fireEvent.click(screen.getByText("Submit prompt"));
@@ -449,6 +459,9 @@ describe("AgentPanel proposal lifecycle", () => {
       )
     );
     expect(mocks.projectState.updateFile).not.toHaveBeenCalled();
+    expect(mocks.agentState.setRunTrace).toHaveBeenCalledWith(
+      "Preparing an implementation"
+    );
   });
 
   it("does not revise or regenerate when the proposal anchor is missing", () => {

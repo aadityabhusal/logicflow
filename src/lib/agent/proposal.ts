@@ -2,7 +2,6 @@ import { nanoid } from "nanoid";
 import isEqual from "react-fast-compare";
 import { z } from "zod";
 import type { Context, OperationListItem } from "../execution/types";
-import { getFilteredOperations } from "../execution/execution";
 import { formatCode, generateOperation } from "../format-code";
 import { coreOperations } from "../operations/built-in";
 import {
@@ -17,16 +16,15 @@ import {
 } from "../packages/registry";
 import { IStatementSchema, ProjectFileSchema, ProjectSchema } from "../schemas";
 import type {
-  DataType,
   IData,
   IStatement,
   OperationType,
   Project,
   ProjectFile,
+  ReferenceType,
 } from "../types";
 import { updateFiles, updateStatements } from "../update";
 import {
-  createContext,
   createData,
   createFileVariables,
   createOperationFromFile,
@@ -57,11 +55,11 @@ function normalizeNestedOperationValues(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeNestedOperationValues);
   if (!isRecord(value)) return value;
 
-  const normalized = Object.fromEntries(
+  let normalized = Object.fromEntries(
     Object.entries(value).map(([key, entry]) => [
       key,
       normalizeNestedOperationValues(entry),
-    ]),
+    ])
   );
   const type = normalized.type;
   if (
@@ -71,8 +69,22 @@ function normalizeNestedOperationValues(value: unknown): unknown {
     "value" in type
   ) {
     const { value: operationValue, ...operationType } = type;
-    return { ...normalized, type: operationType, value: operationValue };
+    normalized = { ...normalized, type: operationType, value: operationValue };
   }
+
+  if ("data" in normalized) {
+    if (!("id" in normalized)) normalized.id = nanoid();
+    if (!("operations" in normalized)) normalized.operations = [];
+  }
+  const normalizedType = normalized.type;
+  if (
+    !("id" in normalized) &&
+    isRecord(normalizedType) &&
+    typeof normalizedType.kind === "string" &&
+    ("value" in normalized || normalizedType.kind === "undefined")
+  )
+    normalized.id = nanoid();
+
   return normalized;
 }
 
@@ -119,7 +131,7 @@ const AgentOperationUpdateObjectSchema = z
       .array(
         z
           .string()
-          .refine((name) => !!PACKAGE_CATALOG[name], "Unsupported package"),
+          .refine((name) => !!PACKAGE_CATALOG[name], "Unsupported package")
       )
       .max(MAX_PACKAGE_ENABLES),
     changes: z.array(AgentStatementActionSchema).max(MAX_ACTIONS),
@@ -142,7 +154,7 @@ const AgentOperationUpdateObjectSchema = z
 
 export const AgentOperationUpdateSchema = z.preprocess(
   normalizeNestedOperationValues,
-  AgentOperationUpdateObjectSchema,
+  AgentOperationUpdateObjectSchema
 );
 
 export type AgentStatementAction = z.infer<typeof AgentStatementActionSchema>;
@@ -228,10 +240,10 @@ function createValidationContext(project: Project): Context {
 
 function projectWithAgentState(project: Project, state: AgentHistoryState) {
   const files: ProjectFile[] = project.files.flatMap((file) =>
-    file.type === "operation" ? [] : [structuredClone(file)],
+    file.type === "operation" ? [] : [structuredClone(file)]
   );
   for (const { index, file } of [...state.operationFiles].sort(
-    (a, b) => a.index - b.index,
+    (a, b) => a.index - b.index
   )) {
     files.splice(Math.min(index, files.length), 0, structuredClone(file));
   }
@@ -248,7 +260,7 @@ function projectWithAgentState(project: Project, state: AgentHistoryState) {
 export function getAgentHistoryState(project: Project): AgentHistoryState {
   return structuredClone({
     operationFiles: project.files.flatMap((file, index) =>
-      file.type === "operation" ? [{ index, file }] : [],
+      file.type === "operation" ? [{ index, file }] : []
     ),
     npmDependencies: project.dependencies?.npm ?? [],
   });
@@ -272,7 +284,7 @@ export function getAgentEditableFingerprint(project: Project) {
 
 export function isAgentProposalStale(
   proposal: AgentProposal,
-  project?: Project,
+  project?: Project
 ) {
   return (
     !project ||
@@ -281,21 +293,10 @@ export function isAgentProposalStale(
   );
 }
 
-function collectEntityIds(statement: IStatement, ids: Set<string>) {
-  walkStatement(
-    statement,
-    {
-      onStatement: (value) => ids.add(value.id),
-      onData: (value) => ids.add(value.id),
-    },
-    { nestedOperations: true, operationCalls: true },
-  );
-}
-
 function remapStatement(
   statement: IStatement,
   rootId?: string,
-  sharedIds = new Map<string, string>(),
+  sharedIds = new Map<string, string>()
 ) {
   const clone = structuredClone(statement);
   const ids = new Map(sharedIds);
@@ -305,25 +306,23 @@ function remapStatement(
       onStatement: (value) =>
         ids.set(
           value.id,
-          value === clone && rootId
-            ? rootId
-            : (ids.get(value.id) ?? nanoid()),
+          value === clone && rootId ? rootId : (ids.get(value.id) ?? nanoid())
         ),
       onData: (value) => {
         if (!ids.has(value.id)) ids.set(value.id, nanoid());
         if (isDataOfType(value, "operation") && value.value.instanceId)
           ids.set(
             value.value.instanceId,
-            ids.get(value.value.instanceId) ?? nanoid(),
+            ids.get(value.value.instanceId) ?? nanoid()
           );
         if (isDataOfType(value, "instance") && value.type.className !== "File")
           ids.set(
             value.value.instanceId,
-            ids.get(value.value.instanceId) ?? nanoid(),
+            ids.get(value.value.instanceId) ?? nanoid()
           );
       },
     },
-    { nestedOperations: true, operationCalls: true },
+    { nestedOperations: true, operationCalls: true }
   );
   walkStatement(
     clone,
@@ -340,7 +339,7 @@ function remapStatement(
           value.value.instanceId = ids.get(value.value.instanceId)!;
       },
     },
-    { nestedOperations: true, operationCalls: true },
+    { nestedOperations: true, operationCalls: true }
   );
   return clone;
 }
@@ -369,7 +368,7 @@ function addDiagnostic(
   diagnostics: AgentDiagnostic[],
   code: string,
   message: string,
-  options?: { repairable?: boolean; fileId?: string; packageName?: string },
+  options?: { repairable?: boolean; fileId?: string; packageName?: string }
 ) {
   if (diagnostics.length >= MAX_DIAGNOSTICS) return;
   diagnostics.push({
@@ -385,15 +384,15 @@ function addDiagnostic(
 function validateTargets(
   file: OperationFile,
   update: AgentOperationUpdate,
-  diagnostics: AgentDiagnostic[],
+  diagnostics: AgentDiagnostic[]
 ) {
   const targeted = new Set<string>();
   const incompatibleAnchors = new Set(
     update.changes.flatMap((action) =>
       action.kind === "delete_statement" || action.kind === "move_statement"
         ? [action.statementId]
-        : [],
-    ),
+        : []
+    )
   );
   for (const action of update.changes) {
     const beforeStatementId =
@@ -404,7 +403,7 @@ function validateTargets(
       addDiagnostic(
         diagnostics,
         "conflicting_actions",
-        `Anchor ${beforeStatementId} is changed incompatibly in the same batch`,
+        `Anchor ${beforeStatementId} is changed incompatibly in the same batch`
       );
     if (action.kind === "insert_statement") {
       if (action.beforeStatementId) {
@@ -413,7 +412,7 @@ function validateTargets(
           addDiagnostic(
             diagnostics,
             "invalid_anchor",
-            `Insert anchor "${action.beforeStatementId}" must identify one statement in the requested container`,
+            `Insert anchor "${action.beforeStatementId}" must identify one statement in the requested container`
           );
         }
       }
@@ -424,7 +423,7 @@ function validateTargets(
       addDiagnostic(
         diagnostics,
         "invalid_statement_target",
-        `Statement target "${action.statementId}" must identify exactly one selected-operation statement`,
+        `Statement target "${action.statementId}" must identify exactly one selected-operation statement`
       );
       continue;
     }
@@ -432,7 +431,7 @@ function validateTargets(
       addDiagnostic(
         diagnostics,
         "conflicting_actions",
-        `Statement ${action.statementId} is targeted more than once`,
+        `Statement ${action.statementId} is targeted more than once`
       );
     }
     targeted.add(action.statementId);
@@ -446,15 +445,15 @@ function validateTargets(
         addDiagnostic(
           diagnostics,
           "invalid_anchor",
-          `Move anchor "${action.beforeStatementId}" must identify one statement in the target's container`,
+          `Move anchor "${action.beforeStatementId}" must identify one statement in the target's container`
         );
       } else {
         const statements = getArray(file, target[0].container);
         const from = statements.findIndex(
-          ({ id }) => id === action.statementId,
+          ({ id }) => id === action.statementId
         );
         const to = statements.findIndex(
-          ({ id }) => id === action.beforeStatementId,
+          ({ id }) => id === action.beforeStatementId
         );
         if (to < from) {
           const dependencies = new Set<string>();
@@ -463,13 +462,13 @@ function validateTargets(
             {
               onReference: ({ value }) => dependencies.add(value.id),
             },
-            { nestedOperations: true, operationCalls: true },
+            { nestedOperations: true, operationCalls: true }
           );
           if (statements.slice(to, from).some(({ id }) => dependencies.has(id)))
             addDiagnostic(
               diagnostics,
               "invalid_statement_order",
-              "A statement cannot be moved before one of its dependencies",
+              "A statement cannot be moved before one of its dependencies"
             );
         }
       }
@@ -484,8 +483,8 @@ function applyActions(file: OperationFile, update: AgentOperationUpdate) {
     update.changes.flatMap((action) =>
       action.kind === "insert_statement"
         ? [[action.statement.id, nanoid()] as const]
-        : [],
-    ),
+        : []
+    )
   );
   for (const action of update.changes) {
     if (action.kind === "insert_statement") {
@@ -496,7 +495,7 @@ function applyActions(file: OperationFile, update: AgentOperationUpdate) {
       const statement = remapStatement(
         action.statement,
         undefined,
-        insertedIds,
+        insertedIds
       );
       statements.splice(index, 0, statement);
       review.push({
@@ -514,7 +513,7 @@ function applyActions(file: OperationFile, update: AgentOperationUpdate) {
       const statement = remapStatement(
         action.statement,
         action.statementId,
-        insertedIds,
+        insertedIds
       );
       statements[index] = statement;
       review.push({
@@ -558,7 +557,7 @@ function referencesId(file: OperationFile, id: string) {
       {
         onReference: (reference) => (referenced ||= reference.value.id === id),
       },
-      { nestedOperations: true, operationCalls: true },
+      { nestedOperations: true, operationCalls: true }
     );
   }
   return referenced;
@@ -586,7 +585,7 @@ function callsOperation(file: OperationFile, operationId: string) {
           }
         },
       },
-      { nestedOperations: true, operationCalls: true },
+      { nestedOperations: true, operationCalls: true }
     );
   }
   return found;
@@ -596,7 +595,7 @@ function migrateCallerArguments(
   base: OperationFile,
   candidate: OperationFile,
   project: Project,
-  diagnostics: AgentDiagnostic[],
+  diagnostics: AgentDiagnostic[]
 ) {
   const oldParameters = base.content.value.parameters;
   const newParameters = candidate.content.value.parameters;
@@ -606,7 +605,7 @@ function migrateCallerArguments(
     (file): file is OperationFile =>
       file.type === "operation" &&
       file.id !== base.id &&
-      callsOperation(file, base.id),
+      callsOperation(file, base.id)
   );
   for (const parameter of newParameters) {
     if (
@@ -618,7 +617,7 @@ function migrateCallerArguments(
       addDiagnostic(
         diagnostics,
         "unsafe_parameter_migration",
-        `Required parameter ${parameter.name ?? parameter.id} has no deterministic caller argument`,
+        `Required parameter ${parameter.name ?? parameter.id} has no deterministic caller argument`
       );
     }
   }
@@ -654,7 +653,7 @@ function migrateCallerArguments(
             }
           },
         },
-        { nestedOperations: true, operationCalls: true },
+        { nestedOperations: true, operationCalls: true }
       );
     }
     return clone;
@@ -695,17 +694,15 @@ function normalizeCandidate(file: OperationFile, project: Project) {
 function canonicalizeProjectCalls(file: OperationFile, project: Project) {
   const targets = new Map(
     project.files.flatMap((candidate) =>
-      candidate.type === "operation"
-        ? [[candidate.id, candidate] as const]
-        : [],
-    ),
+      candidate.type === "operation" ? [[candidate.id, candidate] as const] : []
+    )
   );
   const targetsByName = new Map(
     project.files.flatMap((candidate) =>
       candidate.type === "operation"
         ? [[candidate.name, candidate] as const]
-        : [],
-    ),
+        : []
+    )
   );
   const localIds = new Set<string>();
   for (const root of [
@@ -715,7 +712,7 @@ function canonicalizeProjectCalls(file: OperationFile, project: Project) {
     walkStatement(
       root,
       { onStatement: ({ id }) => localIds.add(id) },
-      { nestedOperations: true, operationCalls: true },
+      { nestedOperations: true, operationCalls: true }
     );
   for (const root of [
     ...file.content.value.parameters,
@@ -760,7 +757,7 @@ function canonicalizeProjectCalls(file: OperationFile, project: Project) {
           }
         },
       },
-      { nestedOperations: true, operationCalls: true },
+      { nestedOperations: true, operationCalls: true }
     );
   return file;
 }
@@ -773,18 +770,19 @@ async function getCatalog(project: Project) {
     packages.map(async (name) => ({
       name,
       descriptor: await loadPackageDescriptor(name),
-    })),
+    }))
   );
   return {
     builtins: coreOperations,
     packages: packageDescriptors.flatMap(({ name, descriptor }) =>
-      descriptor.operations.map((operation) => ({ name, operation })),
+      descriptor.operations.map((operation) => ({ name, operation }))
     ),
   };
 }
 
 async function canonicalizeCatalogCalls(file: OperationFile, project: Project) {
   const catalog = await getCatalog(project);
+  normalizeEmbeddedOperationCalls(file, project, catalog);
   const context = createValidationContext(project);
   for (const root of [
     ...file.content.value.parameters,
@@ -814,7 +812,7 @@ async function canonicalizeCatalogCalls(file: OperationFile, project: Project) {
                     source,
                     call.value.name,
                     current,
-                    context,
+                    context
                   )
                 : [];
               if (matches.length === 1) {
@@ -822,10 +820,10 @@ async function canonicalizeCatalogCalls(file: OperationFile, project: Project) {
                 call.type = {
                   kind: "operation",
                   parameters: structuredClone(
-                    resolveParameters(descriptor, current, context),
+                    resolveParameters(descriptor, current, context)
                   ),
                   result: structuredClone(
-                    resolveCatalogResult(descriptor, current, call, context),
+                    resolveCatalogResult(descriptor, current, call, context)
                   ),
                 };
                 call.value.source = structuredClone(descriptor.source);
@@ -835,7 +833,7 @@ async function canonicalizeCatalogCalls(file: OperationFile, project: Project) {
           }
         },
       },
-      { nestedOperations: true, operationCalls: true },
+      { nestedOperations: true, operationCalls: true }
     );
   return file;
 }
@@ -844,7 +842,7 @@ function resolveCatalogOperation(
   operations: OperationListItem[],
   name: string,
   input: IData,
-  context: Context,
+  context: Context
 ) {
   return operations.filter((operation) => {
     if (operation.name !== name) return false;
@@ -857,7 +855,7 @@ function resolveCatalogResult(
   descriptor: OperationListItem,
   current: IData,
   call: IData<OperationType>,
-  context: Context,
+  context: Context
 ) {
   if (typeof descriptor.expectedType === "function")
     return descriptor.expectedType(current);
@@ -873,6 +871,83 @@ function resolveCatalogResult(
   return call.type.result;
 }
 
+function normalizeEmbeddedOperationCalls(
+  file: OperationFile,
+  project: Project,
+  catalog: Awaited<ReturnType<typeof getCatalog>>
+) {
+  const operationNames = new Set([
+    ...catalog.builtins.map(({ name }) => name),
+    ...catalog.packages.map(({ operation }) => operation.name),
+    ...project.files.flatMap((candidate) =>
+      candidate.type === "operation" ? [candidate.name] : []
+    ),
+  ]);
+
+  function normalizeData(data: IData) {
+    if (isDataOfType(data, "array") || isDataOfType(data, "tuple"))
+      data.value = normalizeStatements(data.value);
+    else if (isDataOfType(data, "object") || isDataOfType(data, "dictionary"))
+      for (const entry of data.value.entries) normalizeStatement(entry.value);
+    else if (isDataOfType(data, "operation")) {
+      data.value.parameters = normalizeStatements(data.value.parameters);
+      data.value.statements = normalizeStatements(data.value.statements);
+    } else if (isDataOfType(data, "instance"))
+      data.value.constructorArgs = normalizeStatements(
+        data.value.constructorArgs
+      );
+    else if (isDataOfType(data, "condition")) {
+      normalizeStatement(data.value.condition);
+      data.value.trueBranch = normalizeStatements(data.value.trueBranch);
+      data.value.falseBranch = normalizeStatements(data.value.falseBranch);
+    }
+  }
+
+  function normalizeStatement(statement: IStatement) {
+    normalizeData(statement.data);
+    for (const operation of statement.operations) {
+      operation.value.parameters = normalizeStatements(
+        operation.value.parameters
+      );
+      operation.value.statements = normalizeStatements(
+        operation.value.statements
+      );
+    }
+
+    const embedded = statement.data;
+    // Repair providers that encode a chained call as operation-valued data.
+    if (
+      !isDataOfType(embedded, "operation") ||
+      !embedded.value.name ||
+      !operationNames.has(embedded.value.name) ||
+      embedded.value.parameters.length === 0 ||
+      embedded.value.statements.length > 0
+    )
+      return;
+
+    const [input, ...parameters] = embedded.value.parameters;
+    statement.data = input.data;
+    statement.operations = [
+      ...input.operations,
+      {
+        ...embedded,
+        value: { ...embedded.value, parameters },
+      },
+      ...statement.operations,
+    ];
+  }
+
+  function normalizeStatements(statements: IStatement[]) {
+    for (const statement of statements) normalizeStatement(statement);
+    return statements;
+  }
+
+  normalizeStatements([
+    ...file.content.value.parameters,
+    ...file.content.value.statements,
+  ]);
+}
+
 function validateArguments(
   call: IData<OperationType>,
   expected: OperationType["parameters"],
@@ -880,7 +955,7 @@ function validateArguments(
   scope: Map<string, { data: IData }>,
   file: OperationFile,
   diagnostics: AgentDiagnostic[],
-  catalog?: Awaited<ReturnType<typeof getCatalog>>,
+  catalog?: Awaited<ReturnType<typeof getCatalog>>
 ) {
   for (const [index, argument] of call.value.parameters.entries()) {
     const parameter = expected[Math.min(index, expected.length - 1)];
@@ -907,7 +982,7 @@ function validateArguments(
           source,
           operation.value.name,
           actual,
-          context,
+          context
         );
         if (matches.length === 1) {
           result = resolveCatalogResult(matches[0], actual, operation, context);
@@ -922,7 +997,7 @@ function validateArguments(
         diagnostics,
         "invalid_argument_type",
         `Operation ${call.value.name} has an incompatible argument at position ${index + 1}`,
-        { fileId: file.id },
+        { fileId: file.id }
       );
   }
 }
@@ -931,10 +1006,10 @@ function validateArgumentCount(
   call: IData<OperationType>,
   expected: OperationType["parameters"],
   file: OperationFile,
-  diagnostics: AgentDiagnostic[],
+  diagnostics: AgentDiagnostic[]
 ) {
   const required = expected.filter(
-    (parameter) => !parameter.isOptional && !parameter.isRest,
+    (parameter) => !parameter.isOptional && !parameter.isRest
   ).length;
   const rest = expected.at(-1)?.isRest;
   if (
@@ -945,11 +1020,22 @@ function validateArgumentCount(
       diagnostics,
       "invalid_argument_count",
       `Operation ${call.value.name} has the wrong argument count`,
-      { fileId: file.id },
+      { fileId: file.id }
     );
 }
 
 type ProposalScope = Map<string, { data: IData }>;
+
+function canonicalizeReference(
+  reference: IData<ReferenceType>,
+  scope: ProposalScope
+) {
+  const variable = scope.get(reference.value.name);
+  if (!variable) return false;
+  // Provider payloads can use the nested IData ID instead of the declaration ID.
+  reference.value.id = variable.data.id;
+  return true;
+}
 
 function visitLexicalStatements({
   statements,
@@ -959,14 +1045,22 @@ function visitLexicalStatements({
 }: {
   statements: IStatement[];
   scope: ProposalScope;
-  onStatement?: (statement: IStatement, scope: ProposalScope) => void;
+  onStatement?: (
+    statement: IStatement,
+    scope: ProposalScope,
+    declaresName: boolean
+  ) => void;
   onReference: (reference: IData, scope: ProposalScope) => void;
 }) {
-  const visitList = (items: IStatement[], parent: ProposalScope) => {
+  const visitList = (
+    items: IStatement[],
+    parent: ProposalScope,
+    declaresNames = true
+  ) => {
     const local = new Map(parent);
     for (const statement of items) {
-      visitStatement(statement, local);
-      if (statement.name)
+      visitStatement(statement, local, declaresNames);
+      if (declaresNames && statement.name)
         local.set(statement.name, {
           data: { ...statement.data, id: statement.id },
         });
@@ -982,7 +1076,7 @@ function visitLexicalStatements({
       const callbackScope = new Map(current);
       visitList(
         [...data.value.parameters, ...data.value.statements],
-        callbackScope,
+        callbackScope
       );
     } else if (isDataOfType(data, "instance"))
       for (const argument of data.value.constructorArgs)
@@ -993,12 +1087,16 @@ function visitLexicalStatements({
       visitList(data.value.falseBranch, current);
     }
   };
-  const visitStatement = (statement: IStatement, current: ProposalScope) => {
-    onStatement?.(statement, current);
+  const visitStatement = (
+    statement: IStatement,
+    current: ProposalScope,
+    declaresName = true
+  ) => {
+    onStatement?.(statement, current, declaresName);
     visitData(statement.data, current);
     for (const operation of statement.operations) {
       for (const argument of operation.value.parameters)
-        visitList([argument], current);
+        visitList([argument], current, false);
       visitList(operation.value.statements, current);
     }
   };
@@ -1008,32 +1106,31 @@ function visitLexicalStatements({
 function validateCandidateReferences(
   file: OperationFile,
   project: Project,
-  diagnostics: AgentDiagnostic[],
+  diagnostics: AgentDiagnostic[]
 ) {
   const context = createValidationContext(project);
   const report = (reference: IData, scope: ProposalScope) => {
     if (!isDataOfType(reference, "reference")) return;
-    const variable = scope.get(reference.value.name);
-    if (!variable || variable.data.id !== reference.value.id)
+    if (!canonicalizeReference(reference, scope))
       addDiagnostic(
         diagnostics,
         "unresolved_reference",
         `Reference ${reference.value.name} is missing or out of scope`,
-        { fileId: file.id },
+        { fileId: file.id }
       );
   };
   const scope = new Map(context.variables) as ProposalScope;
   const targets = new Map(
     project.files.flatMap((candidate) =>
-      candidate.type === "operation"
-        ? [[candidate.id, candidate] as const]
-        : [],
-    ),
+      candidate.type === "operation" ? [[candidate.id, candidate] as const] : []
+    )
   );
   const validateCalls = (
     statement: IStatement,
-    _currentScope: ProposalScope,
+    currentScope: ProposalScope
   ) => {
+    if (isDataOfType(statement.data, "reference"))
+      canonicalizeReference(statement.data, currentScope);
     let current = statement.data;
     for (const call of statement.operations) {
       const target =
@@ -1045,7 +1142,7 @@ function validateCandidateReferences(
           call,
           target.content.type.parameters,
           file,
-          diagnostics,
+          diagnostics
         );
       }
       current = createData({ id: call.id, type: call.type.result });
@@ -1072,7 +1169,7 @@ function validateCandidateReferences(
 
 async function validateOperationSemantics(
   project: Project,
-  diagnostics: AgentDiagnostic[],
+  diagnostics: AgentDiagnostic[]
 ) {
   let catalog: Awaited<ReturnType<typeof getCatalog>>;
   try {
@@ -1081,15 +1178,15 @@ async function validateOperationSemantics(
     addDiagnostic(
       diagnostics,
       "package_load_failed",
-      "Could not load a supported package descriptor",
+      "Could not load a supported package descriptor"
     );
     return;
   }
   const operationFiles = project.files.filter(
-    (file): file is OperationFile => file.type === "operation",
+    (file): file is OperationFile => file.type === "operation"
   );
   const operationsByName = new Map(
-    operationFiles.map((operation) => [operation.name, operation]),
+    operationFiles.map((operation) => [operation.name, operation])
   );
   for (const file of operationFiles) {
     const context = createValidationContext(project);
@@ -1107,7 +1204,7 @@ async function validateOperationSemantics(
           diagnostics,
           "invalid_parameter_name",
           `Operation ${file.name} has an invalid or duplicate parameter name`,
-          { fileId: file.id },
+          { fileId: file.id }
         );
       }
       if (parameter.name) names.add(parameter.name);
@@ -1119,7 +1216,7 @@ async function validateOperationSemantics(
           diagnostics,
           "invalid_rest_parameter",
           `Operation ${file.name} has an invalid rest parameter`,
-          { fileId: file.id },
+          { fileId: file.id }
         );
       }
       if (optionalSeen && !parameter.isOptional && !parameter.isRest) {
@@ -1127,7 +1224,7 @@ async function validateOperationSemantics(
           diagnostics,
           "invalid_parameter_order",
           `Operation ${file.name} has a required parameter after an optional parameter`,
-          { fileId: file.id },
+          { fileId: file.id }
         );
       }
       optionalSeen ||= !!parameter.isOptional;
@@ -1137,10 +1234,12 @@ async function validateOperationSemantics(
       statement: IStatement,
       currentScope: ProposalScope,
       topLevel: boolean,
+      declaresName = true
     ) => {
       const reference = isDataOfType(statement.data, "reference")
         ? statement.data
         : undefined;
+      if (reference) canonicalizeReference(reference, currentScope);
       const input = reference
         ? currentScope.get(reference.value.name)?.data
         : statement.data;
@@ -1165,14 +1264,14 @@ async function validateOperationSemantics(
             !isTypeCompatible(
               current.type,
               target.content.type.parameters[0].type,
-              context,
+              context
             )
           )
             addDiagnostic(
               diagnostics,
               "invalid_argument_type",
               `Operation ${call.value.name} has an incompatible input`,
-              { fileId: file.id },
+              { fileId: file.id }
             );
           call.type = {
             kind: "operation",
@@ -1193,7 +1292,7 @@ async function validateOperationSemantics(
             currentScope,
             file,
             diagnostics,
-            catalog,
+            catalog
           );
         } else if (call.value.name === "call" && reference) {
           if (!target)
@@ -1201,7 +1300,7 @@ async function validateOperationSemantics(
               diagnostics,
               "unknown_operation",
               `Referenced operation ${reference.value.name} does not exist`,
-              { fileId: file.id },
+              { fileId: file.id }
             );
         } else {
           const sourceName = call.value.source?.name;
@@ -1218,7 +1317,7 @@ async function validateOperationSemantics(
               diagnostics,
               "unknown_operation",
               "Operation call has no name",
-              { fileId: file.id },
+              { fileId: file.id }
             );
             continue;
           }
@@ -1226,14 +1325,14 @@ async function validateOperationSemantics(
             source,
             call.value.name,
             current,
-            context,
+            context
           );
           if (matches.length !== 1) {
             addDiagnostic(
               diagnostics,
               matches.length ? "ambiguous_operation" : "unknown_operation",
               `Operation ${call.value.name} is not uniquely available for ${current.type.kind}`,
-              { fileId: file.id, packageName: packageKey },
+              { fileId: file.id, packageName: packageKey }
             );
           } else {
             const descriptor = matches[0];
@@ -1243,7 +1342,7 @@ async function validateOperationSemantics(
               descriptor,
               current,
               call,
-              context,
+              context
             );
             call.type = {
               kind: "operation",
@@ -1259,13 +1358,13 @@ async function validateOperationSemantics(
               currentScope,
               file,
               diagnostics,
-              catalog,
+              catalog
             );
           }
         }
         current = createData({ id: call.id, type: call.type.result });
       }
-      if (statement.name) {
+      if (declaresName && statement.name) {
         const existing = currentScope.get(statement.name);
         if (
           !isValidIdentifier(statement.name) ||
@@ -1275,21 +1374,21 @@ async function validateOperationSemantics(
             diagnostics,
             "duplicate_name",
             `Operation ${file.name} has an invalid or duplicate statement name`,
-            { fileId: file.id },
+            { fileId: file.id }
           );
         }
       }
       returnSeen ||= topLevel && statement.controlFlow === "return";
+      return current;
     };
     const reportReference = (reference: IData, currentScope: ProposalScope) => {
       if (!isDataOfType(reference, "reference")) return;
-      const variable = currentScope.get(reference.value.name);
-      if (!variable || variable.data.id !== reference.value.id)
+      if (!canonicalizeReference(reference, currentScope))
         addDiagnostic(
           diagnostics,
           "unresolved_reference",
           `Reference ${reference.value.name} is missing or out of scope`,
-          { fileId: file.id },
+          { fileId: file.id }
         );
     };
     visitLexicalStatements({
@@ -1310,18 +1409,29 @@ async function validateOperationSemantics(
           diagnostics,
           "unreachable_statement",
           `Operation ${file.name} has a statement after return`,
-          { fileId: file.id },
+          { fileId: file.id }
         );
+      let statementResult: IData | undefined;
       visitLexicalStatements({
         statements: [statement],
         scope,
-        onStatement: (nested, currentScope) =>
-          validateStatement(nested, currentScope, nested === statement),
+        onStatement: (nested, currentScope, declaresName) => {
+          const result = validateStatement(
+            nested,
+            currentScope,
+            nested === statement,
+            declaresName
+          );
+          if (nested === statement) statementResult = result;
+        },
         onReference: reportReference,
       });
       if (statement.name)
         scope.set(statement.name, {
-          data: { ...getStatementResult(statement, context), id: statement.id },
+          data: {
+            ...(statementResult ?? getStatementResult(statement, context)),
+            id: statement.id,
+          },
         });
     }
   }
@@ -1338,7 +1448,7 @@ function validateUniqueIds(project: Project, diagnostics: AgentDiagnostic[]) {
         diagnostics,
         "duplicate_entity_id",
         `Entity ID ${id} is duplicated`,
-        { fileId },
+        { fileId }
       );
     ids.add(id);
   };
@@ -1348,7 +1458,7 @@ function validateUniqueIds(project: Project, diagnostics: AgentDiagnostic[]) {
         diagnostics,
         "duplicate_instance_id",
         `Runtime instance ID ${id} is duplicated`,
-        { fileId },
+        { fileId }
       );
     instanceIds.add(id);
   };
@@ -1386,7 +1496,7 @@ function validateUniqueIds(project: Project, diagnostics: AgentDiagnostic[]) {
             add(statement.id, file.id);
           },
         },
-        { nestedOperations: true, operationCalls: true },
+        { nestedOperations: true, operationCalls: true }
       );
     };
     if (file.type === "operation") {
@@ -1402,18 +1512,18 @@ function validateUniqueIds(project: Project, diagnostics: AgentDiagnostic[]) {
 
 export async function validateAgentHistoryState(
   project: Project,
-  state: AgentHistoryState,
+  state: AgentHistoryState
 ) {
   const diagnostics: AgentDiagnostic[] = [];
   const candidate = projectWithAgentState(project, state);
   const parsedDependencies = ProjectSchema.shape.dependencies.safeParse(
-    candidate.dependencies,
+    candidate.dependencies
   );
   if (!parsedDependencies.success)
     addDiagnostic(
       diagnostics,
       "invalid_package_dependencies",
-      "Package dependencies are malformed",
+      "Package dependencies are malformed"
     );
   const packageNames = state.npmDependencies.map(({ name }) => name);
   for (const name of packageNames) {
@@ -1422,21 +1532,21 @@ export async function validateAgentHistoryState(
         diagnostics,
         "unsupported_package",
         `Unsupported package: ${name}`,
-        { packageName: name },
+        { packageName: name }
       );
   }
   if (new Set(packageNames).size !== packageNames.length)
     addDiagnostic(
       diagnostics,
       "duplicate_package",
-      "Supported packages must be unique",
+      "Supported packages must be unique"
     );
   if (!ProjectSchema.safeParse(candidate).success)
     addDiagnostic(
       diagnostics,
       "invalid_project",
       "Candidate project does not match the project schema",
-      { repairable: false },
+      { repairable: false }
     );
   const operationNames = new Set<string>();
   for (const { file } of state.operationFiles) {
@@ -1445,14 +1555,14 @@ export async function validateAgentHistoryState(
         diagnostics,
         "invalid_operation",
         `Operation ${file.name} does not match the file schema`,
-        { fileId: file.id },
+        { fileId: file.id }
       );
     if (operationNames.has(file.name))
       addDiagnostic(
         diagnostics,
         "duplicate_operation_name",
         `Operation name ${file.name} is duplicated`,
-        { fileId: file.id },
+        { fileId: file.id }
       );
     operationNames.add(file.name);
   }
@@ -1465,15 +1575,15 @@ export async function validateAgentHistoryState(
       await formatCode(
         generateOperation(
           createOperationFromFile(file)!,
-          createValidationContext(candidate),
-        ),
+          createValidationContext(candidate)
+        )
       );
     } catch {
       addDiagnostic(
         diagnostics,
         "invalid_generated_syntax",
         `Operation ${file.name} does not produce valid code`,
-        { fileId: file.id },
+        { fileId: file.id }
       );
     }
   }
@@ -1489,7 +1599,7 @@ function countCalls(file: OperationFile) {
     walkStatement(
       statement,
       { onOperation: () => count++ },
-      { nestedOperations: true, operationCalls: true },
+      { nestedOperations: true, operationCalls: true }
     );
   }
   return count;
@@ -1498,7 +1608,7 @@ function countCalls(file: OperationFile) {
 function operationReview(
   before: OperationFile,
   after: OperationFile,
-  project: Project,
+  project: Project
 ): OperationReview {
   const context = createValidationContext(project);
   return {
@@ -1561,7 +1671,7 @@ export async function createAgentProposal({
   const update = parsed.data;
   const selected = project.files.find(
     (file): file is OperationFile =>
-      file.id === fileId && file.type === "operation",
+      file.id === fileId && file.type === "operation"
   );
   if (!selected) {
     return {
@@ -1582,24 +1692,28 @@ export async function createAgentProposal({
   if (diagnostics.length) return { ...base, update, diagnostics };
   const { candidate: changedCandidate, review: actions } = applyActions(
     selected,
-    update,
+    update
   );
   const changed = canonicalizeProjectCalls(changedCandidate, project);
+  normalizeEmbeddedOperationCalls(changed, project, {
+    builtins: coreOperations,
+    packages: [],
+  });
   validateCandidateReferences(changed, project, diagnostics);
   const deletedIds = update.changes.flatMap((action) =>
-    action.kind === "delete_statement" ? [action.statementId] : [],
+    action.kind === "delete_statement" ? [action.statementId] : []
   );
   for (const id of deletedIds) {
     if (referencesId(changed, id))
       addDiagnostic(
         diagnostics,
         "statement_in_use",
-        `Deleted statement ${id} is still referenced`,
+        `Deleted statement ${id} is still referenced`
       );
   }
   if (
     diagnostics.some(({ code }) =>
-      ["unresolved_reference", "statement_in_use"].includes(code),
+      ["unresolved_reference", "statement_in_use"].includes(code)
     )
   )
     return { ...base, update, diagnostics };
@@ -1607,13 +1721,13 @@ export async function createAgentProposal({
   try {
     dependencies = applySupportedPackageChanges(
       dependencies,
-      update.enablePackages.map((name) => ({ name, enabled: true })),
+      update.enablePackages.map((name) => ({ name, enabled: true }))
     );
   } catch (error) {
     addDiagnostic(
       diagnostics,
       "unsupported_package",
-      error instanceof Error ? error.message : "Unsupported package",
+      error instanceof Error ? error.message : "Unsupported package"
     );
   }
   const packageProject = {
@@ -1624,7 +1738,7 @@ export async function createAgentProposal({
   const normalizedProject = {
     ...packageProject,
     files: packageProject.files.map((file) =>
-      file.id === selected.id ? normalized : file,
+      file.id === selected.id ? normalized : file
     ),
   };
   normalized = canonicalizeProjectCalls(normalized, normalizedProject);
@@ -1634,25 +1748,25 @@ export async function createAgentProposal({
     addDiagnostic(
       diagnostics,
       "package_load_failed",
-      "Could not load a supported package descriptor",
+      "Could not load a supported package descriptor"
     );
   }
   let files = migrateCallerArguments(
     selected,
     normalized,
     packageProject,
-    diagnostics,
+    diagnostics
   );
   files = files.map((file) => (file.id === selected.id ? normalized : file));
   const canonicalProject = { ...packageProject, files };
   files = files.map((file) =>
     file.type === "operation"
       ? canonicalizeProjectCalls(structuredClone(file), canonicalProject)
-      : file,
+      : file
   );
   normalized = files.find(
     (file): file is OperationFile =>
-      file.id === selected.id && file.type === "operation",
+      file.id === selected.id && file.type === "operation"
   )!;
   let propagated = files;
   const maxPasses = files.filter(({ type }) => type === "operation").length + 1;
@@ -1662,7 +1776,7 @@ export async function createAgentProposal({
       propagated,
       () => undefined,
       createValidationContext({ ...packageProject, files: propagated }),
-      pass === 0 ? normalized : undefined,
+      pass === 0 ? normalized : undefined
     );
     const next = updated.map((file, index) => {
       if (pass === 0 && file.id === selected.id) return file;
@@ -1677,8 +1791,8 @@ export async function createAgentProposal({
       next.flatMap((file, index) =>
         file.type === "operation" && !isEqual(file, propagated[index])
           ? [file.id]
-          : [],
-      ),
+          : []
+      )
     );
     propagated = next;
   }
@@ -1689,16 +1803,16 @@ export async function createAgentProposal({
     addDiagnostic(
       diagnostics,
       "no_changes",
-      "The update does not change the project",
+      "The update does not change the project"
     );
   const proposedFile = state.operationFiles.find(
-    ({ file }) => file.id === selected.id,
+    ({ file }) => file.id === selected.id
   )?.file;
   const changedFiles = state.operationFiles.flatMap(({ file }) => {
     if (file.id === selected.id) return [];
     const before = project.files.find(
       (candidate): candidate is OperationFile =>
-        candidate.id === file.id && candidate.type === "operation",
+        candidate.id === file.id && candidate.type === "operation"
     );
     return before && !isEqual(before, file)
       ? [operationReview(before, file, candidateProject)]
@@ -1707,7 +1821,7 @@ export async function createAgentProposal({
   const primary = operationReview(
     selected,
     proposedFile ?? normalized,
-    candidateProject,
+    candidateProject
   );
   return {
     ...base,
@@ -1723,8 +1837,8 @@ export async function createAgentProposal({
         enabled: update.enablePackages.filter(
           (name) =>
             !(project.dependencies?.npm ?? []).some(
-              (dependency) => dependency.name === name,
-            ),
+              (dependency) => dependency.name === name
+            )
         ),
         disabled: [],
       },

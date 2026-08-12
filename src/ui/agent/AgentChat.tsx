@@ -1,5 +1,5 @@
 import { Button, Popover } from "@mantine/core";
-import { FaTrash } from "react-icons/fa6";
+import { FaCheck, FaSpinner, FaTrash } from "react-icons/fa6";
 import { useState } from "react";
 import { useAgentStore, useProjectStore } from "@/lib/store";
 import { IconButton } from "../IconButton";
@@ -181,8 +181,49 @@ export function AgentChat({
         </article>
       ))}
       {isLoading ? (
-        <div>
-          <NoteText>{activeRun?.streamingContent || "Loading..."}</NoteText>
+        <div
+          role="status"
+          aria-label="Agent progress"
+          className="mx-2 mb-2 rounded-xs border border-border bg-dropdown-default px-2 py-2"
+        >
+          <div className="px-1 text-xs text-dimmed">
+            Working through your request
+          </div>
+          <ol className="mt-2 space-y-1 text-sm">
+            {(activeRun?.traces ?? []).map((trace) => {
+              const active = trace.status === "active";
+              return (
+                <li
+                  key={trace.id}
+                  aria-current={active ? "step" : undefined}
+                  className={[
+                    "flex items-center gap-2 px-1",
+                    active ? "text-white" : "text-disabled",
+                  ].join(" ")}
+                >
+                  {active ? (
+                    <FaSpinner
+                      aria-hidden="true"
+                      className="shrink-0 animate-spin"
+                      size={12}
+                    />
+                  ) : (
+                    <FaCheck
+                      aria-hidden="true"
+                      className="shrink-0"
+                      size={12}
+                    />
+                  )}
+                  <span>{trace.label}</span>
+                </li>
+              );
+            })}
+          </ol>
+          {activeRun?.streamingContent ? (
+            <NoteText className="mt-2 border-t border-border/60 px-1 pt-2">
+              {activeRun.streamingContent}
+            </NoteText>
+          ) : null}
         </div>
       ) : null}
     </div>

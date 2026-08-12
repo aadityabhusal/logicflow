@@ -7,7 +7,7 @@ import {
 
 describe("agent prompts", () => {
   it("defines the bounded native update flow", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("15");
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("18");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("AgentOperationUpdate");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("lookup_operations at most once");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("one batch");
@@ -16,8 +16,19 @@ describe("agent prompts", () => {
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain('package "builtin"');
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("short descriptive phrase");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
-      "operations needed inside callbacks or predicates",
+      "operations needed inside callbacks or predicates"
     );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
+      "Every new or replaced statement"
+    );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("operations: []");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
+      "referenced declaration's statement id"
+    );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
+      "Operation calls are never statement.data"
+    );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("only the remaining arguments");
     for (const action of [
       "insert_statement",
       "replace_statement",
@@ -40,7 +51,7 @@ describe("agent prompts", () => {
     const prompt = buildContextPrompt(
       "Revise it",
       { selectedOperation: { id: "selected" } },
-      priorUpdate,
+      priorUpdate
     );
 
     expect(prompt).toContain("Authoritative Current Context");

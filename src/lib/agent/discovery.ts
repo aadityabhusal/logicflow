@@ -31,7 +31,7 @@ export class AgentDiscoveryError extends Error {
       | "package_load_failed"
       | "unsupported_package"
       | "unknown_operation",
-    message: string,
+    message: string
   ) {
     super(message);
     this.name = "AgentDiscoveryError";
@@ -54,13 +54,13 @@ export const AgentOperationLookupSchema = z
               .max(100)
               .optional()
               .describe(
-                'Supported package key, "builtin", or omitted for all active sources',
+                'Supported package key, "builtin", or omitted for all active sources'
               ),
             inputType: DataTypeSchema.optional().describe(
-              "Receiver data type before the operation call, not an operation signature",
+              "Receiver data type before the operation call, not an operation signature"
             ),
           })
-          .strict(),
+          .strict()
       )
       .min(1)
       .max(MAX_LOOKUP_REQUESTS),
@@ -115,7 +115,7 @@ function tokens(value: string) {
 function matches(name: string, query: string) {
   const normalized = name.trim().toLowerCase();
   const nameTokens = tokens(
-    [name, ...(OPERATION_SEARCH_ALIASES.get(name) ?? [])].join(" "),
+    [name, ...(OPERATION_SEARCH_ALIASES.get(name) ?? [])].join(" ")
   );
   const queryTokens = tokens(query);
   return (
@@ -126,8 +126,8 @@ function matches(name: string, query: string) {
           nameToken === queryToken ||
           (nameToken.length >= 3 &&
             (queryToken.startsWith(nameToken) ||
-              nameToken.startsWith(queryToken))),
-      ),
+              nameToken.startsWith(queryToken)))
+      )
     )
   );
 }
@@ -135,7 +135,7 @@ function matches(name: string, query: string) {
 function resolveDescriptor(
   descriptor: CatalogDescriptor,
   inputType: DataType,
-  context: Context,
+  context: Context
 ): AgentOperationDescriptor {
   if (descriptor.file) {
     return {
@@ -165,16 +165,16 @@ function resolveDescriptor(
 
 export async function createAgentDiscovery(
   project: Project,
-  selectedFileId?: string,
+  selectedFileId?: string
 ) {
   const operations = project.files.filter(
     (file): file is Extract<ProjectFile, { type: "operation" }> =>
-      file.type === "operation",
+      file.type === "operation"
   );
   if (new Set(operations.map(({ name }) => name)).size !== operations.length) {
     throw new AgentDiscoveryError(
       "duplicate_operation_name",
-      "Project operation names must be unique",
+      "Project operation names must be unique"
     );
   }
   const selected = operations.find(({ id }) => id === selectedFileId);
@@ -197,7 +197,7 @@ export async function createAgentDiscovery(
       enabledPackages.map(async (name) => ({
         name,
         descriptor: await loadPackageDescriptor(name),
-      })),
+      }))
     );
     for (const { name, descriptor } of loaded) {
       baseCatalog.push(
@@ -206,13 +206,13 @@ export async function createAgentDiscovery(
           source: "package" as const,
           package: name,
           operation,
-        })),
+        }))
       );
     }
   } catch {
     throw new AgentDiscoveryError(
       "package_load_failed",
-      "Could not load an enabled package descriptor",
+      "Could not load an enabled package descriptor"
     );
   }
 
@@ -221,7 +221,7 @@ export async function createAgentDiscovery(
     if (!parsed.success)
       throw new AgentDiscoveryError(
         "invalid_lookup",
-        parsed.error.issues[0]?.message ?? "Invalid lookup",
+        parsed.error.issues[0]?.message ?? "Invalid lookup"
       );
     const disabledNames = [
       ...new Set(
@@ -229,15 +229,15 @@ export async function createAgentDiscovery(
           .map((request) => request.package)
           .filter(
             (name): name is string =>
-              !!name && name !== "builtin" && !enabledPackages.includes(name),
-          ),
+              !!name && name !== "builtin" && !enabledPackages.includes(name)
+          )
       ),
     ].sort();
     for (const name of disabledNames) {
       if (!PACKAGE_CATALOG[name])
         throw new AgentDiscoveryError(
           "unsupported_package",
-          `Unsupported package: ${name}`,
+          `Unsupported package: ${name}`
         );
     }
     let disabled: CatalogDescriptor[] = [];
@@ -246,7 +246,7 @@ export async function createAgentDiscovery(
         disabledNames.map(async (name) => ({
           name,
           descriptor: await loadPackageDescriptor(name),
-        })),
+        }))
       );
       disabled = loaded.flatMap(({ name, descriptor }) =>
         descriptor.operations.map((operation) => ({
@@ -254,12 +254,12 @@ export async function createAgentDiscovery(
           source: "package" as const,
           package: name,
           operation,
-        })),
+        }))
       );
     } catch {
       throw new AgentDiscoveryError(
         "package_load_failed",
-        "Could not load a requested package descriptor",
+        "Could not load a requested package descriptor"
       );
     }
     return parsed.data.requests.map((request) => {
@@ -273,7 +273,7 @@ export async function createAgentDiscovery(
             !request.package ||
             (request.package === "builtin"
               ? descriptor.source === "builtin"
-              : descriptor.package === request.package),
+              : descriptor.package === request.package)
         )
         .filter((descriptor) => matches(descriptor.name, request.query))
         .map((descriptor) => resolveDescriptor(descriptor, inputType, context))
@@ -289,7 +289,7 @@ export async function createAgentDiscovery(
           (a, b) =>
             a.name.localeCompare(b.name) ||
             a.source.localeCompare(b.source) ||
-            (a.package ?? "").localeCompare(b.package ?? ""),
+            (a.package ?? "").localeCompare(b.package ?? "")
         )
         .slice(0, MAX_RESULTS_PER_REQUEST);
     });
@@ -299,18 +299,21 @@ export async function createAgentDiscovery(
     if (!selected)
       throw new AgentDiscoveryError(
         "unknown_operation",
-        "The selected operation is unavailable",
+        "The selected operation is unavailable"
       );
     const usedNames = new Set(
       selected.content.value.statements.flatMap((statement) =>
-        statement.operations.map((operation) => operation.value.name),
-      ),
+        statement.operations.map((operation) => operation.value.name)
+      )
     );
     const usedOperations = baseCatalog
       .filter(({ name }) => usedNames.has(name))
       .map((descriptor) =>
-        resolveDescriptor(descriptor, { kind: "unknown" }, context),
+        resolveDescriptor(descriptor, { kind: "unknown" }, context)
       );
+    const isEmptyOperation =
+      selected.content.value.parameters.length === 0 &&
+      selected.content.value.statements.length === 0;
     const snapshot = {
       selectedOperation: structuredClone(selected.content),
       selectedFileMetadata: {
@@ -334,7 +337,7 @@ export async function createAgentDiscovery(
         })),
       enabledPackages,
       supportedPackages: Object.entries(PACKAGE_CATALOG).map(
-        ([name, entry]) => ({ name, description: entry.description }),
+        ([name, entry]) => ({ name, description: entry.description })
       ),
       usedOperations,
       statementTargets: {
@@ -347,13 +350,14 @@ export async function createAgentDiscovery(
           name: name ?? null,
         })),
       },
-      instruction:
-        "Change only the selected operation using insert_statement, replace_statement, delete_statement, and move_statement actions. Use only IDs from statementTargets for existing action targets and anchors; nested IDs in selectedOperation are not targetable.",
+      instruction: isEmptyOperation
+        ? 'The selected operation has no parameters or body statements. Build it with insert_statement actions: use container "parameters" for input declarations and "body" for computation/result statements, with beforeStatementId null for every insertion. The operation result is inferred from the final body statement. Put chained operation calls in statement.operations, not statement.data: statement.data is the receiver and call.value.parameters contains only explicit arguments after that receiver. Use exact operation names from context or lookup_operations. Do not use replace_statement, delete_statement, or move_statement because statementTargets is empty.'
+        : "Change only the selected operation using insert_statement, replace_statement, delete_statement, and move_statement actions. Use only IDs from statementTargets for existing action targets and anchors; nested IDs in selectedOperation are not targetable.",
     };
     if (JSON.stringify(snapshot).length > MAX_CONTEXT_BYTES) {
       throw new AgentDiscoveryError(
         "invalid_lookup",
-        "Selected operation context is too large",
+        "Selected operation context is too large"
       );
     }
     return snapshot;

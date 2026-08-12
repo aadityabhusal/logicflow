@@ -25,7 +25,7 @@ vi.mock("./discovery", () => ({
   AgentDiscoveryError: class extends Error {
     constructor(
       readonly code: string,
-      message: string,
+      message: string
     ) {
       super(message);
     }
@@ -82,7 +82,7 @@ describe("deployment intent", () => {
     });
     expect(getExplicitDeploymentIntent("Do not deploy this")).toBeUndefined();
     expect(
-      getExplicitDeploymentIntent("How do I deploy this?"),
+      getExplicitDeploymentIntent("How do I deploy this?")
     ).toBeUndefined();
     expect(getExplicitDeploymentIntent("Start a deployment")).toEqual({
       afterChanges: false,
@@ -103,6 +103,7 @@ describe("generateOperationProposal", () => {
       output: Promise.resolve(update),
     });
     const onPartialExplanation = vi.fn();
+    const onProgress = vi.fn();
     const abortController = new AbortController();
 
     const result = await generateOperationProposal({
@@ -113,13 +114,14 @@ describe("generateOperationProposal", () => {
       apiKey: "session-key",
       thinkingLevel: "max",
       abortSignal: abortController.signal,
+      onProgress,
       onPartialExplanation,
     });
 
     expect(mocks.createProviderModel).toHaveBeenCalledWith(
       "anthropic",
       "claude-sonnet-5",
-      "session-key",
+      "session-key"
     );
     expect(mocks.streamText).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -130,7 +132,7 @@ describe("generateOperationProposal", () => {
         providerOptions: {
           anthropic: { thinking: { type: "adaptive" }, effort: "max" },
         },
-      }),
+      })
     );
     expect(Object.keys(mocks.streamText.mock.calls[0][0].tools)).toEqual([
       "lookup_operations",
@@ -145,6 +147,13 @@ describe("generateOperationProposal", () => {
     });
     expect(onPartialExplanation).toHaveBeenNthCalledWith(1, "Working");
     expect(onPartialExplanation).toHaveBeenNthCalledWith(2, "Updated");
+    expect(onProgress.mock.calls.map(([label]) => label)).toEqual([
+      "Reading project context",
+      "Planning the requested change",
+      "Preparing an implementation",
+      "Validating proposed changes",
+      "Preparing changes for review",
+    ]);
     expect(result).toEqual({ response: update, proposal });
   });
 
@@ -201,15 +210,24 @@ describe("generateOperationProposal", () => {
         userPrompt: "Extract the callback",
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
-      }),
+      })
     ).resolves.toEqual({ response: update, proposal });
 
     expect(mocks.streamText).toHaveBeenCalledTimes(2);
     expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
-      "previous response did not match the required schema",
+      "previous response did not match the required schema"
     );
     expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
-      "changes.1.statement.operations.0.value",
+      "changes.1.statement.operations.0.value"
+    );
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
+      "operations: []"
+    );
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
+      "Reference value.id must be the referenced statement ID"
+    );
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
+      "only the remaining arguments"
     );
     expect(mocks.createAgentProposal).toHaveBeenCalledTimes(1);
   });
@@ -241,13 +259,13 @@ describe("generateOperationProposal", () => {
         userPrompt: "Extract the callback",
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
-      }),
+      })
     ).resolves.toEqual({ response: update, proposal });
 
     expect(mocks.streamText).toHaveBeenCalledTimes(2);
     expect(mocks.streamText.mock.calls[1][0].prompt).toContain("nested-id");
     expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
-      "statementTargets",
+      "statementTargets"
     );
     expect(mocks.createAgentProposal).toHaveBeenCalledTimes(2);
   });
@@ -278,7 +296,7 @@ describe("generateOperationProposal", () => {
         userPrompt: "Extract the callback",
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
-      }),
+      })
     ).rejects.toThrow("Normalized provider error");
 
     expect(mocks.streamText).toHaveBeenCalledTimes(2);
@@ -289,19 +307,22 @@ describe("generateOperationProposal", () => {
     const lookup = [[{ name: "map", source: "builtin" }]];
     mocks.discovery.lookupOperations.mockResolvedValue(lookup);
     mockStream();
+    const onProgress = vi.fn();
     await generateOperationProposal({
       operation,
       project,
       userPrompt: "Use map",
       model: "openai/gpt-5.6-sol",
       apiKey: "session-key",
+      onProgress,
     });
     const options = mocks.streamText.mock.calls[0][0];
     const input = { requests: [{ query: "map" }, { query: "filter" }] };
 
     await expect(options.tools.lookup_operations.execute(input)).resolves.toBe(
-      lookup,
+      lookup
     );
+    expect(onProgress).toHaveBeenCalledWith("Checking operation details");
     expect(mocks.discovery.lookupOperations).toHaveBeenCalledWith(input);
     expect(options.prepareStep({ instructions: "system" })).toMatchObject({
       activeTools: [],
@@ -331,7 +352,7 @@ describe("generateOperationProposal", () => {
             strictJsonSchema: false,
           },
         },
-      }),
+      })
     );
   });
 
@@ -350,7 +371,7 @@ describe("generateOperationProposal", () => {
     await execute({ requests: [{ query: "map" }] });
 
     await expect(
-      execute({ requests: [{ query: "entirely different" }] }),
+      execute({ requests: [{ query: "entirely different" }] })
     ).resolves.toEqual({
       error: {
         code: "lookup_limit_reached",
@@ -362,7 +383,7 @@ describe("generateOperationProposal", () => {
 
   it("returns bounded discovery errors without exposing another tool", async () => {
     mocks.discovery.lookupOperations.mockRejectedValue(
-      new AgentDiscoveryError("unsupported_package", "Unsupported package: x"),
+      new AgentDiscoveryError("unsupported_package", "Unsupported package: x")
     );
     mockStream();
     await generateOperationProposal({
@@ -376,7 +397,7 @@ describe("generateOperationProposal", () => {
       mocks.streamText.mock.calls[0][0].tools.lookup_operations.execute;
 
     await expect(
-      execute({ requests: [{ query: "x", package: "x" }] }),
+      execute({ requests: [{ query: "x", package: "x" }] })
     ).resolves.toEqual({
       error: {
         code: "unsupported_package",
@@ -398,7 +419,7 @@ describe("generateOperationProposal", () => {
         userPrompt: "Revise it",
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
-      }),
+      })
     ).rejects.toThrow("does not belong");
     expect(mocks.createAgentDiscovery).not.toHaveBeenCalled();
 
@@ -414,7 +435,7 @@ describe("generateOperationProposal", () => {
         userPrompt: "Revise it",
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
-      }),
+      })
     ).rejects.toThrow("proposal is stale");
   });
 
@@ -441,10 +462,10 @@ describe("generateOperationProposal", () => {
     expect(mocks.buildContextPrompt).toHaveBeenCalledWith(
       "Revise it",
       { selectedOperation: true },
-      previousUpdate,
+      previousUpdate
     );
     expect(mocks.createAgentProposal).toHaveBeenCalledWith(
-      expect.objectContaining({ update }),
+      expect.objectContaining({ update })
     );
   });
 
@@ -464,7 +485,7 @@ describe("generateOperationProposal", () => {
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
         abortSignal: abortController.signal,
-      }),
+      })
     ).rejects.toThrow("Normalized provider error");
     expect(mocks.toAgentTransportError).toHaveBeenCalledWith(abortError);
 
@@ -488,7 +509,7 @@ describe("generateOperationProposal", () => {
         userPrompt: "Update it",
         model: "openai/gpt-5.6-sol",
         apiKey: "session-key",
-      }),
+      })
     ).rejects.toThrow("Normalized provider error");
     expect(mocks.toAgentTransportError).toHaveBeenLastCalledWith(streamError);
   });

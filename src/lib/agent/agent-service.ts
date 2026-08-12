@@ -17,6 +17,8 @@ import type { AgentProvider, AgentThinkingLevel } from "./types";
 
 const AGENT_STEP_TIMEOUT = 60_000;
 const MAX_GENERATION_STEPS = 2;
+const STRUCTURED_OUTPUT_SHAPE_FEEDBACK =
+  "- Every new or replaced statement must include id, data, and operations; use operations: [] when there are no chained calls. Every IData must include its own id, type, and value unless its type is undefined. Put chained calls in statement.operations, not inside statement.data; use the first argument's data as statement.data and only the remaining arguments in the call's value.parameters. Reference value.id must be the referenced statement ID, not the nested IData ID.";
 
 function isInvalidStructuredOutput(error: unknown) {
   if (
@@ -49,8 +51,8 @@ function getStructuredOutputFeedback(error: unknown) {
     if (value.name === "ZodError" && typeof value.message === "string") {
       try {
         const issues = JSON.parse(value.message);
-        if (Array.isArray(issues) && issues.length > 0)
-          return issues
+        if (Array.isArray(issues) && issues.length > 0) {
+          const details = issues
             .slice(0, 5)
             .map((issue) => {
               const path =
@@ -66,25 +68,27 @@ function getStructuredOutputFeedback(error: unknown) {
               return `- ${path || "response"}: ${message}`;
             })
             .join("\n");
+          return `${details}\n${STRUCTURED_OUTPUT_SHAPE_FEEDBACK}`;
+        }
       } catch {
-        return value.message;
+        return `${value.message}\n${STRUCTURED_OUTPUT_SHAPE_FEEDBACK}`;
       }
     }
     current = value.cause;
   }
-  return "- The previous response did not match the required schema.";
+  return `- The previous response did not match the required schema.\n${STRUCTURED_OUTPUT_SHAPE_FEEDBACK}`;
 }
 
 function needsTargetRepair(proposal: AgentProposal) {
   return proposal.diagnostics.some(({ code }) =>
-    ["invalid_statement_target", "invalid_anchor"].includes(code),
+    ["invalid_statement_target", "invalid_anchor"].includes(code)
   );
 }
 
 function getTargetRepairFeedback(proposal: AgentProposal) {
   const diagnostics = proposal.diagnostics
     .filter(({ code }) =>
-      ["invalid_statement_target", "invalid_anchor"].includes(code),
+      ["invalid_statement_target", "invalid_anchor"].includes(code)
     )
     .map(({ message }) => `- ${message}`)
     .join("\n");
@@ -160,6 +164,7 @@ export async function generateOperationProposal({
   initialProposal,
   thinkingLevel = "medium",
   abortSignal,
+  onProgress,
   onPartialExplanation,
 }: {
   operation: IData<OperationType>;
@@ -170,6 +175,7 @@ export async function generateOperationProposal({
   thinkingLevel?: AgentThinkingLevel;
   initialProposal?: AgentProposal;
   abortSignal?: AbortSignal;
+  onProgress?: (label: string) => void;
   onPartialExplanation?: (explanation: string) => void;
 }) {
   if (initialProposal) {
@@ -186,8 +192,10 @@ export async function generateOperationProposal({
     }
   }
 
+  onProgress?.("Reading project context");
   const discovery = await createAgentDiscovery(project, operation.id);
   const contextSnapshot = discovery.buildContextSnapshot();
+  onProgress?.("Planning the requested change");
   let lookupUsed = false;
   const tools = {
     lookup_operations: tool({
@@ -204,6 +212,7 @@ export async function generateOperationProposal({
           };
         }
         lookupUsed = true;
+        onProgress?.("Checking operation details");
         try {
           return await discovery.lookupOperations(input);
         } catch (error) {
@@ -225,6 +234,9 @@ export async function generateOperationProposal({
     const generate = async (feedback?: string) => {
       let streamError: unknown;
       lookupUsed = false;
+      onProgress?.(
+        feedback ? "Refining the proposal" : "Preparing an implementation"
+      );
       try {
         const result = streamText({
           model: resolveProviderModel(model, apiKey),
@@ -267,11 +279,12 @@ export async function generateOperationProposal({
       } catch (error) {
         if (!isInvalidStructuredOutput(error)) throw error;
         return await generate(
-          `${feedback ? `${feedback}\n\n` : ""}The previous response did not match the required schema. Validation details:\n${getStructuredOutputFeedback(error)}\nReturn only a complete schema-valid AgentOperationUpdate.`,
+          `${feedback ? `${feedback}\n\n` : ""}The previous response did not match the required schema. Validation details:\n${getStructuredOutputFeedback(error)}\nReturn only a complete schema-valid AgentOperationUpdate.`
         );
       }
     };
     let response = await generateWithSchemaRetry();
+    onProgress?.("Validating proposed changes");
     if (!response.changes.length && !response.enablePackages.length)
       return { response, proposal: undefined };
     let proposal = await createAgentProposal({
@@ -281,8 +294,9 @@ export async function generateOperationProposal({
       update: response,
     });
     if (needsTargetRepair(proposal)) {
+      onProgress?.("Refining statement targets");
       response = await generateWithSchemaRetry(
-        getTargetRepairFeedback(proposal),
+        getTargetRepairFeedback(proposal)
       );
       if (!response.changes.length && !response.enablePackages.length)
         return { response, proposal: undefined };
@@ -293,6 +307,7 @@ export async function generateOperationProposal({
         update: response,
       });
     }
+    onProgress?.("Preparing changes for review");
     return { response, proposal };
   } catch (error) {
     throw toAgentTransportError(error);

@@ -81,6 +81,29 @@ describe("agent store", () => {
     });
   });
 
+  it("keeps active request traces transient and marks previous steps complete", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+
+    useAgentStore.getState().startRun(thread.id);
+    useAgentStore.getState().setRunTrace("Reading project context");
+
+    expect(useAgentStore.getState().activeRun?.traces).toEqual([
+      {
+        id: expect.any(String),
+        label: "Preparing request",
+        status: "complete",
+      },
+      {
+        id: expect.any(String),
+        label: "Reading project context",
+        status: "active",
+      },
+    ]);
+    expect(
+      useAgentStore.persist.getOptions().partialize!(useAgentStore.getState())
+    ).not.toHaveProperty("activeRun");
+  });
+
   it("keeps proposals transient and clears them with their thread", () => {
     const thread = useAgentStore.getState().createThread("project-a");
     const second = useAgentStore.getState().createThread("project-a");

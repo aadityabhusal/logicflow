@@ -31,6 +31,12 @@ export type AgentMessage = {
   createdAt: number;
 };
 
+export type AgentRunTrace = {
+  id: string;
+  label: string;
+  status: "active" | "complete";
+};
+
 export type AgentProject = {
   projectId: string;
   activeThreadId: string;

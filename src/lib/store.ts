@@ -24,7 +24,12 @@ import {
   restoreProjectFromCheckpoint,
 } from "./checkpoints";
 import { createIDbStorage } from "./idb";
-import { AgentMessage, AgentProject, AgentThread } from "./agent/types";
+import {
+  AgentMessage,
+  AgentProject,
+  AgentRunTrace,
+  AgentThread,
+} from "./agent/types";
 import type { AgentProposal } from "./agent/proposal";
 
 /* Files store */
@@ -420,7 +425,11 @@ interface AgentStore {
   thinkingLevel: import("./agent/types").AgentThinkingLevel;
   agentProjects: Record<string, AgentProject>;
   agentReady: boolean;
-  activeRun?: { threadId: string; streamingContent: string };
+  activeRun?: {
+    threadId: string;
+    streamingContent: string;
+    traces: AgentRunTrace[];
+  };
   pendingProposals: Record<string, AgentProposal>;
 
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
@@ -438,6 +447,7 @@ interface AgentStore {
   ) => AgentMessage | undefined;
   setDraft: (threadId: string, content: string) => void;
   startRun: (threadId: string) => void;
+  setRunTrace: (label: string) => void;
   setStreamingContent: (content: string) => void;
   finishRun: (threadId: string) => void;
   setPendingProposal: (threadId: string, proposal?: AgentProposal) => void;
@@ -645,7 +655,37 @@ export const useAgentStore = createWithEqualityFn(
           });
         },
         startRun: (threadId) =>
-          set({ activeRun: { threadId, streamingContent: "" } }),
+          set({
+            activeRun: {
+              threadId,
+              streamingContent: "",
+              traces: [
+                {
+                  id: nanoid(),
+                  label: "Preparing request",
+                  status: "active",
+                },
+              ],
+            },
+          }),
+        setRunTrace: (label) =>
+          set((state) => {
+            if (!state.activeRun) return state;
+            const current = state.activeRun.traces.at(-1);
+            if (current?.label === label) return state;
+            return {
+              activeRun: {
+                ...state.activeRun,
+                traces: [
+                  ...state.activeRun.traces.map((trace) => ({
+                    ...trace,
+                    status: "complete" as const,
+                  })),
+                  { id: nanoid(), label, status: "active" as const },
+                ],
+              },
+            };
+          }),
         setStreamingContent: (content) =>
           set((state) =>
             state.activeRun

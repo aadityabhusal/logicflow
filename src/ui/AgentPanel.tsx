@@ -39,6 +39,7 @@ export function AgentPanel() {
     removeThread,
     deleteThreadTurn,
     startRun,
+    setRunTrace,
     setStreamingContent,
     finishRun,
     activeRun,
@@ -170,6 +171,7 @@ export function AgentPanel() {
         thinkingLevel,
         initialProposal: revisedProposal,
         abortSignal: controller.signal,
+        onProgress: setRunTrace,
         onPartialExplanation: setStreamingContent,
       });
 

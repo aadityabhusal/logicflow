@@ -60,7 +60,7 @@ describe("agent operation discovery", () => {
     ];
     const discovery = await createAgentDiscovery(
       createTestProject({ files: [selected] }),
-      selected.id,
+      selected.id
     );
 
     const context = discovery.buildContextSnapshot();
@@ -71,13 +71,28 @@ describe("agent operation discovery", () => {
     expect(context.selectedFileMetadata.tests).toBe(1);
   });
 
+  it("gives empty operations construction guidance", async () => {
+    const selected = createOperationFile("operation1");
+    const discovery = await createAgentDiscovery(
+      createTestProject({ files: [selected] }),
+      selected.id
+    );
+
+    const context = discovery.buildContextSnapshot();
+
+    expect(context.statementTargets).toEqual({ parameters: [], body: [] });
+    expect(context.instruction).toContain("no parameters or body statements");
+    expect(context.instruction).toContain("beforeStatementId null");
+    expect(context.instruction).toContain("Do not use replace_statement");
+  });
+
   it("performs deterministic bounded builtin and project lookup without handles", async () => {
     const selected = createOperationFile("main");
     const helper = createOperationFile("formatMessage");
     helper.content.type.result = { kind: "string" };
     const discovery = await createAgentDiscovery(
       createTestProject({ files: [selected, helper] }),
-      selected.id,
+      selected.id
     );
     const [builtins, project] = await discovery.lookupOperations({
       requests: [
@@ -143,16 +158,16 @@ describe("agent operation discovery", () => {
         name: "filter",
         source: "builtin",
         result: { kind: "array", elementType: { kind: "number" } },
-      }),
+      })
     );
     expect(modulo).toContainEqual(
-      expect.objectContaining({ name: "mod", source: "builtin" }),
+      expect.objectContaining({ name: "mod", source: "builtin" })
     );
     expect(even).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "isDeepEqual", source: "builtin" }),
         expect.objectContaining({ name: "mod", source: "builtin" }),
-      ]),
+      ])
     );
   });
 
@@ -175,7 +190,7 @@ describe("agent operation discovery", () => {
     expect(
       (
         await discovery.lookupOperations({ requests: [{ query: "request" }] })
-      )[0],
+      )[0]
     ).toEqual([]);
     const result = (
       await discovery.lookupOperations({
@@ -203,18 +218,18 @@ describe("agent operation discovery", () => {
     expect(
       AgentOperationLookupSchema.safeParse({
         requests: Array.from({ length: 11 }, () => ({ query: "x" })),
-      }).success,
+      }).success
     ).toBe(false);
     expect(
       AgentOperationLookupSchema.safeParse({
         requests: [{ query: "x", extra: true }],
-      }).success,
+      }).success
     ).toBe(false);
     const discovery = await createAgentDiscovery(createTestProject());
     await expect(
       discovery.lookupOperations({
         requests: [{ query: "x", package: "unsupported" }],
-      }),
+      })
     ).rejects.toEqual(expect.objectContaining({ code: "unsupported_package" }));
   });
 
@@ -223,10 +238,10 @@ describe("agent operation discovery", () => {
     duplicate.id = "other-id";
     await expect(
       createAgentDiscovery(
-        createTestProject({ files: [createOperationFile("same"), duplicate] }),
-      ),
+        createTestProject({ files: [createOperationFile("same"), duplicate] })
+      )
     ).rejects.toEqual(
-      expect.objectContaining({ code: "duplicate_operation_name" }),
+      expect.objectContaining({ code: "duplicate_operation_name" })
     );
   });
 });
