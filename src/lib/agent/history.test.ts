@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentProposal } from "./proposal";
+import type { AgentOperationUpdate, AgentProposal } from "./proposal";
 import { getAgentEditableFingerprint, getAgentHistoryState } from "./proposal";
 import type { Project } from "../types";
 import { fileHistoryActions } from "../store";
@@ -31,7 +31,6 @@ const mocks = vi.hoisted(() => {
     clearHistory: vi.fn(),
     editorHistories: new Set<string>(),
     resetWorker: vi.fn(),
-    expectApplication: vi.fn(),
     removeAll: vi.fn(),
     setNavigation: vi.fn(),
     setState,
@@ -70,9 +69,6 @@ vi.mock("../execution/store", () => ({
 vi.mock("../execution/worker-client", () => ({
   executionWorkerClient: { reset: mocks.resetWorker },
 }));
-vi.mock("../execution/controller", () => ({
-  executionController: { expectApplication: mocks.expectApplication },
-}));
 vi.mock("../operations/built-in", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../operations/built-in")>();
@@ -80,7 +76,7 @@ vi.mock("../operations/built-in", async (importOriginal) => {
     ...actual,
     withSyncedPackageRegistry: async <T>(
       packages: { name: string }[],
-      action: () => T | Promise<T>
+      action: () => T | Promise<T>,
     ) => {
       if (mocks.failPackageLoad) throw new Error("package load failed");
       const previous = mocks.livePackages;
@@ -109,7 +105,7 @@ import {
 function operationFile(
   statementId: string,
   id = "operation-a",
-  name = id === "operation-a" ? "operationA" : id
+  name = id === "operation-a" ? "operationA" : id,
 ) {
   return {
     id,
@@ -125,11 +121,47 @@ function operationFile(
       value: {
         name,
         parameters: [],
-        statements: [{ id: statementId }],
+        statements: [
+          {
+            id: statementId,
+            name: statementId.replace(/[^a-zA-Z0-9_$]/g, "_"),
+            data: {
+              id: `${statementId}-data`,
+              type: { kind: "undefined" as const },
+            },
+            operations: [],
+          },
+        ],
         isAsync: false,
       },
     },
   } as unknown as Extract<Project["files"][number], { type: "operation" }>;
+}
+
+function operationUpdate(
+  statementId: string,
+  marker: string,
+): AgentOperationUpdate {
+  return {
+    explanation: `Change to ${marker}`,
+    enablePackages: [],
+    changes: [
+      {
+        kind: "replace_statement" as const,
+        statementId,
+        statement: {
+          id: marker,
+          name: marker.replace(/[^a-zA-Z0-9_$]/g, "_"),
+          data: {
+            id: `${marker}-data`,
+            type: { kind: "undefined" as const },
+            value: undefined,
+          },
+          operations: [],
+        },
+      },
+    ],
+  };
 }
 
 function setup() {
@@ -149,7 +181,7 @@ function setup() {
       operationFile("before"),
     ],
     dependencies: {
-      npm: [{ name: "pkg", version: "1", exports: [], namespace: "kept" }],
+      npm: [{ name: "wretch", version: "1", exports: [], namespace: "kept" }],
     },
   };
   const proposal: AgentProposal = {
@@ -159,7 +191,7 @@ function setup() {
     fileId: "operation-a",
     baseFingerprint: getAgentEditableFingerprint(project),
     sourcePrompt: "Change it",
-    draft: { name: "operationA", parameters: [], statements: [] },
+    update: operationUpdate("before", "after"),
     proposedFile: operationFile("after") as Extract<
       Project["files"][number],
       { type: "operation" }
@@ -223,24 +255,18 @@ describe("agent edit history", () => {
         apiKeys: {},
         selectedModel: "gpt-5.6-terra",
         thinkingLevel: "high",
-      }
+      },
     );
-    expect(mocks.expectApplication).toHaveBeenCalledWith({
-      applicationId: entry.id,
-      projectId: "project-a",
-      operationId: "operation-a",
-      redactionValues: [],
-    });
     expect(mocks.projectState.projects["project-a"].files[0]).toMatchObject({
       id: "docs",
       content: "Keep",
     });
     expect(
-      mocks.agentState.agentProjects["project-a"].history?.entries
+      mocks.agentState.agentProjects["project-a"].history?.entries,
     ).toHaveLength(1);
     expect(
       mocks.agentState.agentProjects["project-a"].threads[0].messages[0]
-        .proposal?.applicationId
+        .proposal?.applicationId,
     ).toBe(entry.id);
     expect(mocks.agentState.pendingProposals["thread-a"]).toBeUndefined();
     expect(mocks.clearHistory).toHaveBeenCalledWith("operation-a");
@@ -254,7 +280,7 @@ describe("agent edit history", () => {
     mocks.commitAgentEdit.mockRejectedValueOnce(new Error("storage failed"));
 
     await expect(applyAgentProposal(proposal)).rejects.toThrow(
-      "storage failed"
+      "storage failed",
     );
 
     expect(mocks.projectState.projects["project-a"]).toBe(originalProject);
@@ -270,7 +296,7 @@ describe("agent edit history", () => {
         () =>
           new Promise<undefined>((resolve) => {
             finishCommit = () => resolve(undefined);
-          })
+          }),
       )
       .mockResolvedValueOnce(undefined);
 
@@ -284,13 +310,38 @@ describe("agent edit history", () => {
     finishCommit();
 
     await expect(application).rejects.toThrow(
-      "changed while the edit was being saved"
+      "changed while the edit was being saved",
     );
     expect(mocks.commitAgentEdit).toHaveBeenCalledTimes(2);
     expect(mocks.projectState.projects["project-a"].description).toBe(
-      "Concurrent edit"
+      "Concurrent edit",
     );
     expect(mocks.agentState.pendingProposals["thread-a"]).toBe(proposal);
+  });
+
+  it("compensates when proposal ownership changes while saving", async () => {
+    const proposal = setup();
+    let finishCommit!: () => void;
+    mocks.commitAgentEdit
+      .mockImplementationOnce(
+        () =>
+          new Promise<undefined>((resolve) => {
+            finishCommit = () => resolve(undefined);
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+
+    const application = applyAgentProposal(proposal);
+    await vi.waitFor(() => expect(finishCommit).toBeTypeOf("function"));
+    const replacement = { ...proposal, id: "proposal-b" };
+    mocks.agentState.pendingProposals = { "thread-a": replacement };
+    finishCommit();
+
+    await expect(application).rejects.toThrow(
+      "changed while the edit was being saved",
+    );
+    expect(mocks.commitAgentEdit).toHaveBeenCalledTimes(2);
+    expect(mocks.agentState.pendingProposals["thread-a"]).toBe(replacement);
   });
 
   it("preserves a preference changed while saving", async () => {
@@ -301,7 +352,7 @@ describe("agent edit history", () => {
         () =>
           new Promise<undefined>((resolve) => {
             finishCommit = () => resolve(undefined);
-          })
+          }),
       )
       .mockResolvedValueOnce(undefined);
 
@@ -311,12 +362,12 @@ describe("agent edit history", () => {
     finishCommit();
 
     await expect(application).rejects.toThrow(
-      "changed while the edit was being saved"
+      "changed while the edit was being saved",
     );
     expect(mocks.commitAgentEdit).toHaveBeenLastCalledWith(
       mocks.projectState.projects,
       mocks.agentState.agentProjects,
-      expect.objectContaining({ selectedModel: "claude-opus-5" })
+      expect.objectContaining({ selectedModel: "claude-opus-5" }),
     );
   });
 
@@ -327,13 +378,14 @@ describe("agent edit history", () => {
 
     await undoAgentEdit("project-a");
     expect(canRedoAgentEdit(mocks.agentState.agentProjects["project-a"])).toBe(
-      true
+      true,
     );
 
     await redoAgentEdit("project-a");
     const operation = mocks.projectState.projects["project-a"].files[1];
     expect(
-      operation.type === "operation" && operation.content.value.statements[0].id
+      operation.type === "operation" &&
+        operation.content.value.statements[0].name,
     ).toBe("after");
 
     await undoAgentEdit("project-a");
@@ -361,11 +413,12 @@ describe("agent edit history", () => {
       ...baseProposal,
       id: "proposal-b",
       baseFingerprint: getAgentEditableFingerprint(current),
+      update: operationUpdate("before", "latest"),
       proposedFile: operationFile("latest"),
       proposedState: getAgentHistoryState({
         ...current,
         files: current.files.map((file) =>
-          file.id === "operation-a" ? operationFile("latest") : file
+          file.id === "operation-a" ? operationFile("latest") : file,
         ),
       }),
     } as AgentProposal;
@@ -387,7 +440,7 @@ describe("agent edit history", () => {
         mocks.projectState.projects["project-a"].files[1] as ReturnType<
           typeof operationFile
         >
-      ).content.value.statements[0].id
+      ).content.value.statements[0].name,
     ).toBe("before");
 
     await redoAgentApplication("project-a", second.id);
@@ -401,28 +454,28 @@ describe("agent edit history", () => {
         mocks.projectState.projects["project-a"].files[1] as ReturnType<
           typeof operationFile
         >
-      ).content.value.statements[0].id
+      ).content.value.statements[0].name,
     ).toBe("latest");
   });
 
   it("rejects stale or conflicting application actions", async () => {
     const entry = await applyAgentProposal(setup());
     await expect(redoAgentApplication("project-a", entry.id)).rejects.toThrow(
-      "already applied"
+      "already applied",
     );
 
     const current = mocks.projectState.projects["project-a"];
     mocks.projectState.projects["project-a"] = {
       ...current,
       files: current.files.map((file) =>
-        file.id === "operation-a" ? operationFile("manual") : file
+        file.id === "operation-a" ? operationFile("manual") : file,
       ),
     };
     await expect(undoAgentApplication("project-a", entry.id)).rejects.toThrow(
-      "project changed"
+      "project changed",
     );
     await expect(undoAgentApplication("project-a", "missing")).rejects.toThrow(
-      "no longer in history"
+      "no longer in history",
     );
   });
 
@@ -437,13 +490,13 @@ describe("agent edit history", () => {
       threadId: "thread-a",
       fileId: "operation-a",
       sourcePrompt: "Change again",
-      draft: { name: "operationA", parameters: [], statements: [] },
+      update: operationUpdate("before", "different"),
       baseFingerprint: getAgentEditableFingerprint(current),
       proposedFile: operationFile("different"),
       proposedState: getAgentHistoryState({
         ...current,
         files: current.files.map((file) =>
-          file.id === "operation-a" ? operationFile("different") : file
+          file.id === "operation-a" ? operationFile("different") : file,
         ),
       }),
       diagnostics: [],
@@ -458,7 +511,7 @@ describe("agent edit history", () => {
       lastSequence: 2,
     });
     expect(
-      mocks.agentState.agentProjects["project-a"].history?.entries
+      mocks.agentState.agentProjects["project-a"].history?.entries,
     ).toHaveLength(1);
   });
 
@@ -468,7 +521,7 @@ describe("agent edit history", () => {
     const manuallyEdited = {
       ...current,
       files: current.files.map((file) =>
-        file.id === "operation-a" ? operationFile("manual") : file
+        file.id === "operation-a" ? operationFile("manual") : file,
       ),
     };
     mocks.projectState.projects["project-a"] = manuallyEdited;
@@ -479,12 +532,12 @@ describe("agent edit history", () => {
       fileId: "operation-a",
       baseFingerprint: getAgentEditableFingerprint(manuallyEdited),
       sourcePrompt: "Change it again",
-      draft: { name: "operationA", parameters: [], statements: [] },
+      update: operationUpdate("manual", "second"),
       proposedFile: operationFile("second"),
       proposedState: getAgentHistoryState({
         ...manuallyEdited,
         files: manuallyEdited.files.map((file) =>
-          file.id === "operation-a" ? operationFile("second") : file
+          file.id === "operation-a" ? operationFile("second") : file,
         ),
       }),
       diagnostics: [],
@@ -495,86 +548,8 @@ describe("agent edit history", () => {
 
     expect(entry.sequence).toBe(2);
     expect(
-      mocks.agentState.agentProjects["project-a"].history?.entries
+      mocks.agentState.agentProjects["project-a"].history?.entries,
     ).toEqual([entry]);
-  });
-
-  it("applies multi-file create, update, delete, and package changes", async () => {
-    const proposal = setup();
-    const project = mocks.projectState.projects["project-a"];
-    const deleted = operationFile("deleted", "operation-delete");
-    const jsonFile = {
-      id: "json",
-      name: "data",
-      type: "json" as const,
-      createdAt: 1,
-      content: { keep: true },
-    };
-    project.files = [
-      project.files[0],
-      operationFile("before"),
-      jsonFile,
-      deleted,
-    ];
-    project.dependencies = {
-      npm: [{ name: "faker", version: "1", exports: [], namespace: "F" }],
-      logicflow: [
-        { projectId: "shared", version: "2", exports: [], namespace: "S" },
-      ],
-    };
-    proposal.baseFingerprint = getAgentEditableFingerprint(project);
-    proposal.proposedState = {
-      operationFiles: [
-        { index: 0, file: operationFile("created", "operation-created") },
-        { index: 3, file: operationFile("updated", "operation-a", "renamed") },
-      ],
-      npmDependencies: [
-        { name: "rowguard", version: "9", exports: [], namespace: "Rg" },
-      ],
-    };
-    mocks.projectState.currentFileId = "docs";
-
-    await applyAgentProposal(proposal);
-
-    const applied = mocks.projectState.projects["project-a"];
-    expect(applied.files.map(({ id }) => id)).toEqual([
-      "operation-created",
-      "docs",
-      "json",
-      "operation-a",
-    ]);
-    expect(applied.files[3].name).toBe("renamed");
-    expect(applied.dependencies).toEqual({
-      npm: [{ name: "rowguard", version: "9", exports: [], namespace: "Rg" }],
-      logicflow: [
-        { projectId: "shared", version: "2", exports: [], namespace: "S" },
-      ],
-    });
-    expect(mocks.projectState.currentFileId).toBe("docs");
-    expect(mocks.livePackages).toEqual(["rowguard"]);
-
-    mocks.projectState.projects["project-a"] = structuredClone(applied);
-    mocks.agentState.agentProjects["project-a"] = structuredClone(
-      mocks.agentState.agentProjects["project-a"]
-    );
-    await undoAgentEdit("project-a");
-    expect(
-      mocks.projectState.projects["project-a"].files.map(({ id }) => id)
-    ).toEqual(["docs", "operation-a", "json", "operation-delete"]);
-    expect(mocks.projectState.projects["project-a"].dependencies).toEqual(
-      project.dependencies
-    );
-
-    mocks.projectState.projects["project-a"] = structuredClone(
-      mocks.projectState.projects["project-a"]
-    );
-    mocks.agentState.agentProjects["project-a"] = structuredClone(
-      mocks.agentState.agentProjects["project-a"]
-    );
-    await redoAgentEdit("project-a");
-    expect(
-      mocks.projectState.projects["project-a"].files.map(({ id }) => id)
-    ).toEqual(["operation-created", "docs", "json", "operation-a"]);
   });
 
   it("requires the exact pending proposal identity", async () => {
@@ -582,9 +557,42 @@ describe("agent edit history", () => {
     mocks.agentState.pendingProposals["thread-a"] = { ...proposal };
 
     await expect(applyAgentProposal(proposal)).rejects.toThrow(
-      "no longer pending"
+      "no longer pending",
     );
     expect(mocks.commitAgentEdit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a corrupted native update before Apply", async () => {
+    const proposal = setup();
+    proposal.update = { unexpected: true } as never;
+
+    await expect(applyAgentProposal(proposal)).rejects.toThrow(
+      "failed final validation",
+    );
+    expect(mocks.commitAgentEdit).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds the candidate and updates only the selected operation", async () => {
+    const proposal = setup();
+    const project = mocks.projectState.projects["project-a"];
+    project.files.push(operationFile("other", "operation-b"));
+    proposal.baseFingerprint = getAgentEditableFingerprint(project);
+    proposal.proposedState = getAgentHistoryState({
+      ...project,
+      files: project.files.map((file) =>
+        file.id === "operation-b"
+          ? operationFile("tampered", "operation-b")
+          : file,
+      ),
+    });
+
+    await applyAgentProposal(proposal);
+
+    const operations = mocks.projectState.projects["project-a"].files.filter(
+      (file) => file.type === "operation",
+    );
+    expect(operations[0].content.value.statements[0].name).toBe("after");
+    expect(operations[1].content.value.statements[0].name).toBe("other");
   });
 
   it("applies while a different file is selected", async () => {
@@ -604,13 +612,14 @@ describe("agent edit history", () => {
         ...baseProposal,
         id: `proposal-${sequence}`,
         baseFingerprint: getAgentEditableFingerprint(project),
+        update: operationUpdate("before", `state-${sequence}`),
         proposedFile: operationFile(`state-${sequence}`),
         proposedState: getAgentHistoryState({
           ...project,
           files: project.files.map((file) =>
             file.id === "operation-a"
               ? operationFile(`state-${sequence}`)
-              : file
+              : file,
           ),
         }),
       } as AgentProposal;
@@ -643,10 +652,11 @@ describe("agent edit history", () => {
       id: "proposal-b",
       threadId: "thread-b",
       baseFingerprint: getAgentEditableFingerprint(project),
+      update: operationUpdate("before", "thread-b"),
       proposedState: getAgentHistoryState({
         ...project,
         files: project.files.map((file) =>
-          file.id === "operation-a" ? operationFile("thread-b") : file
+          file.id === "operation-a" ? operationFile("thread-b") : file,
         ),
       }),
       diagnostics: [],
@@ -657,20 +667,18 @@ describe("agent edit history", () => {
 
     expect(
       mocks.agentState.agentProjects["project-a"].history?.entries.map(
-        ({ threadId }) => threadId
-      )
+        ({ threadId }) => threadId,
+      ),
     ).toEqual(["thread-a", "thread-b"]);
   });
 
   it("does not persist when target packages fail to load", async () => {
     const proposal = setup();
-    proposal.proposedState!.npmDependencies = [
-      { name: "rowguard", version: "1", exports: [] },
-    ];
+    proposal.update.enablePackages = ["rowguard"];
     mocks.failPackageLoad = true;
 
     await expect(applyAgentProposal(proposal)).rejects.toThrow(
-      "package load failed"
+      "package load failed",
     );
     expect(mocks.commitAgentEdit).not.toHaveBeenCalled();
     expect(mocks.agentState.pendingProposals["thread-a"]).toBe(proposal);
@@ -678,20 +686,18 @@ describe("agent edit history", () => {
 
   it("rolls the live package registry back when persistence fails", async () => {
     const proposal = setup();
-    proposal.proposedState!.npmDependencies = [
-      { name: "rowguard", version: "1", exports: [] },
-    ];
+    proposal.update.enablePackages = ["rowguard"];
     mocks.livePackages = ["faker"];
     mocks.commitAgentEdit.mockRejectedValueOnce(new Error("storage failed"));
 
     await expect(applyAgentProposal(proposal)).rejects.toThrow(
-      "storage failed"
+      "storage failed",
     );
 
     expect(mocks.livePackages).toEqual(["faker"]);
     expect(
-      mocks.projectState.projects["project-a"].dependencies?.npm?.[0].name
-    ).toBe("pkg");
+      mocks.projectState.projects["project-a"].dependencies?.npm?.[0].name,
+    ).toBe("wretch");
   });
 
   it("keeps undo and redo cursors unchanged when package sync fails", async () => {
@@ -699,7 +705,7 @@ describe("agent edit history", () => {
     mocks.failPackageLoad = true;
 
     await expect(undoAgentEdit("project-a")).rejects.toThrow(
-      "package load failed"
+      "package load failed",
     );
     expect(mocks.agentState.agentProjects["project-a"].history?.cursor).toBe(1);
 
@@ -707,73 +713,24 @@ describe("agent edit history", () => {
     await undoAgentEdit("project-a");
     mocks.failPackageLoad = true;
     await expect(redoAgentEdit("project-a")).rejects.toThrow(
-      "package load failed"
+      "package load failed",
     );
     expect(mocks.agentState.agentProjects["project-a"].history?.cursor).toBe(0);
   });
 
-  it("clears changed, created, and deleted histories but preserves unaffected ones", async () => {
+  it("clears the selected operation history but preserves unaffected ones", async () => {
     const proposal = setup();
     const project = mocks.projectState.projects["project-a"];
-    project.files.push(
-      operationFile("delete", "operation-delete"),
-      operationFile("keep", "operation-keep")
-    );
+    project.files.push(operationFile("keep", "operation-keep", "keep"));
     proposal.baseFingerprint = getAgentEditableFingerprint(project);
-    proposal.proposedState = {
-      operationFiles: [
-        { index: 1, file: operationFile("changed") },
-        { index: 2, file: operationFile("created", "operation-create") },
-        { index: 3, file: operationFile("keep", "operation-keep") },
-      ],
-      npmDependencies: structuredClone(project.dependencies!.npm!),
-    };
-    for (const id of [
-      "operation-a",
-      "operation-delete",
-      "operation-create",
-      "operation-keep",
-    ]) {
+    for (const id of ["operation-a", "operation-keep"]) {
       fileHistoryActions.pushState(id, {} as never);
     }
 
     await applyAgentProposal(proposal);
 
-    expect(new Set(mocks.clearHistory.mock.calls.flat())).toEqual(
-      new Set(["operation-a", "operation-delete", "operation-create"])
-    );
+    expect(mocks.clearHistory).toHaveBeenCalledWith("operation-a");
+    expect(mocks.clearHistory).not.toHaveBeenCalledWith("operation-keep");
     expect(fileHistoryActions.canUndo("operation-keep")).toBe(true);
-  });
-
-  it("selects the next file after deletion and reconciles the URL", async () => {
-    const proposal = setup();
-    const project = mocks.projectState.projects["project-a"];
-    project.files.push(operationFile("next", "operation-next", "next"));
-    proposal.baseFingerprint = getAgentEditableFingerprint(project);
-    proposal.proposedState = {
-      operationFiles: [
-        { index: 1, file: operationFile("next", "operation-next", "next") },
-      ],
-      npmDependencies: structuredClone(project.dependencies!.npm!),
-    };
-    mocks.projectState.currentFileId = "operation-a";
-    history.replaceState(
-      {},
-      "",
-      "/project/project-a?file=operationA&tab=agent&keep=1"
-    );
-
-    await applyAgentProposal(proposal);
-
-    expect(mocks.projectState.currentFileId).toBe("operation-next");
-    expect(new URL(location.href).searchParams.get("file")).toBe("next");
-    expect(new URL(location.href).searchParams.get("tab")).toBe("agent");
-    expect(new URL(location.href).searchParams.get("keep")).toBe("1");
-
-    await undoAgentEdit("project-a");
-    expect(mocks.projectState.currentFileId).toBe("operation-a");
-    expect(new URL(location.href).searchParams.get("file")).toBe("operationA");
-    await redoAgentEdit("project-a");
-    expect(mocks.projectState.currentFileId).toBe("operation-next");
   });
 });

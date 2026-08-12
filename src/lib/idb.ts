@@ -1,7 +1,7 @@
 import { openDB } from "idb";
 import { createJSONStorage } from "zustand/middleware";
 
-export const IDbStore = openDB("logicflow", 6, {
+export const IDbStore = openDB("logicflow", 7, {
   upgrade(db) {
     if (!db.objectStoreNames.contains("projects")) {
       db.createObjectStore("projects");
@@ -46,12 +46,12 @@ export async function commitAgentEdit(
     apiKeys: unknown;
     selectedModel: unknown;
     thinkingLevel: unknown;
-  }
+  },
 ) {
   const db = await IDbStore;
   const transaction = db.transaction(
     ["projects", "agentProjects"],
-    "readwrite"
+    "readwrite",
   );
   await Promise.all([
     transaction
@@ -62,7 +62,7 @@ export async function commitAgentEdit(
         state: { ...agentPreferences, agentProjects },
         version: 0,
       }),
-      "agent"
+      "agent",
     ),
     transaction.done,
   ]);

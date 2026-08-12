@@ -9,6 +9,19 @@ const proposal: NonNullable<AgentMessage["proposal"]> = {
   diagnostics: [],
   review: {
     operationName: "formatMessage",
+    actions: [],
+    files: [
+      {
+        change: "update",
+        operationName: "renderMessage",
+        parameters: { before: 0, after: 1 },
+        statements: { before: 0, after: 2 },
+        operationCalls: { before: 0, after: 1 },
+        returnType: { before: "undefined", after: "string" },
+        generatedSyntax: "valid",
+      },
+    ],
+    packages: { enabled: [], disabled: [] },
     parameters: { before: 0, after: 1 },
     statements: { before: 0, after: 2 },
     operationCalls: { before: 0, after: 1 },
@@ -29,7 +42,7 @@ beforeAll(() => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })),
   );
 });
 
@@ -64,20 +77,20 @@ function renderReview(overrides?: {
         diagnosticFileNames={overrides?.diagnosticFileNames}
         {...actions}
       />
-    </MantineProvider>
+    </MantineProvider>,
   );
   return actions;
 }
 
 describe("AgentProposalReview", () => {
-  it("renders legacy single-operation reviews and enables Apply", () => {
+  it("renders the native operation review and enables Apply", () => {
     const actions = renderReview();
 
     expect(
-      screen.getByRole("region", { name: "Proposal review" })
+      screen.getByRole("region", { name: "Proposal review" }),
     ).toBeDefined();
     expect(screen.getByText("formatMessage")).toBeDefined();
-    expect(screen.getByText("undefined to string")).toBeDefined();
+    expect(screen.getAllByText("undefined to string")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(actions.onApply).toHaveBeenCalledOnce();
   });
@@ -106,7 +119,7 @@ describe("AgentProposalReview", () => {
           ...proposal.review!,
           files: [
             {
-              change: "create",
+              change: "update",
               operationName: "newFormatter",
               parameters: { before: 0, after: 1 },
               statements: { before: 0, after: 1 },
@@ -124,33 +137,70 @@ describe("AgentProposalReview", () => {
               generatedSyntax: "valid",
             },
             {
-              change: "delete",
+              change: "update",
               operationName: "oldFormatter",
               parameters: { before: 1, after: 0 },
               statements: { before: 2, after: 0 },
               operationCalls: { before: 1, after: 0 },
               returnType: { before: "string", after: "undefined" },
+              generatedSyntax: "valid",
             },
           ],
-          packages: { enabled: ["wretch"], disabled: ["date-fns"] },
+          packages: { enabled: ["wretch"], disabled: [] },
         },
       },
       diagnosticFileNames: ["formatMessage", undefined],
     });
 
     expect(
-      screen.getByRole("heading", { name: "Affected operations" })
+      screen.getByRole("heading", { name: "Propagated caller changes" }),
     ).toBeDefined();
-    expect(screen.getByText("create newFormatter")).toBeDefined();
-    expect(screen.getByText("update formatMessage")).toBeDefined();
-    expect(screen.getByText("delete oldFormatter")).toBeDefined();
-    expect(screen.getByText("not applicable")).toBeDefined();
+    expect(screen.getByText("update newFormatter")).toBeDefined();
+    expect(screen.getByText("formatMessage")).toBeDefined();
+    expect(screen.getByText("update oldFormatter")).toBeDefined();
     expect(screen.getByText("wretch")).toBeDefined();
-    expect(screen.getByText("date-fns")).toBeDefined();
     expect(screen.getByText(/Operation formatMessage:/)).toBeDefined();
     expect(screen.getByText(/Package wretch:/)).toBeDefined();
     expect(screen.getAllByText(/warning:/i)).toHaveLength(2);
     expect(screen.queryByText(/private-file-id/)).toBeNull();
+  });
+
+  it("renders generic native action summaries with container labels", () => {
+    renderReview({
+      proposal: {
+        ...proposal,
+        review: {
+          ...proposal.review!,
+          actions: [
+            {
+              kind: "insert_statement",
+              container: "parameters",
+              statementName: "input",
+            },
+            {
+              kind: "replace_statement",
+              container: "body",
+              statementName: "formatted",
+            },
+            {
+              kind: "delete_statement",
+              container: "body",
+              statementName: "obsolete",
+            },
+            {
+              kind: "move_statement",
+              container: "parameters",
+              statementName: "suffix",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(screen.getByText("Insert input in Parameters")).toBeDefined();
+    expect(screen.getByText("Replace formatted in Body")).toBeDefined();
+    expect(screen.getByText("Delete obsolete in Body")).toBeDefined();
+    expect(screen.getByText("Move suffix in Parameters")).toBeDefined();
   });
 
   it("supports reject, revise, and regenerate without applying", () => {
@@ -176,7 +226,7 @@ describe("AgentProposalReview", () => {
 
     for (const name of ["Reject", "Revise", "Regenerate", "Apply"]) {
       expect(
-        screen.getByRole("button", { name }).hasAttribute("disabled")
+        screen.getByRole("button", { name }).hasAttribute("disabled"),
       ).toBe(true);
     }
   });
@@ -184,7 +234,7 @@ describe("AgentProposalReview", () => {
   it("disables Apply for stale proposals", () => {
     renderReview({ stale: true });
     expect(
-      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
     ).toBe(true);
   });
 
@@ -204,10 +254,10 @@ describe("AgentProposalReview", () => {
     });
 
     expect(
-      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
     ).toBe(true);
     expect(
-      screen.getByRole("button", { name: "Revise" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Revise" }).hasAttribute("disabled"),
     ).toBe(false);
     expect(screen.getByText(/Apply is unavailable/)).toBeDefined();
   });
@@ -216,7 +266,7 @@ describe("AgentProposalReview", () => {
     renderReview({ recoverable: false });
 
     expect(
-      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
     ).toBe(true);
     expect(screen.getByText(/source operation no longer exists/)).toBeDefined();
   });

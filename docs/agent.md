@@ -1,6 +1,6 @@
 # Agent
 
-The Agent panel helps turn a natural-language request into a reviewed Logicflow project change. It creates proposals; it never changes project state without an explicit user action.
+The Agent panel turns a natural-language request into a reviewed update for the selected Logicflow operation. It never changes project state without an explicit **Apply**.
 
 ## Enable and Use the Agent Panel
 
@@ -10,58 +10,52 @@ Set the feature flag in `.env.local` and restart the app:
 VITE_APP_ENABLE_AGENT_PANEL=true
 ```
 
-Open the **Agent** tab, choose a model, add the API key for that provider, and send a request. Drafts, messages, and multiple chat threads are scoped to the current project. Active runs can be cancelled; a new request can be submitted after cancellation.
+Open the **Agent** tab, choose a model, add the provider API key, and send a request while an operation is selected. Drafts, messages, and chat threads are scoped to the current project. Active requests can be cancelled.
 
-Keys, model selection, and thinking level are stored in this browser's IndexedDB and persist across tabs and browser sessions. The selected provider may receive the user prompt, relevant project context, and sanitized execution feedback.
+Keys, model selection, and thinking level are stored in this browser's IndexedDB. The selected provider receives the request and bounded operation context described below.
 
-## Capabilities and Limitations
+## Native Statement Updates
 
-The agent can:
+The model returns one structured update for the selected operation. It may:
 
-- Create, replace, rename, and delete operation files.
-- Update supported cross-file operation references.
-- Propose changes to supported package dependencies.
-- Inspect and validate a progressive proposal before Apply.
-- Suggest a focused repair after failed execution feedback.
+- Insert, replace, delete, or move parameter statements.
+- Insert, replace, delete, or move body statements.
+- Enable up to three packages from Logicflow's supported package catalog.
 
-The agent cannot:
+Replacing a statement can express nested arrays, objects, conditions, callbacks, constructors, and call arguments because the payload uses Logicflow's native statement JSON. The host remaps new entity IDs and preserves the root ID of a replaced statement.
 
-- Apply, execute, or deploy a change autonomously.
-- Edit raw project JSON, persistent IDs, documentation files, assets, metadata, or deployment settings.
-- Use shell, filesystem, generic HTTP, MCP, credential, or environment-value tools.
-- Install arbitrary npm packages or select arbitrary package versions.
+The Agent cannot create or delete operation files, directly edit another operation, disable packages, add arbitrary dependencies, change deployment settings, replace raw project JSON, or apply a proposal itself.
 
-Generated syntax validation does not replace full TypeScript, bundle, or deployment validation.
+## Context and Lookup
 
-## Operation and Package Discovery
+The initial provider context contains:
 
-The agent searches the current catalog instead of receiving a complete catalog in its prompt. Discovery can include core operations, enabled package operations, project operations, and operations created earlier in the current proposal.
+- The complete selected operation.
+- File metadata that must be preserved.
+- Signatures for other project operations.
+- Enabled and supported package summaries.
+- Exact descriptors for operations already used by the selected operation.
 
-The normal flow is **search**, then inspect exact operation details. Discovery results use opaque, host-owned handles. Handles are scoped to the current run; unknown or stale handles are rejected rather than guessed.
+When an exact operation descriptor is missing, the model may make one batched, read-only `lookup_operations` call. Lookup searches built-ins, project operations, enabled packages, and a disabled package only when its supported catalog key is explicitly named. It does not mutate the package registry.
 
-## Proposal, Validation, Apply, and Execution
+The provider has no shell, filesystem, generic HTTP, credential, environment, mutation, execution, or Apply tools.
 
-An agent edit follows this lifecycle:
+## Validation and Apply
 
-1. Inspect the selected operation and relevant project context.
-2. Search and describe exact operations or supported packages.
-3. Build a progressive proposal with host-generated IDs.
-4. Run deterministic schema, reference, scope, type, normalization, and generated-syntax checks.
-5. Review diagnostics and the semantic change summary.
+An Agent edit follows this lifecycle:
+
+1. Build bounded context for the selected operation.
+2. Receive one native statement update, optionally after one lookup.
+3. Apply the actions to an isolated candidate and remap new IDs.
+4. Validate schemas, unique identities, lexical references, operation existence, chain and argument types, parameters, packages, callers, and generated syntax.
+5. Review the action, package, caller, and diagnostic summaries.
 6. Choose **Apply**, **Reject**, **Revise**, or **Regenerate**.
-7. After Apply, the existing worker may execute the selected operation and return bounded feedback.
 
-Apply rechecks project, thread, proposal, and staleness boundaries. A stale or invalid proposal is rejected without mutation. Execution feedback is reported as `succeeded`, `failed`, `cancelled`, or `not_run`.
+Apply verifies proposal ownership and staleness, reconstructs and validates the candidate again, and persists the project and chat atomically. A stale or invalid proposal is rejected without changing live state. Agent edits retain project-level undo and redo history.
 
-Failed execution may produce a focused repair proposal, but every repair requires another explicit **Apply**. The agent does not retry execution or Apply by itself.
+Apply does not wait for execution, send execution results to a provider, or start an automatic repair. Logicflow's normal live execution remains independent.
 
-## Threads, Persistence, Undo, and Redo
-
-Each project can have multiple independent agent threads. Threads, drafts, messages, active-thread selection, proposal links, and agent edit history are stored in the browser's IndexedDB.
-
-Active runs are cancelled on reload and are not resumed. Each provider step has a 60-second timeout; multi-step tool runs may take longer overall and can be stopped from the composer. Proposal runs are bounded to 40 provider steps and 128 tool calls. The final step is reserved for a structured response, and three repeated equivalent tool-call batches also trigger finalization. Agent edit history keeps up to 50 entries per project. Undo and redo require the current project to match the recorded state; a conflicting manual change blocks the action. A new edit after undo clears the redo branch.
-
-## Providers, API Keys, and Proxy
+## Providers and Proxy
 
 Logicflow supports usage-based API-key billing through these providers and models:
 
@@ -70,55 +64,38 @@ Logicflow supports usage-based API-key billing through these providers and model
 | OpenAI    | GPT-5.6 Sol, GPT-5.6 Terra, GPT-5.6 Luna       |
 | Anthropic | Claude Fable 5, Claude Opus 5, Claude Sonnet 5 |
 
-The composer exposes Low, Medium, High, XHigh, and Max thinking levels. Higher levels can improve difficult coding and reasoning work at the cost of greater latency and token usage. The level applies to the whole provider request; Logicflow does not display raw chain-of-thought.
+The composer exposes Low, Medium, High, XHigh, and Max thinking levels. Logicflow does not display raw chain-of-thought.
 
-Logicflow does not provide subscription-backed or local-runtime providers. Agent requests use the configured proxy. Leave `VITE_API_PROXY_URL` empty for local development; Vite forwards `/api/ai/*` to the sibling Worker at `http://localhost:8787`. Set `VITE_API_PROXY_URL` to the absolute URL of the deployed `logicflow-proxy` Worker in production. The Worker must allow the app origin:
+Agent requests use the configured proxy. Leave `VITE_API_PROXY_URL` empty for local development; Vite forwards `/api/ai/*` to the sibling Worker at `http://localhost:8787`. Set it to the deployed `logicflow-proxy` Worker URL in production. The Worker must allow the app origin:
 
 ```bash
 ALLOWED_ORIGIN=http://localhost:3000
 ```
 
-The client uses fixed provider routes: `/ai/openai` and `/ai/anthropic`. The proxy must allow the app origin through CORS, preserve streaming responses, and support request cancellation. The client reports cancellation, timeouts, unauthorized keys, rate limits, unavailable providers, and other request failures without silently falling back to a direct provider request.
+The client uses fixed `/ai/openai` and `/ai/anthropic` routes and never falls back to direct provider requests.
 
 ## Data Sharing and Security
 
-Only the selected provider receives an agent request. Depending on the request, the provider may receive:
+The selected provider may receive:
 
-- The user's prompt and relevant operation context.
-- Relevant project text, operation documentation, literal values, names, and catalog metadata.
-- Proposal diagnostics and the generated explanation.
-- Sanitized, bounded post-Apply execution feedback.
+- The user's request.
+- The selected operation and preserved metadata summary.
+- Other operation signatures and supported package metadata.
+- Read-only lookup results when requested.
+- A prior native update when revising a proposal.
 
-Provider keys, deployment credentials, platform tokens, project references, and environment values remain outside model context. Project content, catalog metadata, provider responses, and execution output or errors are untrusted data, not instructions.
-
-Execution feedback is limited to depth 4, 20 items per collection, 500 characters per string, 10 errors, and 8,000 serialized UTF-8 bytes. Known provider, deployment, environment, and execution-specific values are redacted on a best-effort basis. Truncated feedback is marked **Feedback was truncated**.
-
-## Supported Package Policy
-
-The agent can use only packages in Logicflow's host-supported catalog. Package changes are explicit enable or disable proposals and discovery is scoped to the current proposal.
-
-Arbitrary npm names, versions, installation commands, npm search, and package downloads are not supported. Disabling or deleting a package is rejected while proposed or existing operations still reference it.
+Provider keys, deployment credentials, platform tokens, project references, environment values, unrelated file bodies, and execution results stay outside model context. Project content, package metadata, prior updates, and provider output are treated as untrusted data.
 
 ## Deployment Requests
 
-Deployment remains owned by the **Deployment** panel:
-
-- An explicit deployment-only request creates an **Open Deployment panel** action without a model call.
-- A combined edit-and-deploy request offers that action only after the proposal is applied and execution succeeds.
-- The action does not navigate automatically; the user must click **Open Deployment panel**.
-- Platform credentials, project references, environment values, and the final **Deploy** click remain in the panel.
-- Deployment failures stay in the panel and are not automatically retried by the agent.
-
-See [Deployment](#deployment) for platform setup and environment variables.
+Deployment remains owned by the **Deployment** panel. A deployment-only request offers an **Open Deployment panel** action without a model call. For an edit-and-deploy request, the action is offered after the proposal is applied. Credentials and the final **Deploy** action remain in the Deployment panel.
 
 ## Troubleshooting
 
 - **Agent tab is missing:** Set `VITE_APP_ENABLE_AGENT_PANEL=true` and restart the development server.
-- **API key required:** Add a key for the selected model's provider. Keys are stored locally in IndexedDB and persist across tabs and browser sessions.
-- **Unauthorized or rate-limited:** Check the provider key, provider account, and usage limits.
-- **Timeout, cancellation, or unavailable provider:** Retry after checking the provider status and network connection. No direct-provider fallback is used.
-- **Proxy or CORS failure:** Check `VITE_API_PROXY_URL`, the proxy's fixed routes, and its allowed app origin. Production builds do not use Vite's local proxy.
-- **Stale proposal:** Reinspect the current operation and generate a new proposal; do not reuse a proposal after the project changes.
-- **`not_run` feedback:** The Apply may have succeeded while execution did not start or finish. Review the project and worker status before trying another Apply.
-- **Truncated feedback:** The output exceeded a safety bound. Use the bounded summary and avoid relying on omitted values.
-- **Package-load failure:** Confirm the package is in the supported catalog and try enabling it again from Settings.
+- **API key required:** Add a key for the selected model's provider.
+- **Unauthorized or rate-limited:** Check the provider key, account, and usage limits.
+- **Timeout or cancellation:** Retry after checking provider and network status.
+- **Proxy or CORS failure:** Check `VITE_API_PROXY_URL`, fixed routes, and the allowed app origin.
+- **Stale proposal:** Regenerate against the current operation after the project changes.
+- **Package-load failure:** Confirm the package is in the supported catalog and try again.

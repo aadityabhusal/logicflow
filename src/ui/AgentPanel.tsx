@@ -3,7 +3,6 @@ import { FaListUl, FaPen, FaPlus, FaTrash } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
 import {
-  generateExecutionFeedbackResponse,
   generateOperationProposal,
   getExplicitDeploymentIntent,
 } from "@/lib/agent/agent-service";
@@ -24,11 +23,6 @@ import {
   redoAgentApplication,
   undoAgentApplication,
 } from "@/lib/agent/history";
-import { executionController } from "@/lib/execution/controller";
-import {
-  createAgentExecutionFeedback,
-  getAgentExecutionSecrets,
-} from "@/lib/agent/execution-feedback";
 
 export function AgentPanel() {
   const {
@@ -43,6 +37,7 @@ export function AgentPanel() {
     renameThread,
     selectThread,
     removeThread,
+    deleteThreadTurn,
     startRun,
     setStreamingContent,
     finishRun,
@@ -55,6 +50,7 @@ export function AgentPanel() {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
   const abortController = useRef<AbortController>();
+  const deploymentAfterApply = useRef(new Set<string>());
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameButtonRef = useRef<HTMLButtonElement>(null);
   const restoreRenameFocus = useRef(false);
@@ -113,19 +109,16 @@ export function AgentPanel() {
     options?: {
       regenerate?: boolean;
       sourceFileId?: string;
-      repairAttempt?: number;
-      manualDeploymentAfterApply?: boolean;
     }
   ) => {
     if (useAgentStore.getState().activeRun) return;
     const submittedProject = useProjectStore.getState().getCurrentProject();
-    const deploymentIntent =
-      !options?.regenerate && !options?.repairAttempt
-        ? getExplicitDeploymentIntent(prompt)
-        : undefined;
+    const deploymentIntent = !options?.regenerate
+      ? getExplicitDeploymentIntent(prompt)
+      : undefined;
     if (!submittedProject || !currentProjectId || !activeThreadId) return;
     if (deploymentIntent && !deploymentIntent.afterChanges) {
-      if (!options?.regenerate && !options?.repairAttempt) {
+      if (!options?.regenerate) {
         addMessage(activeThreadId, { role: "user", content: prompt });
       }
       addMessage(activeThreadId, {
@@ -148,7 +141,7 @@ export function AgentPanel() {
     const apiKey = getApiKey(modelConfig.provider);
     if (!apiKey) return;
 
-    if (!options?.regenerate && !options?.repairAttempt) {
+    if (!options?.regenerate) {
       addMessage(activeThreadId, { role: "user", content: prompt });
     }
     const revisedProposal =
@@ -161,7 +154,7 @@ export function AgentPanel() {
         ? pendingProposal
         : undefined;
     const requestPrompt = revisedProposal
-      ? `Original request:\n${revisedProposal.sourcePrompt}\n\nCurrent proposal draft:\n${JSON.stringify(revisedProposal.draft)}\n\nRequested revision:\n${prompt}`
+      ? `Original request:\n${revisedProposal.sourcePrompt}\n\nCurrent proposal update:\n${JSON.stringify(revisedProposal.update)}\n\nRequested revision:\n${prompt}`
       : prompt;
     const controller = new AbortController();
     abortController.current = controller;
@@ -181,12 +174,6 @@ export function AgentPanel() {
       });
 
       if (controller.signal.aborted) return;
-      const manualDeploymentAfterApply =
-        options?.manualDeploymentAfterApply ??
-        revisedProposal?.manualDeploymentAfterApply ??
-        (options?.regenerate
-          ? pendingProposal?.manualDeploymentAfterApply
-          : deploymentIntent?.afterChanges);
       addMessage(activeThreadId, {
         role: "assistant",
         content:
@@ -201,19 +188,24 @@ export function AgentPanel() {
           : undefined,
       });
       if (proposal) {
+        if (
+          deploymentIntent?.afterChanges ||
+          (revisedProposal &&
+            deploymentAfterApply.current.has(revisedProposal.id)) ||
+          (options?.regenerate &&
+            pendingProposal &&
+            deploymentAfterApply.current.has(pendingProposal.id))
+        ) {
+          deploymentAfterApply.current.add(proposal.id);
+        }
         setPendingProposal(activeThreadId, {
           ...proposal,
           threadId: activeThreadId,
-          repairAttempt:
-            options?.repairAttempt ??
-            revisedProposal?.repairAttempt ??
-            (options?.regenerate ? pendingProposal?.repairAttempt : undefined),
           sourcePrompt: options?.regenerate
             ? prompt
             : revisedProposal
               ? revisedProposal.sourcePrompt
               : prompt,
-          manualDeploymentAfterApply,
         });
       }
       setRevisionProposalId(undefined);
@@ -243,54 +235,6 @@ export function AgentPanel() {
     document.getElementById("agent-prompt-input")?.focus();
   };
 
-  const handleExecutionFeedback = async (
-    feedback: Parameters<
-      typeof generateExecutionFeedbackResponse
-    >[0]["feedback"],
-    threadId: string
-  ) => {
-    const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
-    if (!modelConfig) return;
-    const apiKey = getApiKey(modelConfig.provider);
-    if (!apiKey) return;
-    const controller = new AbortController();
-    abortController.current = controller;
-    startRun(threadId);
-    try {
-      const response = await generateExecutionFeedbackResponse({
-        feedback,
-        model: `${modelConfig.provider}/${modelConfig.id}`,
-        apiKey,
-        thinkingLevel,
-        abortSignal: controller.signal,
-        onPartialExplanation: setStreamingContent,
-      });
-      if (!controller.signal.aborted) {
-        addMessage(threadId, {
-          role: "assistant",
-          content: response.explanation || `Execution ${feedback.status}.`,
-        });
-      }
-    } catch (error) {
-      if (
-        !(error instanceof AgentTransportError) ||
-        error.code !== "cancelled"
-      ) {
-        addMessage(threadId, {
-          role: "assistant",
-          content: `Error: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        });
-      }
-    } finally {
-      if (abortController.current === controller) {
-        abortController.current = undefined;
-      }
-      finishRun(threadId);
-    }
-  };
-
   const handleHistoryAction = async (action: () => Promise<unknown>) => {
     if (historyBusy || activeRun) return;
     setHistoryBusy(true);
@@ -310,67 +254,14 @@ export function AgentPanel() {
     if (!pendingProposal) return;
     const proposal = pendingProposal;
     void handleHistoryAction(async () => {
-      const application = await applyAgentProposal(proposal);
-      const outcome = await executionController.waitForApplication(
-        application.id
-      );
-      if (outcome.projectId !== proposal.projectId) {
-        throw new Error("Execution feedback belongs to another project");
-      }
-      const projectState = useProjectStore.getState();
-      const project = projectState.projects[proposal.projectId];
-      if (!project) return;
-      const selectedFile = project?.files.find(
-        (file) =>
-          file.id === application.afterSelectedFileId &&
-          file.type === "operation"
-      );
-      const operation = createOperationFromFile(selectedFile);
-      const feedback = createAgentExecutionFeedback({
-        outcome,
-        operation,
-        secrets: getAgentExecutionSecrets(
-          project,
-          useAgentStore.getState().apiKeys
-        ).concat(outcome.redactionValues ?? []),
-      });
-      addMessage(proposal.threadId!, {
-        role: "assistant",
-        content: `Execution ${feedback.status.replace("_", " ")}.`,
-        executionFeedback: feedback,
-      });
-
-      const repairAttempt = (proposal.repairAttempt ?? 0) + 1;
-      const canContinue =
-        projectState.currentProjectId === proposal.projectId &&
-        useAgentStore.getState().agentProjects[proposal.projectId]
-          ?.activeThreadId === proposal.threadId;
-      if (
-        feedback.status === "failed" &&
-        repairAttempt <= 2 &&
-        application.afterSelectedFileId &&
-        canContinue
-      ) {
-        await handleSubmit(
-          `The previous proposal was applied. Use this sanitized execution feedback to propose a focused repair. Do not apply it:\n${JSON.stringify(feedback)}`,
-          {
-            sourceFileId: application.afterSelectedFileId,
-            repairAttempt,
-            manualDeploymentAfterApply: proposal.manualDeploymentAfterApply,
-          }
-        );
-      } else if (canContinue) {
-        await handleExecutionFeedback(feedback, proposal.threadId!);
-        if (
-          proposal.manualDeploymentAfterApply &&
-          feedback.status === "succeeded"
-        ) {
-          addMessage(proposal.threadId!, {
-            role: "assistant",
-            content: "The proposal was applied successfully.",
-            deploymentAction: "open-deployment-panel",
-          });
-        }
+      await applyAgentProposal(proposal);
+      if (proposal.threadId && deploymentAfterApply.current.has(proposal.id)) {
+        deploymentAfterApply.current.delete(proposal.id);
+        addMessage(proposal.threadId, {
+          role: "assistant",
+          content: "The proposal was applied successfully.",
+          deploymentAction: "open-deployment-panel",
+        });
       }
     });
   };
@@ -612,6 +503,9 @@ export function AgentPanel() {
         onRedoApplication={(applicationId) =>
           handleRestoreApplication(applicationId, "redo")
         }
+        onDeleteTurn={(messageId) => {
+          if (activeThreadId) deleteThreadTurn(activeThreadId, messageId);
+        }}
         onOpenDeploymentPanel={() => {
           useSidebarTabStore.getState().setActiveTab("deployment");
           requestAnimationFrame(() =>

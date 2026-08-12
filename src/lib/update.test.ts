@@ -182,13 +182,13 @@ describe("updateStatements", () => {
     const condData = testCondition(
       booleanStatement(true),
       [stringStatement("yes")],
-      [stringStatement("no")]
+      [stringStatement("no")],
     );
     const stmt = createStatement({ data: condData });
     const changedCond = testCondition(
       booleanStatement(false),
       [stringStatement("no")],
-      [stringStatement("yes")]
+      [stringStatement("yes")],
     );
     const changed = createStatement({ data: changedCond });
     changed.id = stmt.id;
@@ -261,7 +261,7 @@ describe("updateStatements", () => {
       data: testCondition(
         condition,
         [stringStatement("yes")],
-        [stringStatement("no")]
+        [stringStatement("no")],
       ),
     });
     conditionCtx.variables.set("canRun", { data: resolvedData });
@@ -301,7 +301,7 @@ describe("updateStatements", () => {
     const ctx = createTestContext();
     const unionData = testUnion(
       [{ kind: "string" }, { kind: "number" }],
-      "hello"
+      "hello",
     );
     const stmt = createStatement({ data: unionData });
     const result = updateStatements({ statements: [stmt], context: ctx });
@@ -328,7 +328,7 @@ describe("updateStatements", () => {
     const ctx = createTestContext();
     const dictData = testDictionary(
       [{ key: "name", value: stringStatement("test") }],
-      { kind: "string" }
+      { kind: "string" },
     );
     const stmt = createStatement({ data: dictData });
     const result = updateStatements({ statements: [stmt], context: ctx });
@@ -437,7 +437,7 @@ describe("updateStatement - operation call updates", () => {
       data: testOperation(
         [stringStatement("source", "source")],
         [stringStatement("result")],
-        "oldOp"
+        "oldOp",
       ),
     });
     ctx.variables.set("oldOp", {
@@ -466,7 +466,7 @@ describe("updateStatement - operation call updates", () => {
     const savedOperation = testOperation(
       [stringStatement("saved", "input")],
       [],
-      "recur"
+      "recur",
     );
     ctx.variables.set("recur", { data: savedOperation });
 
@@ -477,14 +477,14 @@ describe("updateStatement - operation call updates", () => {
         testOperation(
           [stringStatement("next"), numberStatement(99)],
           [],
-          "call"
+          "call",
         ),
       ],
     });
     const draftOperation = testOperation(
       [stringStatement("current", "input"), numberStatement(0, "extra")],
       [editableStatement, recursiveCallStatement],
-      "recur"
+      "recur",
     );
     draftOperation.id = savedOperation.id;
     draftOperation.type.result = { kind: "string" };
@@ -520,7 +520,7 @@ describe("updateStatement - operation call updates", () => {
     const draftOperation = testOperation(
       [stringStatement("", "input")],
       [statement],
-      "recur"
+      "recur",
     );
     draftOperation.id = "draft-operation";
     draftOperation.type.result = { kind: "string" };
@@ -581,12 +581,12 @@ describe("updateFiles", () => {
     const helperOperation = testOperation(
       [stringStatement("", "source")],
       [stringStatement("ok")],
-      "helperOp"
+      "helperOp",
     );
     const changedHelperOperation = testOperation(
       [stringStatement("", "source"), stringStatement("", "input")],
       [stringStatement("ok")],
-      "helperOp"
+      "helperOp",
     );
     const helperFile = createProjectFile({
       type: "operation",
@@ -623,7 +623,7 @@ describe("updateFiles", () => {
       [helperFile, mainFile],
       pushHistory,
       ctx,
-      changedFile
+      changedFile,
     );
 
     expect(result).toHaveLength(2);
@@ -634,6 +634,9 @@ describe("updateFiles", () => {
       expect(updatedCall.value.name).toBe("helperOp");
       expect(updatedCall.value.parameters).toHaveLength(1);
       expect(updatedCall.value.parameters[0].data.type.kind).toBe("string");
+      expect(updatedCall.type.result).toEqual(
+        changedHelperOperation.type.result,
+      );
       expect(result[1].createdAt).toBe(mainFile.createdAt);
       expect(result[1].tags).toEqual(["important"]);
       expect(result[1].documentation).toBe("Keep me");
@@ -681,13 +684,13 @@ describe("updateFiles", () => {
       [helperFile, callerFile],
       () => undefined,
       ctx,
-      changedFile
+      changedFile,
     );
 
     expect(result[1].type).toBe("operation");
     if (result[1].type === "operation") {
       expect(
-        result[1].content.value.statements[0].operations[0].type.result
+        result[1].content.value.statements[0].operations[0].type.result,
       ).toEqual({ kind: "string" });
     }
   });
@@ -812,10 +815,10 @@ describe("updateFiles", () => {
     expect(result[1].type).toBe("operation");
     if (result[1].type === "operation" && file2.type === "operation") {
       expect(result[1].content.value.parameters).toEqual(
-        file2.content.value.parameters
+        file2.content.value.parameters,
       );
       expect(result[1].content.value.statements).toEqual(
-        file2.content.value.statements
+        file2.content.value.statements,
       );
     }
   });

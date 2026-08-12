@@ -1,3 +1,4 @@
+import { zodSchema } from "ai";
 import { describe, expect, it } from "vitest";
 import {
   createOperationFile,
@@ -6,699 +7,432 @@ import {
   testCondition,
   testObject,
   testOperation,
+  testReference,
 } from "../../tests/helpers";
-import { createAgentDiscovery } from "./discovery";
+import type { IStatement, OperationType } from "../types";
 import { createData, createStatement } from "../utils";
-import type { DataType, OperationType, ProjectFile } from "../types";
 import {
-  createAgentPackageProposal,
+  AgentOperationUpdateSchema,
   createAgentProposal,
-  deleteAgentOperationProposal,
   getAgentEditableFingerprint,
   isAgentProposalStale,
-  OperationDraftSchema,
 } from "./proposal";
 
-describe("agent proposal", () => {
-  it("builds host-owned operation state and preserves file metadata", async () => {
-    const file = createOperationFile("formatMessage");
-    file.tags = ["public"];
-    file.documentation = "Keep this documentation";
-    file.tests = [];
-    const project = createTestProject({ files: [file] });
-    const discovery = await createAgentDiscovery(project, file.id);
+describe("native agent proposals", () => {
+  it("can be represented as a structured-output JSON Schema", async () => {
+    const schema = await zodSchema(AgentOperationUpdateSchema, {
+      useReferences: true,
+    }).jsonSchema;
 
+    expect(schema).toMatchObject({ type: "object" });
+  });
+
+  it("strictly accepts only the four bounded native statement actions", () => {
+    const statement = createStatement({ data: createData({ value: "value" }) });
+    expect(
+      AgentOperationUpdateSchema.safeParse({
+        explanation: "insert",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentOperationUpdateSchema.safeParse({
+        explanation: "bad",
+        enablePackages: [],
+        changes: [{ kind: "set_statement_name", statementId: "x", name: "y" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentOperationUpdateSchema.safeParse({
+        explanation: "bad",
+        enablePackages: ["not-supported"],
+        changes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentOperationUpdateSchema.safeParse({
+        explanation: "bad",
+        enablePackages: [],
+        changes: [],
+        extra: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("repairs operation values nested inside operation types from provider output", () => {
+    const parsed = AgentOperationUpdateSchema.safeParse({
+      explanation: "insert callback",
+      enablePackages: [],
+      changes: [
+        {
+          kind: "insert_statement",
+          container: "body",
+          beforeStatementId: null,
+          statement: {
+            id: "statement",
+            data: {
+              id: "data",
+              type: {
+                kind: "operation",
+                parameters: [],
+                result: { kind: "string" },
+                value: {
+                  statements: [],
+                  parameters: [],
+                  name: "callback",
+                },
+              },
+              operations: [],
+            },
+            operations: [],
+          },
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const [change] = parsed.data.changes;
+    if (change.kind !== "insert_statement") return;
+    expect(change.statement.data).toMatchObject({
+      type: { kind: "operation", parameters: [], result: { kind: "string" } },
+      value: { name: "callback", statements: [], parameters: [] },
+    });
+  });
+
+  it("inserts only into the selected operation and preserves metadata", async () => {
+    const file = createOperationFile("main");
+    file.documentation = "keep";
+    file.tags = ["public"];
+    const other = createOperationFile("other");
+    const project = createTestProject({ files: [file, other] });
+    const payload = createStatement({
+      name: "result",
+      data: createData({ value: "ok" }),
+      controlFlow: "return",
+    });
     const proposal = await createAgentProposal({
       project,
       fileId: file.id,
-      sourcePrompt: "Return the message",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "formatMessage",
-        parameters: [{ name: "message", type: { kind: "string" } }],
-        statements: [
+      sourcePrompt: "return ok",
+      update: {
+        explanation: "Return ok",
+        enablePackages: [],
+        changes: [
           {
-            name: "result",
-            value: { kind: "reference", name: "message" },
-            return: true,
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: payload,
           },
         ],
       },
     });
-
     expect(proposal.diagnostics).toEqual([]);
     expect(proposal.proposedFile).toMatchObject({
       id: file.id,
-      name: file.name,
+      documentation: "keep",
       tags: ["public"],
-      documentation: "Keep this documentation",
-      tests: [],
     });
-    const parameter = proposal.proposedFile!.content.value.parameters[0];
-    const statement = proposal.proposedFile!.content.value.statements[0];
-    expect(parameter.id).not.toBe(parameter.data.id);
-    expect(statement.data).toMatchObject({
-      type: { kind: "reference", name: "message" },
-      value: { name: "message", id: parameter.id },
-    });
-    expect(proposal.review).toMatchObject({
-      operationName: "formatMessage",
-      generatedSyntax: "valid",
-      parameters: { before: 0, after: 1 },
-      statements: { before: 0, after: 1 },
-    });
-    expect(file.content.value.parameters).toEqual([]);
+    expect(proposal.proposedFile!.content.value.statements[0].id).not.toBe(
+      payload.id,
+    );
+    expect(proposal.proposedState!.operationFiles[1].file).toEqual(other);
+    expect(file.content.value.statements).toEqual([]);
   });
 
-  it("constructs catalog operation calls from scoped handles", async () => {
-    const file = createOperationFile("getMessageLength");
-    const project = createTestProject({ files: [file] });
-    const discovery = await createAgentDiscovery(project, file.id);
-    const operation = discovery.searchOperations({
-      query: "stringifyJSON",
-      inputType: { kind: "string" },
-      source: "core",
-    })[0];
+  it("remaps nested IDs and internal references while preserving a replacement root", async () => {
+    const file = createOperationFile("main");
+    const target = createStatement({ data: createData({ value: "old" }) });
+    file.content.value.statements = [target];
+    const nested = createStatement({
+      name: "item",
+      data: createData({ value: 1 }),
+    });
+    const reference = createStatement({
+      data: createData({
+        type: { kind: "reference", name: "item" },
+        value: { name: "item", id: nested.id },
+      }),
+    });
+    const payload = createStatement({ data: testArray([nested, reference]) });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "replace",
+      update: {
+        explanation: "replace",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "replace_statement",
+            statementId: target.id,
+            statement: payload,
+          },
+        ],
+      },
+    });
+    expect(proposal.diagnostics).toEqual([]);
+    const replaced = proposal.proposedFile!.content.value.statements[0];
+    expect(replaced.id).toBe(target.id);
+    expect(replaced.data.id).not.toBe(payload.data.id);
+    if (
+      replaced.data.type.kind !== "array" ||
+      !Array.isArray(replaced.data.value)
+    )
+      throw new Error("Expected array");
+    expect(replaced.data.value[1].data.value).toMatchObject({
+      id: replaced.data.value[0].id,
+    });
+  });
+
+  it("remaps references to statements inserted by another action", async () => {
+    const file = createOperationFile("main");
+    const target = createStatement({ data: createData({ value: "inline" }) });
+    file.content.value.statements = [target];
+    const callback = createStatement({
+      name: "isEven",
+      data: testOperation(),
+    });
+    const replacement = createStatement({
+      data: testReference("isEven", callback.id),
+    });
 
     const proposal = await createAgentProposal({
-      project,
+      project: createTestProject({ files: [file] }),
       fileId: file.id,
-      sourcePrompt: "Return the message length",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: file.name,
-        parameters: [{ name: "message", type: { kind: "string" } }],
-        statements: [
+      sourcePrompt: "extract callback",
+      update: {
+        explanation: "Extract callback",
+        enablePackages: [],
+        changes: [
           {
-            value: { kind: "reference", name: "message" },
-            operations: [{ operationHandle: operation.handle, arguments: [] }],
-            return: true,
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: target.id,
+            statement: callback,
+          },
+          {
+            kind: "replace_statement",
+            statementId: target.id,
+            statement: replacement,
           },
         ],
       },
     });
 
     expect(proposal.diagnostics).toEqual([]);
-    expect(
-      proposal.proposedFile?.content.value.statements[0].operations[0]
-    ).toMatchObject({
-      type: { result: { kind: "string" } },
-      value: { name: "stringifyJSON", parameters: [] },
-    });
-    expect(proposal.proposedFile?.content.type.result).toEqual({
-      kind: "string",
+    const [inserted, replaced] = proposal.proposedFile!.content.value.statements;
+    expect(inserted.id).not.toBe(callback.id);
+    expect(replaced.id).toBe(target.id);
+    expect(replaced.data.value).toMatchObject({
+      name: "isEven",
+      id: inserted.id,
     });
   });
 
-  it("returns explicit diagnostics for invalid drafts", async () => {
-    const file = createOperationFile("target");
+  it("moves statements without changing IDs and validates anchors and containers", async () => {
+    const file = createOperationFile("main");
+    const first = createStatement({ data: createData({ value: 1 }) });
+    const second = createStatement({ data: createData({ value: 2 }) });
+    file.content.value.statements = [first, second];
     const project = createTestProject({ files: [file] });
+    const moved = await createAgentProposal({
+      project,
+      fileId: file.id,
+      sourcePrompt: "move",
+      update: {
+        explanation: "move",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "move_statement",
+            statementId: second.id,
+            beforeStatementId: first.id,
+          },
+        ],
+      },
+    });
+    expect(moved.diagnostics).toEqual([]);
+    expect(
+      moved.proposedFile!.content.value.statements.map(({ id }) => id),
+    ).toEqual([second.id, first.id]);
+    const invalid = await createAgentProposal({
+      project,
+      fileId: file.id,
+      sourcePrompt: "bad",
+      update: {
+        explanation: "bad",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "parameters",
+            beforeStatementId: first.id,
+            statement: createStatement(),
+          },
+        ],
+      },
+    });
+    expect(invalid.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "invalid_anchor" }),
+    );
+  });
+
+  it("rejects nested statement IDs as action targets", async () => {
+    const nested = createStatement({ data: createData({ value: "nested" }) });
+    const root = createStatement({ data: testOperation([], [nested]) });
+    const file = createOperationFile("main");
+    file.content.value.statements = [root];
 
     const proposal = await createAgentProposal({
-      project,
+      project: createTestProject({ files: [file] }),
       fileId: file.id,
-      sourcePrompt: "Change it",
-      resolveOperation: () => {
-        throw new Error("Unknown operation handle");
-      },
-      draft: {
-        name: "renamed",
-        parameters: [],
-        statements: [
-          { value: { kind: "reference", name: "missing" }, return: true },
-        ],
+      sourcePrompt: "replace nested",
+      update: {
+        explanation: "replace nested",
+        enablePackages: [],
+        changes: [{ kind: "delete_statement", statementId: nested.id }],
       },
     });
 
-    expect(proposal.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "unresolved_reference" }),
-      ])
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_statement_target",
+        message: expect.stringContaining(nested.id),
+      }),
     );
-    expect(
-      OperationDraftSchema.safeParse({
-        id: "model-id",
-        name: "target",
-        parameters: [],
-        statements: [],
-      }).success
-    ).toBe(false);
-
-    const unreachable = await createAgentProposal({
-      project,
-      fileId: file.id,
-      sourcePrompt: "Return twice",
-      resolveOperation: () => {
-        throw new Error("Unused");
-      },
-      draft: {
-        name: "target",
-        parameters: [],
-        statements: [
-          { value: { kind: "string", value: "first" }, return: true },
-          { value: { kind: "number", value: 2 }, return: true },
-        ],
-      },
-    });
-    expect(unreachable.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "unreachable_statement" }),
-      ])
-    );
-    expect(unreachable.proposedFile?.content.type.result).toEqual({
-      kind: "string",
-    });
   });
 
-  it("rejects unrepresentable parameter chains", async () => {
-    const file = createOperationFile("target");
-    const parameter = createStatement({
+  it("rejects moving a statement before a dependency from the untouched operation", async () => {
+    const file = createOperationFile("main");
+    const dependency = createStatement({
+      name: "dependency",
+      data: createData({ value: 1 }),
+    });
+    const dependent = createStatement({
+      data: testReference("dependency", dependency.id),
+    });
+    file.content.value.statements = [dependency, dependent];
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "move",
+      update: {
+        explanation: "move",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "move_statement",
+            statementId: dependent.id,
+            beforeStatementId: dependency.id,
+          },
+        ],
+      },
+    });
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "invalid_statement_order" }),
+    );
+  });
+
+  it("rejects deleting a referenced statement and duplicate targets", async () => {
+    const file = createOperationFile("main");
+    const value = createStatement({
       name: "value",
-      data: createData({ type: { kind: "string" }, value: "default" }),
+      data: createData({ value: 1 }),
+    });
+    const reference = createStatement({
+      data: createData({
+        type: { kind: "reference", name: "value" },
+        value: { name: "value", id: value.id },
+      }),
+    });
+    file.content.value.statements = [value, reference];
+    const project = createTestProject({ files: [file] });
+    const deleted = await createAgentProposal({
+      project,
+      fileId: file.id,
+      sourcePrompt: "delete",
+      update: {
+        explanation: "delete",
+        enablePackages: [],
+        changes: [{ kind: "delete_statement", statementId: value.id }],
+      },
+    });
+    expect(deleted.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "statement_in_use" }),
+    );
+    const conflict = await createAgentProposal({
+      project,
+      fileId: file.id,
+      sourcePrompt: "conflict",
+      update: {
+        explanation: "conflict",
+        enablePackages: [],
+        changes: [
+          { kind: "delete_statement", statementId: value.id },
+          {
+            kind: "move_statement",
+            statementId: value.id,
+            beforeStatementId: null,
+          },
+        ],
+      },
+    });
+    expect(conflict.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "conflicting_actions" }),
+    );
+  });
+
+  it("rejects structurally valid calls to nonexistent operations", async () => {
+    const file = createOperationFile("main");
+    const statement = createStatement({
+      data: createData({ value: "x" }),
       operations: [
-        createData<OperationType>({
+        createData({
           type: {
             kind: "operation",
             parameters: [{ type: { kind: "string" } }],
             result: { kind: "string" },
           },
-          value: { name: "trim", parameters: [], statements: [] },
+          value: { name: "inventedOperation", parameters: [], statements: [] },
         }),
       ],
     });
-    file.content.type.parameters = [
-      { name: "value", type: { kind: "string" } },
-    ];
-    file.content.value.parameters = [parameter];
-    const project = createTestProject({ files: [file] });
-
     const proposal = await createAgentProposal({
-      project,
+      project: createTestProject({ files: [file] }),
       fileId: file.id,
-      sourcePrompt: "Change it",
-      resolveOperation: () => {
-        throw new Error("Unused");
-      },
-      draft: {
-        name: "target",
-        parameters: [{ name: "value", type: { kind: "string" } }],
-        statements: [],
-      },
-    });
-
-    expect(proposal.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "unsupported_parameter_operations" }),
-      ])
-    );
-    expect(proposal.review?.operationCalls).toEqual({ before: 1, after: 0 });
-  });
-
-  it("counts operation calls recursively through nested statement schemas", async () => {
-    const call = () =>
-      createData<OperationType>({
-        type: {
-          kind: "operation",
-          parameters: [],
-          result: { kind: "undefined" },
-        },
-        value: { name: "call", parameters: [], statements: [] },
-      });
-    const calledStatement = () =>
-      createStatement({ data: createData(), operations: [call()] });
-    const argument = calledStatement();
-    const callback = createStatement({
-      data: testOperation([], [calledStatement()]),
-      operations: [
-        createData<OperationType>({
-          type: {
-            kind: "operation",
-            parameters: [{ type: { kind: "undefined" } }],
-            result: { kind: "undefined" },
-          },
-          value: { name: "call", parameters: [argument], statements: [] },
-        }),
-      ],
-    });
-    const file = createOperationFile("nestedCalls");
-    file.content.value.statements = [
-      createStatement({
-        data: testArray([
-          createStatement({
-            data: testObject([
-              {
-                key: "nested",
-                value: createStatement({
-                  data: testCondition(calledStatement(), [callback], []),
-                }),
-              },
-            ]),
-          }),
-        ]),
-      }),
-    ];
-    const project = createTestProject({ files: [file] });
-
-    const proposal = await createAgentProposal({
-      project,
-      fileId: file.id,
-      sourcePrompt: "Clear nested calls",
-      resolveOperation: () => {
-        throw new Error("Unused");
-      },
-      draft: { name: file.name, parameters: [], statements: [] },
-    });
-
-    expect(proposal.review?.operationCalls).toEqual({ before: 4, after: 0 });
-  });
-
-  it("treats optional parameters as possibly undefined", async () => {
-    const file = createOperationFile("target");
-    const project = createTestProject({ files: [file] });
-
-    const proposal = await createAgentProposal({
-      project,
-      fileId: file.id,
-      sourcePrompt: "Use the optional value",
-      resolveOperation: () => ({
-        name: "strictStringOperation",
-        source: "core",
-        parameters: [{ type: { kind: "string" } }],
-        resultType: { kind: "string" },
-      }),
-      draft: {
-        name: "target",
-        parameters: [
-          { name: "value", type: { kind: "string" }, optional: true },
-        ],
-        statements: [
+      sourcePrompt: "insert",
+      update: {
+        explanation: "insert",
+        enablePackages: [],
+        changes: [
           {
-            value: { kind: "reference", name: "value" },
-            operations: [{ operationHandle: "strict", arguments: [] }],
-            return: true,
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement,
           },
         ],
       },
     });
-
-    expect(proposal.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "invalid_chain_input" }),
-      ])
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "unknown_operation" }),
     );
   });
 
-  it("fingerprints all operation metadata and npm dependencies", async () => {
-    const file = createOperationFile("target");
-    const project = createTestProject({ files: [file] });
-    const proposal = await createAgentProposal({
-      project,
-      fileId: file.id,
-      sourcePrompt: "Change it",
-      resolveOperation: () => {
-        throw new Error("Unused");
-      },
-      draft: { name: "target", parameters: [], statements: [] },
-    });
-    const changed = structuredClone(project);
-    const changedFile = changed.files[0];
-    if (changedFile.type === "operation") changedFile.documentation = "Later";
-
-    expect(proposal.baseFingerprint).toBe(getAgentEditableFingerprint(project));
-    expect(isAgentProposalStale(proposal, project)).toBe(false);
-    expect(isAgentProposalStale(proposal, changed)).toBe(true);
-  });
-
-  it("creates host-owned operations that later calls can discover and reference", async () => {
-    const anchor = createOperationFile("anchor");
-    const project = createTestProject({ files: [anchor] });
-    const discovery = await createAgentDiscovery(project, anchor.id);
-    const created = await createAgentProposal({
-      project,
-      anchorFileId: anchor.id,
-      create: true,
-      sourcePrompt: "Add a helper",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "helper",
-        parameters: [],
-        statements: [{ value: { kind: "string", value: "ok" }, return: true }],
-      },
-    });
-
-    expect(created.diagnostics).toEqual([]);
-    expect(created.proposedFile?.id).not.toBe(anchor.id);
-    expect(created.proposedFile?.id).not.toBe("model-id");
-    await discovery.updateProposedState(created.proposedState!);
-    const helper = discovery.searchOperations({
-      query: "helper",
-      source: "project",
-    })[0];
-    expect(helper.handle).toMatch(/^operation_/);
-
-    const caller = await createAgentProposal({
-      project,
-      anchorFileId: anchor.id,
-      previousState: created.proposedState,
-      create: true,
-      sourcePrompt: "Add a caller",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "caller",
-        parameters: [],
-        statements: [
-          {
-            value: { kind: "reference", name: "helper" },
-            operations: [{ operationHandle: helper.handle, arguments: [] }],
-            return: true,
-          },
-        ],
-      },
-    });
-
-    expect(caller.diagnostics).toEqual([]);
-    expect(
-      caller.proposedState?.operationFiles.map(({ file }) => file.name)
-    ).toEqual(["anchor", "helper", "caller"]);
-    const helperFile = caller.proposedState?.operationFiles.find(
-      ({ file }) => file.name === "helper"
-    )!.file;
-    const callerFile = caller.proposedState?.operationFiles.find(
-      ({ file }) => file.name === "caller"
-    )!.file;
-    expect(callerFile?.content.value.statements[0].data.value).toMatchObject({
-      name: "helper",
-      id: helperFile?.id,
-    });
-  });
-
-  it("accepts a project helper operation as a filter predicate", async () => {
-    const anchor = createOperationFile("anchor");
-    const predicate = createOperationFile("isEven");
-    predicate.content.type = {
-      kind: "operation",
-      parameters: [{ name: "item", type: { kind: "number" } }],
-      result: { kind: "boolean" },
-    };
-    const project = createTestProject({ files: [anchor, predicate] });
-    const discovery = await createAgentDiscovery(project, anchor.id);
-    const filter = discovery.searchOperations({
-      query: "filter",
-      inputType: { kind: "array", elementType: { kind: "number" } },
-    })[0];
-
-    const proposal = await createAgentProposal({
-      project,
-      fileId: anchor.id,
-      sourcePrompt: "Keep even numbers",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "anchor",
-        parameters: [],
-        statements: [
-          {
-            value: {
-              kind: "array",
-              items: [
-                { kind: "number", value: 1 },
-                { kind: "number", value: 2 },
-              ],
-            },
-            operations: [
-              {
-                operationHandle: filter.handle,
-                arguments: [{ kind: "reference", name: "isEven" }],
-              },
-            ],
-            return: true,
-          },
-        ],
-      },
-    });
-
-    expect(proposal.diagnostics).toEqual([]);
-    expect(proposal.proposedFile?.content.type.result).toMatchObject({
-      kind: "union",
-      types: expect.arrayContaining([
-        { kind: "array", elementType: { kind: "number" } },
-      ]),
-    });
-  });
-
-  it("propagates a renamed signature and result type into stable-ID callers", async () => {
-    const helper = createOperationFile("helper");
-    helper.content.type.result = { kind: "number" };
-    const caller = createOperationFile("caller");
-    caller.content.value.statements = [
+  it("recursively validates calls in every nested statement host", async () => {
+    const invalidCall = () =>
       createStatement({
-        data: createData({
-          type: { kind: "reference", name: "helper" },
-          value: { name: "helper", id: helper.id },
-        }),
-        operations: [
-          createData<OperationType>({
-            type: {
-              kind: "operation",
-              parameters: [{ type: helper.content.type }],
-              result: { kind: "number" },
-            },
-            value: { name: "call", parameters: [], statements: [] },
-          }),
-        ],
-      }),
-    ];
-    const project = createTestProject({ files: [helper, caller] });
-    const discovery = await createAgentDiscovery(project, caller.id);
-    const proposal = await createAgentProposal({
-      project,
-      anchorFileId: caller.id,
-      fileId: helper.id,
-      sourcePrompt: "Rename and change the signature",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "formatHelper",
-        parameters: [{ name: "value", type: { kind: "string" } }],
-        statements: [
-          {
-            value: { kind: "reference", name: "value" },
-            return: true,
-          },
-        ],
-      },
-    });
-
-    expect(proposal.diagnostics).toEqual([]);
-    const updatedCaller = proposal.proposedState?.operationFiles.find(
-      ({ file }) => file.id === caller.id
-    )!.file;
-    const statement = updatedCaller?.content.value.statements[0];
-    expect(statement?.data.value).toMatchObject({
-      name: "formatHelper",
-      id: helper.id,
-    });
-    expect(statement?.operations[0]).toMatchObject({
-      type: { result: { kind: "string" } },
-      value: { name: "call" },
-    });
-    expect(statement?.operations[0].value.parameters).toHaveLength(1);
-    expect(proposal.review?.files?.map((file) => file.operationName)).toEqual([
-      "formatHelper",
-      "caller",
-    ]);
-  });
-
-  it("propagates changed result types through transitive callers", async () => {
-    const helper = createOperationFile("helper");
-    helper.content.type.result = { kind: "number" };
-    const createCaller = (name: string, target: typeof helper) => {
-      const caller = createOperationFile(name);
-      caller.content.type.result = { kind: "number" };
-      caller.content.value.statements = [
-        createStatement({
-          data: createData({
-            type: { kind: "reference", name: target.name },
-            value: { name: target.name, id: target.id },
-          }),
-          operations: [
-            createData<OperationType>({
-              type: {
-                kind: "operation",
-                parameters: [{ type: target.content.type }],
-                result: { kind: "number" },
-              },
-              value: { name: "call", parameters: [], statements: [] },
-            }),
-          ],
-        }),
-      ];
-      return caller;
-    };
-    const middle = createCaller("middle", helper);
-    const outer = createCaller("outer", middle);
-    const project = createTestProject({ files: [helper, middle, outer] });
-    const discovery = await createAgentDiscovery(project, outer.id);
-
-    const proposal = await createAgentProposal({
-      project,
-      anchorFileId: outer.id,
-      fileId: helper.id,
-      sourcePrompt: "Change helper result",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "helper",
-        parameters: [],
-        statements: [
-          { value: { kind: "string", value: "changed" }, return: true },
-        ],
-      },
-    });
-
-    const updatedOuter = proposal.proposedState!.operationFiles.find(
-      ({ file }) => file.id === outer.id
-    )!.file;
-    expect(
-      updatedOuter.content.value.statements[0].operations[0].type.result
-    ).toEqual({
-      kind: "string",
-    });
-    expect(
-      proposal.review?.files?.map(({ operationName }) => operationName)
-    ).toEqual(["helper", "middle", "outer"]);
-  });
-
-  it("blocks referenced deletes and safely deletes unreferenced operations", () => {
-    const target = createOperationFile("target");
-    const caller = createOperationFile("caller");
-    caller.content.value.statements = [
-      createStatement({
-        data: createData({
-          type: { kind: "reference", name: "target" },
-          value: { name: "target", id: target.id },
-        }),
-      }),
-    ];
-    const project = createTestProject({ files: [target, caller] });
-    const blocked = deleteAgentOperationProposal({
-      project,
-      anchorFileId: caller.id,
-      fileId: target.id,
-      sourcePrompt: "Delete target",
-    });
-    expect(blocked.diagnostics).toEqual([
-      expect.objectContaining({
-        code: "operation_in_use",
-        message: "Cannot delete target; referenced by caller",
-      }),
-    ]);
-
-    caller.content.value.statements = [];
-    const deleted = deleteAgentOperationProposal({
-      project,
-      anchorFileId: caller.id,
-      fileId: target.id,
-      sourcePrompt: "Delete target",
-    });
-    expect(deleted.diagnostics).toEqual([]);
-    expect(
-      deleted.proposedState?.operationFiles.map(({ file }) => file.name)
-    ).toEqual(["caller"]);
-    expect(deleted.review?.files).toMatchObject([
-      { change: "delete", operationName: "target" },
-    ]);
-  });
-
-  it("blocks deletes referenced by operation tests and globals", () => {
-    const target = createOperationFile("target");
-    const tested = createOperationFile("tested");
-    const reference = () =>
-      createData({
-        type: { kind: "reference" as const, name: target.name },
-        value: { name: target.name, id: target.id },
-      });
-    tested.tests = [
-      {
-        name: "calls target",
-        inputs: [reference()],
-        expectedOutput: createData(),
-      },
-    ];
-    const globals: ProjectFile = {
-      id: "globals",
-      name: "globals",
-      type: "globals",
-      createdAt: 1,
-      content: { target: reference() },
-    };
-
-    const blocked = deleteAgentOperationProposal({
-      project: createTestProject({ files: [target, tested, globals] }),
-      anchorFileId: tested.id,
-      fileId: target.id,
-      sourcePrompt: "Delete target",
-    });
-
-    expect(blocked.diagnostics).toEqual([
-      expect.objectContaining({
-        code: "operation_in_use",
-        message: "Cannot delete target; referenced by globals, tested",
-      }),
-    ]);
-  });
-
-  it("finds project references beyond the old child bound in nested calls", () => {
-    const target = createOperationFile("target");
-    const caller = createOperationFile("caller");
-    const parameters = Array.from({ length: 101 }, (_, index) =>
-      createStatement({
-        data:
-          index === 100
-            ? createData({
-                type: { kind: "reference", name: target.name },
-                value: { name: target.name, id: target.id },
-              })
-            : createData({ value: index }),
-      })
-    );
-    caller.content.value.statements = [
-      createStatement({
-        data: createData({ value: "input" }),
-        operations: [
-          createData<OperationType>({
-            type: {
-              kind: "operation",
-              parameters: [],
-              result: { kind: "undefined" },
-            },
-            value: { name: "nested", parameters, statements: [] },
-          }),
-        ],
-      }),
-    ];
-
-    const blocked = deleteAgentOperationProposal({
-      project: createTestProject({ files: [target, caller] }),
-      anchorFileId: caller.id,
-      fileId: target.id,
-      sourcePrompt: "Delete target",
-    });
-
-    expect(blocked.diagnostics).toEqual([
-      expect.objectContaining({ code: "operation_in_use" }),
-    ]);
-  });
-
-  it("keeps idempotent package changes across edits and blocks disabling referenced packages", async () => {
-    const file = createOperationFile("usesWretch");
-    file.content.value.statements = [
-      createStatement({
-        data: createData({ value: "url" }),
+        data: createData({ value: "x" }),
         operations: [
           createData<OperationType>({
             type: {
@@ -707,274 +441,943 @@ describe("agent proposal", () => {
               result: { kind: "string" },
             },
             value: {
-              name: "wretch.get",
+              name: "inventedOperation",
               parameters: [],
               statements: [],
-              source: { name: "wretch" },
+            },
+          }),
+        ],
+      });
+    const callee = createOperationFile("callee");
+    callee.content.value.parameters = [
+      createStatement({ name: "value", data: createData({ value: "" }) }),
+    ];
+    callee.content.type.parameters = [
+      { name: "value", type: { kind: "string" } },
+    ];
+    const nested = [
+      createStatement({ data: testArray([invalidCall()]) }),
+      createStatement({
+        data: testObject([{ key: "value", value: invalidCall() }]),
+      }),
+      createStatement({
+        data: testCondition(
+          createStatement({ data: createData({ value: true }) }),
+          [invalidCall()],
+          [],
+        ),
+      }),
+      createStatement({ data: testOperation([], [invalidCall()]) }),
+      createStatement({
+        data: createData({
+          type: {
+            kind: "instance",
+            className: "Example",
+            constructorArgs: [{ type: { kind: "string" } }],
+          },
+          value: {
+            className: "Example",
+            instanceId: "payload-instance",
+            constructorArgs: [invalidCall()],
+          },
+        }),
+      }),
+      createStatement({
+        data: testReference(callee.name, callee.id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: callee.content.type },
+                { type: { kind: "string" } },
+              ],
+              result: callee.content.type.result,
+            },
+            value: {
+              name: "call",
+              parameters: [invalidCall()],
+              statements: [],
             },
           }),
         ],
       }),
     ];
-    const project = createTestProject({
-      files: [file],
-      dependencies: {
-        npm: [{ name: "wretch", version: "latest", exports: [] }],
+    const file = createOperationFile("main");
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file, callee] }),
+      fileId: file.id,
+      sourcePrompt: "insert nested",
+      update: {
+        explanation: "insert nested",
+        enablePackages: [],
+        changes: nested.map((statement) => ({
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement,
+        })),
       },
     });
-    const blocked = createAgentPackageProposal({
-      project,
-      anchorFileId: file.id,
-      sourcePrompt: "Disable wretch",
-      name: "wretch",
-      enabled: false,
-    });
-    expect(blocked.diagnostics).toEqual([
-      expect.objectContaining({
-        code: "package_in_use",
-        packageName: "wretch",
-      }),
-    ]);
-
-    const emptyProject = createTestProject({
-      files: [createOperationFile("plain")],
-    });
-    const enabled = createAgentPackageProposal({
-      project: emptyProject,
-      anchorFileId: emptyProject.files[0].id,
-      sourcePrompt: "Enable wretch",
-      name: "wretch",
-      enabled: true,
-    });
-    const repeated = createAgentPackageProposal({
-      project: emptyProject,
-      anchorFileId: emptyProject.files[0].id,
-      previousState: enabled.proposedState,
-      sourcePrompt: "Enable wretch again",
-      name: "wretch",
-      enabled: true,
-    });
-    expect(repeated.proposedState?.npmDependencies).toHaveLength(1);
-    expect(repeated.review?.packages).toEqual({
-      enabled: ["wretch"],
-      disabled: [],
-    });
-    const edited = await createAgentProposal({
-      project: emptyProject,
-      anchorFileId: emptyProject.files[0].id,
-      fileId: emptyProject.files[0].id,
-      previousState: repeated.proposedState,
-      sourcePrompt: "Edit after enabling",
-      resolveOperation: () => {
-        throw new Error("Unused");
-      },
-      draft: {
-        name: "plain",
-        parameters: [],
-        statements: [
-          { value: { kind: "string", value: "kept" }, return: true },
-        ],
-      },
-    });
-    expect(edited.proposedState?.npmDependencies).toEqual(
-      repeated.proposedState?.npmDependencies
-    );
-    expect(() =>
-      createAgentPackageProposal({
-        project: emptyProject,
-        anchorFileId: emptyProject.files[0].id,
-        sourcePrompt: "Enable arbitrary package",
-        name: "arbitrary-package",
-        enabled: true,
-      })
-    ).toThrow("Unsupported package: arbitrary-package");
+    expect(
+      proposal.diagnostics.filter(({ code }) => code === "unknown_operation"),
+    ).toHaveLength(6);
   });
 
-  it("blocks disabling packages referenced by operation tests", () => {
-    const file = createOperationFile("testedPackage");
-    file.tests = [
-      {
-        name: "package output",
-        inputs: [],
-        expectedOutput: createData<OperationType>({
-          type: {
-            kind: "operation",
-            parameters: [],
-            result: { kind: "undefined" },
-          },
-          value: {
-            name: "wretch.get",
-            parameters: [],
-            statements: [],
-            source: { name: "wretch" },
-          },
-        }),
-      },
+  it("validates project-call argument types and canonicalizes call metadata", async () => {
+    const callee = createOperationFile("callee");
+    callee.content.value.parameters = [
+      createStatement({ name: "value", data: createData({ value: 0 }) }),
     ];
-    const project = createTestProject({
-      files: [file],
-      dependencies: {
-        npm: [{ name: "wretch", version: "latest", exports: [] }],
-      },
-    });
-
-    const blocked = createAgentPackageProposal({
-      project,
-      anchorFileId: file.id,
-      sourcePrompt: "Disable wretch",
-      name: "wretch",
-      enabled: false,
-    });
-
-    expect(blocked.diagnostics).toEqual([
-      expect.objectContaining({ code: "package_in_use" }),
-    ]);
-  });
-
-  it.each([
-    {
-      enabled: true,
-      dependencies: [{ name: "wretch", version: "latest", exports: [] }],
-    },
-    { enabled: false, dependencies: [] },
-  ])(
-    "rejects idempotent package changes with an empty review",
-    ({ enabled, dependencies }) => {
-      const file = createOperationFile("plain");
-      const project = createTestProject({
-        files: [file],
-        dependencies: { npm: dependencies },
-      });
-
-      const proposal = createAgentPackageProposal({
-        project,
-        anchorFileId: file.id,
-        sourcePrompt: "Keep package state",
-        name: "wretch",
-        enabled,
-      });
-
-      expect(proposal.review?.files).toEqual([]);
-      expect(proposal.review?.packages).toEqual({ enabled: [], disabled: [] });
-      expect(proposal.diagnostics).toEqual([
-        expect.objectContaining({ code: "no_changes", severity: "error" }),
-      ]);
-    }
-  );
-
-  it("finds package references in deeply nested data types", () => {
-    const file = createOperationFile("typedPackageResult");
-    let result: DataType = {
-      kind: "instance",
-      className: "wretchResponseChain",
-      constructorArgs: [],
-    };
-    for (let depth = 0; depth < 14; depth++) {
-      result = { kind: "array", elementType: result };
-    }
-    file.content.type.result = result;
-    const project = createTestProject({
-      files: [file],
-      dependencies: {
-        npm: [{ name: "wretch", version: "latest", exports: [] }],
-      },
-    });
-
-    const blocked = createAgentPackageProposal({
-      project,
-      anchorFileId: file.id,
-      sourcePrompt: "Disable wretch",
-      name: "wretch",
-      enabled: false,
-    });
-
-    expect(blocked.diagnostics).toEqual([
-      expect.objectContaining({ code: "package_in_use" }),
-    ]);
-  });
-
-  it("keeps the complete live-base review through progressive actions", async () => {
-    const anchor = createOperationFile("anchor");
-    const obsolete = createOperationFile("obsolete");
-    const project = createTestProject({ files: [anchor, obsolete] });
-    const discovery = await createAgentDiscovery(project, anchor.id);
-    const created = await createAgentProposal({
-      project,
-      anchorFileId: anchor.id,
-      previousState: undefined,
-      create: true,
-      sourcePrompt: "Make several changes",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "helper",
+    callee.content.type.parameters = [
+      { name: "value", type: { kind: "number" } },
+    ];
+    const call = createData<OperationType>({
+      type: {
+        kind: "operation",
         parameters: [],
-        statements: [
-          { value: { kind: "string", value: "helper" }, return: true },
+        result: { kind: "unknown" },
+      },
+      value: {
+        name: "call",
+        source: { name: "wrong" },
+        parameters: [createStatement({ data: createData({ value: "wrong" }) })],
+        statements: [],
+      },
+    });
+    const file = createOperationFile("main");
+    const statement = createStatement({
+      data: testReference(callee.name, callee.id),
+      operations: [call],
+    });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file, callee] }),
+      fileId: file.id,
+      sourcePrompt: "call",
+      update: {
+        explanation: "call",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement,
+          },
         ],
       },
     });
-    const edited = await createAgentProposal({
-      project,
-      anchorFileId: anchor.id,
-      fileId: anchor.id,
-      previousState: created.proposedState,
-      sourcePrompt: "Make several changes",
-      resolveOperation: (handle, inputType) =>
-        discovery.resolveOperationHandle(handle, inputType),
-      draft: {
-        name: "anchor",
-        parameters: [],
-        statements: [{ value: { kind: "number", value: 1 }, return: true }],
-      },
-    });
-    const deleted = deleteAgentOperationProposal({
-      project,
-      anchorFileId: anchor.id,
-      fileId: obsolete.id,
-      previousState: edited.proposedState,
-      sourcePrompt: "Make several changes",
-    });
-    const packaged = createAgentPackageProposal({
-      project,
-      anchorFileId: anchor.id,
-      previousState: deleted.proposedState,
-      sourcePrompt: "Make several changes",
-      name: "wretch",
-      enabled: true,
-    });
-
-    expect(packaged.review?.files).toMatchObject([
-      { change: "update", operationName: "anchor" },
-      { change: "create", operationName: "helper" },
-      { change: "delete", operationName: "obsolete" },
-    ]);
-    expect(packaged.review?.packages).toEqual({
-      enabled: ["wretch"],
-      disabled: [],
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "invalid_argument_type" }),
+    );
+    const proposedCall =
+      proposal.proposedFile!.content.value.statements[0].operations[0];
+    expect(proposedCall.value.source).toBeUndefined();
+    expect(proposedCall.type).toEqual({
+      kind: "operation",
+      parameters: [
+        { type: callee.content.type },
+        { name: "value", type: { kind: "number" } },
+      ],
+      result: callee.content.type.result,
     });
   });
 
-  it("returns a deterministic diagnostic for an equivalent replacement", async () => {
-    const file = createOperationFile("unchanged");
-    file.content.type.result = { kind: "undefined" };
-    file.content.value.name = file.name;
-    file.content.value.isAsync = false;
-    const project = createTestProject({ files: [file] });
+  it("migrates only calls whose receiver is the selected operation", async () => {
+    const selected = createOperationFile("selected");
+    const first = createStatement({
+      name: "first",
+      data: createData({ value: "" }),
+    });
+    const second = createStatement({
+      name: "second",
+      data: createData({ value: 0 }),
+    });
+    selected.content.value.parameters = [first, second];
+    selected.content.type.parameters = [
+      { name: "first", type: { kind: "string" } },
+      { name: "second", type: { kind: "number" } },
+    ];
+    const other = createOperationFile("other");
+    other.content.value.parameters = [first];
+    other.content.type.parameters = [
+      { name: "first", type: { kind: "string" } },
+    ];
+    const makeCall = (target: typeof selected, args: IStatement[]) =>
+      createStatement({
+        data: testReference(target.name, target.id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: target.content.type },
+                ...target.content.type.parameters,
+              ],
+              result: target.content.type.result,
+            },
+            value: { name: "call", parameters: args, statements: [] },
+          }),
+        ],
+      });
+    const selectedArgs = [
+      createStatement({ data: createData({ value: "selected" }) }),
+      createStatement({ data: createData({ value: 1 }) }),
+    ];
+    const otherArg = createStatement({ data: createData({ value: "other" }) });
+    const caller = createOperationFile("caller");
+    caller.content.value.statements = [
+      createStatement({
+        data: testArray([
+          makeCall(selected, selectedArgs),
+          makeCall(other, [otherArg]),
+        ]),
+      }),
+    ];
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected, other, caller] }),
+      fileId: selected.id,
+      sourcePrompt: "reorder",
+      update: {
+        explanation: "reorder",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "move_statement",
+            statementId: second.id,
+            beforeStatementId: first.id,
+          },
+        ],
+      },
+    });
+    const proposedCaller = proposal.proposedState!.operationFiles.find(
+      ({ file }) => file.id === caller.id,
+    )!.file;
+    const calls = proposedCaller.content.value.statements[0].data
+      .value as IStatement[];
+    expect(calls[0].operations[0].value.parameters.map(({ id }) => id)).toEqual(
+      [selectedArgs[1].id, selectedArgs[0].id],
+    );
+    expect(calls[1].operations[0].value.parameters.map(({ id }) => id)).toEqual(
+      [otherArg.id],
+    );
+  });
 
+  it("remaps operation-call and constructor-argument entity IDs", async () => {
+    const file = createOperationFile("main");
+    const argument = createStatement({ data: createData({ value: "value" }) });
+    const call = createData<OperationType>({
+      type: {
+        kind: "operation",
+        parameters: [{ type: { kind: "string" } }],
+        result: { kind: "string" },
+      },
+      value: { name: "toString", parameters: [], statements: [] },
+    });
+    argument.operations = [call];
+    const instance = createData({
+      type: {
+        kind: "instance",
+        className: "Example",
+        constructorArgs: [{ type: { kind: "string" } }],
+      },
+      value: {
+        className: "Example",
+        instanceId: "instance-host",
+        constructorArgs: [argument],
+      },
+    });
+    const payload = createStatement({
+      data: testArray([createStatement({ data: instance })]),
+    });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "insert",
+      update: {
+        explanation: "insert",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: payload,
+          },
+        ],
+      },
+    });
+    const value = proposal.proposedFile!.content.value.statements[0].data
+      .value as IStatement[];
+    const constructorArgument = (
+      value[0].data.value as { constructorArgs: IStatement[] }
+    ).constructorArgs[0];
+    expect(constructorArgument.id).not.toBe(argument.id);
+    expect(constructorArgument.data.id).not.toBe(argument.data.id);
+    expect(constructorArgument.operations[0].id).not.toBe(call.id);
+  });
+
+  it("fingerprints history-relevant state for staleness", async () => {
+    const file = createOperationFile("main");
+    const project = createTestProject({ files: [file] });
     const proposal = await createAgentProposal({
       project,
       fileId: file.id,
-      sourcePrompt: "Keep it as-is",
-      resolveOperation: () => {
-        throw new Error("Unused");
+      sourcePrompt: "noop",
+      update: { explanation: "noop", enablePackages: [], changes: [] },
+    });
+    expect(proposal.baseFingerprint).toBe(getAgentEditableFingerprint(project));
+    expect(isAgentProposalStale(proposal, project)).toBe(false);
+    const changed = structuredClone(project);
+    if (changed.files[0].type === "operation")
+      changed.files[0].documentation = "changed";
+    expect(isAgentProposalStale(proposal, changed)).toBe(true);
+  });
+
+  it("validates submitted reference name and ID before normalization", async () => {
+    const file = createOperationFile("main");
+    const value = createStatement({
+      name: "value",
+      data: createData({ value: 1 }),
+    });
+    file.content.value.statements = [value];
+    const reference = createStatement({
+      data: testReference("wrongName", value.id),
+    });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "reference",
+      update: {
+        explanation: "reference",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: reference,
+          },
+        ],
       },
-      draft: { name: file.name, parameters: [], statements: [] },
+    });
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "unresolved_reference" }),
+    );
+  });
+
+  it("keeps nested lexical declarations local while allowing closure capture", async () => {
+    const file = createOperationFile("main");
+    const outer = createStatement({
+      name: "outer",
+      data: createData({ value: 1 }),
+    });
+    file.content.value.statements = [outer];
+    const local = createStatement({
+      name: "local",
+      data: testReference("outer", outer.id),
+    });
+    const closure = createStatement({
+      data: testOperation(
+        [],
+        [local, createStatement({ data: testReference("local", local.id) })],
+      ),
+    });
+    const escaped = createStatement({ data: testReference("local", local.id) });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "scope",
+      update: {
+        explanation: "scope",
+        enablePackages: [],
+        changes: [closure, escaped].map((statement) => ({
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement,
+        })),
+      },
+    });
+    expect(
+      proposal.diagnostics.filter(
+        ({ code }) => code === "unresolved_reference",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("canonicalizes stale project and recursive operation references", async () => {
+    const selected = createOperationFile("selected");
+    const helper = createOperationFile("helper");
+    const caller = createOperationFile("caller");
+    const operationCall = (name: string, id: string) =>
+      createStatement({
+        data: testReference(name, id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [],
+              result: { kind: "unknown" },
+            },
+            value: { name: "call", parameters: [], statements: [] },
+          }),
+        ],
+      });
+    selected.content.value.statements = [
+      operationCall(selected.name, "old-selected-id"),
+      operationCall(helper.name, "old-helper-id"),
+    ];
+    caller.content.value.statements = [
+      operationCall(selected.name, "old-selected-id"),
+    ];
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected, helper, caller] }),
+      fileId: selected.id,
+      sourcePrompt: "keep calls valid",
+      update: {
+        explanation: "add value",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: createStatement({ data: createData({ value: 1 }) }),
+          },
+        ],
+      },
     });
 
-    expect(proposal.review?.files).toEqual([]);
-    expect(proposal.diagnostics).toEqual([
-      expect.objectContaining({ code: "no_changes", severity: "error" }),
+    expect(proposal.diagnostics).toEqual([]);
+    expect(
+      proposal
+        .proposedFile!.content.value.statements.slice(0, 2)
+        .map(({ data }) => data.value),
+    ).toEqual([
+      { name: selected.name, id: selected.id },
+      { name: helper.name, id: helper.id },
     ]);
+    const proposedCaller = proposal.proposedState!.operationFiles.find(
+      ({ file }) => file.id === caller.id,
+    )!.file;
+    expect(proposedCaller.content.value.statements[0].data.value).toEqual({
+      name: selected.name,
+      id: selected.id,
+    });
+  });
+
+  it("canonicalizes built-in result metadata and validates project-call arity", async () => {
+    const callee = createOperationFile("callee");
+    callee.content.value.parameters = [
+      createStatement({ name: "value", data: createData({ value: 0 }) }),
+    ];
+    callee.content.type.parameters = [{ type: { kind: "number" } }];
+    const projectCall = createStatement({
+      data: testReference(callee.name, callee.id),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [],
+            result: { kind: "unknown" },
+          },
+          value: { name: "call", parameters: [], statements: [] },
+        }),
+      ],
+    });
+    const builtIn = createStatement({
+      data: createData({ value: 1 }),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [],
+            result: { kind: "boolean" },
+          },
+          value: {
+            name: "mod",
+            parameters: [createStatement({ data: createData({ value: 2 }) })],
+            statements: [],
+          },
+        }),
+      ],
+    });
+    const file = createOperationFile("main");
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file, callee] }),
+      fileId: file.id,
+      sourcePrompt: "calls",
+      update: {
+        explanation: "calls",
+        enablePackages: [],
+        changes: [projectCall, builtIn].map((statement) => ({
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement,
+        })),
+      },
+    });
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "invalid_argument_count" }),
+    );
+    expect(
+      proposal.proposedFile!.content.value.statements[1].operations[0].type
+        .result,
+    ).toEqual({ kind: "number" });
+  });
+
+  it("validates sourced core operations against the built-in catalog", async () => {
+    const file = createOperationFile("main");
+    const statement = createStatement({
+      data: createData({ value: "a,b" }),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [],
+            result: { kind: "unknown" },
+          },
+          value: {
+            name: "split",
+            source: { name: "remeda" },
+            parameters: [createStatement({ data: createData({ value: "," }) })],
+            statements: [],
+          },
+        }),
+      ],
+    });
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "split",
+      update: {
+        explanation: "split",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement,
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).toEqual([]);
+    const call =
+      proposal.proposedFile!.content.value.statements[0].operations[0];
+    expect(call.value.source).toEqual({ name: "remeda" });
+    expect(call.type.result).toEqual({
+      kind: "array",
+      elementType: { kind: "string" },
+    });
+    expect(call.value.parameters[0]).toMatchObject({
+      id: expect.any(String),
+      data: { id: expect.any(String) },
+    });
+  });
+
+  it("canonicalizes direct-name project calls without degrading results", async () => {
+    const arrayType = {
+      kind: "array" as const,
+      elementType: { kind: "number" as const },
+    };
+    const helper = createOperationFile("merge_sort");
+    helper.content.type.parameters = [{ name: "arr", type: arrayType }];
+    helper.content.type.result = arrayType;
+    const selected = createOperationFile("main");
+    selected.content.type.result = arrayType;
+    selected.content.value.statements = [
+      createStatement({
+        data: createData({ type: arrayType, value: [] }),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: helper.content.type.parameters,
+              result: { kind: "unknown" },
+            },
+            value: {
+              name: helper.name,
+              parameters: [],
+              statements: [],
+            },
+          }),
+        ],
+        controlFlow: "return",
+      }),
+    ];
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected, helper] }),
+      fileId: selected.id,
+      sourcePrompt: "add note",
+      update: {
+        explanation: "add note",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: selected.content.value.statements[0].id,
+            statement: createStatement({
+              data: createData({ type: arrayType, value: [] }),
+            }),
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).toEqual([]);
+    expect(proposal.proposedFile!.content.type.result).toEqual(arrayType);
+    expect(
+      proposal.proposedFile!.content.value.statements[1].operations[0].type
+        .result,
+    ).toEqual(arrayType);
+  });
+
+  it("validates chained lexical arguments by their final result type", async () => {
+    const arrayType = {
+      kind: "array" as const,
+      elementType: { kind: "number" as const },
+    };
+    const selected = createOperationFile("merge_op");
+    const left = createStatement({
+      name: "left",
+      data: createData({ type: arrayType, value: [] }),
+    });
+    const right = createStatement({
+      name: "right",
+      data: createData({ type: arrayType, value: [] }),
+    });
+    selected.content.value.parameters = [left, right];
+    selected.content.type.parameters = [
+      { name: left.name, type: arrayType },
+      { name: right.name, type: arrayType },
+    ];
+    selected.content.type.result = arrayType;
+    selected.content.value.statements = [
+      createStatement({
+        data: testReference(selected.name, selected.id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: selected.content.type },
+                ...selected.content.type.parameters,
+              ],
+              result: arrayType,
+            },
+            value: {
+              name: "call",
+              parameters: [
+                createStatement({
+                  data: testReference(left.name!, left.id),
+                  operations: [
+                    createData<OperationType>({
+                      type: {
+                        kind: "operation",
+                        parameters: [
+                          {
+                            type: {
+                              kind: "array",
+                              elementType: { kind: "unknown" },
+                            },
+                          },
+                        ],
+                        result: { kind: "unknown" },
+                      },
+                      value: {
+                        name: "slice",
+                        parameters: [],
+                        statements: [],
+                      },
+                    }),
+                  ],
+                }),
+                createStatement({ data: testReference(right.name!, right.id) }),
+              ],
+              statements: [],
+            },
+          }),
+        ],
+        controlFlow: "return",
+      }),
+    ];
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected] }),
+      fileId: selected.id,
+      sourcePrompt: "retain recursive call",
+      update: {
+        explanation: "retain recursive call",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: selected.content.value.statements[0].id,
+            statement: createStatement({
+              data: createData({ type: arrayType, value: [] }),
+            }),
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "invalid_argument_type" }),
+    );
+  });
+
+  it("preserves every retained rest argument during parameter migration", async () => {
+    const selected = createOperationFile("selected");
+    const rest = createStatement({
+      name: "values",
+      isRest: true,
+      data: createData({
+        type: { kind: "array", elementType: { kind: "number" } },
+        value: [],
+      }),
+    });
+    selected.content.value.parameters = [rest];
+    selected.content.type.parameters = [{ type: rest.data.type, isRest: true }];
+    const args = [1, 2, 3].map((value) =>
+      createStatement({ data: createData({ value }) }),
+    );
+    const caller = createOperationFile("caller");
+    caller.content.value.statements = [
+      createStatement({
+        data: testReference(selected.name, selected.id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [
+                { type: selected.content.type },
+                ...selected.content.type.parameters,
+              ],
+              result: selected.content.type.result,
+            },
+            value: { name: "call", parameters: args, statements: [] },
+          }),
+        ],
+      }),
+    ];
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected, caller] }),
+      fileId: selected.id,
+      sourcePrompt: "rename rest",
+      update: {
+        explanation: "rename rest",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "replace_statement",
+            statementId: rest.id,
+            statement: { ...rest, name: "items" },
+          },
+        ],
+      },
+    });
+    const proposedCaller = proposal.proposedState!.operationFiles.find(
+      ({ file }) => file.id === caller.id,
+    )!.file;
+    expect(
+      proposedCaller.content.value.statements[0].operations[0].value.parameters.map(
+        ({ id }) => id,
+      ),
+    ).toEqual(args.map(({ id }) => id));
+  });
+
+  it("propagates changed results through transitive callers", async () => {
+    const selected = createOperationFile("selected");
+    const direct = createOperationFile("direct");
+    const transitive = createOperationFile("transitive");
+    const call = (target: typeof selected) =>
+      createStatement({
+        data: testReference(target.name, target.id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [{ type: target.content.type }],
+              result: target.content.type.result,
+            },
+            value: { name: "call", parameters: [], statements: [] },
+          }),
+        ],
+        controlFlow: "return",
+      });
+    direct.content.value.statements = [call(selected)];
+    transitive.content.value.statements = [call(direct)];
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected, direct, transitive] }),
+      fileId: selected.id,
+      sourcePrompt: "return number",
+      update: {
+        explanation: "return number",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: createStatement({
+              data: createData({ value: 1 }),
+              controlFlow: "return",
+            }),
+          },
+        ],
+      },
+    });
+    const files = proposal.proposedState!.operationFiles;
+    const directResult = files.find(({ file }) => file.id === direct.id)!.file
+      .content.type.result;
+    const proposedTransitive = files.find(
+      ({ file }) => file.id === transitive.id,
+    )!.file;
+    expect(proposedTransitive.content.type.result).toEqual(directResult);
+    expect(
+      proposedTransitive.content.value.statements[0].operations[0].type.result,
+    ).toEqual(directResult);
+  });
+
+  it("rejects an anchor changed incompatibly in the same batch", async () => {
+    const file = createOperationFile("main");
+    const anchor = createStatement();
+    file.content.value.statements = [anchor];
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "conflict",
+      update: {
+        explanation: "conflict",
+        enablePackages: [],
+        changes: [
+          { kind: "delete_statement", statementId: anchor.id },
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: anchor.id,
+            statement: createStatement(),
+          },
+        ],
+      },
+    });
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "conflicting_actions" }),
+    );
+  });
+
+  it("remaps runtime instance IDs but preserves external File asset IDs", async () => {
+    const file = createOperationFile("main");
+    const runtime = createData({
+      type: { kind: "instance", className: "Date", constructorArgs: [] },
+      value: {
+        className: "Date",
+        instanceId: "runtime-id",
+        constructorArgs: [],
+      },
+    });
+    const asset = createData({
+      type: { kind: "instance", className: "File", constructorArgs: [] },
+      value: { className: "File", instanceId: "asset-id", constructorArgs: [] },
+    });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "instances",
+      update: {
+        explanation: "instances",
+        enablePackages: [],
+        changes: [runtime, asset].map((data) => ({
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement: createStatement({ data }),
+        })),
+      },
+    });
+    const statements = proposal.proposedFile!.content.value.statements;
+    expect(
+      (statements[0].data.value as { instanceId: string }).instanceId,
+    ).not.toBe("runtime-id");
+    expect(
+      (statements[1].data.value as { instanceId: string }).instanceId,
+    ).toBe("asset-id");
+  });
+
+  it("remaps colliding submitted runtime instance IDs to unique IDs", async () => {
+    const file = createOperationFile("main");
+    const instance = () =>
+      createData({
+        type: { kind: "instance", className: "Date", constructorArgs: [] },
+        value: {
+          className: "Date",
+          instanceId: "shared-runtime-id",
+          constructorArgs: [],
+        },
+      });
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "instances",
+      update: {
+        explanation: "instances",
+        enablePackages: [],
+        changes: [instance(), instance()].map((data) => ({
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement: createStatement({ data }),
+        })),
+      },
+    });
+    const ids = proposal.proposedFile!.content.value.statements.map(
+      ({ data }) => (data.value as { instanceId: string }).instanceId,
+    );
+    expect(new Set(ids).size).toBe(2);
+    expect(ids).not.toContain("shared-runtime-id");
+    expect(proposal.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "duplicate_instance_id" }),
+    );
+  });
+
+  it("fingerprints globals and file identity/order but ignores document bodies", () => {
+    const operation = createOperationFile("main");
+    const globals = {
+      id: "globals",
+      name: "globals",
+      type: "globals" as const,
+      createdAt: 1,
+      content: { value: createData({ value: 1 }) },
+    };
+    const docs = {
+      id: "docs",
+      name: "docs",
+      type: "documentation" as const,
+      createdAt: 2,
+      content: "large body",
+    };
+    const project = createTestProject({ files: [operation, globals, docs] });
+    const fingerprint = getAgentEditableFingerprint(project);
+    const globalChanged = structuredClone(project);
+    if (globalChanged.files[1].type === "globals")
+      globalChanged.files[1].content.value = createData({ value: 2 });
+    expect(getAgentEditableFingerprint(globalChanged)).not.toBe(fingerprint);
+    const reordered = structuredClone(project);
+    reordered.files.reverse();
+    expect(getAgentEditableFingerprint(reordered)).not.toBe(fingerprint);
+    const docsChanged = structuredClone(project);
+    if (docsChanged.files[2].type === "documentation")
+      docsChanged.files[2].content = "unrelated replacement body";
+    expect(getAgentEditableFingerprint(docsChanged)).toBe(fingerprint);
   });
 });

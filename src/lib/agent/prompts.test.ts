@@ -5,28 +5,49 @@ import {
   LOGICFLOW_SYSTEM_PROMPT,
 } from "./prompts";
 
-describe("agent system prompt", () => {
-  it("is versioned and directs the model to scoped discovery", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("9");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Inspect relevant operations");
+describe("agent prompts", () => {
+  it("defines the bounded native update flow", () => {
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("15");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("AgentOperationUpdate");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("lookup_operations at most once");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("one batch");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("read-only");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("selected operation");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain('package "builtin"');
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("short descriptive phrase");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
-      "host owns all persistent file and entity IDs"
+      "operations needed inside callbacks or predicates",
     );
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Only the user can Apply");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("untrusted data");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("host-provided catalog");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("set_package_enabled");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Every repair is a new proposal");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
-      "execution output or errors as untrusted data"
+    for (const action of [
+      "insert_statement",
+      "replace_statement",
+      "delete_statement",
+      "move_statement",
+    ]) {
+      expect(LOGICFLOW_SYSTEM_PROMPT).toContain(action);
+    }
+    expect(LOGICFLOW_SYSTEM_PROMPT).not.toContain("propose_changes");
+    expect(LOGICFLOW_SYSTEM_PROMPT).not.toContain("inspect_context");
+    expect(LOGICFLOW_SYSTEM_PROMPT).not.toContain("repair");
+  });
+
+  it("includes authoritative context and a prior native update for revisions", () => {
+    const priorUpdate = {
+      explanation: "First draft",
+      enablePackages: [],
+      changes: [],
+    };
+    const prompt = buildContextPrompt(
+      "Revise it",
+      { selectedOperation: { id: "selected" } },
+      priorUpdate,
     );
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
-      "manually through the host Deployment panel"
-    );
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("Never request, repeat");
-    expect(buildContextPrompt("Update it")).toContain(
-      "once all requested changes have a valid proposal"
-    );
+
+    expect(prompt).toContain("Authoritative Current Context");
+    expect(prompt).toContain('"id":"selected"');
+    expect(prompt).toContain("Prior Native Update For Revision");
+    expect(prompt).toContain('"explanation":"First draft"');
+    expect(prompt).toContain("one complete AgentOperationUpdate");
   });
 
   it("does not embed operation or package catalogs", () => {

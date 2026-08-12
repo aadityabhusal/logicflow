@@ -101,6 +101,17 @@ export function toAgentTransportError(error: unknown) {
       "request_failed"
     );
   }
+  if (
+    error &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "AI_NoObjectGeneratedError"
+  ) {
+    return new AgentTransportError(
+      "Provider returned an invalid proposal. Please retry",
+      "request_failed"
+    );
+  }
   const seen = new Set<unknown>();
   let value = error as {
     name?: string;

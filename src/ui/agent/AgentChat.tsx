@@ -1,4 +1,8 @@
+import { Button, Popover } from "@mantine/core";
+import { FaTrash } from "react-icons/fa6";
+import { useState } from "react";
 import { useAgentStore, useProjectStore } from "@/lib/store";
+import { IconButton } from "../IconButton";
 import { NoteText } from "../NoteText";
 import { isAgentProposalStale } from "@/lib/agent/proposal";
 import { AgentProposalReview } from "./AgentProposalReview";
@@ -11,6 +15,7 @@ export function AgentChat({
   onRegenerateProposal,
   onUndoApplication,
   onRedoApplication,
+  onDeleteTurn,
   onOpenDeploymentPanel,
   historyBusy,
 }: {
@@ -20,6 +25,7 @@ export function AgentChat({
   onRegenerateProposal: () => void;
   onUndoApplication: (applicationId: string) => void;
   onRedoApplication: (applicationId: string) => void;
+  onDeleteTurn: (messageId: string) => void;
   onOpenDeploymentPanel: () => void;
   historyBusy: boolean;
 }) {
@@ -44,6 +50,7 @@ export function AgentChat({
   );
   const threadMessages = activeThread?.messages ?? [];
   const isLoading = activeRun?.threadId === activeThreadId;
+  const [deleteMessageId, setDeleteMessageId] = useState<string>();
 
   return (
     <div
@@ -59,38 +66,64 @@ export function AgentChat({
           key={msg.id}
           aria-label={msg.role === "user" ? "You" : "Agent"}
           className={[
-            "min-w-0 rounded-xs p-2 mb-2 wrap-anywhere",
-            msg.role === "user" ? "bg-dropdown-scrollbar" : "",
+            "min-w-0 mb-2 wrap-anywhere text-sm leading-5",
+            msg.role === "user"
+              ? "ml-auto w-fit max-w-[92%] rounded-xs border border-border bg-dropdown-default px-3 py-2"
+              : "px-2 py-1",
           ].join(" ")}
         >
-          <div className="whitespace-pre-wrap">{msg.content}</div>
-          {msg.executionFeedback ? (
-            <div
-              aria-label={`Execution ${msg.executionFeedback.status.replace("_", " ")}`}
-              className="mt-2 border-l-2 pl-2 text-sm"
-            >
-              {msg.executionFeedback.resultType ? (
-                <div>Result type: {msg.executionFeedback.resultType.kind}</div>
-              ) : null}
-              {msg.executionFeedback.resultPreview !== undefined ? (
-                <pre className="whitespace-pre-wrap break-words">
-                  {JSON.stringify(msg.executionFeedback.resultPreview, null, 2)}
-                </pre>
-              ) : null}
-              {msg.executionFeedback.errors.map((error, index) => (
-                <div key={`${error.type ?? "error"}-${index}`} role="alert">
-                  {error.type ? `${error.type}: ` : ""}
-                  {error.message}
-                </div>
-              ))}
-              {msg.executionFeedback.reason ? (
-                <div>Reason: {msg.executionFeedback.reason}</div>
-              ) : null}
-              {msg.executionFeedback.truncated ? (
-                <div>Feedback was truncated.</div>
-              ) : null}
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1 whitespace-pre-wrap">
+              {msg.content}
             </div>
-          ) : null}
+            {msg.role === "user" ? (
+              <Popover
+                opened={deleteMessageId === msg.id}
+                onChange={(opened) =>
+                  setDeleteMessageId(opened ? msg.id : undefined)
+                }
+                position="bottom-end"
+                offset={1}
+                trapFocus
+                returnFocus
+              >
+                <Popover.Target>
+                  <IconButton
+                    icon={FaTrash}
+                    title="Delete turn"
+                    size={16}
+                    className="shrink-0 p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
+                    onClick={() => setDeleteMessageId(msg.id)}
+                    disabled={!!activeRun || historyBusy}
+                  />
+                </Popover.Target>
+                <Popover.Dropdown
+                  aria-labelledby={`delete-turn-${msg.id}`}
+                  classNames={{ dropdown: "border" }}
+                >
+                  <div className="flex max-w-64 flex-col gap-2 p-1">
+                    <span id={`delete-turn-${msg.id}`} className="text-sm">
+                      Delete this request and its response?
+                    </span>
+                    <span className="text-xs text-dimmed">
+                      Applied project changes will remain unchanged.
+                    </span>
+                    <Button
+                      size="compact-xs"
+                      leftSection={<FaTrash className="text-red-400" />}
+                      className="self-end"
+                      onClick={() => {
+                        setDeleteMessageId(undefined);
+                        onDeleteTurn(msg.id);
+                      }}
+                    >
+                      Yes, delete.
+                    </Button>
+                  </div>
+                </Popover.Dropdown>
+              </Popover>
+            ) : null}
+          </div>
           {msg.deploymentAction === "open-deployment-panel" ? (
             <button
               type="button"

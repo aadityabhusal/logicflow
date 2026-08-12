@@ -6,16 +6,21 @@ const idb = vi.hoisted(() => ({
   delete: vi.fn(),
   transaction: vi.fn(),
 }));
+const openDB = vi.hoisted(() =>
+  vi.fn((..._args: unknown[]) => Promise.resolve(idb)),
+);
 
 vi.mock("idb", async (importOriginal) => {
   const actual = await importOriginal<typeof import("idb")>();
-  return { ...actual, openDB: vi.fn(() => Promise.resolve(idb)) };
+  return { ...actual, openDB };
 });
 
 import { commitAgentEdit, createIDbStorage } from "./idb";
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  idb.get.mockReset();
+  idb.put.mockReset();
+  idb.delete.mockReset();
   idb.get.mockResolvedValue(undefined);
   idb.put.mockResolvedValue(undefined);
   idb.delete.mockResolvedValue(undefined);
@@ -23,6 +28,22 @@ beforeEach(() => {
 });
 
 describe("IndexedDB storage", () => {
+  it("keeps database version 7 without creating obsolete stores", () => {
+    const [, version, options] = openDB.mock.calls[0] as [
+      string,
+      number,
+      { upgrade: (db: unknown) => void },
+    ];
+    const createObjectStore = vi.fn();
+    options.upgrade({
+      objectStoreNames: { contains: () => true },
+      createObjectStore,
+    });
+
+    expect(version).toBe(7);
+    expect(createObjectStore).not.toHaveBeenCalled();
+  });
+
   it("reports storage write failures", async () => {
     const onError = vi.fn();
     const consoleError = vi.spyOn(console, "error").mockImplementation(vi.fn());
@@ -52,12 +73,12 @@ describe("IndexedDB storage", () => {
         apiKeys: { openai: "key" },
         selectedModel: "gpt-5.6-terra",
         thinkingLevel: "high",
-      }
+      },
     );
 
     expect(idb.transaction).toHaveBeenCalledWith(
       ["projects", "agentProjects"],
-      "readwrite"
+      "readwrite",
     );
     expect(put).toHaveBeenNthCalledWith(
       1,
@@ -65,7 +86,7 @@ describe("IndexedDB storage", () => {
         state: { projects: { project: true } },
         version: 0,
       }),
-      "projects"
+      "projects",
     );
     expect(put).toHaveBeenNthCalledWith(
       2,
@@ -78,7 +99,7 @@ describe("IndexedDB storage", () => {
         },
         version: 0,
       }),
-      "agent"
+      "agent",
     );
   });
 
@@ -101,8 +122,8 @@ describe("IndexedDB storage", () => {
           apiKeys: {},
           selectedModel: "gpt-5.6-sol",
           thinkingLevel: "medium",
-        }
-      )
+        },
+      ),
     ).rejects.toThrow("write failed");
   });
 });

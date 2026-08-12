@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { ProjectSchema } from "@/lib/schemas";
 import type { Project, ProjectFile } from "@/lib/types";
+import { walkStatement } from "@/lib/walk";
 import apiEndpoints from "./api-endpoints.logicflow.json";
 import fizzBuzz from "./fizz-buzz.logicflow.json";
 import mergeSort from "./merge-sort.logicflow.json";
@@ -24,16 +25,34 @@ export const examples: Example[] = [
 
 export function createExampleFiles(files: ProjectFile[]): ProjectFile[] {
   const createdAt = Date.now();
-  return structuredClone(files).map((file) => ({
-    ...file,
-    id: nanoid(),
-    createdAt,
-    updatedAt: undefined,
-  }));
+  const ids = new Map(files.map(({ id }) => [id, nanoid()]));
+  return structuredClone(files).map((file) => {
+    if (file.type === "operation")
+      for (const statement of [
+        ...file.content.value.parameters,
+        ...file.content.value.statements,
+      ])
+        walkStatement(
+          statement,
+          {
+            onReference: (reference) => {
+              reference.value.id =
+                ids.get(reference.value.id) ?? reference.value.id;
+            },
+          },
+          { nestedOperations: true, operationCalls: true },
+        );
+    return {
+      ...file,
+      id: ids.get(file.id)!,
+      createdAt,
+      updatedAt: undefined,
+    };
+  });
 }
 
 export function createExampleProjectMetadata(
-  project: Project
+  project: Project,
 ): Partial<Omit<Project, "id" | "createdAt" | "updatedAt">> {
   const clone = structuredClone(project);
   const { id: _, createdAt: _c, updatedAt: _u, ...metadata } = clone;

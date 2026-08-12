@@ -193,7 +193,11 @@ const BaseData = z.object({ id: z.string() });
 const DataVariants = [
   BaseData.extend({ type: UnknownTypeSchema, value: z.unknown() }),
   BaseData.extend({ type: NeverTypeSchema, value: z.never() }),
-  BaseData.extend({ type: UndefinedTypeSchema, value: z.undefined() }),
+  BaseData.extend({
+    type: UndefinedTypeSchema,
+    // JSON Schema cannot represent z.undefined(); omission is its JSON form.
+    value: z.never().optional() as z.ZodType<undefined>,
+  }),
   BaseData.extend({ type: StringTypeSchema, value: z.string() }),
   BaseData.extend({ type: NumberTypeSchema, value: z.number() }),
   BaseData.extend({ type: BooleanTypeSchema, value: z.boolean() }),
@@ -212,7 +216,6 @@ const DataVariants = [
       return z.union([
         z.unknown(),
         z.never(),
-        z.undefined(),
         z.string(),
         z.number(),
         z.boolean(),

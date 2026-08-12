@@ -161,4 +161,18 @@ describe("agent provider transport", () => {
       )
     );
   });
+
+  it("reports invalid structured output instead of a provider failure", () => {
+    expect(
+      toAgentTransportError({
+        name: "AI_NoObjectGeneratedError",
+        finishReason: "stop",
+      })
+    ).toEqual(
+      new AgentTransportError(
+        "Provider returned an invalid proposal. Please retry",
+        "request_failed"
+      )
+    );
+  });
 });

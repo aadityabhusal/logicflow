@@ -431,6 +431,7 @@ interface AgentStore {
   renameThread: (threadId: string, title: string) => void;
   selectThread: (projectId: string, threadId: string) => void;
   removeThread: (threadId: string) => void;
+  deleteThreadTurn: (threadId: string, messageId: string) => void;
   addMessage: (
     threadId: string,
     message: Omit<AgentMessage, "id" | "createdAt">
@@ -515,6 +516,7 @@ export const useAgentStore = createWithEqualityFn(
             projectId,
             activeThreadId: thread.id,
             threads: [...(current?.threads ?? []), thread],
+            history: current?.history,
           });
           return thread;
         },
@@ -553,6 +555,64 @@ export const useAgentStore = createWithEqualityFn(
             const { [threadId]: _, ...pendingProposals } =
               state.pendingProposals;
             return { pendingProposals };
+          });
+        },
+        deleteThreadTurn: (threadId, messageId) => {
+          const project = findProjectByThread(threadId);
+          const thread = project?.threads.find(({ id }) => id === threadId);
+          if (!project || !thread) return;
+          const messageIndex = thread.messages.findIndex(
+            ({ id }) => id === messageId
+          );
+          if (
+            messageIndex < 0 ||
+            thread.messages[messageIndex]?.role !== "user"
+          )
+            return;
+          const nextUserIndex = thread.messages.findIndex(
+            (message, index) => index > messageIndex && message.role === "user"
+          );
+          const endIndex =
+            nextUserIndex < 0 ? thread.messages.length : nextUserIndex;
+          const removedMessages = thread.messages.slice(messageIndex, endIndex);
+          const nextProject = {
+            ...project,
+            threads: project.threads.map((currentThread) =>
+              currentThread.id !== threadId
+                ? currentThread
+                : {
+                    ...currentThread,
+                    messages: [
+                      ...currentThread.messages.slice(0, messageIndex),
+                      ...currentThread.messages.slice(endIndex),
+                    ],
+                  }
+            ),
+          };
+          set((state) => {
+            const pendingProposal = state.pendingProposals[threadId];
+            const removesPendingProposal =
+              !!pendingProposal &&
+              removedMessages.some(
+                (message) => message.proposal?.id === pendingProposal.id
+              );
+            if (!removesPendingProposal) {
+              return {
+                agentProjects: {
+                  ...state.agentProjects,
+                  [project.projectId]: nextProject,
+                },
+              };
+            }
+            const { [threadId]: _, ...pendingProposals } =
+              state.pendingProposals;
+            return {
+              agentProjects: {
+                ...state.agentProjects,
+                [project.projectId]: nextProject,
+              },
+              pendingProposals,
+            };
           });
         },
         addMessage: (threadId, message) => {

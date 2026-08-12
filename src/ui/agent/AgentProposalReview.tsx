@@ -36,7 +36,7 @@ export function AgentProposalReview({
   const staleId = `proposal-${proposal.id}-stale`;
   const actionStatusId = `proposal-${proposal.id}-action-status`;
   const errors = diagnostics.filter(
-    (diagnostic) => diagnostic.severity === "error"
+    (diagnostic) => diagnostic.severity === "error",
   );
   const actionStatus = !recoverable
     ? "Proposal actions are unavailable because the source operation no longer exists."
@@ -83,34 +83,50 @@ export function AgentProposalReview({
       <h2 id={titleId} className="font-medium">
         Proposal review
       </h2>
-      {review?.files ? (
-        review.files.length > 0 ? (
-          <section className="mt-2">
-            <h3 className="text-xs font-medium">Affected operations</h3>
-            <ul className="mt-1 space-y-2">
-              {review.files.map((file, index) => (
-                <li key={`${file.change}-${file.operationName}-${index}`}>
-                  <div className="text-xs font-medium capitalize">
-                    {file.change} {file.operationName}
-                  </div>
-                  {renderChanges(file)}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null
-      ) : review ? (
-        <section className="mt-1">
-          <h3 className="text-xs font-medium">Operation</h3>
+      {review?.actions.length ? (
+        <section className="mt-2">
+          <h3 className="text-xs font-medium">Requested changes</h3>
+          <ul className="mt-1 text-xs">
+            {review.actions.map((action, index) => (
+              <li key={`${action.kind}-${action.statementId ?? index}`}>
+                {action.kind === "insert_statement" && "Insert"}
+                {action.kind === "replace_statement" && "Replace"}
+                {action.kind === "delete_statement" && "Delete"}
+                {action.kind === "move_statement" && "Move"}{" "}
+                {action.statementName ?? "statement"} in{" "}
+                {action.container === "parameters" ? "Parameters" : "Body"}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {review ? (
+        <section className="mt-2">
+          <h3 className="text-xs font-medium">Selected operation</h3>
           <div className="text-xs">{review.operationName}</div>
           {renderChanges(review)}
+        </section>
+      ) : null}
+      {review?.files.length ? (
+        <section className="mt-2">
+          <h3 className="text-xs font-medium">Propagated caller changes</h3>
+          <ul className="mt-1 space-y-2">
+            {review.files.map((file, index) => (
+              <li key={`${file.change}-${file.operationName}-${index}`}>
+                <div className="text-xs font-medium capitalize">
+                  {file.change} {file.operationName}
+                </div>
+                {renderChanges(file)}
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
       {review?.packages &&
       (review.packages.enabled.length > 0 ||
         review.packages.disabled.length > 0) ? (
         <section className="mt-2">
-          <h3 className="text-xs font-medium">Supported packages</h3>
+          <h3 className="text-xs font-medium">Packages</h3>
           <dl className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-xs">
             {review.packages.enabled.length > 0 ? (
               <>

@@ -4,7 +4,22 @@ import {
   createTestProject,
   testString,
 } from "../tests/helpers";
-import { ProjectSchema } from "./schemas";
+import { IDataSchema, ProjectSchema } from "./schemas";
+
+describe("IDataSchema", () => {
+  it("accepts an omitted undefined value without accepting JSON values", () => {
+    const data = { id: "undefined-data", type: { kind: "undefined" } };
+
+    expect(IDataSchema.safeParse(data).success).toBe(true);
+    expect(IDataSchema.safeParse({ ...data, value: undefined }).success).toBe(
+      true,
+    );
+    expect(IDataSchema.safeParse({ ...data, value: null }).success).toBe(false);
+    expect(IDataSchema.safeParse({ ...data, value: "undefined" }).success).toBe(
+      false,
+    );
+  });
+});
 
 describe("ProjectSchema losslessness", () => {
   it("preserves project and operation metadata", () => {

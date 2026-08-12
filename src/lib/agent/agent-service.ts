@@ -1,65 +1,94 @@
 import { Output, stepCountIs, streamText, tool, zodSchema } from "ai";
-import { z } from "zod";
-import { DataTypeSchema } from "../schemas";
 import type { IData, OperationType, Project } from "../types";
-import { AgentDiscoveryError, createAgentDiscovery } from "./discovery";
 import {
-  createAgentPackageProposal,
+  AgentDiscoveryError,
+  AgentOperationLookupSchema,
+  createAgentDiscovery,
+} from "./discovery";
+import {
+  AgentOperationUpdateSchema,
   createAgentProposal,
-  deleteAgentOperationProposal,
-  getAgentHistoryState,
   isAgentProposalStale,
-  OperationDraftSchema,
   type AgentProposal,
 } from "./proposal";
 import { LOGICFLOW_SYSTEM_PROMPT, buildContextPrompt } from "./prompts";
 import { createProviderModel, toAgentTransportError } from "./transport";
-import type {
-  AgentExecutionFeedback,
-  AgentProvider,
-  AgentThinkingLevel,
-} from "./types";
+import type { AgentProvider, AgentThinkingLevel } from "./types";
 
 const AGENT_STEP_TIMEOUT = 60_000;
-const MAX_AGENT_STEPS = 40;
-const MAX_TOOL_CALLS = 128;
+const MAX_GENERATION_STEPS = 2;
 
-const AgentResponseSchema = z.object({
-  explanation: z.string().nullable(),
-});
-
-const UpdateProposalSchema = z.discriminatedUnion("action", [
-  z
-    .object({ action: z.literal("create"), draft: OperationDraftSchema })
-    .strict(),
-  z
-    .object({
-      action: z.literal("replace"),
-      operationHandle: z.string().min(1),
-      draft: OperationDraftSchema,
-    })
-    .strict(),
-  z
-    .object({
-      action: z.literal("delete"),
-      operationHandle: z.string().min(1),
-    })
-    .strict(),
-]);
-
-const SetPackageEnabledSchema = z
-  .object({ name: z.string().min(1), enabled: z.boolean() })
-  .strict();
-
-function getToolCallsSignature(
-  toolCalls: { toolName: string; input: unknown }[]
-) {
-  if (!toolCalls.length) return;
-  return JSON.stringify(
-    toolCalls
-      .map(({ toolName, input }) => `${toolName}:${JSON.stringify(input)}`)
-      .sort()
+function isInvalidStructuredOutput(error: unknown) {
+  if (
+    !error ||
+    typeof error !== "object" ||
+    !("name" in error) ||
+    error.name !== "AI_NoObjectGeneratedError" ||
+    !("cause" in error)
+  )
+    return false;
+  const cause = error.cause;
+  return (
+    !!cause &&
+    typeof cause === "object" &&
+    "name" in cause &&
+    ["AI_TypeValidationError", "AI_JSONParseError"].includes(String(cause.name))
   );
+}
+
+function getStructuredOutputFeedback(error: unknown) {
+  const seen = new Set<object>();
+  let current: unknown = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    const value = current as {
+      name?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    if (value.name === "ZodError" && typeof value.message === "string") {
+      try {
+        const issues = JSON.parse(value.message);
+        if (Array.isArray(issues) && issues.length > 0)
+          return issues
+            .slice(0, 5)
+            .map((issue) => {
+              const path =
+                issue && typeof issue === "object" && "path" in issue
+                  ? Array.isArray(issue.path)
+                    ? issue.path.join(".")
+                    : "response"
+                  : "response";
+              const message =
+                issue && typeof issue === "object" && "message" in issue
+                  ? String(issue.message)
+                  : "Invalid value";
+              return `- ${path || "response"}: ${message}`;
+            })
+            .join("\n");
+      } catch {
+        return value.message;
+      }
+    }
+    current = value.cause;
+  }
+  return "- The previous response did not match the required schema.";
+}
+
+function needsTargetRepair(proposal: AgentProposal) {
+  return proposal.diagnostics.some(({ code }) =>
+    ["invalid_statement_target", "invalid_anchor"].includes(code),
+  );
+}
+
+function getTargetRepairFeedback(proposal: AgentProposal) {
+  const diagnostics = proposal.diagnostics
+    .filter(({ code }) =>
+      ["invalid_statement_target", "invalid_anchor"].includes(code),
+    )
+    .map(({ message }) => `- ${message}`)
+    .join("\n");
+  return `The previous update matched the schema but used an invalid statement target or anchor. Repair it by returning a complete fresh update. Existing action targets and anchors must use only IDs from statementTargets. Nested callback, data, operation-call, operation-type, and inserted-payload IDs are not valid targets.\n${diagnostics}`;
 }
 
 export function getExplicitDeploymentIntent(prompt: string) {
@@ -107,7 +136,12 @@ function getThinkingProviderOptions(
   thinkingLevel: AgentThinkingLevel
 ): NonNullable<Parameters<typeof streamText>[0]["providerOptions"]> {
   if (provider === "openai") {
-    return { openai: { reasoningEffort: thinkingLevel } };
+    return {
+      openai: {
+        reasoningEffort: thinkingLevel,
+        strictJsonSchema: false,
+      },
+    };
   }
   return {
     anthropic: {
@@ -151,285 +185,116 @@ export async function generateOperationProposal({
       throw new Error("Cannot revise proposal: proposal is stale");
     }
   }
-  const initialHasErrors = initialProposal?.diagnostics.some(
-    (diagnostic) => diagnostic.severity === "error"
-  );
-  const initialState = initialHasErrors
-    ? initialProposal?.revisionState
-    : (initialProposal?.proposedState ?? initialProposal?.revisionState);
-  if (initialProposal && !initialState) {
-    throw new Error("Cannot revise proposal: revision state is missing");
-  }
-  const discovery = await createAgentDiscovery(project, operation.id);
-  let proposal = initialProposal;
-  let proposedState = initialState ?? getAgentHistoryState(project);
-  if (initialState) {
-    await discovery.updateProposedState(initialState);
-  }
-  let toolCalls = 0;
-  const executeTool = async (action: () => unknown) => {
-    toolCalls++;
-    if (toolCalls > MAX_TOOL_CALLS) {
-      return {
-        error: {
-          code: "tool_limit_reached",
-          message: "Agent tool-call limit reached",
-        },
-      };
-    }
-    try {
-      return await action();
-    } catch (error) {
-      if (error instanceof AgentDiscoveryError) {
-        return { error: { code: error.code, message: error.message } };
-      }
-      if (
-        error instanceof Error &&
-        error.message.startsWith("Unsupported package:")
-      ) {
-        return {
-          error: { code: "unsupported_package", message: error.message },
-        };
-      }
-      throw error;
-    }
-  };
-  const tools = {
-    get_project_outline: tool({
-      description: "Return compact current project and operation context",
-      inputSchema: z.object({}),
-      execute: () => executeTool(() => discovery.getProjectOutline()),
-    }),
-    inspect_operation: tool({
-      description: "Inspect an operation using its scoped handle",
-      inputSchema: z.object({ handle: z.string() }),
-      execute: ({ handle }) =>
-        executeTool(() => discovery.inspectOperation(handle)),
-    }),
-    search_operations: tool({
-      description:
-        "Search current core, enabled-package, and project operations",
-      inputSchema: z.object({
-        query: z.string().optional(),
-        inputType: DataTypeSchema.optional(),
-        resultType: DataTypeSchema.optional(),
-        source: z.enum(["core", "package", "project"]).optional(),
-        limit: z.number().int().positive().max(20).optional(),
-      }),
-      execute: ({ query, inputType, resultType, source, limit }) =>
-        executeTool(() =>
-          discovery.searchOperations({
-            query,
-            inputType,
-            resultType,
-            source,
-            limit,
-          })
-        ),
-    }),
-    describe_operations: tool({
-      description: "Return exact details for operation handles",
-      inputSchema: z.object({
-        handles: z.array(z.string()).min(1).max(20),
-        inputType: DataTypeSchema.optional(),
-      }),
-      execute: ({ handles, inputType }) =>
-        executeTool(() => discovery.describeOperations(handles, inputType)),
-    }),
-    search_packages: tool({
-      description: "Search packages supported by the host catalog",
-      inputSchema: z.object({
-        query: z.string().optional(),
-        limit: z.number().int().positive().max(20).optional(),
-      }),
-      execute: ({ query, limit }) =>
-        executeTool(() => discovery.searchPackages(query, limit)),
-    }),
-    update_proposal: tool({
-      description:
-        "Create, replace, rename, or delete an operation in the progressive cross-file proposal",
-      inputSchema: UpdateProposalSchema,
-      execute: (input) =>
-        executeTool(async () => {
-          if (input.action === "create") {
-            proposal = await createAgentProposal({
-              project,
-              anchorFileId: operation.id,
-              previousState: proposedState,
-              create: true,
-              draft: input.draft,
-              sourcePrompt: userPrompt,
-              resolveOperation: (handle, inputType) =>
-                discovery.resolveOperationHandle(handle, inputType),
-            });
-          } else {
-            const target = discovery.resolveOperationHandle(
-              input.operationHandle
-            );
-            if (target.source !== "project" || !target.fileId) {
-              throw new AgentDiscoveryError(
-                "unknown_handle",
-                "Proposal targets must be project-operation handles"
-              );
-            }
-            proposal =
-              input.action === "delete"
-                ? deleteAgentOperationProposal({
-                    project,
-                    anchorFileId: operation.id,
-                    fileId: target.fileId,
-                    previousState: proposedState,
-                    sourcePrompt: userPrompt,
-                  })
-                : await createAgentProposal({
-                    project,
-                    anchorFileId: operation.id,
-                    fileId: target.fileId,
-                    previousState: proposedState,
-                    draft: input.draft,
-                    sourcePrompt: userPrompt,
-                    resolveOperation: (handle, inputType) =>
-                      discovery.resolveOperationHandle(handle, inputType),
-                  });
-          }
-          const valid = !proposal.diagnostics.some(
-            (diagnostic) => diagnostic.severity === "error"
-          );
-          proposal.revisionState =
-            valid && proposal.proposedState
-              ? proposal.proposedState
-              : proposedState;
-          if (valid && proposal.proposedState) {
-            proposedState = proposal.proposedState;
-            await discovery.updateProposedState(proposedState);
-          }
-          return {
-            proposalId: proposal.id,
-            valid,
-            diagnostics: proposal.diagnostics,
-            review: proposal.review,
-          };
-        }),
-    }),
-    set_package_enabled: tool({
-      description:
-        "Idempotently enable or disable one supported package in the proposal",
-      inputSchema: SetPackageEnabledSchema,
-      execute: ({ name, enabled }) =>
-        executeTool(async () => {
-          const candidate = createAgentPackageProposal({
-            project,
-            anchorFileId: operation.id,
-            previousState: proposedState,
-            sourcePrompt: userPrompt,
-            name,
-            enabled,
-          });
-          const valid = !candidate.diagnostics.some(
-            (diagnostic) => diagnostic.severity === "error"
-          );
-          candidate.revisionState =
-            valid && candidate.proposedState
-              ? candidate.proposedState
-              : proposedState;
-          if (valid && candidate.proposedState) {
-            await discovery.updateProposedState(candidate.proposedState);
-            proposedState = candidate.proposedState;
-          }
-          proposal = candidate;
-          return {
-            proposalId: candidate.id,
-            valid,
-            diagnostics: candidate.diagnostics,
-            review: candidate.review,
-          };
-        }),
-    }),
-  };
-  let streamError: unknown;
-  try {
-    const provider = model.split("/")[0] as AgentProvider;
-    const result = streamText({
-      model: resolveProviderModel(model, apiKey),
-      providerOptions: getThinkingProviderOptions(provider, thinkingLevel),
-      output: Output.object({
-        schema: zodSchema(AgentResponseSchema, { useReferences: true }),
-      }),
-      tools,
-      stopWhen: stepCountIs(MAX_AGENT_STEPS),
-      prepareStep: ({ stepNumber, steps, instructions }) => {
-        const recentSignatures = steps
-          .slice(-3)
-          .map((step) => getToolCallsSignature(step.toolCalls));
-        const repeatedToolCalls =
-          recentSignatures.length === 3 &&
-          recentSignatures[0] !== undefined &&
-          recentSignatures.every(
-            (signature) => signature === recentSignatures[0]
-          );
-        if (stepNumber < MAX_AGENT_STEPS - 1 && !repeatedToolCalls) return;
-        return {
-          activeTools: [],
-          toolChoice: "none" as const,
-          instructions: `${instructions}\n\nDo not call more tools. Return the final structured response now, explaining the valid proposal produced so far or the specific limitation that prevented completion.`,
-        };
-      },
-      system: LOGICFLOW_SYSTEM_PROMPT,
-      prompt: buildContextPrompt(userPrompt),
-      abortSignal,
-      timeout: { stepMs: AGENT_STEP_TIMEOUT },
-      maxRetries: 0,
-      onError: ({ error }) => {
-        streamError = error;
-      },
-    });
-    for await (const partial of result.partialOutputStream) {
-      if (partial.explanation) onPartialExplanation?.(partial.explanation);
-    }
-    return { response: await result.output, proposal };
-  } catch (error) {
-    throw toAgentTransportError(streamError ?? error);
-  }
-}
 
-export async function generateExecutionFeedbackResponse({
-  apiKey,
-  model,
-  feedback,
-  thinkingLevel = "medium",
-  abortSignal,
-  onPartialExplanation,
-}: {
-  apiKey: string;
-  model: string;
-  feedback: AgentExecutionFeedback;
-  thinkingLevel?: AgentThinkingLevel;
-  abortSignal?: AbortSignal;
-  onPartialExplanation?: (explanation: string) => void;
-}) {
-  let streamError: unknown;
+  const discovery = await createAgentDiscovery(project, operation.id);
+  const contextSnapshot = discovery.buildContextSnapshot();
+  let lookupUsed = false;
+  const tools = {
+    lookup_operations: tool({
+      description:
+        "Look up exact operation descriptors only when required information is absent from the context. Submit all queries in this one read-only call, including operations needed inside callbacks or predicates.",
+      inputSchema: AgentOperationLookupSchema,
+      execute: async (input) => {
+        if (lookupUsed) {
+          return {
+            error: {
+              code: "lookup_limit_reached",
+              message: "Only one batched operation lookup is allowed",
+            },
+          };
+        }
+        lookupUsed = true;
+        try {
+          return await discovery.lookupOperations(input);
+        } catch (error) {
+          if (error instanceof AgentDiscoveryError) {
+            return { error: { code: error.code, message: error.message } };
+          }
+          throw error;
+        }
+      },
+    }),
+  };
   try {
     const provider = model.split("/")[0] as AgentProvider;
-    const result = streamText({
-      model: resolveProviderModel(model, apiKey),
-      providerOptions: getThinkingProviderOptions(provider, thinkingLevel),
-      output: Output.object({
-        schema: zodSchema(AgentResponseSchema, { useReferences: true }),
-      }),
-      system: LOGICFLOW_SYSTEM_PROMPT,
-      prompt: `Report this sanitized post-Apply execution outcome concisely. Do not propose edits or actions:\n${JSON.stringify(feedback)}`,
-      abortSignal,
-      timeout: { stepMs: AGENT_STEP_TIMEOUT },
-      maxRetries: 0,
-      onError: ({ error }) => {
-        streamError = error;
-      },
+    const prompt = buildContextPrompt(
+      userPrompt,
+      contextSnapshot,
+      initialProposal?.update
+    );
+    const generate = async (feedback?: string) => {
+      let streamError: unknown;
+      lookupUsed = false;
+      try {
+        const result = streamText({
+          model: resolveProviderModel(model, apiKey),
+          providerOptions: getThinkingProviderOptions(provider, thinkingLevel),
+          output: Output.object({
+            schema: zodSchema(AgentOperationUpdateSchema, {
+              useReferences: true,
+            }),
+          }),
+          tools,
+          stopWhen: stepCountIs(MAX_GENERATION_STEPS),
+          prepareStep: ({ instructions }) =>
+            lookupUsed
+              ? {
+                  activeTools: [],
+                  toolChoice: "none" as const,
+                  instructions: `${instructions}\n\nThe one allowed lookup is complete. Return the final structured update now without calling another tool.`,
+                }
+              : undefined,
+          system: LOGICFLOW_SYSTEM_PROMPT,
+          prompt: feedback ? `${prompt}\n\n${feedback}` : prompt,
+          abortSignal,
+          timeout: { stepMs: AGENT_STEP_TIMEOUT },
+          maxRetries: 0,
+          onError: ({ error }) => {
+            streamError = error;
+          },
+        });
+        for await (const partial of result.partialOutputStream) {
+          if (partial.explanation) onPartialExplanation?.(partial.explanation);
+        }
+        return await result.output;
+      } catch (error) {
+        throw streamError ?? error;
+      }
+    };
+    const generateWithSchemaRetry = async (feedback?: string) => {
+      try {
+        return await generate(feedback);
+      } catch (error) {
+        if (!isInvalidStructuredOutput(error)) throw error;
+        return await generate(
+          `${feedback ? `${feedback}\n\n` : ""}The previous response did not match the required schema. Validation details:\n${getStructuredOutputFeedback(error)}\nReturn only a complete schema-valid AgentOperationUpdate.`,
+        );
+      }
+    };
+    let response = await generateWithSchemaRetry();
+    if (!response.changes.length && !response.enablePackages.length)
+      return { response, proposal: undefined };
+    let proposal = await createAgentProposal({
+      project,
+      fileId: operation.id,
+      sourcePrompt: userPrompt,
+      update: response,
     });
-    for await (const partial of result.partialOutputStream) {
-      if (partial.explanation) onPartialExplanation?.(partial.explanation);
+    if (needsTargetRepair(proposal)) {
+      response = await generateWithSchemaRetry(
+        getTargetRepairFeedback(proposal),
+      );
+      if (!response.changes.length && !response.enablePackages.length)
+        return { response, proposal: undefined };
+      proposal = await createAgentProposal({
+        project,
+        fileId: operation.id,
+        sourcePrompt: userPrompt,
+        update: response,
+      });
     }
-    return await result.output;
+    return { response, proposal };
   } catch (error) {
-    throw toAgentTransportError(streamError ?? error);
+    throw toAgentTransportError(error);
   }
 }

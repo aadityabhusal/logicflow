@@ -8,6 +8,8 @@ Watch the [demo video](https://youtu.be/qzS_zw1iwS0) for an overview.
 
 See [documentation](https://logicflow.dev/docs) for more details.
 
+The optional Agent panel uses `VITE_APP_ENABLE_AGENT_PANEL=true`. It proposes reviewed native statement updates for the selected operation.
+
 ## Key Features
 
 ### Core Editor

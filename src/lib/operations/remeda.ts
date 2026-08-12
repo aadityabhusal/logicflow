@@ -21,7 +21,7 @@ export function getArrayCallbackParams(
     twoParams?: boolean;
     fourParams?: boolean;
     accumulator?: boolean;
-  }
+  },
 ): OperationType["parameters"] {
   const itemType =
     data.type.kind === "array" ? data.type.elementType : { kind: "unknown" };
@@ -70,7 +70,7 @@ export function getArrayCallbackParams(
 
 function getOrderRuleParams(
   data: IData,
-  options?: { secondData: DataType }
+  options?: { secondData: DataType },
 ): OperationType["parameters"] {
   const projection: DataType = {
     kind: "operation",
@@ -100,7 +100,7 @@ function getOrderRuleParams(
 
 export function getObjectParam(
   data?: IData,
-  options?: { includeInstance?: boolean }
+  options?: { includeInstance?: boolean },
 ): OperationType["parameters"][number] {
   if (options?.includeInstance && data?.type.kind === "instance") {
     return { type: data.type };
@@ -114,7 +114,7 @@ export function getObjectParam(
 }
 
 export function getUnionParam(
-  data: IData
+  data: IData,
 ): OperationType["parameters"][number] {
   return {
     type: {
@@ -126,7 +126,7 @@ export function getUnionParam(
 
 function getPredicateOperationType(
   data: IData,
-  returnType?: DataType
+  returnType?: DataType,
 ): DataType {
   return {
     kind: "operation",
@@ -141,7 +141,7 @@ function getObjectCallbackParams(
     reverseParams?: boolean;
     returnType?: DataType;
     withData?: boolean;
-  }
+  },
 ): OperationType["parameters"] {
   const valueType: DataType =
     data.type.kind === "object"
@@ -209,12 +209,12 @@ export function createOperationHandler<
 >(
   operations: T,
   operationName: K,
-  expectedType?: OperationListItem["expectedType"]
+  expectedType?: OperationListItem["expectedType"],
 ) {
   return (context: Context, ...args: IData[]): IData => {
     const _context = { ...context, isSync: true };
     const rawArgs = args.map((arg) =>
-      unwrapThenable(getRawValueFromData(arg, _context))
+      unwrapThenable(getRawValueFromData(arg, _context)),
     );
     const result = (
       operations[operationName] as (...args: unknown[]) => unknown
@@ -253,6 +253,7 @@ export const remedaOperationList: (Omit<
   {
     name: "divide",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "number" },
   },
   {
     name: "ceil",
@@ -346,6 +347,7 @@ export const remedaOperationList: (Omit<
   {
     name: "split",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
+    expectedType: { kind: "array", elementType: { kind: "string" } },
   },
   {
     name: "sliceString",
@@ -387,6 +389,7 @@ export const remedaOperationList: (Omit<
       { type: { kind: "array", elementType: { kind: "unknown" } } },
       { type: { kind: "array", elementType: { kind: "unknown" } } },
     ],
+    expectedType: (data) => data.type,
   },
   {
     name: "reverse",
@@ -1017,7 +1020,7 @@ export const remedaOperationList: (Omit<
     narrowType: (_, data) =>
       isDataOfType(data, "union")
         ? resolveUnionType(
-            data.type.types.filter((t) => OBJECT_TYPES.includes(t.kind))
+            data.type.types.filter((t) => OBJECT_TYPES.includes(t.kind)),
           )
         : undefined,
   },
@@ -1033,7 +1036,7 @@ export const remedaOperationList: (Omit<
       getInverseTypes(
         new Map([["data", { data }]]),
         new Map([["data", { data: createData() }]]),
-        context
+        context,
       ).get("data")?.data.type,
   },
   {
@@ -1079,5 +1082,5 @@ export const remedaOperations: OperationListItem[] = remedaOperationList.map(
     ...operation,
     source: { name: "remeda" },
     handler: createOperationHandler(R, operation.name, operation.expectedType),
-  })
+  }),
 );

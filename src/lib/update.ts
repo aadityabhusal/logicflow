@@ -41,7 +41,7 @@ function getUpdateContext(context: Context, id: string): Context {
       ...childCtx.variables,
       ...[...context.variables].filter(
         ([name, { data }]) =>
-          !childCtx.variables.has(name) || isDataOfType(data, "operation")
+          !childCtx.variables.has(name) || isDataOfType(data, "operation"),
       ),
     ]),
   };
@@ -50,7 +50,7 @@ function getUpdateContext(context: Context, id: string): Context {
 function updateOperationCalls(
   statement: IStatement,
   context: Context,
-  { variableNames, selfOperation }: UpdateOptions
+  { variableNames, selfOperation }: UpdateOptions,
 ): IData<OperationType>[] {
   return statement.operations.reduce(
     (accOperations, operation, operationIndex) => {
@@ -63,7 +63,7 @@ function updateOperationCalls(
       const _context = getUpdateContext(context, operation.id);
 
       const foundOperation = getFilteredOperations(data, _context).find(
-        (op) => op.name === operation.value.name
+        (op) => op.name === operation.value.name,
       );
       let referencedOperation: IData<OperationType> | undefined;
       if (operation.value.name === "call" && isDataOfType(data, "reference")) {
@@ -73,6 +73,18 @@ function updateOperationCalls(
             isDataOfType(variable, "operation")
           ) {
             referencedOperation = variable;
+            break;
+          }
+        }
+      }
+      let directOperation: IData<OperationType> | undefined;
+      if (operation.value.name !== "call" && foundOperation?.id) {
+        for (const { data: variable } of _context.variables.values()) {
+          if (
+            variable.id === foundOperation.id &&
+            isDataOfType(variable, "operation")
+          ) {
+            directOperation = variable;
             break;
           }
         }
@@ -119,8 +131,8 @@ function updateOperationCalls(
                   isOptional: sourceParam.isOptional || sourceParam.isRest,
                 },
                 getUpdateContext(context, _param.id),
-                { variableNames, selfOperation }
-              )
+                { variableNames, selfOperation },
+              ),
             );
           })
           .filter((p): p is IStatement => p !== null);
@@ -138,7 +150,9 @@ function updateOperationCalls(
               isDataOfType(data, "reference") &&
               selfOperation?.value.name === data.value.name
                 ? selfOperation.type.result
-                : referencedOperation?.type.result) ?? operation.type.result,
+                : referencedOperation?.type.result) ??
+              directOperation?.type.result ??
+              operation.type.result,
           },
           value: {
             ...operation.value,
@@ -150,7 +164,7 @@ function updateOperationCalls(
         },
       ];
     },
-    [] as IData<OperationType>[]
+    [] as IData<OperationType>[],
   );
 }
 
@@ -176,7 +190,7 @@ function updateDataValue({
               value: updateStatement(
                 value,
                 getUpdateContext(context, value.id),
-                options
+                options,
               ),
             })),
           }
@@ -199,7 +213,7 @@ function updateDataValue({
                   const condition = updateStatement(
                     data.value.condition,
                     getUpdateContext(context, data.value.condition.id),
-                    options
+                    options,
                   );
                   const trueBranch = updateStatements({
                     statements: data.value.trueBranch,
@@ -228,7 +242,7 @@ function updateDataValue({
 function updateStatement(
   currentStatement: IStatement,
   context: Context,
-  options: UpdateOptions
+  options: UpdateOptions,
 ): IStatement {
   const currentReference = isDataOfType(currentStatement.data, "reference")
     ? currentStatement.data.value
@@ -315,7 +329,7 @@ export function updateStatements({
     const result = updateStatement(
       statementToProcess,
       getUpdateContext(context, statementToProcess.id),
-      { ...options, variableNames: currentVariableNames }
+      { ...options, variableNames: currentVariableNames },
     );
     if (result.name) currentVariableNames.set(result.id, result.name);
     return result;
@@ -325,7 +339,7 @@ export function updateStatements({
 function updateOperationValue(
   operation: IData<OperationType>,
   context: Context,
-  options: UpdateOptions
+  options: UpdateOptions,
 ): DataValue<OperationType> {
   const updatedStatements = updateStatements({
     statements: [...operation.value.parameters, ...operation.value.statements],
@@ -343,10 +357,10 @@ export function updateFiles(
   files: ProjectFile[],
   pushHistory: (fileId: string, content: ProjectFile["content"]) => void,
   context: Context,
-  changedFile?: ProjectFile
+  changedFile?: ProjectFile,
 ): ProjectFile[] {
   const updatedFiles = files.map((file) =>
-    file.id === changedFile?.id ? changedFile : file
+    file.id === changedFile?.id ? changedFile : file,
   );
   return files.reduce((prevFiles, currentFile) => {
     let fileToProcess = currentFile;

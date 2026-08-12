@@ -1,564 +1,363 @@
-import { nanoid } from "nanoid";
+import { z } from "zod";
+import type { Context, OperationListItem } from "../execution/types";
 import { coreOperations } from "../operations/built-in";
 import { getEnabledPackages, PACKAGE_CATALOG } from "../packages/catalog";
 import { loadPackageDescriptor } from "../packages/registry";
-import type { Context, OperationListItem } from "../execution/types";
-import type {
-  DataType,
-  IData,
-  IStatement,
-  OperationType,
-  Project,
-  ProjectFile,
-} from "../types";
+import { DataTypeSchema } from "../schemas";
+import type { DataType, OperationType, Project, ProjectFile } from "../types";
 import {
   createData,
+  createFileVariables,
   getTypeSignature,
-  isDataOfType,
   isTypeCompatible,
   resolveParameters,
 } from "../utils";
-import type { AgentHistoryState } from "./proposal";
 
-const MAX_RESULTS = 20;
-const MAX_OUTLINE_OPERATIONS = 50;
-const MAX_INSPECTED_STATEMENTS = 50;
-const MAX_NESTED_ITEMS = 20;
-const MAX_TEXT_LENGTH = 2_000;
+const MAX_LOOKUP_REQUESTS = 10;
+const MAX_RESULTS_PER_REQUEST = 10;
+const MAX_QUERY_LENGTH = 200;
+const MAX_CONTEXT_BYTES = 200_000;
+
+const OPERATION_SEARCH_ALIASES = new Map<string, string[]>([
+  ["isDeepEqual", ["equal", "equals", "equality", "even", "odd"]],
+  ["mod", ["modulo", "remainder", "even", "odd"]],
+]);
 
 export class AgentDiscoveryError extends Error {
   constructor(
     readonly code:
       | "duplicate_operation_name"
-      | "invalid_limit"
+      | "invalid_lookup"
       | "package_load_failed"
       | "unsupported_package"
-      | "stale_handle"
-      | "unknown_handle",
-    message: string
+      | "unknown_operation",
+    message: string,
   ) {
     super(message);
     this.name = "AgentDiscoveryError";
   }
 }
 
-export type AgentOperationSource = "core" | "package" | "project";
+export const AgentOperationLookupSchema = z
+  .object({
+    requests: z
+      .array(
+        z
+          .object({
+            query: z
+              .string()
+              .min(1)
+              .max(MAX_QUERY_LENGTH)
+              .describe("Exact operation name or short descriptive phrase"),
+            package: z
+              .string()
+              .max(100)
+              .optional()
+              .describe(
+                'Supported package key, "builtin", or omitted for all active sources',
+              ),
+            inputType: DataTypeSchema.optional().describe(
+              "Receiver data type before the operation call, not an operation signature",
+            ),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_LOOKUP_REQUESTS),
+  })
+  .strict();
 
-export type AgentOperationSummary = {
-  handle: string;
+export type AgentOperationLookup = z.infer<typeof AgentOperationLookupSchema>;
+export type AgentOperationDescriptor = {
   name: string;
-  source: AgentOperationSource;
-  packageName?: string;
-  inputType: DataType;
-  resultType: DataType | { kind: "unresolved" };
-  signature: string;
+  source: "builtin" | "project" | "package";
+  package?: string;
+  parameters: OperationType["parameters"];
+  result: DataType | { kind: "unresolved" };
+  operationId?: string;
+  operationSource?: OperationListItem["source"];
 };
 
-type OperationDescriptor = {
-  handle: string;
+type CatalogDescriptor = {
   name: string;
-  source: AgentOperationSource;
-  packageKey?: string;
-  packageName?: string;
-  importKind?: "default" | "namespace" | "named";
+  source: AgentOperationDescriptor["source"];
+  package?: string;
   operation?: OperationListItem;
   file?: Extract<ProjectFile, { type: "operation" }>;
 };
 
-type SearchOptions = {
-  query?: string;
-  inputType?: DataType;
-  resultType?: DataType;
-  source?: AgentOperationSource;
-  limit?: number;
-};
-
-const typeContext: Context = {
-  scopeId: "agent-discovery",
-  variables: new Map(),
-  packageAliases: {},
-  getResult: () => undefined,
-  getInstance: () => undefined,
-  setInstance: () => undefined,
-  executeOperation: () => Promise.resolve(createData()),
-  executeOperationSync: () => createData(),
-  executeStatement: () => Promise.resolve(createData()),
-  executeStatementSync: () => createData(),
-  getContext: () => typeContext,
-  setContext: () => undefined,
-  setResult: () => undefined,
-};
-
-function formatSignature(
-  parameters: OperationType["parameters"],
-  result: DataType | { kind: "unresolved" },
-  depth = 4
-) {
-  const args = parameters
-    .map(
-      (parameter, index) =>
-        `${parameter.isRest ? "..." : ""}${parameter.name || `arg${index + 1}`}${parameter.isOptional ? "?" : ""}: ${getTypeSignature(parameter.type, typeContext, depth)}`
-    )
-    .join(", ");
-  return `(${args}) => ${result.kind === "unresolved" ? "unresolved" : getTypeSignature(result, typeContext, depth)}`;
+function createTypeContext(project: Project): Context {
+  const context = {
+    scopeId: "agent-discovery",
+    variables: createFileVariables(project.files),
+    packageAliases: {},
+    getResult: () => undefined,
+    getInstance: () => undefined,
+    setInstance: () => undefined,
+    executeOperation: () => Promise.resolve(createData()),
+    executeOperationSync: () => createData(),
+    executeStatement: () => Promise.resolve(createData()),
+    executeStatementSync: () => createData(),
+    getContext: () => context,
+    setContext: () => undefined,
+    setResult: () => undefined,
+  } as Context;
+  return context;
 }
 
-function resolveOperation(
-  descriptor: OperationDescriptor,
-  inputType: DataType = { kind: "unknown" }
-) {
+function tokens(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function matches(name: string, query: string) {
+  const normalized = name.trim().toLowerCase();
+  const nameTokens = tokens(
+    [name, ...(OPERATION_SEARCH_ALIASES.get(name) ?? [])].join(" "),
+  );
+  const queryTokens = tokens(query);
+  return (
+    normalized === query.trim().toLowerCase() ||
+    queryTokens.some((queryToken) =>
+      nameTokens.some(
+        (nameToken) =>
+          nameToken === queryToken ||
+          (nameToken.length >= 3 &&
+            (queryToken.startsWith(nameToken) ||
+              nameToken.startsWith(queryToken))),
+      ),
+    )
+  );
+}
+
+function resolveDescriptor(
+  descriptor: CatalogDescriptor,
+  inputType: DataType,
+  context: Context,
+): AgentOperationDescriptor {
   if (descriptor.file) {
     return {
+      name: descriptor.name,
+      source: "project",
       parameters: descriptor.file.content.type.parameters,
-      resultType: descriptor.file.content.type.result as
-        | DataType
-        | { kind: "unresolved" },
+      result: descriptor.file.content.type.result,
+      operationId: descriptor.file.id,
     };
   }
-
+  const input = createData({ type: inputType });
   const operation = descriptor.operation!;
-  const data = createData({ type: inputType });
-  const parameters = resolveParameters(operation, data, typeContext);
-  const resultType =
+  const parameters = resolveParameters(operation, input, context);
+  const result =
     typeof operation.expectedType === "function"
-      ? operation.expectedType(data)
+      ? operation.expectedType(input)
       : (operation.expectedType ?? { kind: "unresolved" as const });
-  return { parameters, resultType };
-}
-
-function toSummary(
-  descriptor: OperationDescriptor,
-  inputType?: DataType
-): AgentOperationSummary {
-  const resolved = resolveOperation(descriptor, inputType);
   return {
-    handle: descriptor.handle,
     name: descriptor.name,
     source: descriptor.source,
-    packageName: descriptor.packageName,
-    inputType: resolved.parameters[0]?.type ?? { kind: "undefined" },
-    resultType: resolved.resultType,
-    signature: formatSignature(resolved.parameters, resolved.resultType),
-  };
-}
-
-function getLimit(limit = 10) {
-  if (!Number.isInteger(limit) || limit < 1) {
-    throw new AgentDiscoveryError(
-      "invalid_limit",
-      "Result limit must be positive"
-    );
-  }
-  return Math.min(limit, MAX_RESULTS);
-}
-
-const OPERATION_SEARCH_TERMS: Record<string, string[]> = {
-  filter: ["predicate", "select", "keep"],
-  isDeepEqual: ["equal", "equals", "equality", "even", "odd"],
-  isShallowEqual: ["equal", "equals", "equality"],
-  mod: ["modulo", "remainder", "even", "odd"],
-};
-
-function rankName(name: string, query: string) {
-  if (!query) return 3;
-  const normalized = name.toLowerCase();
-  if (normalized === query) return 0;
-  if (normalized.includes(query)) return 1;
-  const aliases = Object.hasOwn(OPERATION_SEARCH_TERMS, name)
-    ? OPERATION_SEARCH_TERMS[name]
-    : [];
-  const terms = [normalized, ...aliases];
-  if (
-    query.split(/\s+/).some((word) => terms.some((term) => term.includes(word)))
-  )
-    return 2;
-  return 3;
-}
-
-function inspectData(data: IData, depth: number): unknown {
-  if (depth === 0) return { type: data.type };
-  if (typeof data.value === "string") {
-    return data.value.slice(0, MAX_TEXT_LENGTH);
-  }
-  if (
-    typeof data.value === "number" ||
-    typeof data.value === "boolean" ||
-    data.value === undefined
-  ) {
-    return data.value;
-  }
-  if (isDataOfType(data, "reference")) {
-    return { reference: data.value.name };
-  }
-  if (isDataOfType(data, "array") || isDataOfType(data, "tuple")) {
-    return data.value
-      .slice(0, MAX_NESTED_ITEMS)
-      .map((statement) => inspectStatement(statement, depth - 1));
-  }
-  if (isDataOfType(data, "object") || isDataOfType(data, "dictionary")) {
-    return data.value.entries.slice(0, MAX_NESTED_ITEMS).map((entry) => ({
-      key: entry.key.slice(0, 200),
-      value: inspectStatement(entry.value, depth - 1),
-    }));
-  }
-  if (isDataOfType(data, "operation")) {
-    return {
-      name: data.value.name,
-      parameters: data.value.parameters
-        .slice(0, MAX_NESTED_ITEMS)
-        .map((parameter) => inspectStatement(parameter, depth - 1)),
-      statements: data.value.statements
-        .slice(0, MAX_NESTED_ITEMS)
-        .map((statement) => inspectStatement(statement, depth - 1)),
-    };
-  }
-  if (isDataOfType(data, "condition")) {
-    return {
-      condition: inspectStatement(data.value.condition, depth - 1),
-      trueBranch: data.value.trueBranch
-        .slice(0, MAX_NESTED_ITEMS)
-        .map((statement) => inspectStatement(statement, depth - 1)),
-      falseBranch: data.value.falseBranch
-        .slice(0, MAX_NESTED_ITEMS)
-        .map((statement) => inspectStatement(statement, depth - 1)),
-    };
-  }
-  if (isDataOfType(data, "instance")) {
-    return { className: data.value.className };
-  }
-  if (isDataOfType(data, "error")) {
-    return { reason: data.value.reason.slice(0, MAX_TEXT_LENGTH) };
-  }
-  return undefined;
-}
-
-function inspectStatement(statement: IStatement, depth = 3): unknown {
-  return {
-    name: statement.name,
-    optional: statement.isOptional,
-    rest: statement.isRest,
-    return: statement.controlFlow === "return" || undefined,
-    type: statement.data.type,
-    value: inspectData(statement.data, depth),
-    operations: statement.operations
-      .slice(0, MAX_NESTED_ITEMS)
-      .map((operation) => ({
-        name: operation.value.name,
-        resultType: operation.type.result,
-        arguments: operation.value.parameters
-          .slice(0, MAX_NESTED_ITEMS)
-          .map((parameter) => inspectStatement(parameter, depth - 1)),
-        statements: operation.value.statements
-          .slice(0, MAX_NESTED_ITEMS)
-          .map((child) => inspectStatement(child, depth - 1)),
-      })),
+    package: descriptor.package,
+    parameters,
+    result,
+    operationSource: operation.source,
   };
 }
 
 export async function createAgentDiscovery(
   project: Project,
-  currentFileId?: string
+  selectedFileId?: string,
 ) {
-  const sessionId = nanoid();
-  let handleIndex = 0;
-  const descriptors = new Map<string, OperationDescriptor>();
-  const createDescriptor = (
-    descriptor: Omit<OperationDescriptor, "handle">
-  ) => {
-    const handle = `operation_${sessionId}_${++handleIndex}`;
-    const created = { ...descriptor, handle };
-    descriptors.set(handle, created);
-    return created;
-  };
-
-  for (const operation of coreOperations) {
-    createDescriptor({ name: operation.name, source: "core", operation });
-  }
-
-  const enabledPackageNames = new Set(
-    getEnabledPackages(project).map((dependency) => dependency.name)
+  const operations = project.files.filter(
+    (file): file is Extract<ProjectFile, { type: "operation" }> =>
+      file.type === "operation",
   );
-  const loadPackage = async (packageName: string) => {
-    const entry = PACKAGE_CATALOG[packageName];
-    if (!entry) {
-      throw new AgentDiscoveryError(
-        "unsupported_package",
-        `Unsupported package: ${packageName}`
+  if (new Set(operations.map(({ name }) => name)).size !== operations.length) {
+    throw new AgentDiscoveryError(
+      "duplicate_operation_name",
+      "Project operation names must be unique",
+    );
+  }
+  const selected = operations.find(({ id }) => id === selectedFileId);
+  const enabledPackages = getEnabledPackages(project)
+    .map(({ name }) => name)
+    .sort();
+  const context = createTypeContext(project);
+  const baseCatalog: CatalogDescriptor[] = [
+    ...coreOperations.map((operation) => ({
+      name: operation.name,
+      source: "builtin" as const,
+      operation,
+    })),
+    ...operations
+      .filter(({ id }) => id !== selectedFileId)
+      .map((file) => ({ name: file.name, source: "project" as const, file })),
+  ];
+  try {
+    const loaded = await Promise.all(
+      enabledPackages.map(async (name) => ({
+        name,
+        descriptor: await loadPackageDescriptor(name),
+      })),
+    );
+    for (const { name, descriptor } of loaded) {
+      baseCatalog.push(
+        ...descriptor.operations.map((operation) => ({
+          name: operation.name,
+          source: "package" as const,
+          package: name,
+          operation,
+        })),
       );
     }
+  } catch {
+    throw new AgentDiscoveryError(
+      "package_load_failed",
+      "Could not load an enabled package descriptor",
+    );
+  }
+
+  const lookupOperations = async (input: AgentOperationLookup) => {
+    const parsed = AgentOperationLookupSchema.safeParse(input);
+    if (!parsed.success)
+      throw new AgentDiscoveryError(
+        "invalid_lookup",
+        parsed.error.issues[0]?.message ?? "Invalid lookup",
+      );
+    const disabledNames = [
+      ...new Set(
+        parsed.data.requests
+          .map((request) => request.package)
+          .filter(
+            (name): name is string =>
+              !!name && name !== "builtin" && !enabledPackages.includes(name),
+          ),
+      ),
+    ].sort();
+    for (const name of disabledNames) {
+      if (!PACKAGE_CATALOG[name])
+        throw new AgentDiscoveryError(
+          "unsupported_package",
+          `Unsupported package: ${name}`,
+        );
+    }
+    let disabled: CatalogDescriptor[] = [];
     try {
-      const descriptor = await loadPackageDescriptor(packageName);
-      for (const operation of descriptor.operations) {
-        createDescriptor({
+      const loaded = await Promise.all(
+        disabledNames.map(async (name) => ({
+          name,
+          descriptor: await loadPackageDescriptor(name),
+        })),
+      );
+      disabled = loaded.flatMap(({ name, descriptor }) =>
+        descriptor.operations.map((operation) => ({
           name: operation.name,
-          source: "package",
-          packageKey: packageName,
-          packageName: entry.packageName,
-          importKind: entry.importKind,
+          source: "package" as const,
+          package: name,
           operation,
-        });
-      }
+        })),
+      );
     } catch {
       throw new AgentDiscoveryError(
         "package_load_failed",
-        `Could not load enabled package ${entry.displayName}`
+        "Could not load a requested package descriptor",
       );
     }
-  };
-  const removePackage = (packageName: string) => {
-    for (const [handle, descriptor] of descriptors) {
-      if (descriptor.packageKey === packageName) descriptors.delete(handle);
-    }
-  };
-  for (const packageName of [...enabledPackageNames].sort()) {
-    await loadPackage(packageName);
-  }
-
-  const projectNames = new Set<string>();
-  const syncProjectFiles = (
-    files: Extract<ProjectFile, { type: "operation" }>[]
-  ) => {
-    const byId = new Map(
-      [...descriptors.values()]
-        .filter((descriptor) => descriptor.file)
-        .map((descriptor) => [descriptor.file!.id, descriptor])
-    );
-    projectNames.clear();
-    for (const [handle, descriptor] of descriptors) {
-      if (
-        descriptor.file &&
-        !files.some((file) => file.id === descriptor.file!.id)
-      ) {
-        descriptors.delete(handle);
-      }
-    }
-    for (const file of files) {
-      if (projectNames.has(file.name)) {
-        throw new AgentDiscoveryError(
-          "duplicate_operation_name",
-          `Project contains more than one operation named ${file.name}`
-        );
-      }
-      projectNames.add(file.name);
-      const existing = byId.get(file.id);
-      if (existing) {
-        existing.name = file.name;
-        existing.file = file;
-      } else {
-        createDescriptor({ name: file.name, source: "project", file });
-      }
-    }
-  };
-  syncProjectFiles(
-    project.files.filter(
-      (file): file is Extract<ProjectFile, { type: "operation" }> =>
-        file.type === "operation"
-    )
-  );
-
-  const getDescriptor = (handle: string) => {
-    const descriptor = descriptors.get(handle);
-    if (descriptor) return descriptor;
-    if (handle.startsWith("operation_") && !handle.includes(sessionId)) {
-      throw new AgentDiscoveryError(
-        "stale_handle",
-        "Operation handle belongs to an obsolete discovery session"
-      );
-    }
-    throw new AgentDiscoveryError("unknown_handle", "Unknown operation handle");
-  };
-
-  return {
-    getProjectOutline() {
-      const operations = [...descriptors.values()]
-        .filter((descriptor) => descriptor.source === "project")
-        .slice(0, MAX_OUTLINE_OPERATIONS)
-        .map((descriptor) => toSummary(descriptor));
-      return {
-        project: {
-          name: project.name,
-          description: project.description?.slice(0, MAX_TEXT_LENGTH),
-        },
-        files: {
-          operations: projectNames.size,
-          globals: project.files.filter((file) => file.type === "globals")
-            .length,
-          documentation: project.files.filter(
-            (file) => file.type === "documentation"
-          ).length,
-          json: project.files.filter((file) => file.type === "json").length,
-        },
-        currentOperationHandle: [...descriptors.values()].find(
-          (descriptor) => descriptor.file?.id === currentFileId
-        )?.handle,
-        operations,
-        totalOperations: projectNames.size,
-      };
-    },
-
-    inspectOperation(handle: string) {
-      const descriptor = getDescriptor(handle);
-      const summary = toSummary(descriptor);
-      if (!descriptor.file) return summary;
-      return {
-        ...summary,
-        documentation: descriptor.file.documentation?.slice(0, MAX_TEXT_LENGTH),
-        parameters: descriptor.file.content.type.parameters,
-        parameterValues: descriptor.file.content.value.parameters
-          .slice(0, MAX_NESTED_ITEMS)
-          .map((parameter) => inspectStatement(parameter)),
-        statements: descriptor.file.content.value.statements
-          .slice(0, MAX_INSPECTED_STATEMENTS)
-          .map((statement) => inspectStatement(statement)),
-        totalStatements: descriptor.file.content.value.statements.length,
-      };
-    },
-
-    searchOperations(options: SearchOptions = {}) {
-      const limit = getLimit(options.limit);
-      const query = options.query?.trim().toLowerCase() ?? "";
-      return [...descriptors.values()]
+    return parsed.data.requests.map((request) => {
+      const inputType =
+        request.inputType?.kind === "operation"
+          ? (request.inputType.parameters[0]?.type ?? request.inputType.result)
+          : (request.inputType ?? { kind: "unknown" as const });
+      return [...baseCatalog, ...disabled]
         .filter(
           (descriptor) =>
-            (!options.source || descriptor.source === options.source) &&
-            (!descriptor.file || descriptor.file.id !== currentFileId)
+            !request.package ||
+            (request.package === "builtin"
+              ? descriptor.source === "builtin"
+              : descriptor.package === request.package),
         )
-        .map((descriptor) => toSummary(descriptor, options.inputType))
-        .filter((summary) => {
-          if (query && rankName(summary.name, query) === 3) return false;
-          if (
-            options.inputType &&
-            !isTypeCompatible(options.inputType, summary.inputType, typeContext)
-          ) {
-            return false;
-          }
-          return !(
-            options.resultType &&
-            (summary.resultType.kind === "unresolved" ||
-              !isTypeCompatible(
-                summary.resultType,
-                options.resultType,
-                typeContext
-              ))
-          );
-        })
-        .sort((first, second) => {
-          const rank =
-            rankName(first.name, query) - rankName(second.name, query);
-          if (rank !== 0) return rank;
-          const sourceRank = { project: 0, package: 1, core: 2 };
+        .filter((descriptor) => matches(descriptor.name, request.query))
+        .map((descriptor) => resolveDescriptor(descriptor, inputType, context))
+        .filter((descriptor) => {
+          const expected = descriptor.parameters[0]?.type;
           return (
-            sourceRank[first.source] - sourceRank[second.source] ||
-            first.name.localeCompare(second.name) ||
-            first.handle.localeCompare(second.handle)
+            !request.inputType ||
+            !expected ||
+            isTypeCompatible(inputType, expected, context)
           );
         })
-        .slice(0, limit);
-    },
-
-    describeOperations(handles: string[], inputType?: DataType) {
-      return handles.slice(0, MAX_RESULTS).map((handle) => {
-        const descriptor = getDescriptor(handle);
-        const resolved = resolveOperation(descriptor, inputType);
-        return {
-          ...toSummary(descriptor, inputType),
-          parameters: resolved.parameters.map((parameter, index) => ({
-            ...parameter,
-            name: parameter.name || `arg${index + 1}`,
-          })),
-          packageKey: descriptor.packageKey,
-          importKind: descriptor.importKind,
-          operationSource: descriptor.operation?.source,
-          documentation: descriptor.file?.documentation?.slice(
-            0,
-            MAX_TEXT_LENGTH
-          ),
-        };
-      });
-    },
-
-    resolveOperationHandle(
-      handle: string,
-      inputType: DataType = { kind: "unknown" }
-    ) {
-      const descriptor = getDescriptor(handle);
-      const resolved = resolveOperation(descriptor, inputType);
-      return {
-        name: descriptor.name,
-        source: descriptor.source,
-        fileId: descriptor.file?.id,
-        parameters: descriptor.file
-          ? [{ type: descriptor.file.content.type }, ...resolved.parameters]
-          : resolved.parameters,
-        resultType: resolved.resultType,
-        operationSource: descriptor.operation?.source,
-      };
-    },
-
-    searchPackages(query = "", limit = 10) {
-      const normalized = query.trim().toLowerCase();
-      return Object.entries(PACKAGE_CATALOG)
-        .map(([name, entry]) => ({
-          name,
-          displayName: entry.displayName,
-          packageName: entry.packageName,
-          description: entry.description,
-          enabled: enabledPackageNames.has(name),
-        }))
-        .filter(
-          (entry) =>
-            !normalized ||
-            entry.name.toLowerCase().includes(normalized) ||
-            entry.displayName.toLowerCase().includes(normalized) ||
-            entry.packageName.toLowerCase().includes(normalized) ||
-            entry.description?.toLowerCase().includes(normalized)
-        )
         .sort(
-          (first, second) =>
-            rankName(first.name, normalized) -
-              rankName(second.name, normalized) ||
-            Number(second.enabled) - Number(first.enabled) ||
-            first.name.localeCompare(second.name)
+          (a, b) =>
+            a.name.localeCompare(b.name) ||
+            a.source.localeCompare(b.source) ||
+            (a.package ?? "").localeCompare(b.package ?? ""),
         )
-        .slice(0, getLimit(limit));
-    },
-
-    async setPackageEnabled(name: string, enabled: boolean) {
-      if (!PACKAGE_CATALOG[name]) {
-        throw new AgentDiscoveryError(
-          "unsupported_package",
-          `Unsupported package: ${name}`
-        );
-      }
-      if (enabled === enabledPackageNames.has(name)) return;
-      if (enabled) {
-        await loadPackage(name);
-        enabledPackageNames.add(name);
-      } else {
-        removePackage(name);
-        enabledPackageNames.delete(name);
-      }
-    },
-
-    async updateProposedState(state: AgentHistoryState) {
-      const nextPackages = new Set(
-        state.npmDependencies
-          .map((dependency) => dependency.name)
-          .filter((name) => PACKAGE_CATALOG[name])
-      );
-      for (const name of [...enabledPackageNames]) {
-        if (!nextPackages.has(name)) {
-          removePackage(name);
-          enabledPackageNames.delete(name);
-        }
-      }
-      for (const name of [...nextPackages].sort()) {
-        if (!enabledPackageNames.has(name)) {
-          await loadPackage(name);
-          enabledPackageNames.add(name);
-        }
-      }
-      syncProjectFiles(state.operationFiles.map(({ file }) => file));
-    },
+        .slice(0, MAX_RESULTS_PER_REQUEST);
+    });
   };
+
+  const buildContextSnapshot = () => {
+    if (!selected)
+      throw new AgentDiscoveryError(
+        "unknown_operation",
+        "The selected operation is unavailable",
+      );
+    const usedNames = new Set(
+      selected.content.value.statements.flatMap((statement) =>
+        statement.operations.map((operation) => operation.value.name),
+      ),
+    );
+    const usedOperations = baseCatalog
+      .filter(({ name }) => usedNames.has(name))
+      .map((descriptor) =>
+        resolveDescriptor(descriptor, { kind: "unknown" }, context),
+      );
+    const snapshot = {
+      selectedOperation: structuredClone(selected.content),
+      selectedFileMetadata: {
+        id: selected.id,
+        name: selected.name,
+        createdAt: selected.createdAt,
+        updatedAt: selected.updatedAt,
+        tags: selected.tags,
+        trigger: selected.trigger,
+        tests: selected.tests?.length ?? 0,
+        documentation: selected.documentation,
+      },
+      projectOperations: operations
+        .filter(({ id }) => id !== selected.id)
+        .map((file) => ({
+          name: file.name,
+          operationId: file.id,
+          parameters: file.content.type.parameters,
+          result: file.content.type.result,
+          signature: `(${file.content.type.parameters.map((parameter) => `${parameter.name ?? "arg"}: ${getTypeSignature(parameter.type, context)}`).join(", ")}) => ${getTypeSignature(file.content.type.result, context)}`,
+        })),
+      enabledPackages,
+      supportedPackages: Object.entries(PACKAGE_CATALOG).map(
+        ([name, entry]) => ({ name, description: entry.description }),
+      ),
+      usedOperations,
+      statementTargets: {
+        parameters: selected.content.value.parameters.map(({ id, name }) => ({
+          id,
+          name: name ?? null,
+        })),
+        body: selected.content.value.statements.map(({ id, name }) => ({
+          id,
+          name: name ?? null,
+        })),
+      },
+      instruction:
+        "Change only the selected operation using insert_statement, replace_statement, delete_statement, and move_statement actions. Use only IDs from statementTargets for existing action targets and anchors; nested IDs in selectedOperation are not targetable.",
+    };
+    if (JSON.stringify(snapshot).length > MAX_CONTEXT_BYTES) {
+      throw new AgentDiscoveryError(
+        "invalid_lookup",
+        "Selected operation context is too large",
+      );
+    }
+    return snapshot;
+  };
+
+  return { buildContextSnapshot, lookupOperations };
 }

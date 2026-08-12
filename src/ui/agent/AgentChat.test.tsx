@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -31,13 +31,6 @@ const mocks = vi.hoisted(() => ({
                 id: "message-a",
                 role: "assistant",
                 content: "Review this",
-                executionFeedback: {
-                  status: "succeeded",
-                  resultType: { kind: "string" },
-                  resultPreview: "done",
-                  errors: [],
-                  truncated: true,
-                },
                 deploymentAction: "open-deployment-panel",
                 proposal: {
                   id: "proposal-a",
@@ -45,6 +38,9 @@ const mocks = vi.hoisted(() => ({
                   applicationId: undefined as string | undefined,
                   review: {
                     operationName: "anchorOperation",
+                    actions: [],
+                    files: [],
+                    packages: { enabled: [], disabled: [] },
                     parameters: { before: 0, after: 0 },
                     statements: { before: 0, after: 1 },
                     operationCalls: { before: 0, after: 0 },
@@ -120,6 +116,7 @@ describe("AgentChat proposal navigation", () => {
           onRegenerateProposal={vi.fn()}
           onUndoApplication={vi.fn()}
           onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
           historyBusy={false}
         />
@@ -137,27 +134,6 @@ describe("AgentChat proposal navigation", () => {
     ).toBe(false);
   });
 
-  it("shows bounded execution feedback distinctly", () => {
-    render(
-      <MantineProvider>
-        <AgentChat
-          onApplyProposal={vi.fn()}
-          onRejectProposal={vi.fn()}
-          onReviseProposal={vi.fn()}
-          onRegenerateProposal={vi.fn()}
-          onUndoApplication={vi.fn()}
-          onRedoApplication={vi.fn()}
-          onOpenDeploymentPanel={vi.fn()}
-          historyBusy={false}
-        />
-      </MantineProvider>
-    );
-
-    expect(screen.getByLabelText("Execution succeeded")).toBeDefined();
-    expect(screen.getByText("Result type: string")).toBeDefined();
-    expect(screen.getByText("Feedback was truncated.")).toBeDefined();
-  });
-
   it("shows a manual deployment action", () => {
     const onOpenDeploymentPanel = vi.fn();
     render(
@@ -169,6 +145,7 @@ describe("AgentChat proposal navigation", () => {
           onRegenerateProposal={vi.fn()}
           onUndoApplication={vi.fn()}
           onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={onOpenDeploymentPanel}
           historyBusy={false}
         />
@@ -202,6 +179,7 @@ describe("AgentChat proposal navigation", () => {
           onRegenerateProposal={vi.fn()}
           onUndoApplication={onUndoApplication}
           onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
           historyBusy={false}
         />
@@ -210,5 +188,42 @@ describe("AgentChat proposal navigation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(onUndoApplication).toHaveBeenCalledWith("application-a");
+  });
+
+  it("confirms and routes deleting a user turn", async () => {
+    const onDeleteTurn = vi.fn();
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      {
+        id: "user-a",
+        role: "user",
+        content: "Remove this request",
+      } as never,
+    ] as never;
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={onDeleteTurn}
+          onOpenDeploymentPanel={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete turn" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Yes, delete." })).toBeDefined()
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Yes, delete.", hidden: true })
+    );
+
+    expect(onDeleteTurn).toHaveBeenCalledWith("user-a");
   });
 });

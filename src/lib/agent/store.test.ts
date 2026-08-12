@@ -34,6 +34,32 @@ describe("agent store", () => {
     expect(projects["project-b"].activeThreadId).toBe(second.id);
   });
 
+  it("preserves project edit history when creating a later chat", () => {
+    const first = useAgentStore.getState().createThread("project-a");
+    const history = { entries: [], cursor: 0, lastSequence: 0 };
+    const project = useAgentStore.getState().agentProjects["project-a"];
+    useAgentStore.setState({
+      agentProjects: {
+        ...useAgentStore.getState().agentProjects,
+        "project-a": { ...project, history },
+      },
+    });
+
+    const second = useAgentStore.getState().createThread("project-a");
+    useAgentStore.getState().selectThread("project-a", first.id);
+
+    expect(useAgentStore.getState().agentProjects["project-a"].history).toBe(
+      history
+    );
+    expect(
+      useAgentStore.getState().agentProjects["project-a"].threads
+    ).toHaveLength(2);
+    expect(
+      useAgentStore.getState().agentProjects["project-a"].activeThreadId
+    ).toBe(first.id);
+    expect(second.id).not.toBe(first.id);
+  });
+
   it("persists preferences, API keys, and project documents", () => {
     const thread = useAgentStore.getState().createThread("project-a");
     useAgentStore.getState().setApiKey("openai", "session-secret");
@@ -77,6 +103,48 @@ describe("agent store", () => {
     expect(useAgentStore.getState().pendingProposals[second.id]?.id).toBe(
       "proposal-b"
     );
+  });
+
+  it("deletes one request and its response without removing later turns", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+    const first = useAgentStore.getState().addMessage(thread.id, {
+      role: "user",
+      content: "First request",
+    });
+    useAgentStore.getState().addMessage(thread.id, {
+      role: "assistant",
+      content: "First response",
+      proposal: { id: "proposal-a", diagnostics: [] },
+    });
+    const later = useAgentStore.getState().addMessage(thread.id, {
+      role: "user",
+      content: "Later request",
+    });
+    const laterResponse = useAgentStore.getState().addMessage(thread.id, {
+      role: "assistant",
+      content: "Later response",
+    });
+    useAgentStore.getState().setPendingProposal(thread.id, {
+      id: "proposal-a",
+      projectId: "project-a",
+      threadId: thread.id,
+    } as never);
+
+    useAgentStore.getState().deleteThreadTurn(thread.id, first!.id);
+
+    const messages =
+      useAgentStore.getState().agentProjects["project-a"].threads[0].messages;
+    expect(messages.map(({ id }) => id)).toEqual([
+      later!.id,
+      laterResponse!.id,
+    ]);
+    expect(messages.map(({ content }) => content)).toEqual([
+      "Later request",
+      "Later response",
+    ]);
+    expect(
+      useAgentStore.getState().pendingProposals[thread.id]
+    ).toBeUndefined();
   });
 
   it("redacts known API keys from messages and drafts", () => {

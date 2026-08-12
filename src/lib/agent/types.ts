@@ -8,18 +8,6 @@ export type AgentProvider = "openai" | "anthropic";
 
 export type AgentThinkingLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
-export type AgentExecutionError = { type?: string; message: string };
-
-export type AgentExecutionFeedback = {
-  status: "succeeded" | "failed" | "cancelled" | "not_run";
-  operationHandle?: string;
-  resultType?: { kind: string };
-  resultPreview?: unknown;
-  errors: AgentExecutionError[];
-  reason?: string;
-  truncated: boolean;
-};
-
 export type AgentThread = {
   id: string;
   title: string;
@@ -39,7 +27,6 @@ export type AgentMessage = {
     diagnostics: AgentDiagnostic[];
     applicationId?: string;
   };
-  executionFeedback?: AgentExecutionFeedback;
   deploymentAction?: "open-deployment-panel";
   createdAt: number;
 };
