@@ -66,7 +66,10 @@ const mocks = vi.hoisted(() => {
       string,
       { id: string; files: { id: string; type: string }[] }
     >,
-    getCurrentFile: vi.fn(() => ({ id: "operation-a", type: "operation" })),
+    getCurrentFile: vi.fn((): { id: string; type: string } | undefined => ({
+      id: "operation-a",
+      type: "operation",
+    })),
     getCurrentProject: vi.fn(() => ({
       id: "project-a",
       files: [{ id: "operation-a", type: "operation" }],
@@ -177,6 +180,7 @@ vi.mock("./agent/AgentInput", () => ({
 }));
 
 import { AgentPanel } from "./AgentPanel";
+import { AgentTransportError } from "@/lib/agent/transport";
 
 beforeAll(() => {
   vi.stubGlobal(
@@ -220,6 +224,9 @@ beforeEach(() => {
     id: "operation-a",
     type: "operation",
   });
+  mocks.createOperationFromFile.mockImplementation((file?: { id: string }) =>
+    file ? { id: file.id } : undefined
+  );
   const project = {
     id: "project-a",
     files: [{ id: "operation-a", type: "operation" }],
@@ -348,6 +355,57 @@ describe("AgentPanel thread header", () => {
 });
 
 describe("AgentPanel proposal lifecycle", () => {
+  it("reports a missing operation without clearing the draft", () => {
+    mocks.projectState.getCurrentFile.mockReturnValue(undefined);
+    mocks.createOperationFromFile.mockReturnValue(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Select an operation before sending a request."
+    );
+    expect(mocks.agentState.setDraft).not.toHaveBeenCalledWith("thread-a", "");
+  });
+
+  it("reports a missing provider key and offers the key settings", () => {
+    mocks.agentState.getApiKey.mockReturnValue(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Add an API key for OpenAI"
+    );
+    expect(screen.getByRole("button", { name: "Add API key" })).toBeDefined();
+    expect(mocks.agentState.setDraft).not.toHaveBeenCalledWith("thread-a", "");
+  });
+
+  it("stores a retryable request error with the original operation anchor", async () => {
+    mocks.generateOperationProposal.mockRejectedValue(
+      new AgentTransportError("Provider request failed", "request_failed")
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({
+          content: "Error: Provider request failed",
+          error: {
+            retry: {
+              prompt: "Update it",
+              sourceFileId: "operation-a",
+            },
+            requiresApiKey: false,
+          },
+        })
+      )
+    );
+  });
+
   it("opens the Deployment panel for deployment-only requests", async () => {
     mocks.submitPrompt = "Deploy this to Vercel";
     mocks.getExplicitDeploymentIntent.mockReturnValue({ afterChanges: false });
@@ -459,6 +517,7 @@ describe("AgentPanel proposal lifecycle", () => {
       )
     );
     expect(mocks.projectState.updateFile).not.toHaveBeenCalled();
+    expect(mocks.agentState.setDraft).toHaveBeenCalledWith("thread-a", "");
     expect(mocks.agentState.setRunTrace).toHaveBeenCalledWith(
       "Preparing an implementation"
     );

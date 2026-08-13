@@ -66,9 +66,11 @@ afterAll(() => vi.unstubAllGlobals());
 
 function renderInput({
   isLoading = false,
+  historyBusy = false,
   onSubmit = vi.fn(),
 }: {
   isLoading?: boolean;
+  historyBusy?: boolean;
   onSubmit?: (prompt: string) => void;
 } = {}) {
   return {
@@ -79,6 +81,7 @@ function renderInput({
           onSubmit={onSubmit}
           onCancel={vi.fn()}
           isLoading={isLoading}
+          historyBusy={historyBusy}
         />
       </MantineProvider>
     ),
@@ -105,7 +108,9 @@ describe("AgentInput accessibility", () => {
     expect(
       screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
     ).toBe(true);
-    expect(screen.queryByText(/Add an API key/)).toBeNull();
+    expect(
+      screen.getByText(/Add an API key for .* to send messages/)
+    ).toBeDefined();
   });
 
   it("submits with Enter on desktop when the selected model has a key", () => {
@@ -118,7 +123,7 @@ describe("AgentInput accessibility", () => {
     );
 
     expect(onSubmit).toHaveBeenCalledWith("Keep this draft");
-    expect(mocks.setDraft).toHaveBeenCalledWith("thread-a", "");
+    expect(mocks.setDraft).not.toHaveBeenCalledWith("thread-a", "");
     expect(
       screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
     ).toBe(false);
@@ -149,6 +154,26 @@ describe("AgentInput accessibility", () => {
 
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
     expect(onSubmit).toHaveBeenCalledWith("Keep this draft");
+  });
+
+  it("does not submit while an input method is composing text", () => {
+    mocks.apiKey = "key";
+    const { onSubmit } = renderInput();
+
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Message the agent" }),
+      { key: "Enter", isComposing: true }
+    );
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the composer usable without showing a cancel action during history saves", () => {
+    mocks.apiKey = "key";
+    renderInput({ historyBusy: true });
+
+    expect(screen.queryByRole("button", { name: "Cancel request" })).toBeNull();
+    expect(screen.getByText("Saving changes...")).toBeDefined();
   });
 
   it("returns focus to the composer when a request finishes", () => {

@@ -17,6 +17,12 @@ export type AgentThread = {
   messages: AgentMessage[];
 };
 
+export type AgentRetry = {
+  prompt: string;
+  sourceFileId?: string;
+  regenerate?: boolean;
+};
+
 export type AgentMessage = {
   id: string;
   role: "user" | "assistant";
@@ -28,6 +34,10 @@ export type AgentMessage = {
     applicationId?: string;
   };
   deploymentAction?: "open-deployment-panel";
+  error?: {
+    retry?: AgentRetry;
+    requiresApiKey?: boolean;
+  };
   createdAt: number;
 };
 

@@ -4,6 +4,7 @@ import {
   afterAll,
   afterEach,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
         { id: "selected-file", name: "selectedOperation", type: "operation" },
       ],
     })),
+    getCurrentFile: vi.fn(() => ({ id: "selected-file", type: "operation" })),
   },
   agentState: {
     agentProjects: {
@@ -63,6 +65,7 @@ const mocks = vi.hoisted(() => ({
       },
     },
     activeRun: undefined,
+    agentReady: true,
     pendingProposals: {
       "thread-a": {
         id: "proposal-a",
@@ -117,6 +120,43 @@ afterEach(() => {
   Object.assign(mocks.agentState, { activeRun: undefined });
 });
 
+beforeEach(() => {
+  mocks.agentState.agentReady = true;
+  mocks.agentState.activeRun = undefined;
+  mocks.agentState.agentProjects["project-a"].history = {
+    entries: [],
+    cursor: 0,
+    lastSequence: 0,
+  };
+  mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+    {
+      id: "message-a",
+      role: "assistant",
+      content: "Review this",
+      deploymentAction: "open-deployment-panel",
+      proposal: {
+        id: "proposal-a",
+        diagnostics: [],
+        applicationId: undefined,
+        review: {
+          operationName: "anchorOperation",
+          actions: [],
+          files: [],
+          packages: { enabled: [], disabled: [] },
+          parameters: { before: 0, after: 0 },
+          statements: { before: 0, after: 1 },
+          operationCalls: { before: 0, after: 0 },
+          returnType: { before: "undefined", after: "string" },
+          generatedSyntax: "valid",
+        },
+      },
+    },
+  ] as never;
+  mocks.agentState.pendingProposals = {
+    "thread-a": { id: "proposal-a", fileId: "anchor-file" },
+  } as Record<string, { id: string; fileId: string }>;
+});
+
 describe("AgentChat request progress", () => {
   it("shows request milestones and streamed explanation instead of a loading label", () => {
     Object.assign(mocks.agentState, {
@@ -149,6 +189,8 @@ describe("AgentChat request progress", () => {
           onRedoApplication={vi.fn()}
           onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>
@@ -159,6 +201,168 @@ describe("AgentChat request progress", () => {
     expect(progress.textContent).toContain("Planning the requested change");
     expect(progress.textContent).toContain("I found the relevant operation.");
     expect(progress.textContent).not.toContain("Loading...");
+  });
+});
+
+describe("AgentChat navigation and recovery", () => {
+  it("explains that chat history is loading before hydration completes", () => {
+    mocks.agentState.agentReady = false;
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Loading agent chats"
+    );
+  });
+
+  it("follows new messages when the reader is already at the bottom", () => {
+    const view = render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+    const conversation = screen.getByRole("log", {
+      name: "Agent conversation",
+    });
+    Object.defineProperties(conversation, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, value: 1000 },
+    });
+    conversation.scrollTop = 700;
+    fireEvent.scroll(conversation);
+
+    mocks.agentState.agentProjects["project-a"].threads[0].messages.push({
+      id: "message-b",
+      role: "assistant",
+      content: "A newer response",
+    } as never);
+    view.rerender(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    expect(conversation.scrollTop).toBe(1000);
+  });
+
+  it("preserves an older reading position and offers jump to latest", () => {
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+    const conversation = screen.getByRole("log", {
+      name: "Agent conversation",
+    });
+    Object.defineProperties(conversation, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, value: 1000 },
+    });
+    conversation.scrollTop = 0;
+    fireEvent.scroll(conversation);
+
+    expect(
+      screen.getByRole("button", { name: "Jump to latest" })
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+
+    expect(conversation.scrollTop).toBe(1000);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
+  it("renders recovery actions for retryable errors", () => {
+    const onOpenApiKeys = vi.fn();
+    const onRetry = vi.fn();
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      {
+        id: "error-a",
+        role: "assistant",
+        content: "Error: Provider rejected the API key",
+        error: {
+          requiresApiKey: true,
+          retry: { prompt: "Try again", sourceFileId: "anchor-file" },
+        },
+      },
+    ] as never;
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={onOpenApiKeys}
+          onRetry={onRetry}
+          historyBusy={false}
+        />
+      </MantineProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add API key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry request" }));
+
+    expect(onOpenApiKeys).toHaveBeenCalledOnce();
+    expect(onRetry).toHaveBeenCalledWith({
+      prompt: "Try again",
+      sourceFileId: "anchor-file",
+    });
   });
 });
 
@@ -175,6 +379,8 @@ describe("AgentChat proposal navigation", () => {
           onRedoApplication={vi.fn()}
           onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>
@@ -204,6 +410,8 @@ describe("AgentChat proposal navigation", () => {
           onRedoApplication={vi.fn()}
           onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={onOpenDeploymentPanel}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>
@@ -238,6 +446,8 @@ describe("AgentChat proposal navigation", () => {
           onRedoApplication={vi.fn()}
           onDeleteTurn={vi.fn()}
           onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>
@@ -268,6 +478,8 @@ describe("AgentChat proposal navigation", () => {
           onRedoApplication={vi.fn()}
           onDeleteTurn={onDeleteTurn}
           onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
           historyBusy={false}
         />
       </MantineProvider>

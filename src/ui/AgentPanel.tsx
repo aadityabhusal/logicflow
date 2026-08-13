@@ -18,6 +18,7 @@ import { createOperationFromFile } from "@/lib/utils";
 import { MdVpnKey } from "react-icons/md";
 import { type FocusEvent, useEffect, useRef, useState } from "react";
 import { AgentTransportError } from "@/lib/agent/transport";
+import type { AgentRetry } from "@/lib/agent/types";
 import {
   applyAgentProposal,
   redoAgentApplication,
@@ -60,6 +61,8 @@ export function AgentPanel() {
   const [revisionProposalId, setRevisionProposalId] = useState<string>();
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
+  const [submissionError, setSubmissionError] = useState<string>();
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
   const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
   const agentProject = currentProjectId
     ? agentProjects[currentProjectId]
@@ -103,6 +106,7 @@ export function AgentPanel() {
     setDeleteConfirmationOpen(false);
     setRevisionProposalId(undefined);
     setHistoryError(undefined);
+    setSubmissionError(undefined);
   }, [activeThreadId, currentProjectId]);
 
   const handleSubmit = async (
@@ -117,11 +121,16 @@ export function AgentPanel() {
     const deploymentIntent = !options?.regenerate
       ? getExplicitDeploymentIntent(prompt)
       : undefined;
-    if (!submittedProject || !currentProjectId || !activeThreadId) return;
+    if (!submittedProject || !currentProjectId || !activeThreadId) {
+      setSubmissionError("The agent chat is still loading. Please try again.");
+      return;
+    }
     if (deploymentIntent && !deploymentIntent.afterChanges) {
       if (!options?.regenerate) {
         addMessage(activeThreadId, { role: "user", content: prompt });
+        setDraft(activeThreadId, "");
       }
+      setSubmissionError(undefined);
       addMessage(activeThreadId, {
         role: "assistant",
         content:
@@ -135,15 +144,34 @@ export function AgentPanel() {
       (file) => file.id === sourceFileId && file.type === "operation"
     );
     const currentOperation = createOperationFromFile(sourceFile);
-    if (!currentOperation || !sourceFile || !submittedProject) return;
+    if (!sourceFile) {
+      setSubmissionError("Select an operation before sending a request.");
+      return;
+    }
+    if (!currentOperation) {
+      setSubmissionError(
+        "The selected operation could not be loaded. Select another operation and try again."
+      );
+      return;
+    }
 
     const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
-    if (!modelConfig) return;
+    if (!modelConfig) {
+      setSubmissionError("Select an agent model before sending a request.");
+      return;
+    }
     const apiKey = getApiKey(modelConfig.provider);
-    if (!apiKey) return;
+    if (!apiKey) {
+      setSubmissionError(
+        `Add an API key for ${LLM_PROVIDERS[modelConfig.provider].name} before sending a request.`
+      );
+      return;
+    }
 
+    setSubmissionError(undefined);
     if (!options?.regenerate) {
       addMessage(activeThreadId, { role: "user", content: prompt });
+      setDraft(activeThreadId, "");
     }
     const revisedProposal =
       pendingProposal &&
@@ -212,17 +240,27 @@ export function AgentPanel() {
       }
       setRevisionProposalId(undefined);
     } catch (error) {
-      if (
-        !(error instanceof AgentTransportError) ||
-        error.code !== "cancelled"
-      ) {
-        addMessage(activeThreadId, {
-          role: "assistant",
-          content: `Error: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        });
-      }
+      const transportError =
+        error instanceof AgentTransportError ? error : undefined;
+      const retry: AgentRetry = {
+        prompt,
+        sourceFileId: sourceFile.id,
+      };
+      if (options?.regenerate) retry.regenerate = true;
+      const errorMessage =
+        transportError?.code === "cancelled"
+          ? "Request cancelled."
+          : `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`;
+      addMessage(activeThreadId, {
+        role: "assistant",
+        content: errorMessage,
+        error: {
+          retry,
+          requiresApiKey: transportError?.code === "unauthorized",
+        },
+      });
     } finally {
       if (abortController.current === controller) {
         abortController.current = undefined;
@@ -328,7 +366,7 @@ export function AgentPanel() {
               icon={FaListUl}
               title="Chat list"
               aria-label="Chat list"
-              disabled={!!activeRun || !currentProjectId}
+              disabled={!!activeRun || historyBusy || !currentProjectId}
             />
           </Menu.Target>
           <Menu.Dropdown>
@@ -387,7 +425,7 @@ export function AgentPanel() {
               title="Rename chat"
               aria-label="Rename chat"
               className="px-0.5 hover:outline hover:outline-border"
-              disabled={!activeThread || !!activeRun}
+              disabled={!activeThread || !!activeRun || historyBusy}
             />
           ) : null}
         </div>
@@ -406,7 +444,7 @@ export function AgentPanel() {
                 title="Delete chat"
                 aria-label="Delete chat"
                 className="p-0.5 hover:outline hover:outline-border"
-                disabled={!activeThread || !!activeRun}
+                disabled={!activeThread || !!activeRun || historyBusy}
                 onClick={() => setDeleteConfirmationOpen((opened) => !opened)}
               />
             </Popover.Target>
@@ -436,11 +474,23 @@ export function AgentPanel() {
             icon={FaPlus}
             onClick={() => currentProjectId && createThread(currentProjectId)}
             title="New chat"
-            disabled={!!activeRun || !currentProjectId || !agentProject}
+            disabled={
+              !!activeRun || historyBusy || !currentProjectId || !agentProject
+            }
           />
-          <Popover position="top-start" trapFocus returnFocus>
+          <Popover
+            position="top-start"
+            trapFocus
+            returnFocus
+            opened={apiKeysOpen}
+            onChange={setApiKeysOpen}
+          >
             <Popover.Target>
-              <IconButton icon={MdVpnKey} title="Add API keys" />
+              <IconButton
+                icon={MdVpnKey}
+                title="Add API keys"
+                onClick={() => setApiKeysOpen((opened) => !opened)}
+              />
             </Popover.Target>
             <Popover.Dropdown
               aria-labelledby="agent-api-keys-title"
@@ -494,6 +544,23 @@ export function AgentPanel() {
           {historyError}
         </div>
       ) : null}
+      {submissionError ? (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-b p-2 text-xs"
+        >
+          <span className="min-w-0 flex-1">{submissionError}</span>
+          {submissionError.startsWith("Add an API key") ? (
+            <Button
+              size="compact-xs"
+              className="min-h-9 shrink-0"
+              onClick={() => setApiKeysOpen(true)}
+            >
+              Add API key
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <AgentChat
         onApplyProposal={handleApplyProposal}
         onRejectProposal={handleRejectProposal}
@@ -514,6 +581,13 @@ export function AgentPanel() {
             document.getElementById("sidebar-tab-deployment")?.focus()
           );
         }}
+        onOpenApiKeys={() => setApiKeysOpen(true)}
+        onRetry={(retry: AgentRetry) =>
+          void handleSubmit(retry.prompt, {
+            regenerate: retry.regenerate,
+            sourceFileId: retry.sourceFileId,
+          })
+        }
         historyBusy={historyBusy}
       />
       <AgentInput
@@ -528,7 +602,8 @@ export function AgentPanel() {
           })
         }
         onCancel={() => abortController.current?.abort()}
-        isLoading={!!activeRun || historyBusy}
+        isLoading={!!activeRun}
+        historyBusy={historyBusy}
       />
     </div>
   );

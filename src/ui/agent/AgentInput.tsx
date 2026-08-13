@@ -16,9 +16,15 @@ interface AgentInputProps {
   onSubmit: (prompt: string) => void;
   onCancel: () => void;
   isLoading: boolean;
+  historyBusy?: boolean;
 }
 
-export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
+export function AgentInput({
+  onSubmit,
+  onCancel,
+  isLoading,
+  historyBusy = false,
+}: AgentInputProps) {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const wasLoading = useRef(isLoading);
@@ -53,6 +59,19 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
   const SelectedProviderIcon = selectedModelConfig
     ? LLM_PROVIDERS[selectedModelConfig.provider].Icon
     : undefined;
+  const composerDisabled = isLoading || historyBusy || !activeThreadId;
+  const selectorDisabled = historyBusy || !activeThreadId;
+  const composerStatus = historyBusy
+    ? "Saving changes..."
+    : !activeThreadId
+      ? "Loading chat..."
+      : !selectedModelConfig
+        ? "Select a model to send messages."
+        : !modelHasApiKey
+          ? `Add an API key for ${LLM_PROVIDERS[selectedModelConfig.provider].name} to send messages.`
+          : smallScreen
+            ? "Ctrl/Cmd + Enter to send"
+            : "Enter to send | Shift + Enter for a new line";
 
   useEffect(() => {
     if (wasLoading.current && !isLoading) {
@@ -72,7 +91,6 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
     if (value.trim() && !isLoading && modelHasApiKey) {
       restoreComposerFocus.current = true;
       onSubmit(value.trim());
-      if (activeThreadId) setDraft(activeThreadId, "");
     }
   };
 
@@ -83,6 +101,7 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
           id="agent-prompt-input"
           ref={inputRef}
           aria-label="Message the agent"
+          aria-describedby="agent-composer-status"
           value={value}
           onChange={(e) =>
             activeThreadId && setDraft(activeThreadId, e.target.value)
@@ -91,10 +110,11 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
           autosize
           minRows={3}
           maxRows={smallScreen ? 6 : 10}
-          disabled={isLoading}
+          disabled={composerDisabled}
           onKeyDown={(e) => {
             if (
               e.key === "Enter" &&
+              !e.nativeEvent.isComposing &&
               (e.metaKey || e.ctrlKey || (!smallScreen && !e.shiftKey))
             ) {
               e.preventDefault();
@@ -107,12 +127,20 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
           }}
         />
         <div className="flex min-w-0 gap-1 border-t border-border/60 px-2 py-1.5">
+          <span
+            id="agent-composer-status"
+            aria-live="polite"
+            className="min-w-0 flex-1 self-center truncate px-1 text-xs text-dimmed"
+          >
+            {composerStatus}
+          </span>
           <Menu position="top-start">
             <Menu.Target>
               <button
                 type="button"
                 className="flex min-h-9 min-w-0 items-center gap-2 rounded-xs px-2 text-sm text-dimmed hover:bg-dropdown-default hover:text-white focus-visible:outline-2 outline-white"
                 aria-label={`Model: ${selectedModelConfig?.name ?? "Select model"}`}
+                disabled={selectorDisabled}
               >
                 {SelectedProviderIcon ? (
                   <SelectedProviderIcon className="shrink-0" />
@@ -147,6 +175,7 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
                 type="button"
                 className="flex min-h-9 shrink-0 items-center gap-2 rounded-xs px-2 text-sm text-dimmed hover:bg-dropdown-default hover:text-white focus-visible:outline-2 outline-white"
                 aria-label={`Thinking: ${thinkingLabel}`}
+                disabled={selectorDisabled}
               >
                 {thinkingLabel}
                 <FaChevronDown size={10} />
@@ -185,7 +214,9 @@ export function AgentInput({ onSubmit, onCancel, isLoading }: AgentInputProps) {
               icon={FaArrowUp}
               className="border px-2"
               title="Send"
-              disabled={value.trim() === "" || !modelHasApiKey}
+              disabled={
+                composerDisabled || value.trim() === "" || !modelHasApiKey
+              }
             />
           )}
         </div>

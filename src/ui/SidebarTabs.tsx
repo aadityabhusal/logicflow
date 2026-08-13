@@ -122,37 +122,35 @@ function SidebarTabsComponent({
             </Tooltip>
           ))}
         </Tabs.List>
-        {!activeTab ? null : (
-          <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden">
-            <Tabs.Panel value="operations" className="h-full w-full">
+        <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden">
+          <Tabs.Panel value="operations" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <OperationsList />
+            </Suspense>
+          </Tabs.Panel>
+          <Tabs.Panel value="details" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <DetailsPanel />
+            </Suspense>
+          </Tabs.Panel>
+          {import.meta.env.VITE_APP_ENABLE_AGENT_PANEL && AgentPanel && (
+            <Tabs.Panel value="agent" className="h-full w-full" keepMounted>
               <Suspense fallback={<LoadingFallback />}>
-                <OperationsList />
+                <AgentPanel />
               </Suspense>
             </Tabs.Panel>
-            <Tabs.Panel value="details" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <DetailsPanel />
-              </Suspense>
-            </Tabs.Panel>
-            {import.meta.env.VITE_APP_ENABLE_AGENT_PANEL && AgentPanel && (
-              <Tabs.Panel value="agent" className="h-full w-full">
-                <Suspense fallback={<LoadingFallback />}>
-                  <AgentPanel />
-                </Suspense>
-              </Tabs.Panel>
-            )}
-            <Tabs.Panel value="deployment" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <Deployment />
-              </Suspense>
-            </Tabs.Panel>
-            <Tabs.Panel value="settings" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <SettingsPanel />
-              </Suspense>
-            </Tabs.Panel>
-          </div>
-        )}
+          )}
+          <Tabs.Panel value="deployment" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <Deployment />
+            </Suspense>
+          </Tabs.Panel>
+          <Tabs.Panel value="settings" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <SettingsPanel />
+            </Suspense>
+          </Tabs.Panel>
+        </div>
       </Tabs>
 
       {!activeTab ? null : !smallScreen ? (
