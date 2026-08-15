@@ -1,6 +1,6 @@
 import { lazy, memo, Suspense } from "react";
 import { Tabs, Tooltip } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
+import { useMediaQuery, useViewportSize } from "@mantine/hooks";
 import {
   FaCircleInfo,
   FaRobot,
@@ -12,6 +12,7 @@ import { useUiConfigStore } from "../lib/store";
 import { MAX_SCREEN_WIDTH } from "@/lib/data";
 import { Resizer } from "./Resizer";
 import { LoadingFallback } from "./LoadingFallback";
+import { getSidebarPanelLimits } from "@/lib/layout";
 
 const OperationsList = lazy(() =>
   import("./OperationsList").then((m) => ({ default: m.OperationsList }))
@@ -47,11 +48,28 @@ function SidebarTabsComponent({
   setActiveTab: (activeTab: string | undefined) => void;
 }) {
   const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
-  const { panelWidth, panelHeight, setUiConfig } = useUiConfigStore((s) => ({
-    panelWidth: activeTab ? s.sidebar.width || 300 : 0,
-    panelHeight: activeTab ? s.sidebar.height || 300 : 0,
-    setUiConfig: s.setUiConfig,
-  }));
+  const viewport = useViewportSize();
+  const { storedPanelWidth, storedPanelHeight, setUiConfig } = useUiConfigStore(
+    (s) => ({
+      storedPanelWidth: s.sidebar.width || 300,
+      storedPanelHeight: s.sidebar.height || 300,
+      setUiConfig: s.setUiConfig,
+    })
+  );
+  const viewportWidth = viewport.width || window.innerWidth;
+  const viewportHeight = viewport.height || window.innerHeight;
+  const {
+    minWidth: panelMinWidth,
+    maxWidth: panelMaxWidth,
+    minHeight: panelMinHeight,
+    maxHeight: panelMaxHeight,
+  } = getSidebarPanelLimits(activeTab, viewportWidth, viewportHeight);
+  const panelWidth = activeTab
+    ? Math.min(panelMaxWidth, Math.max(panelMinWidth, storedPanelWidth))
+    : 0;
+  const panelHeight = activeTab
+    ? Math.min(panelMaxHeight, Math.max(panelMinHeight, storedPanelHeight))
+    : 0;
 
   const handleTabChange = (value: string | null) => {
     setActiveTab(value === activeTab ? undefined : (value ?? undefined));
@@ -89,12 +107,13 @@ function SidebarTabsComponent({
               position={smallScreen ? "top" : "right"}
             >
               <Tabs.Tab
+                id={`sidebar-tab-${tab.value}`}
                 value={tab.value}
                 leftSection={<tab.Icon size={24} />}
                 title={tab.label}
                 classNames={{
                   tab: [
-                    "flex gap-1 items-center justify-center p-0 w-full text-sm outline-none hover:bg-dropdown-hover",
+                    "flex gap-1 items-center justify-center p-0 w-full text-sm focus-visible:outline-2 outline-white hover:bg-dropdown-hover",
                     activeTab ? "data-active:bg-dropdown-selected" : "",
                   ].join(" "),
                   tabSection: smallScreen ? "p-2" : "p-3",
@@ -103,45 +122,44 @@ function SidebarTabsComponent({
             </Tooltip>
           ))}
         </Tabs.List>
-        {!activeTab ? null : (
-          <div className="overflow-hidden relative flex-1">
-            <Tabs.Panel value="operations" className="h-full w-full">
+        <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden">
+          <Tabs.Panel value="operations" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <OperationsList />
+            </Suspense>
+          </Tabs.Panel>
+          <Tabs.Panel value="details" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <DetailsPanel />
+            </Suspense>
+          </Tabs.Panel>
+          {import.meta.env.VITE_APP_ENABLE_AGENT_PANEL && AgentPanel && (
+            <Tabs.Panel value="agent" className="h-full w-full" keepMounted>
               <Suspense fallback={<LoadingFallback />}>
-                <OperationsList />
+                <AgentPanel />
               </Suspense>
             </Tabs.Panel>
-            <Tabs.Panel value="details" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <DetailsPanel />
-              </Suspense>
-            </Tabs.Panel>
-            {import.meta.env.VITE_APP_ENABLE_AGENT_PANEL && AgentPanel && (
-              <Tabs.Panel value="agent" className="h-full w-full">
-                <Suspense fallback={<LoadingFallback />}>
-                  <AgentPanel />
-                </Suspense>
-              </Tabs.Panel>
-            )}
-            <Tabs.Panel value="deployment" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <Deployment />
-              </Suspense>
-            </Tabs.Panel>
-            <Tabs.Panel value="settings" className="h-full w-full">
-              <Suspense fallback={<LoadingFallback />}>
-                <SettingsPanel />
-              </Suspense>
-            </Tabs.Panel>
-          </div>
-        )}
+          )}
+          <Tabs.Panel value="deployment" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <Deployment />
+            </Suspense>
+          </Tabs.Panel>
+          <Tabs.Panel value="settings" className="h-full w-full">
+            <Suspense fallback={<LoadingFallback />}>
+              <SettingsPanel />
+            </Suspense>
+          </Tabs.Panel>
+        </div>
       </Tabs>
 
       {!activeTab ? null : !smallScreen ? (
         <Resizer
           type="width"
           direction="positive"
-          minSize={200}
-          maxSize={window.innerWidth / 2}
+          value={panelWidth}
+          minSize={panelMinWidth}
+          maxSize={panelMaxWidth}
           setPanelSize={(size) =>
             setUiConfig((p) => ({
               sidebar: { ...(p.sidebar ?? {}), width: size.width },
@@ -153,8 +171,9 @@ function SidebarTabsComponent({
         <Resizer
           type="height"
           direction="negative"
-          minSize={150}
-          maxSize={window.innerHeight * 0.75}
+          value={panelHeight}
+          minSize={panelMinHeight}
+          maxSize={panelMaxHeight}
           setPanelSize={(size) =>
             setUiConfig((p) => ({
               sidebar: { ...(p.sidebar ?? {}), height: size.height },

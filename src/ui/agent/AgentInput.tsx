@@ -1,70 +1,163 @@
-import { Textarea, Button, Menu, Tooltip } from "@mantine/core";
+import { Textarea, Menu } from "@mantine/core";
 import { useAgentStore } from "@/lib/store";
-import { useState } from "react";
-import { AVAILABLE_MODELS } from "@/lib/data";
-import { FaArrowUp, FaChevronDown } from "react-icons/fa6";
+import {
+  AGENT_THINKING_LEVELS,
+  AVAILABLE_MODELS,
+  LLM_PROVIDERS,
+} from "@/lib/data";
+import { FaArrowUp, FaChevronDown, FaStop } from "react-icons/fa6";
 import { IconButton } from "../IconButton";
+import { useProjectStore } from "@/lib/store";
+import { useMediaQuery } from "@mantine/hooks";
+import { MAX_SCREEN_WIDTH } from "@/lib/data";
+import { useEffect, useRef } from "react";
 
 interface AgentInputProps {
   onSubmit: (prompt: string) => void;
+  onCancel: () => void;
+  isLoading: boolean;
+  historyBusy?: boolean;
 }
 
-export function AgentInput({ onSubmit }: AgentInputProps) {
-  const [value, setValue] = useState("");
-  const { isLoading, selectedModel, getApiKey, setSelectedModel } =
-    useAgentStore();
+export function AgentInput({
+  onSubmit,
+  onCancel,
+  isLoading,
+  historyBusy = false,
+}: AgentInputProps) {
+  const smallScreen = useMediaQuery(`(max-width: ${MAX_SCREEN_WIDTH}px)`);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const wasLoading = useRef(isLoading);
+  const restoreComposerFocus = useRef(false);
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  const {
+    selectedModel,
+    getApiKey,
+    setSelectedModel,
+    thinkingLevel,
+    setThinkingLevel,
+    agentProjects,
+    setDraft,
+  } = useAgentStore();
+  const agentProject = currentProjectId
+    ? agentProjects[currentProjectId]
+    : undefined;
+  const activeThread = agentProject?.threads.find(
+    (thread) => thread.id === agentProject.activeThreadId
+  );
+  const activeThreadId = activeThread?.id;
+  const value = activeThread?.draft ?? "";
   const selectedModelConfig = AVAILABLE_MODELS.find(
     (m) => m.id === selectedModel
   );
   const modelHasApiKey = selectedModelConfig
     ? getApiKey(selectedModelConfig.provider)
     : false;
+  const thinkingLabel =
+    AGENT_THINKING_LEVELS.find(({ value }) => value === thinkingLevel)?.label ??
+    "Medium";
+  const SelectedProviderIcon = selectedModelConfig
+    ? LLM_PROVIDERS[selectedModelConfig.provider].Icon
+    : undefined;
+  const composerDisabled = isLoading || historyBusy || !activeThreadId;
+  const selectorDisabled = historyBusy || !activeThreadId;
+  const composerStatus = historyBusy
+    ? "Saving changes..."
+    : !activeThreadId
+      ? "Loading chat..."
+      : !selectedModelConfig
+        ? "Select a model to send messages."
+        : !modelHasApiKey
+          ? `Add an API key for ${LLM_PROVIDERS[selectedModelConfig.provider].name} to send messages.`
+          : smallScreen
+            ? "Ctrl/Cmd + Enter to send"
+            : "Enter to send | Shift + Enter for a new line";
+
+  useEffect(() => {
+    if (wasLoading.current && !isLoading) {
+      const activeElement = document.activeElement;
+      if (
+        restoreComposerFocus.current &&
+        (activeElement === document.body || activeElement === inputRef.current)
+      ) {
+        inputRef.current?.focus();
+      }
+      restoreComposerFocus.current = false;
+    }
+    wasLoading.current = isLoading;
+  }, [isLoading]);
 
   const handleSubmit = () => {
-    if (value.trim() && !isLoading) {
+    if (value.trim() && !isLoading && modelHasApiKey) {
+      restoreComposerFocus.current = true;
       onSubmit(value.trim());
-      setValue("");
     }
   };
 
   return (
-    <div className="flex flex-col border-t p-1 gap-1">
-      <Textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Describe the changes you want..."
-        autosize
-        className="p-2"
-        minRows={2}
-        maxRows={10}
-        disabled={isLoading}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit();
+    <div className="border-t bg-editor">
+      <div className="focus-within:outline focus-within:outline-white">
+        <Textarea
+          id="agent-prompt-input"
+          ref={inputRef}
+          aria-label="Message the agent"
+          aria-describedby="agent-composer-status"
+          value={value}
+          onChange={(e) =>
+            activeThreadId && setDraft(activeThreadId, e.target.value)
           }
-        }}
-      />
-      <div className="flex justify-between p-1 gap-2">
-        <Menu position="top-start">
-          <Menu.Target>
-            <Button
-              leftSection={<FaChevronDown size={12} />}
-              className="outline-none"
-            >
-              {selectedModelConfig?.name ?? "Select modal"}
-            </Button>
-          </Menu.Target>
-          <Menu.Dropdown>
-            {AVAILABLE_MODELS.map((model) => (
-              <Tooltip
-                key={model.id}
-                label={!getApiKey(model.provider) ? "Add API key" : ""}
-                position="right"
-                disabled={!!getApiKey(model.provider)}
+          placeholder="Ask anything..."
+          autosize
+          minRows={3}
+          maxRows={smallScreen ? 6 : 10}
+          disabled={composerDisabled}
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.nativeEvent.isComposing &&
+              (e.metaKey || e.ctrlKey || (!smallScreen && !e.shiftKey))
+            ) {
+              e.preventDefault();
+              handleSubmit();
+            }
+          }}
+          classNames={{
+            input:
+              "rounded-none border-0 bg-transparent px-3 py-2 text-base focus-visible:outline-none",
+          }}
+        />
+        <div className="flex min-w-0 gap-1 border-t border-border/60 px-2 py-1.5">
+          <span
+            id="agent-composer-status"
+            aria-live="polite"
+            className="min-w-0 flex-1 self-center truncate px-1 text-xs text-dimmed"
+          >
+            {composerStatus}
+          </span>
+          <Menu position="top-start">
+            <Menu.Target>
+              <button
+                type="button"
+                className="flex min-h-9 min-w-0 items-center gap-2 rounded-xs px-2 text-sm text-dimmed hover:bg-dropdown-default hover:text-white focus-visible:outline-2 outline-white"
+                aria-label={`Model: ${selectedModelConfig?.name ?? "Select model"}`}
+                disabled={selectorDisabled}
               >
+                {SelectedProviderIcon ? (
+                  <SelectedProviderIcon className="shrink-0" />
+                ) : null}
+                <span className="truncate">
+                  {selectedModelConfig?.name ?? "Select model"}
+                </span>
+                <FaChevronDown size={10} className="shrink-0" />
+              </button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              {AVAILABLE_MODELS.map((model) => (
                 <Menu.Item
+                  key={model.id}
                   onClick={() => setSelectedModel(model.id)}
+                  role="menuitemradio"
+                  aria-checked={model.id === selectedModel}
                   classNames={{
                     item:
                       model.id === selectedModel ? "bg-dropdown-selected" : "",
@@ -73,17 +166,60 @@ export function AgentInput({ onSubmit }: AgentInputProps) {
                 >
                   {model.name}
                 </Menu.Item>
-              </Tooltip>
-            ))}
-          </Menu.Dropdown>
-        </Menu>
-        <IconButton
-          onClick={handleSubmit}
-          icon={FaArrowUp}
-          loading={isLoading}
-          className="px-2 outline"
-          disabled={value.trim() === "" || !modelHasApiKey}
-        />
+              ))}
+            </Menu.Dropdown>
+          </Menu>
+          <Menu position="top-start">
+            <Menu.Target>
+              <button
+                type="button"
+                className="flex min-h-9 shrink-0 items-center gap-2 rounded-xs px-2 text-sm text-dimmed hover:bg-dropdown-default hover:text-white focus-visible:outline-2 outline-white"
+                aria-label={`Thinking: ${thinkingLabel}`}
+                disabled={selectorDisabled}
+              >
+                {thinkingLabel}
+                <FaChevronDown size={10} />
+              </button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              {AGENT_THINKING_LEVELS.map((level) => (
+                <Menu.Item
+                  key={level.value}
+                  onClick={() => setThinkingLevel(level.value)}
+                  role="menuitemradio"
+                  aria-checked={level.value === thinkingLevel}
+                  classNames={{
+                    item:
+                      level.value === thinkingLevel
+                        ? "bg-dropdown-selected"
+                        : "",
+                  }}
+                >
+                  {level.label}
+                </Menu.Item>
+              ))}
+            </Menu.Dropdown>
+          </Menu>
+          <div className="ml-auto" />
+          {isLoading ? (
+            <IconButton
+              onClick={onCancel}
+              icon={FaStop}
+              className="border px-2"
+              title="Cancel request"
+            />
+          ) : (
+            <IconButton
+              onClick={handleSubmit}
+              icon={FaArrowUp}
+              className="border px-2"
+              title="Send"
+              disabled={
+                composerDisabled || value.trim() === "" || !modelHasApiKey
+              }
+            />
+          )}
+        </div>
       </div>
     </div>
   );

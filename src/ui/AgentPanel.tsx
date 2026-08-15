@@ -1,121 +1,610 @@
-import { PasswordInput, Popover } from "@mantine/core";
-import { FaTrash } from "react-icons/fa6";
+import { Button, Menu, PasswordInput, Popover } from "@mantine/core";
+import { FaListUl, FaPen, FaPlus, FaTrash } from "react-icons/fa6";
 import { AgentChat } from "./agent/AgentChat";
 import { AgentInput } from "./agent/AgentInput";
 import {
-  generateOperationChanges,
-  applyChangesToOperation,
+  generateOperationProposal,
+  getExplicitDeploymentIntent,
 } from "@/lib/agent/agent-service";
 import {
   useProjectStore,
-  fileHistoryActions,
   useAgentStore,
+  useAgentPersistenceErrorStore,
+  useSidebarTabStore,
 } from "@/lib/store";
 import { AVAILABLE_MODELS, LLM_PROVIDERS } from "@/lib/data";
 import { IconButton } from "./IconButton";
-import { createFileFromOperation, createOperationFromFile } from "@/lib/utils";
+import { createOperationFromFile } from "@/lib/utils";
 import { MdVpnKey } from "react-icons/md";
+import { type FocusEvent, useEffect, useRef, useState } from "react";
+import { AgentTransportError } from "@/lib/agent/transport";
+import type { AgentRetry } from "@/lib/agent/types";
+import {
+  applyAgentProposal,
+  redoAgentApplication,
+  undoAgentApplication,
+} from "@/lib/agent/history";
 
 export function AgentPanel() {
   const {
     selectedModel,
+    thinkingLevel,
     addMessage,
-    setIsLoading,
     getApiKey,
     setApiKey,
-    clearMessages,
+    agentProjects,
+    agentReady,
+    createThread,
+    renameThread,
+    selectThread,
+    removeThread,
+    deleteThreadTurn,
+    startRun,
+    setRunTrace,
+    setStreamingContent,
+    finishRun,
+    activeRun,
+    pendingProposals,
+    setPendingProposal,
+    setDraft,
   } = useAgentStore();
 
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const currentFile = useProjectStore((s) => s.getCurrentFile());
-  const updateFile = useProjectStore((s) => s.updateFile);
+  const abortController = useRef<AbortController>();
+  const deploymentAfterApply = useRef(new Set<string>());
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreRenameFocus = useRef(false);
+  const [editingThreadId, setEditingThreadId] = useState<string>();
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+  const [revisionProposalId, setRevisionProposalId] = useState<string>();
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const [submissionError, setSubmissionError] = useState<string>();
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
+  const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
+  const agentProject = currentProjectId
+    ? agentProjects[currentProjectId]
+    : undefined;
+  const projectThreads = agentProject?.threads ?? [];
+  const activeThread = projectThreads.find(
+    (thread) => thread.id === agentProject?.activeThreadId
+  );
+  const activeThreadId = activeThread?.id;
+  const pendingProposal = activeThreadId
+    ? pendingProposals[activeThreadId]
+    : undefined;
 
-  const handleSubmit = async (prompt: string) => {
-    const currentOperation = createOperationFromFile(currentFile);
-    if (!currentOperation) return;
+  useEffect(() => {
+    abortController.current?.abort();
+  }, [currentProjectId]);
+
+  useEffect(() => {
+    if (agentReady && currentProjectId && !agentProject) {
+      createThread(currentProjectId);
+    }
+  }, [agentProject, agentReady, createThread, currentProjectId]);
+
+  useEffect(
+    () => () => {
+      abortController.current?.abort();
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (editingThreadId) renameInputRef.current?.focus();
+    else if (restoreRenameFocus.current) {
+      renameButtonRef.current?.focus();
+      restoreRenameFocus.current = false;
+    }
+  }, [editingThreadId]);
+
+  useEffect(() => {
+    setEditingThreadId(undefined);
+    setDeleteConfirmationOpen(false);
+    setRevisionProposalId(undefined);
+    setHistoryError(undefined);
+    setSubmissionError(undefined);
+  }, [activeThreadId, currentProjectId]);
+
+  const handleSubmit = async (
+    prompt: string,
+    options?: {
+      regenerate?: boolean;
+      sourceFileId?: string;
+    }
+  ) => {
+    if (useAgentStore.getState().activeRun) return;
+    const submittedProject = useProjectStore.getState().getCurrentProject();
+    const deploymentIntent = !options?.regenerate
+      ? getExplicitDeploymentIntent(prompt)
+      : undefined;
+    if (!submittedProject || !currentProjectId || !activeThreadId) {
+      setSubmissionError("The agent chat is still loading. Please try again.");
+      return;
+    }
+    if (deploymentIntent && !deploymentIntent.afterChanges) {
+      if (!options?.regenerate) {
+        addMessage(activeThreadId, { role: "user", content: prompt });
+        setDraft(activeThreadId, "");
+      }
+      setSubmissionError(undefined);
+      addMessage(activeThreadId, {
+        role: "assistant",
+        content:
+          "Open the Deployment panel to configure and deploy this project.",
+        deploymentAction: "open-deployment-panel",
+      });
+      return;
+    }
+    const sourceFileId = options?.sourceFileId ?? currentFile?.id;
+    const sourceFile = submittedProject.files.find(
+      (file) => file.id === sourceFileId && file.type === "operation"
+    );
+    const currentOperation = createOperationFromFile(sourceFile);
+    if (!sourceFile) {
+      setSubmissionError("Select an operation before sending a request.");
+      return;
+    }
+    if (!currentOperation) {
+      setSubmissionError(
+        "The selected operation could not be loaded. Select another operation and try again."
+      );
+      return;
+    }
 
     const modelConfig = AVAILABLE_MODELS.find((m) => m.id === selectedModel);
-    if (!modelConfig) return;
+    if (!modelConfig) {
+      setSubmissionError("Select an agent model before sending a request.");
+      return;
+    }
     const apiKey = getApiKey(modelConfig.provider);
-    if (!apiKey) return;
+    if (!apiKey) {
+      setSubmissionError(
+        `Add an API key for ${LLM_PROVIDERS[modelConfig.provider].name} before sending a request.`
+      );
+      return;
+    }
 
-    addMessage({ role: "user", content: prompt });
-    setIsLoading(true);
+    setSubmissionError(undefined);
+    if (!options?.regenerate) {
+      addMessage(activeThreadId, { role: "user", content: prompt });
+      setDraft(activeThreadId, "");
+    }
+    const revisedProposal =
+      pendingProposal &&
+      pendingProposal.id === revisionProposalId &&
+      pendingProposal.projectId === currentProjectId &&
+      pendingProposal.threadId === activeThreadId &&
+      pendingProposal.fileId === sourceFile.id &&
+      !options?.regenerate
+        ? pendingProposal
+        : undefined;
+    const requestPrompt = revisedProposal
+      ? `Original request:\n${revisedProposal.sourcePrompt}\n\nCurrent proposal update:\n${JSON.stringify(revisedProposal.update)}\n\nRequested revision:\n${prompt}`
+      : prompt;
+    const controller = new AbortController();
+    abortController.current = controller;
+    startRun(activeThreadId);
 
     try {
-      const { response, mappingContext } = await generateOperationChanges({
+      const { response, proposal } = await generateOperationProposal({
         operation: currentOperation,
-        userPrompt: prompt,
+        project: submittedProject,
+        userPrompt: requestPrompt,
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
+        thinkingLevel,
+        initialProposal: revisedProposal,
+        abortSignal: controller.signal,
+        onProgress: setRunTrace,
+        onPartialExplanation: setStreamingContent,
       });
 
-      addMessage({
+      if (controller.signal.aborted) return;
+      addMessage(activeThreadId, {
         role: "assistant",
-        content: response.explanation || "Changes applied successfully.",
-        changes: response.changes,
+        content:
+          response.explanation ||
+          (proposal ? "Proposal ready for review." : "No changes proposed."),
+        proposal: proposal
+          ? {
+              id: proposal.id,
+              review: proposal.review,
+              diagnostics: proposal.diagnostics,
+            }
+          : undefined,
       });
-
-      if (response.changes.length > 0) {
-        const lastContent = createFileFromOperation(currentOperation).content;
-        fileHistoryActions.pushState(currentOperation.id, lastContent);
-        const updatedOperation = applyChangesToOperation(
-          currentOperation,
-          response.changes,
-          mappingContext
-        );
-        updateFile(
-          currentOperation.id,
-          createFileFromOperation(updatedOperation)
-        );
+      if (proposal) {
+        if (
+          deploymentIntent?.afterChanges ||
+          (revisedProposal &&
+            deploymentAfterApply.current.has(revisedProposal.id)) ||
+          (options?.regenerate &&
+            pendingProposal &&
+            deploymentAfterApply.current.has(pendingProposal.id))
+        ) {
+          deploymentAfterApply.current.add(proposal.id);
+        }
+        setPendingProposal(activeThreadId, {
+          ...proposal,
+          threadId: activeThreadId,
+          sourcePrompt: options?.regenerate
+            ? prompt
+            : revisedProposal
+              ? revisedProposal.sourcePrompt
+              : prompt,
+        });
       }
+      setRevisionProposalId(undefined);
     } catch (error) {
-      addMessage({
+      const transportError =
+        error instanceof AgentTransportError ? error : undefined;
+      const retry: AgentRetry = {
+        prompt,
+        sourceFileId: sourceFile.id,
+      };
+      if (options?.regenerate) retry.regenerate = true;
+      const errorMessage =
+        transportError?.code === "cancelled"
+          ? "Request cancelled."
+          : `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`;
+      addMessage(activeThreadId, {
         role: "assistant",
-        content: `Error: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
+        content: errorMessage,
+        error: {
+          retry,
+          requiresApiKey: transportError?.code === "unauthorized",
+        },
       });
     } finally {
-      setIsLoading(false);
+      if (abortController.current === controller) {
+        abortController.current = undefined;
+      }
+      finishRun(activeThreadId);
     }
   };
 
+  const handleRejectProposal = () => {
+    if (activeThreadId) setPendingProposal(activeThreadId, undefined);
+    setRevisionProposalId(undefined);
+    document.getElementById("agent-prompt-input")?.focus();
+  };
+
+  const handleHistoryAction = async (action: () => Promise<unknown>) => {
+    if (historyBusy || activeRun) return;
+    setHistoryBusy(true);
+    setHistoryError(undefined);
+    try {
+      await action();
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error ? error.message : "Agent edit failed"
+      );
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const handleApplyProposal = () => {
+    if (!pendingProposal) return;
+    const proposal = pendingProposal;
+    void handleHistoryAction(async () => {
+      await applyAgentProposal(proposal);
+      if (proposal.threadId && deploymentAfterApply.current.has(proposal.id)) {
+        deploymentAfterApply.current.delete(proposal.id);
+        addMessage(proposal.threadId, {
+          role: "assistant",
+          content: "The proposal was applied successfully.",
+          deploymentAction: "open-deployment-panel",
+        });
+      }
+    });
+  };
+
+  const handleRestoreApplication = (
+    applicationId: string,
+    direction: "undo" | "redo"
+  ) => {
+    if (!currentProjectId) return;
+    void handleHistoryAction(() =>
+      direction === "undo"
+        ? undoAgentApplication(currentProjectId, applicationId)
+        : redoAgentApplication(currentProjectId, applicationId)
+    );
+  };
+
+  const handleReviseProposal = () => {
+    const project = useProjectStore.getState().getCurrentProject();
+    if (
+      !pendingProposal ||
+      !activeThreadId ||
+      pendingProposal.projectId !== currentProjectId ||
+      pendingProposal.threadId !== activeThreadId ||
+      !project?.files.some(
+        (file) =>
+          file.id === pendingProposal.fileId && file.type === "operation"
+      )
+    )
+      return;
+    setRevisionProposalId(pendingProposal.id);
+    setDraft(activeThreadId, "Revise the proposal: ");
+    document.getElementById("agent-prompt-input")?.focus();
+  };
+
+  const handleRegenerateProposal = () => {
+    if (
+      !pendingProposal ||
+      pendingProposal.projectId !== currentProjectId ||
+      pendingProposal.threadId !== activeThreadId ||
+      useAgentStore.getState().activeRun
+    )
+      return;
+    void handleSubmit(pendingProposal.sourcePrompt, {
+      regenerate: true,
+      sourceFileId: pendingProposal.fileId,
+    });
+  };
+
+  const handleRenameThread = ({
+    currentTarget,
+  }: FocusEvent<HTMLInputElement>) => {
+    if (activeThread) renameThread(activeThread.id, currentTarget.value);
+    setEditingThreadId(undefined);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-editor">
-      <div className="flex justify-between items-center p-1 border-b gap-4 bg-dropdown-default">
-        <p className="mr-auto font-bold">Agent</p>
-        <IconButton
-          icon={FaTrash}
-          onClick={clearMessages}
-          title="Clear messages"
-        />
-        <Popover position="top-start">
-          <Popover.Target>
-            <IconButton icon={MdVpnKey} title="Add API keys" />
-          </Popover.Target>
-          <Popover.Dropdown classNames={{ dropdown: "border" }}>
-            <div className="flex flex-col gap-1">
-              {Object.entries(LLM_PROVIDERS).map(([id, { name, Icon }]) => (
-                <PasswordInput
-                  key={id}
-                  leftSection={<Icon />}
-                  placeholder={`Enter ${name} key`}
-                  classNames={{
-                    wrapper: "p-1",
-                    innerInput: "focus:outline outline-white p-0.5",
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-editor">
+      <div className="flex min-w-0 flex-wrap items-center p-1 border-b gap-1 bg-dropdown-default">
+        <Menu position="bottom-start">
+          <Menu.Target>
+            <IconButton
+              icon={FaListUl}
+              title="Chat list"
+              aria-label="Chat list"
+              disabled={!!activeRun || historyBusy || !currentProjectId}
+            />
+          </Menu.Target>
+          <Menu.Dropdown>
+            {projectThreads.map((thread) => (
+              <Menu.Item
+                key={thread.id}
+                role="menuitemradio"
+                aria-checked={thread.id === activeThreadId}
+                onClick={() =>
+                  currentProjectId && selectThread(currentProjectId, thread.id)
+                }
+                classNames={{
+                  item:
+                    thread.id === activeThreadId ? "bg-dropdown-selected" : "",
+                }}
+              >
+                <span className="block max-w-56 truncate">{thread.title}</span>
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {editingThreadId === activeThreadId && activeThread ? (
+            <input
+              ref={renameInputRef}
+              aria-label="Chat name"
+              className="min-w-0 flex-1 rounded-xs p-0.5 focus:outline outline-white"
+              defaultValue={activeThread.title}
+              onBlur={handleRenameThread}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  restoreRenameFocus.current = true;
+                  setEditingThreadId(undefined);
+                }
+              }}
+            />
+          ) : (
+            <span
+              className="max-w-40 truncate p-0.5"
+              title={activeThread?.title}
+            >
+              {activeThread?.title ?? "Agent"}
+            </span>
+          )}
+          {!editingThreadId ? (
+            <IconButton
+              ref={renameButtonRef}
+              icon={FaPen}
+              onClick={() =>
+                activeThread && setEditingThreadId(activeThread.id)
+              }
+              title="Rename chat"
+              aria-label="Rename chat"
+              className="px-0.5 hover:outline hover:outline-border"
+              disabled={!activeThread || !!activeRun || historyBusy}
+            />
+          ) : null}
+        </div>
+        <div className="ml-auto flex items-center gap-1">
+          <Popover
+            position="bottom-end"
+            offset={1}
+            opened={deleteConfirmationOpen}
+            onChange={setDeleteConfirmationOpen}
+            trapFocus
+            returnFocus
+          >
+            <Popover.Target>
+              <IconButton
+                icon={FaTrash}
+                title="Delete chat"
+                aria-label="Delete chat"
+                className="p-0.5 hover:outline hover:outline-border"
+                disabled={!activeThread || !!activeRun || historyBusy}
+                onClick={() => setDeleteConfirmationOpen((opened) => !opened)}
+              />
+            </Popover.Target>
+            <Popover.Dropdown
+              aria-labelledby="delete-chat-title"
+              classNames={{ dropdown: "border" }}
+            >
+              <div className="flex flex-col gap-2 p-1">
+                <span id="delete-chat-title" className="text-sm">
+                  Delete this chat?
+                </span>
+                <Button
+                  leftSection={<FaTrash className="text-red-400" />}
+                  className="text-sm self-end"
+                  onClick={() => {
+                    const threadId = activeThreadId;
+                    setDeleteConfirmationOpen(false);
+                    if (threadId) removeThread(threadId);
                   }}
-                  value={getApiKey(id as keyof typeof LLM_PROVIDERS)}
-                  onChange={(e) =>
-                    setApiKey(id as keyof typeof LLM_PROVIDERS, e.target.value)
-                  }
-                />
-              ))}
-            </div>
-          </Popover.Dropdown>
-        </Popover>
+                >
+                  Yes, delete.
+                </Button>
+              </div>
+            </Popover.Dropdown>
+          </Popover>
+          <IconButton
+            icon={FaPlus}
+            onClick={() => currentProjectId && createThread(currentProjectId)}
+            title="New chat"
+            disabled={
+              !!activeRun || historyBusy || !currentProjectId || !agentProject
+            }
+          />
+          <Popover
+            position="top-start"
+            trapFocus
+            returnFocus
+            opened={apiKeysOpen}
+            onChange={setApiKeysOpen}
+          >
+            <Popover.Target>
+              <IconButton
+                icon={MdVpnKey}
+                title="Add API keys"
+                onClick={() => setApiKeysOpen((opened) => !opened)}
+              />
+            </Popover.Target>
+            <Popover.Dropdown
+              aria-labelledby="agent-api-keys-title"
+              classNames={{ dropdown: "border" }}
+            >
+              <div className="flex flex-col gap-1">
+                <span id="agent-api-keys-title" className="sr-only">
+                  API keys
+                </span>
+                {Object.entries(LLM_PROVIDERS).map(([id, { name, Icon }]) => (
+                  <PasswordInput
+                    key={id}
+                    leftSection={<Icon />}
+                    label={`${name} API key`}
+                    placeholder={`Enter ${name} key`}
+                    classNames={{
+                      label: "sr-only",
+                      wrapper: "p-1",
+                      innerInput: "focus:outline outline-white p-0.5",
+                    }}
+                    value={getApiKey(id as keyof typeof LLM_PROVIDERS) ?? ""}
+                    onChange={(e) =>
+                      setApiKey(
+                        id as keyof typeof LLM_PROVIDERS,
+                        e.target.value
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </Popover.Dropdown>
+          </Popover>
+        </div>
       </div>
-      <AgentChat />
-      <AgentInput onSubmit={handleSubmit} />
+      {persistenceError ? (
+        <div role="alert" className="border-b p-2 text-xs">
+          <p>{persistenceError}</p>
+          <Button
+            size="compact-xs"
+            className="mt-1"
+            onClick={() =>
+              useAgentPersistenceErrorStore.setState({ error: undefined })
+            }
+          >
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
+      {historyError ? (
+        <div role="alert" className="border-b p-2 text-xs">
+          {historyError}
+        </div>
+      ) : null}
+      {submissionError ? (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-b p-2 text-xs"
+        >
+          <span className="min-w-0 flex-1">{submissionError}</span>
+          {submissionError.startsWith("Add an API key") ? (
+            <Button
+              size="compact-xs"
+              className="min-h-9 shrink-0"
+              onClick={() => setApiKeysOpen(true)}
+            >
+              Add API key
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <AgentChat
+        onApplyProposal={handleApplyProposal}
+        onRejectProposal={handleRejectProposal}
+        onReviseProposal={handleReviseProposal}
+        onRegenerateProposal={handleRegenerateProposal}
+        onUndoApplication={(applicationId) =>
+          handleRestoreApplication(applicationId, "undo")
+        }
+        onRedoApplication={(applicationId) =>
+          handleRestoreApplication(applicationId, "redo")
+        }
+        onDeleteTurn={(messageId) => {
+          if (activeThreadId) deleteThreadTurn(activeThreadId, messageId);
+        }}
+        onOpenDeploymentPanel={() => {
+          useSidebarTabStore.getState().setActiveTab("deployment");
+          requestAnimationFrame(() =>
+            document.getElementById("sidebar-tab-deployment")?.focus()
+          );
+        }}
+        onOpenApiKeys={() => setApiKeysOpen(true)}
+        onRetry={(retry: AgentRetry) =>
+          void handleSubmit(retry.prompt, {
+            regenerate: retry.regenerate,
+            sourceFileId: retry.sourceFileId,
+          })
+        }
+        historyBusy={historyBusy}
+      />
+      <AgentInput
+        onSubmit={(prompt) =>
+          handleSubmit(prompt, {
+            sourceFileId:
+              revisionProposalId &&
+              pendingProposal &&
+              revisionProposalId === pendingProposal.id
+                ? pendingProposal.fileId
+                : undefined,
+          })
+        }
+        onCancel={() => abortController.current?.abort()}
+        isLoading={!!activeRun}
+        historyBusy={historyBusy}
+      />
     </div>
   );
 }

@@ -411,6 +411,14 @@ describe("execution store mutation helpers", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves execution stopped after removeAll", () => {
+    useExecutionResultsStore.setState({ isExecuting: true });
+
+    useExecutionResultsStore.getState().removeAll();
+
+    expect(useExecutionResultsStore.getState().isExecuting).toBe(false);
+  });
+
   it("disposes associated instance on removeResult", () => {
     const destroy = vi.fn();
     const data = createData({ value: 42 });

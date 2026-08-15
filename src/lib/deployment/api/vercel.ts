@@ -26,20 +26,19 @@ async function findVercelProjectByName(
   projectName: string,
   token: string
 ): Promise<{ id: string; name: string } | null> {
-  try {
-    const res = await vercelFetch(
-      `/v9/projects?name=${encodeURIComponent(projectName)}`,
-      token
-    );
-    if (!res.ok) return null;
-    const body = await res.json();
-    const match = body.projects?.find(
-      (p: { name: string }) => p.name === projectName
-    );
-    return match ? { id: match.id, name: match.name } : null;
-  } catch {
-    return null;
+  const res = await vercelFetch(
+    `/v9/projects?name=${encodeURIComponent(projectName)}`,
+    token
+  );
+  if (!res.ok) throw new Error(await parseError(res));
+  const body = await res.json();
+  if (!Array.isArray(body.projects)) {
+    throw new Error("Invalid project response from Vercel");
   }
+  const match = body.projects.find(
+    (project: { name: string }) => project.name === projectName
+  );
+  return match ? { id: match.id, name: match.name } : null;
 }
 
 async function ensureVercelProject(
@@ -80,14 +79,30 @@ export async function deployToVercel(
   onProgress?: (progress: DeploymentProgress) => void
 ): Promise<DeploymentResult> {
   onProgress?.({ stage: "generating", message: "Creating Vercel project" });
-  const vercelProject = await ensureVercelProject(options.projectName, token);
+  let vercelProject: Awaited<ReturnType<typeof ensureVercelProject>>;
+  try {
+    vercelProject = await ensureVercelProject(options.projectName, token);
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to check Vercel project",
+    };
+  }
   if (!vercelProject) {
     return { success: false, error: "Failed to create Vercel project" };
   }
 
   if (options.envVars?.length) {
     onProgress?.({ stage: "uploading", message: "Setting env variables" });
-    await setVercelEnvVars(vercelProject.id, token, options.envVars);
+    const error = await setVercelEnvVars(
+      vercelProject.id,
+      token,
+      options.envVars
+    );
+    if (error) return { success: false, error };
   }
 
   onProgress?.({ stage: "uploading", message: "Uploading files to Vercel" });
@@ -141,9 +156,14 @@ export async function deployToVercel(
 
   const result = await pollVercelDeployment(deployment.id, token, onProgress);
 
-  const orgSlug = deployment.inspectorUrl
-    ? new URL(deployment.inspectorUrl).pathname.split("/")[1]
-    : undefined;
+  let orgSlug: string | undefined;
+  try {
+    orgSlug = deployment.inspectorUrl
+      ? new URL(deployment.inspectorUrl).pathname.split("/")[1]
+      : undefined;
+  } catch {
+    orgSlug = undefined;
+  }
   const dashboardUrl =
     orgSlug && vercelProject.name
       ? `https://vercel.com/${orgSlug}/${vercelProject.name}`
@@ -206,24 +226,25 @@ async function setVercelEnvVars(
   projectId: string,
   token: string,
   envVars: { key: string; value: string }[]
-): Promise<void> {
+): Promise<string | undefined> {
   const vars = envVars.filter((v) => v.value);
   if (vars.length === 0) return;
 
   let existing: { id: string; key: string }[] = [];
   try {
     const res = await vercelFetch(`/v9/projects/${projectId}/env`, token);
-    if (res.ok) {
-      const body = await res.json();
-      existing = body.envs;
-    }
-  } catch {
-    console.error("Couldn't fetch Vercel env variables");
+    if (!res.ok) return await parseError(res);
+    const body = await res.json();
+    existing = Array.isArray(body.envs) ? body.envs : [];
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "Couldn't fetch Vercel environment variables";
   }
 
   const idsByKey = new Map(existing.map((e) => [e.key, e.id]));
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     vars.map(({ key, value }) => {
       const id = idsByKey.get(key);
       if (id) {
@@ -243,4 +264,12 @@ async function setVercelEnvVars(
       });
     })
   );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      return result.reason instanceof Error
+        ? result.reason.message
+        : "Couldn't set Vercel environment variables";
+    }
+    if (!result.value.ok) return await parseError(result.value);
+  }
 }

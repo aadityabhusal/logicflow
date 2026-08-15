@@ -8,6 +8,21 @@ const WRAP_THRESHOLD = 6;
 const SEPARATOR_WIDTH = 1;
 const MAX_STRING_DISPLAY_LENGTH = 28;
 
+export function getSidebarPanelLimits(
+  activeTab: string | undefined,
+  viewportWidth: number,
+  viewportHeight: number
+) {
+  const minWidth = 200;
+  const maxWidth = Math.max(minWidth, viewportWidth / 2);
+  const maxHeight = Math.max(150, viewportHeight * 0.75);
+  const minHeight =
+    activeTab === "agent"
+      ? Math.min(maxHeight, Math.max(240, viewportHeight / 2))
+      : 150;
+  return { minWidth, maxWidth, minHeight, maxHeight };
+}
+
 const COMPLEX_KINDS = new Set<string>([
   "object",
   "array",

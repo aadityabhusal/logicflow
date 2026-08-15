@@ -38,11 +38,14 @@ import * as _ from "./runtime";
 import { Context, OperationListItem, Variable } from "../execution/types";
 import {
   loadedPackageOperations,
-  loadPackage,
-  resetPackageRegistry,
+  getPackageRegistrySnapshot,
+  loadPackageDescriptor,
+  replacePackageRegistry,
+  restorePackageRegistry,
   SOURCE_PACKAGE_MAP,
   InstanceTypes,
 } from "../packages/registry";
+import { PACKAGE_CATALOG } from "../packages/catalog";
 
 const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   name: FunctionKeys<typeof _>;
@@ -51,6 +54,7 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   {
     name: "concat",
     parameters: [{ type: { kind: "string" } }, { type: { kind: "string" } }],
+    expectedType: { kind: "string" },
   },
   {
     name: "includes",
@@ -67,24 +71,33 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
   {
     name: "mod",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "number" },
   },
   {
     name: "lessThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
   {
     name: "lessThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
   {
     name: "greaterThan",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
   {
     name: "greaterThanOrEqual",
     parameters: [{ type: { kind: "number" } }, { type: { kind: "number" } }],
+    expectedType: { kind: "boolean" },
   },
-  { name: "not", parameters: [{ type: { kind: "boolean" } }] },
+  {
+    name: "not",
+    parameters: [{ type: { kind: "boolean" } }],
+    expectedType: { kind: "boolean" },
+  },
   {
     name: "at",
     parameters: [
@@ -132,6 +145,7 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
       { type: { kind: "number" }, isOptional: true },
       { type: { kind: "number" }, isOptional: true },
     ],
+    expectedType: (data) => data.type,
   },
   {
     name: "toTuple",
@@ -248,7 +262,7 @@ const basicOperationList: (Omit<OperationListItem, "handler" | "source"> & {
       kind: "instance",
       className: "Response",
       constructorArgs: resolveConstructorArgs(
-        InstanceTypes.Response.constructorArgs
+        InstanceTypes.Response.constructorArgs,
       ),
     },
     shouldCacheResult: true,
@@ -269,11 +283,11 @@ const lazyOperations: OperationListItem[] = [
       const result = (
         getRawValueFromData(
           cb.data,
-          updateContextWithNarrowedTypes(context, data)
+          updateContextWithNarrowedTypes(context, data),
         ) as () => unknown
       )();
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (r) => createDataFromRawValue(r, context)
+        (r) => createDataFromRawValue(r, context),
       );
     },
   },
@@ -290,11 +304,11 @@ const lazyOperations: OperationListItem[] = [
       const result = (
         getRawValueFromData(
           cb.data,
-          updateContextWithNarrowedTypes(context, data)
+          updateContextWithNarrowedTypes(context, data),
         ) as () => unknown
       )();
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (r) => createDataFromRawValue(r, context)
+        (r) => createDataFromRawValue(r, context),
       );
     },
   },
@@ -316,7 +330,7 @@ const lazyOperations: OperationListItem[] = [
           ? (getRawValueFromData(falseCb.data, _context) as () => unknown)()
           : undefined;
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (res) => createDataFromRawValue(res, context)
+        (res) => createDataFromRawValue(res, context),
       );
     },
   },
@@ -335,7 +349,7 @@ const specialOperations: OperationListItem[] = [
             context,
           }),
           type.type,
-          context
+          context,
         ),
       });
     },
@@ -401,18 +415,18 @@ const specialOperations: OperationListItem[] = [
       ) => unknown;
 
       const result = operation(
-        ...params.map((p) => unwrapThenable(getRawValueFromData(p, context)))
+        ...params.map((p) => unwrapThenable(getRawValueFromData(p, context))),
       );
 
       if (opData.value.isAsync) {
         return createDataFromRawValue(
           result instanceof Promise ? result : Promise.resolve(result),
-          { ...context, expectedType: opData.type.result }
+          { ...context, expectedType: opData.type.result },
         );
       }
 
       return (result instanceof Promise ? result : createThenable(result)).then(
-        (r) => createDataFromRawValue(r, context)
+        (r) => createDataFromRawValue(r, context),
       );
     },
   },
@@ -429,7 +443,8 @@ function createInstanceOperation<T extends keyof typeof InstanceTypes>(
     context: Context,
     ...extraArgs: unknown[]
   ) => unknown,
-  parameters: OperationListItem["parameters"] = []
+  parameters: OperationListItem["parameters"] = [],
+  expectedType?: OperationListItem["expectedType"],
 ): OperationListItem {
   return {
     name,
@@ -443,39 +458,40 @@ function createInstanceOperation<T extends keyof typeof InstanceTypes>(
         return createRuntimeError(`${className} instance not found`);
       }
       const resolvedExtra = extraArgs.map((arg) =>
-        getRawValueFromData(arg, context)
+        getRawValueFromData(arg, context),
       );
       return createDataFromRawValue(
         method(instance, context, ...resolvedExtra),
-        context
+        context,
       );
     },
+    expectedType,
   };
 }
 
 const dateOperations: OperationListItem[] = [
   createInstanceOperation("Date", "getFullYear", (instance) =>
-    instance.getFullYear()
+    instance.getFullYear(),
   ),
   createInstanceOperation("Date", "getMonth", (instance) =>
-    instance.getMonth()
+    instance.getMonth(),
   ),
   createInstanceOperation("Date", "getDate", (instance) => instance.getDate()),
   createInstanceOperation("Date", "getTime", (instance) => instance.getTime()),
   createInstanceOperation("Date", "getHours", (instance) =>
-    instance.getHours()
+    instance.getHours(),
   ),
   createInstanceOperation("Date", "getMinutes", (instance) =>
-    instance.getMinutes()
+    instance.getMinutes(),
   ),
   createInstanceOperation("Date", "getSeconds", (instance) =>
-    instance.getSeconds()
+    instance.getSeconds(),
   ),
   createInstanceOperation("Date", "toISOString", (instance) =>
-    instance.toISOString()
+    instance.toISOString(),
   ),
   createInstanceOperation("Date", "toDateString", (instance) =>
-    instance.toDateString()
+    instance.toDateString(),
   ),
 ];
 
@@ -485,18 +501,18 @@ const urlOperations: OperationListItem[] = [
   createInstanceOperation(
     "URL",
     "getProtocol",
-    (instance) => instance.protocol
+    (instance) => instance.protocol,
   ),
   createInstanceOperation(
     "URL",
     "getHostname",
-    (instance) => instance.hostname
+    (instance) => instance.hostname,
   ),
   createInstanceOperation("URL", "getPort", (instance) => instance.port),
   createInstanceOperation(
     "URL",
     "getPathname",
-    (instance) => instance.pathname
+    (instance) => instance.pathname,
   ),
   createInstanceOperation("URL", "getSearch", (instance) => instance.search),
   createInstanceOperation("URL", "getHash", (instance) => instance.hash),
@@ -531,10 +547,10 @@ const promiseOperations: OperationListItem[] = [
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
-          context
+          context,
         ) as Promise<unknown>;
         const newPromise = promiseValue.then(
-          getRawValueFromData(callback, context) as (_: unknown) => unknown
+          getRawValueFromData(callback, context) as (_: unknown) => unknown,
         );
         return createDataFromRawValue(newPromise, {
           ...context,
@@ -567,10 +583,12 @@ const promiseOperations: OperationListItem[] = [
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
-          context
+          context,
         ) as Promise<unknown>;
         const newPromise = promiseValue.catch(
-          getRawValueFromData(errorCallback, context) as (_: unknown) => unknown
+          getRawValueFromData(errorCallback, context) as (
+            _: unknown,
+          ) => unknown,
         );
         return createDataFromRawValue(newPromise, {
           ...context,
@@ -590,7 +608,7 @@ const promiseOperations: OperationListItem[] = [
       try {
         const promiseValue = getRawValueFromData(
           promiseData,
-          context
+          context,
         ) as Promise<unknown>;
         const resolvedValue = await promiseValue;
         return createDataFromRawValue(resolvedValue, context);
@@ -651,26 +669,27 @@ const requestOperations: OperationListItem[] = [
   createInstanceOperation(
     "Request",
     "getMethod",
-    (instance) => instance.method
+    (instance) => instance.method,
   ),
   createInstanceOperation(
     "Request",
     "getHeader",
     (instance, _context, headerName) =>
       instance.headers.get(headerName as string) || "",
-    [{ type: { kind: "string" }, name: "headerName" }]
+    [{ type: { kind: "string" }, name: "headerName" }],
   ),
   createInstanceOperation(
     "Request",
     "getQuery",
     (instance, _context, paramName) =>
       new URL(instance.url).searchParams.get(paramName as string) || "",
-    [{ type: { kind: "string" }, name: "paramName" }]
+    [{ type: { kind: "string" }, name: "paramName" }],
+    { kind: "string" },
   ),
   createInstanceOperation(
     "Request",
     "getPath",
-    (instance) => new URL(instance.url).pathname
+    (instance) => new URL(instance.url).pathname,
   ),
   {
     name: "json",
@@ -705,7 +724,7 @@ const requestOperations: OperationListItem[] = [
 
 function createFileLikeOperation(
   className: "File" | "Blob",
-  name: "getName" | "getSize" | "getType" | "text" | "arrayBuffer"
+  name: "getName" | "getSize" | "getType" | "text" | "arrayBuffer",
 ): OperationListItem {
   let expectedType: DataType | undefined = { kind: "string" };
   if (name === "getSize") expectedType = { kind: "number" };
@@ -821,15 +840,50 @@ export function rebuildIndexes() {
   }
 }
 
-export async function syncPackageRegistry(
-  packages: PackageNamespace[] = []
-): Promise<PromiseSettledResult<void>[]> {
-  resetPackageRegistry();
-  const results = await Promise.allSettled(
-    packages.map(({ name }) => loadPackage(name))
+let packageRegistryTransaction = Promise.resolve();
+
+function serializePackageRegistryAction<T>(
+  action: () => Promise<T>,
+): Promise<T> {
+  const result = packageRegistryTransaction.then(action, action);
+  packageRegistryTransaction = result.then(
+    () => undefined,
+    () => undefined,
   );
-  rebuildIndexes();
-  return results;
+  return result;
+}
+
+export function withSyncedPackageRegistry<T>(
+  packages: PackageNamespace[],
+  action: () => T | Promise<T>,
+): Promise<T> {
+  return serializePackageRegistryAction(async () => {
+    const names = [
+      ...new Set(
+        packages
+          .map(({ name }) => name)
+          .filter((name) => PACKAGE_CATALOG[name]),
+      ),
+    ];
+    const descriptors = await Promise.all(names.map(loadPackageDescriptor));
+    const previous = getPackageRegistrySnapshot();
+
+    try {
+      replacePackageRegistry(descriptors);
+      rebuildIndexes();
+      return await action();
+    } catch (error) {
+      restorePackageRegistry(previous);
+      rebuildIndexes();
+      throw error;
+    }
+  });
+}
+
+export async function syncPackageRegistry(
+  packages: PackageNamespace[] = [],
+): Promise<void> {
+  await withSyncedPackageRegistry(packages, () => undefined);
 }
 
 export const coreOperations: OperationListItem[] = [
@@ -855,7 +909,7 @@ export const builtInOperationsByName = new Map<string, OperationListItem[]>();
 rebuildIndexes();
 
 export function isReferenceableBuiltInOperation(
-  operation: OperationListItem
+  operation: OperationListItem,
 ): operation is Extract<OperationListItem, { handler: unknown }> {
   const parameters = Array.isArray(operation.parameters)
     ? operation.parameters
@@ -877,7 +931,7 @@ function isBuiltInOperationRef(data: IData): boolean {
 export function createExecutionVariables(
   context: Context,
   files: ProjectFile[] = [],
-  envVariables: { key: string; value: string }[] = []
+  envVariables: { key: string; value: string }[] = [],
 ) {
   const variables = new Map<string, Variable>();
   const seenNames = new Set<string>();

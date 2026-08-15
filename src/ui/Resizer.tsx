@@ -6,6 +6,7 @@ export function Resizer({
   direction = "positive",
   minSize,
   maxSize,
+  value,
   className,
   hitAreaClassName,
 }: {
@@ -13,6 +14,7 @@ export function Resizer({
   direction?: "positive" | "negative";
   minSize?: number;
   maxSize?: number;
+  value: number;
   setPanelSize: (value: { width?: number; height?: number }) => void;
   className?: string;
   hitAreaClassName?: string;
@@ -25,8 +27,12 @@ export function Resizer({
     const value =
       (direction === "positive" ? clientPosition : dimension - clientPosition) +
       dragOffsetRef.current;
+    setSize(value);
+  }
+
+  function setSize(size: number) {
     setPanelSize({
-      [type]: Math.min(Math.max(value, minSize ?? 0), maxSize ?? Infinity),
+      [type]: Math.min(Math.max(size, minSize ?? 0), maxSize ?? Infinity),
     });
   }
 
@@ -121,6 +127,40 @@ export function Resizer({
         handleSize(dimension * (direction === "positive" ? 0.25 : 0.75));
       }}
       role="separator"
+      tabIndex={0}
+      aria-label={`Resize ${type === "width" ? "sidebar width" : "panel height"}`}
+      aria-orientation={type === "width" ? "vertical" : "horizontal"}
+      aria-valuemin={minSize}
+      aria-valuemax={maxSize}
+      aria-valuenow={Math.round(value)}
+      onKeyDown={(event) => {
+        const increaseKey =
+          type === "width"
+            ? direction === "positive"
+              ? "ArrowRight"
+              : "ArrowLeft"
+            : direction === "positive"
+              ? "ArrowDown"
+              : "ArrowUp";
+        const decreaseKey =
+          type === "width"
+            ? direction === "positive"
+              ? "ArrowLeft"
+              : "ArrowRight"
+            : direction === "positive"
+              ? "ArrowUp"
+              : "ArrowDown";
+        if (event.key === increaseKey || event.key === decreaseKey) {
+          event.preventDefault();
+          setSize(value + (event.key === increaseKey ? 10 : -10));
+        } else if (event.key === "Home" && minSize !== undefined) {
+          event.preventDefault();
+          setSize(minSize);
+        } else if (event.key === "End" && maxSize !== undefined) {
+          event.preventDefault();
+          setSize(maxSize);
+        }
+      }}
     >
       <div
         className={`absolute z-50 touch-none ${hitAreaFeedbackStyles} ${innerStyles}`}

@@ -38,10 +38,10 @@ describe("dev proxy fetch", () => {
     vi.stubGlobal("fetch", mockFetch);
     installDevProxyFetch();
 
-    globalThis.fetch(`${window.location.origin}/api/users`);
+    globalThis.fetch(`${window.location.origin}/api/ai/openai/responses`);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      `${window.location.origin}/api/users`,
+      `${window.location.origin}/api/ai/openai/responses`,
       undefined
     );
   });

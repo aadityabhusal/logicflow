@@ -32,7 +32,7 @@ export type WalkOptions = {
 
 export function walkDataType(
   type: DataType,
-  onDataType: (type: DataType) => void
+  onDataType: (type: DataType) => void,
 ): void {
   onDataType(type);
   if (type.kind === "instance") {
@@ -57,7 +57,7 @@ export function walkDataType(
 export function walkData(
   data: IData,
   visitors: Visitors,
-  options?: WalkOptions
+  options?: WalkOptions,
 ) {
   visitors.onData?.(data);
   if (options?.dataTypes && visitors.onDataType) {
@@ -105,14 +105,15 @@ export function walkData(
 export function walkStatement(
   stmt: IStatement,
   visitors: Visitors,
-  options?: WalkOptions
+  options?: WalkOptions,
 ) {
   visitors.onStatement?.(stmt);
   walkData(stmt.data, visitors, options);
   for (const op of stmt.operations) {
     if (options?.operationCalls) walkData(op, visitors, options);
-    for (const param of op.value.parameters) {
-      walkStatement(param, visitors, options);
-    }
+    if (!options?.operationCalls || !options.nestedOperations)
+      for (const param of op.value.parameters) {
+        walkStatement(param, visitors, options);
+      }
   }
 }

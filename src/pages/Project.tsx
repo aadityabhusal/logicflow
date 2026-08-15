@@ -37,6 +37,7 @@ import {
   executionWorkerClient,
   hydrateContexts,
 } from "@/lib/execution/worker-client";
+import { executionController } from "@/lib/execution/controller";
 import { getEnabledPackages } from "@/lib/packages/catalog";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
 
@@ -187,18 +188,25 @@ export default function Project() {
     const { results, instances, rootContext } =
       useExecutionResultsStore.getState();
     const project = useProjectStore.getState().getCurrentProject();
+    if (!project) return;
     useExecutionResultsStore.getState().setIsExecuting(true);
 
-    executionWorkerClient
-      .run({
-        operation: deferredOperation,
-        files: project?.files ?? [],
-        packages: getEnabledPackages(project),
-        envVariables: project?.deployment?.envVariables ?? [],
-        cachedResults: [...results].filter(([, r]) => r.shouldCacheResult),
-        expectedType: rootContext.expectedType,
-        enforceExpectedType: rootContext.enforceExpectedType,
-      })
+    executionController
+      .run(
+        {
+          operation: deferredOperation,
+          files: project?.files ?? [],
+          packages: getEnabledPackages(project),
+          envVariables: project?.deployment?.envVariables ?? [],
+          cachedResults: [...results].filter(([, r]) => r.shouldCacheResult),
+          expectedType: rootContext.expectedType,
+          enforceExpectedType: rootContext.enforceExpectedType,
+        },
+        {
+          projectId: project.id,
+          operationId: deferredOperation.id,
+        }
+      )
       .then((result) => {
         if (cancelled) return;
         const contexts = hydrateContexts(result.workerContexts, rootContext);

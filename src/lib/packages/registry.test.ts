@@ -8,13 +8,20 @@ import {
   loadedPackageOperations,
   getAllInstanceTypes,
   getInstanceDocsUrl,
+  loadPackageDescriptor,
   resolveDisplayName,
 } from "./registry";
 import {
+  applySupportedPackageChanges,
   PACKAGE_CATALOG,
   getAliasesFromPackages,
   getEnabledPackages,
 } from "./catalog";
+import {
+  builtInOperationsByName,
+  syncPackageRegistry,
+  withSyncedPackageRegistry,
+} from "../operations/built-in";
 
 describe("PACKAGE_REGISTRY derivation", () => {
   it("has an entry for every catalog package", () => {
@@ -245,6 +252,146 @@ describe("loadPackage / unloadPackage / resetPackageRegistry", () => {
   it("loadPackage is a no-op for unknown packages", async () => {
     await loadPackage("nonexistent");
     expect(loadedPackageOperations.size).toBe(0);
+  });
+});
+
+describe("package descriptors and synchronized registry", () => {
+  beforeEach(() => {
+    resetPackageRegistry();
+  });
+
+  it("normalizes a descriptor without mutating loader results or live state", async () => {
+    const entry = PACKAGE_CATALOG.wretch;
+    const originalLoad = entry.load;
+    const loaded = await originalLoad();
+    const plainOperation = {
+      ...loaded.operations.find((operation) => operation.name === "url")!,
+      name: "plain",
+      source: undefined,
+    };
+    const importOperation = {
+      ...loaded.operations.find((operation) => operation.name === "wretch")!,
+      name: "factory",
+    };
+    const operations = [plainOperation, importOperation];
+    entry.load = async () => ({
+      operations,
+      instanceTypes: loaded.instanceTypes,
+    });
+
+    try {
+      const descriptor = await loadPackageDescriptor("wretch");
+
+      expect(descriptor.name).toBe("wretch");
+      expect(descriptor.operations.map(({ name }) => name)).toEqual([
+        "wretch.plain",
+        "factory",
+      ]);
+      expect(descriptor.operations[0].source).toEqual({ name: "wretch" });
+      expect(descriptor.instanceTypes).toBe(loaded.instanceTypes);
+      expect(descriptor.operations[0]).not.toBe(plainOperation);
+      expect(operations[0]).toBe(plainOperation);
+      expect(plainOperation).toMatchObject({
+        name: "plain",
+        source: undefined,
+      });
+      expect(importOperation.name).toBe("factory");
+      expect(loadedPackageOperations.size).toBe(0);
+      expect(getAllInstanceTypes()["wretch.Wretch"]).toBeUndefined();
+    } finally {
+      entry.load = originalLoad;
+    }
+  });
+
+  it("rejects unsupported descriptor names", async () => {
+    await expect(loadPackageDescriptor("missing")).rejects.toThrow(
+      "Unsupported package: missing"
+    );
+  });
+
+  it("preserves the live registry when staged loading fails", async () => {
+    await syncPackageRegistry([{ name: "wretch" }]);
+    const previousOperations = loadedPackageOperations.get("wretch");
+    const previousInstance = getAllInstanceTypes()["wretch.Wretch"];
+    const entry = PACKAGE_CATALOG.rowguard;
+    const originalLoad = entry.load;
+    entry.load = async () => {
+      throw new Error("load failed");
+    };
+
+    try {
+      await expect(
+        syncPackageRegistry([{ name: "faker" }, { name: "rowguard" }])
+      ).rejects.toThrow("load failed");
+
+      expect(loadedPackageOperations.get("wretch")).toBe(previousOperations);
+      expect(getAllInstanceTypes()["wretch.Wretch"]).toBe(previousInstance);
+      expect(loadedPackageOperations.has("faker")).toBe(false);
+      expect(builtInOperationsByName.has("wretch.url")).toBe(true);
+      expect(builtInOperationsByName.has("faker.person.firstName")).toBe(false);
+    } finally {
+      entry.load = originalLoad;
+    }
+  });
+
+  it("restores exact registry state and indexes when the callback rejects", async () => {
+    await syncPackageRegistry([{ name: "wretch" }]);
+    const previousOperations = loadedPackageOperations.get("wretch");
+    const previousInstance = getAllInstanceTypes()["wretch.Wretch"];
+
+    await expect(
+      withSyncedPackageRegistry([{ name: "rowguard" }], async () => {
+        expect(loadedPackageOperations.has("wretch")).toBe(false);
+        expect(loadedPackageOperations.has("rowguard")).toBe(true);
+        expect(builtInOperationsByName.has("rowguard.on")).toBe(true);
+        throw new Error("persistence failed");
+      })
+    ).rejects.toThrow("persistence failed");
+
+    expect(loadedPackageOperations.get("wretch")).toBe(previousOperations);
+    expect(getAllInstanceTypes()["wretch.Wretch"]).toBe(previousInstance);
+    expect(loadedPackageOperations.has("rowguard")).toBe(false);
+    expect(getAllInstanceTypes()["rowguard.PolicyBuilder"]).toBeUndefined();
+    expect(builtInOperationsByName.has("wretch.url")).toBe(true);
+    expect(builtInOperationsByName.has("rowguard.on")).toBe(false);
+  });
+
+  it("ignores unsupported persisted dependencies during synchronization", async () => {
+    await expect(
+      syncPackageRegistry([{ name: "missing" }, { name: "faker" }])
+    ).resolves.toBeUndefined();
+    expect([...loadedPackageOperations.keys()]).toEqual(["faker"]);
+  });
+
+  it("serializes registry transactions through their callbacks", async () => {
+    let releaseFirst!: () => void;
+    let markFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const holdFirst = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const order: string[] = [];
+
+    const first = withSyncedPackageRegistry([{ name: "wretch" }], async () => {
+      order.push("first-start");
+      markFirstStarted();
+      await holdFirst;
+      order.push("first-end");
+    });
+    await firstStarted;
+
+    const second = withSyncedPackageRegistry([{ name: "faker" }], () => {
+      order.push("second");
+    });
+    await Promise.resolve();
+    expect(order).toEqual(["first-start"]);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(order).toEqual(["first-start", "first-end", "second"]);
+    expect([...loadedPackageOperations.keys()]).toEqual(["faker"]);
   });
 });
 
@@ -610,6 +757,66 @@ describe("getEnabledPackages", () => {
     expect(getEnabledPackages(project)).toEqual([
       { name: "wretch", namespace: "W" },
     ]);
+  });
+});
+
+describe("applySupportedPackageChanges", () => {
+  const unknownDependency = {
+    name: "custom-package",
+    version: "1.2.3",
+    namespace: "Custom",
+    types: "custom-types",
+    exports: [{ name: "run", importedBy: [{ operationName: "main" }] }],
+  };
+  const existingPackage = {
+    name: "wretch",
+    version: "3.0.0",
+    namespace: "Http",
+    exports: [{ name: "default", importedBy: [] }],
+  };
+
+  it("preserves full existing and unknown records while applying deltas", () => {
+    const dependencies = [unknownDependency, existingPackage];
+    const result = applySupportedPackageChanges(dependencies, [
+      { name: "wretch", enabled: true },
+      { name: "faker", enabled: true },
+    ]);
+
+    expect(result).toEqual([
+      unknownDependency,
+      existingPackage,
+      { name: "faker", version: "latest", exports: [] },
+    ]);
+    expect(result[0]).toBe(unknownDependency);
+    expect(result[1]).toBe(existingPackage);
+    expect(dependencies).toEqual([unknownDependency, existingPackage]);
+  });
+
+  it("is idempotent and removes only the disabled catalog dependency", () => {
+    const dependencies = [unknownDependency, existingPackage];
+    const once = applySupportedPackageChanges(dependencies, [
+      { name: "wretch", enabled: false },
+      { name: "faker", enabled: true },
+    ]);
+    const twice = applySupportedPackageChanges(once, [
+      { name: "wretch", enabled: false },
+      { name: "faker", enabled: true },
+    ]);
+
+    expect(twice).toEqual(once);
+    expect(twice[0]).toBe(unknownDependency);
+  });
+
+  it("rejects unsupported changes without mutating dependencies", () => {
+    const dependencies = [unknownDependency, existingPackage];
+
+    expect(() =>
+      applySupportedPackageChanges(dependencies, [
+        { name: "faker", enabled: true },
+        { name: "missing", enabled: false },
+      ])
+    ).toThrow("Unsupported package: missing");
+    expect(dependencies).toEqual([unknownDependency, existingPackage]);
   });
 });
 

@@ -16,7 +16,6 @@ import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import { nanoid } from "nanoid";
 import { SetStateAction } from "react";
-import { AgentChange } from "./schemas";
 import { Context } from "./execution/types";
 import { produce } from "immer";
 import { EntityPath } from "./types";
@@ -25,6 +24,13 @@ import {
   restoreProjectFromCheckpoint,
 } from "./checkpoints";
 import { createIDbStorage } from "./idb";
+import {
+  AgentMessage,
+  AgentProject,
+  AgentRunTrace,
+  AgentThread,
+} from "./agent/types";
+import type { AgentProposal } from "./agent/proposal";
 
 /* Files store */
 
@@ -135,6 +141,7 @@ const createProjectsSlice: StateCreator<
       return { projects: rest };
     });
     useCheckpointStore.getState().deleteProjectCheckpoints(id);
+    useAgentStore.getState().deleteAgentProject(id);
   },
   getProject: (id) => get().projects[id],
   getCurrentProject: () => {
@@ -410,54 +417,342 @@ export const useNavigationStore = createWithEqualityFn<NavigationStore>(
 interface ApiKeys {
   openai?: string;
   anthropic?: string;
-  google?: string;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  changes?: AgentChange[];
-  timestamp: number;
 }
 
 interface AgentStore {
   apiKeys: ApiKeys;
   selectedModel?: string;
-  messages: ChatMessage[];
-  isLoading: boolean;
+  thinkingLevel: import("./agent/types").AgentThinkingLevel;
+  agentProjects: Record<string, AgentProject>;
+  agentReady: boolean;
+  activeRun?: {
+    threadId: string;
+    streamingContent: string;
+    traces: AgentRunTrace[];
+  };
+  pendingProposals: Record<string, AgentProposal>;
 
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
   getApiKey: (provider: keyof ApiKeys) => string | undefined;
   setSelectedModel: (model: string) => void;
-  addMessage: (message: Omit<ChatMessage, "id" | "timestamp">) => void;
-  clearMessages: () => void;
-  setIsLoading: (loading: boolean) => void;
+  setThinkingLevel: (level: import("./agent/types").AgentThinkingLevel) => void;
+  createThread: (projectId: string, title?: string) => AgentThread;
+  renameThread: (threadId: string, title: string) => void;
+  selectThread: (projectId: string, threadId: string) => void;
+  removeThread: (threadId: string) => void;
+  deleteThreadTurn: (threadId: string, messageId: string) => void;
+  addMessage: (
+    threadId: string,
+    message: Omit<AgentMessage, "id" | "createdAt">
+  ) => AgentMessage | undefined;
+  setDraft: (threadId: string, content: string) => void;
+  startRun: (threadId: string) => void;
+  setRunTrace: (label: string) => void;
+  setStreamingContent: (content: string) => void;
+  finishRun: (threadId: string) => void;
+  setPendingProposal: (threadId: string, proposal?: AgentProposal) => void;
+  deleteAgentProject: (projectId: string) => void;
 }
 
-export const useAgentStore = createWithEqualityFn<AgentStore>()(
-  persist(
-    (set, get) => ({
-      loading: false,
-      apiKeys: {},
-      messages: [],
-      isLoading: false,
-      setApiKey: (provider, key) => {
-        set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
-      },
-      getApiKey: (provider) => get().apiKeys[provider],
-      setSelectedModel: (model) => set({ selectedModel: model }),
-      addMessage: (message) =>
+export const useAgentPersistenceErrorStore = createWithEqualityFn<{
+  error?: string;
+}>(() => ({}), shallow);
+
+function createAgentThread(title = "New chat"): AgentThread {
+  const now = Date.now();
+  return {
+    id: nanoid(),
+    title,
+    createdAt: now,
+    updatedAt: now,
+    draft: "",
+    messages: [],
+  };
+}
+
+function redactAgentSecrets<T>(value: T, apiKeys: ApiKeys): T {
+  const keys = Object.values(apiKeys).filter(Boolean) as string[];
+  if (keys.length === 0) return value;
+  const redact = (item: unknown): unknown => {
+    if (typeof item === "string") {
+      return keys.reduce(
+        (content, key) => content.replaceAll(key, "[REDACTED]"),
+        item
+      );
+    }
+    if (Array.isArray(item)) return item.map(redact);
+    if (item && typeof item === "object") {
+      return Object.fromEntries(
+        Object.entries(item).map(([key, child]) => [key, redact(child)])
+      );
+    }
+    return item;
+  };
+  return redact(value) as T;
+}
+
+export const useAgentStore = createWithEqualityFn(
+  persist<AgentStore>(
+    (set, get) => {
+      const saveProject = (project: AgentProject) =>
         set((state) => ({
-          messages: [
-            ...state.messages,
-            { ...message, id: nanoid(), timestamp: Date.now() },
-          ],
-        })),
-      clearMessages: () => set({ messages: [], isLoading: false }),
-      setIsLoading: (loading) => set({ isLoading: loading }),
-    }),
-    { name: "agent", storage: createIDbStorage("agent") }
+          agentProjects: {
+            ...state.agentProjects,
+            [project.projectId]: project,
+          },
+        }));
+      const findProjectByThread = (threadId: string) =>
+        Object.values(get().agentProjects).find((project) =>
+          project.threads.some((thread) => thread.id === threadId)
+        );
+
+      return {
+        apiKeys: {},
+        selectedModel: "gpt-5.6-sol",
+        thinkingLevel: "medium",
+        agentProjects: {},
+        agentReady: false,
+        pendingProposals: {},
+        setApiKey: (provider, key) => {
+          set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
+        },
+        getApiKey: (provider) => get().apiKeys[provider],
+        setSelectedModel: (model) => set({ selectedModel: model }),
+        setThinkingLevel: (thinkingLevel) => set({ thinkingLevel }),
+        createThread: (projectId, title) => {
+          const thread = createAgentThread(title);
+          const current = get().agentProjects[projectId];
+          saveProject({
+            projectId,
+            activeThreadId: thread.id,
+            threads: [...(current?.threads ?? []), thread],
+            history: current?.history,
+          });
+          return thread;
+        },
+        renameThread: (threadId, title) => {
+          const trimmedTitle = title.trim();
+          const project = findProjectByThread(threadId);
+          if (!project || !trimmedTitle) return;
+          saveProject({
+            ...project,
+            threads: project.threads.map((thread) =>
+              thread.id === threadId
+                ? { ...thread, title: trimmedTitle, updatedAt: Date.now() }
+                : thread
+            ),
+          });
+        },
+        selectThread: (projectId, threadId) => {
+          const project = get().agentProjects[projectId];
+          if (!project?.threads.some((thread) => thread.id === threadId))
+            return;
+          saveProject({ ...project, activeThreadId: threadId });
+        },
+        removeThread: (threadId) => {
+          const project = findProjectByThread(threadId);
+          if (!project) return;
+          const remaining = project.threads.filter(
+            (thread) => thread.id !== threadId
+          );
+          if (remaining.length === 0) remaining.push(createAgentThread());
+          saveProject({
+            ...project,
+            activeThreadId: remaining[0].id,
+            threads: remaining,
+          });
+          set((state) => {
+            const { [threadId]: _, ...pendingProposals } =
+              state.pendingProposals;
+            return { pendingProposals };
+          });
+        },
+        deleteThreadTurn: (threadId, messageId) => {
+          const project = findProjectByThread(threadId);
+          const thread = project?.threads.find(({ id }) => id === threadId);
+          if (!project || !thread) return;
+          const messageIndex = thread.messages.findIndex(
+            ({ id }) => id === messageId
+          );
+          if (
+            messageIndex < 0 ||
+            thread.messages[messageIndex]?.role !== "user"
+          )
+            return;
+          const nextUserIndex = thread.messages.findIndex(
+            (message, index) => index > messageIndex && message.role === "user"
+          );
+          const endIndex =
+            nextUserIndex < 0 ? thread.messages.length : nextUserIndex;
+          const removedMessages = thread.messages.slice(messageIndex, endIndex);
+          const nextProject = {
+            ...project,
+            threads: project.threads.map((currentThread) =>
+              currentThread.id !== threadId
+                ? currentThread
+                : {
+                    ...currentThread,
+                    messages: [
+                      ...currentThread.messages.slice(0, messageIndex),
+                      ...currentThread.messages.slice(endIndex),
+                    ],
+                  }
+            ),
+          };
+          set((state) => {
+            const pendingProposal = state.pendingProposals[threadId];
+            const removesPendingProposal =
+              !!pendingProposal &&
+              removedMessages.some(
+                (message) => message.proposal?.id === pendingProposal.id
+              );
+            if (!removesPendingProposal) {
+              return {
+                agentProjects: {
+                  ...state.agentProjects,
+                  [project.projectId]: nextProject,
+                },
+              };
+            }
+            const { [threadId]: _, ...pendingProposals } =
+              state.pendingProposals;
+            return {
+              agentProjects: {
+                ...state.agentProjects,
+                [project.projectId]: nextProject,
+              },
+              pendingProposals,
+            };
+          });
+        },
+        addMessage: (threadId, message) => {
+          const project = findProjectByThread(threadId);
+          if (!project) return;
+          const created: AgentMessage = {
+            ...redactAgentSecrets(message, get().apiKeys),
+            id: nanoid(),
+            createdAt: Date.now(),
+          };
+          saveProject({
+            ...project,
+            threads: project.threads.map((thread) =>
+              thread.id === threadId
+                ? { ...thread, messages: [...thread.messages, created] }
+                : thread
+            ),
+          });
+          return created;
+        },
+        setDraft: (threadId, content) => {
+          const project = findProjectByThread(threadId);
+          if (!project) return;
+          const draft = redactAgentSecrets(content, get().apiKeys);
+          saveProject({
+            ...project,
+            threads: project.threads.map((thread) =>
+              thread.id === threadId ? { ...thread, draft } : thread
+            ),
+          });
+        },
+        startRun: (threadId) =>
+          set({
+            activeRun: {
+              threadId,
+              streamingContent: "",
+              traces: [
+                {
+                  id: nanoid(),
+                  label: "Preparing request",
+                  status: "active",
+                },
+              ],
+            },
+          }),
+        setRunTrace: (label) =>
+          set((state) => {
+            if (!state.activeRun) return state;
+            const current = state.activeRun.traces.at(-1);
+            if (current?.label === label) return state;
+            return {
+              activeRun: {
+                ...state.activeRun,
+                traces: [
+                  ...state.activeRun.traces.map((trace) => ({
+                    ...trace,
+                    status: "complete" as const,
+                  })),
+                  { id: nanoid(), label, status: "active" as const },
+                ],
+              },
+            };
+          }),
+        setStreamingContent: (content) =>
+          set((state) =>
+            state.activeRun
+              ? { activeRun: { ...state.activeRun, streamingContent: content } }
+              : state
+          ),
+        finishRun: (threadId) =>
+          set((state) =>
+            state.activeRun?.threadId === threadId
+              ? { activeRun: undefined }
+              : state
+          ),
+        setPendingProposal: (threadId, proposal) =>
+          set((state) => {
+            if (proposal) {
+              return {
+                pendingProposals: {
+                  ...state.pendingProposals,
+                  [threadId]: proposal,
+                },
+              };
+            }
+            const { [threadId]: _, ...pendingProposals } =
+              state.pendingProposals;
+            return { pendingProposals };
+          }),
+        deleteAgentProject: (projectId) => {
+          const remove = () =>
+            set((state) => {
+              const { [projectId]: _, ...agentProjects } = state.agentProjects;
+              return {
+                agentProjects,
+                pendingProposals: Object.fromEntries(
+                  Object.entries(state.pendingProposals).filter(
+                    ([, proposal]) => proposal.projectId !== projectId
+                  )
+                ),
+              };
+            });
+          remove();
+          if (!useAgentStore.persist.hasHydrated()) {
+            const unsubscribe = useAgentStore.persist.onFinishHydration(() => {
+              remove();
+              unsubscribe();
+            });
+          }
+        },
+      };
+    },
+    {
+      name: "agent",
+      storage: createIDbStorage("agentProjects", () =>
+        useAgentPersistenceErrorStore.setState({
+          error:
+            "Agent chats could not be saved. Recent changes may be lost on reload.",
+        })
+      ),
+      partialize: (state) =>
+        ({
+          apiKeys: state.apiKeys,
+          selectedModel: state.selectedModel,
+          thinkingLevel: state.thinkingLevel,
+          agentProjects: state.agentProjects,
+        }) as AgentStore,
+      onRehydrateStorage: () => () =>
+        useAgentStore.setState({ agentReady: true }),
+    }
   ),
   shallow
 );

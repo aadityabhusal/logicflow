@@ -8,6 +8,8 @@ Watch the [demo video](https://youtu.be/qzS_zw1iwS0) for an overview.
 
 See [documentation](https://logicflow.dev/docs) for more details.
 
+The optional Agent panel uses `VITE_APP_ENABLE_AGENT_PANEL=true`. It proposes reviewed native statement updates for the selected operation.
+
 ## Key Features
 
 ### Core Editor
@@ -133,9 +135,18 @@ yarn preview
 
 ### Environment Variables
 
-| Variable             | Description                                         |
-| -------------------- | --------------------------------------------------- |
-| `VITE_API_PROXY_URL` | Proxy URL for deployment platform API requests only |
+| Variable             | Description                                                |
+| -------------------- | ---------------------------------------------------------- |
+| `VITE_API_PROXY_URL` | Base URL for fixed deployment and AI provider proxy routes |
+
+During local agent development, leave `VITE_API_PROXY_URL` empty, run the
+sibling `logicflow-proxy` Worker with `ALLOWED_ORIGIN=http://localhost:3000`,
+and start Vite. Vite forwards fixed `/api/ai/*` routes to the Worker's default
+`http://localhost:8787` address, preserving streaming and cancellation.
+
+Production agent requests require `VITE_API_PROXY_URL` to be the absolute URL
+of the deployed `logicflow-proxy` Worker. Vite's local proxy is not included in
+the production build.
 
 ## Tech Stack
 

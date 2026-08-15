@@ -17,7 +17,17 @@ type PendingRun = {
   request: Omit<ExecutionWorkerRunRequest, "type" | "runId">;
   resolve: (result: WorkerRunResult) => void;
   reject: (error: Error) => void;
+  cancellationReason?: ExecutionCancellationReason;
 };
+
+export type ExecutionCancellationReason = "cancelled" | "reset" | "superseded";
+
+export class ExecutionCancelledError extends Error {
+  constructor(readonly reason: ExecutionCancellationReason) {
+    super("Execution cancelled");
+    this.name = "ExecutionCancelledError";
+  }
+}
 
 function createExecutionWorkerClient() {
   let worker: Worker | undefined;
@@ -41,7 +51,10 @@ function createExecutionWorkerClient() {
         const run = activeRun;
         activeRun = undefined;
 
-        if (cancelled) run.reject(new Error("Execution cancelled"));
+        if (cancelled)
+          run.reject(
+            new ExecutionCancelledError(run.cancellationReason ?? "cancelled")
+          );
         else if (error) run.reject(new Error(error));
         else run.resolve({ results: new Map(results), workerContexts });
 
@@ -52,7 +65,7 @@ function createExecutionWorkerClient() {
       worker.onerror = (e) => {
         activeRun?.reject(new Error(e.message || "Worker error"));
         activeRun = undefined;
-        pendingRun?.reject(new Error("Execution cancelled"));
+        pendingRun?.reject(new ExecutionCancelledError("cancelled"));
         pendingRun = undefined;
         worker?.terminate();
         worker = undefined;
@@ -76,21 +89,23 @@ function createExecutionWorkerClient() {
           startRun(run);
           return;
         }
-        pendingRun?.reject(new Error("Execution cancelled"));
+        pendingRun?.reject(new ExecutionCancelledError("superseded"));
         pendingRun = run;
+        activeRun.cancellationReason = "superseded";
         worker?.postMessage({ type: "cancel" });
       });
     },
     cancel() {
       if (!activeRun && !pendingRun) return;
-      pendingRun?.reject(new Error("Execution cancelled"));
+      pendingRun?.reject(new ExecutionCancelledError("cancelled"));
       pendingRun = undefined;
+      if (activeRun) activeRun.cancellationReason = "cancelled";
       worker?.postMessage({ type: "cancel" });
     },
     reset() {
-      activeRun?.reject(new Error("Execution cancelled"));
+      activeRun?.reject(new ExecutionCancelledError("reset"));
       activeRun = undefined;
-      pendingRun?.reject(new Error("Execution cancelled"));
+      pendingRun?.reject(new ExecutionCancelledError("reset"));
       pendingRun = undefined;
       worker?.terminate();
       worker = undefined;

@@ -12,6 +12,7 @@ import npmPackages from "@/../docs/npm-packages.md?raw";
 import additionalFeatures from "@/../docs/additional-features.md?raw";
 import keyboardShortcuts from "@/../docs/keyboard-shortcuts.md?raw";
 import codeGeneration from "@/../docs/code-generation.md?raw";
+import agent from "@/../docs/agent.md?raw";
 import deployment from "@/../docs/deployment.md?raw";
 import { Fragment, ReactNode, useEffect, useState } from "react";
 import { CodeHighlight } from "@/ui/CodeHighlight";
@@ -83,6 +84,12 @@ const docSections = [
     title: "Code Generation",
     content: codeGeneration,
     subHeadings: extractHeadings(codeGeneration).filter((h) => h.level === 2),
+  },
+  {
+    id: "agent",
+    title: "Agent",
+    content: agent,
+    subHeadings: extractHeadings(agent).filter((h) => h.level === 2),
   },
   {
     id: "deployment",

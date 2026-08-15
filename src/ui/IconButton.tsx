@@ -16,7 +16,12 @@ const IconButtonComponent = forwardRef<
     }
 >(({ icon: Icon, size, children: _children, title, ...props }, ref) => {
   const iconNode = (
-    <ActionIcon size={size} ref={ref} {...props}>
+    <ActionIcon
+      size={size}
+      ref={ref}
+      {...props}
+      aria-label={props["aria-label"] ?? title}
+    >
       <Icon style={{ width: size, height: size }} />
     </ActionIcon>
   );
