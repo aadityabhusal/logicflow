@@ -141,6 +141,15 @@ function getHistory(agentProject: AgentProject): ProjectAgentHistory {
   return agentProject.history ?? { entries: [], cursor: 0, lastSequence: 0 };
 }
 
+function matchesAgentHistoryCursor(
+  project: Project,
+  history: ProjectAgentHistory,
+) {
+  const currentEntry = history.entries[history.cursor - 1];
+  const expected = currentEntry?.after ?? history.entries[0]?.before;
+  return !!expected && isEqual(getAgentHistoryState(project), expected);
+}
+
 function updateProposalApplication(
   agentProject: AgentProject,
   proposal: AgentProposal,
@@ -277,6 +286,7 @@ async function applyProposal(proposal: AgentProposal) {
     project,
     fileId: proposal.fileId,
     sourcePrompt: proposal.sourcePrompt,
+    requestContext: proposal.requestContext,
     update: proposal.update,
   });
   if (
@@ -407,11 +417,13 @@ export type AgentApplicationStatus = "applied" | "undone" | "unavailable";
 export function getAgentApplicationStatus(
   agentProject: AgentProject | undefined,
   applicationId: string,
+  project: Project | undefined,
 ): AgentApplicationStatus {
   const history = agentProject?.history;
   const index =
     history?.entries.findIndex(({ id }) => id === applicationId) ?? -1;
-  if (!history || index < 0) return "unavailable";
+  if (!history || index < 0 || !project) return "unavailable";
+  if (!matchesAgentHistoryCursor(project, history)) return "unavailable";
   return index < history.cursor ? "applied" : "undone";
 }
 
@@ -433,9 +445,7 @@ async function restoreAgentApplication(
       `This agent edit is already ${direction === "undo" ? "undone" : "applied"}`,
     );
   }
-  const currentEntry = history.entries[history.cursor - 1];
-  const expected = currentEntry?.after ?? history.entries[0]?.before;
-  if (!expected || !isEqual(getAgentHistoryState(project), expected)) {
+  if (!matchesAgentHistoryCursor(project, history)) {
     throw new Error(
       `Cannot ${direction} because the project changed after this agent edit`,
     );

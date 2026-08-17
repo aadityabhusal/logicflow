@@ -158,7 +158,7 @@ beforeEach(() => {
 });
 
 describe("AgentChat request progress", () => {
-  it("shows request milestones and streamed explanation instead of a loading label", () => {
+  it("shows asynchronous work and streamed explanation", () => {
     Object.assign(mocks.agentState, {
       activeRun: {
         threadId: "thread-a",
@@ -171,7 +171,7 @@ describe("AgentChat request progress", () => {
           },
           {
             id: "trace-b",
-            label: "Planning the requested change",
+            label: "Preparing an implementation",
             status: "active",
           },
         ],
@@ -198,7 +198,8 @@ describe("AgentChat request progress", () => {
 
     const progress = screen.getByRole("status", { name: "Agent progress" });
     expect(progress.textContent).toContain("Reading project context");
-    expect(progress.textContent).toContain("Planning the requested change");
+    expect(progress.textContent).toContain("Preparing an implementation");
+    expect(progress.textContent).not.toContain("Planning the requested change");
     expect(progress.textContent).toContain("I found the relevant operation.");
     expect(progress.textContent).not.toContain("Loading...");
   });

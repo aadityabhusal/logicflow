@@ -89,8 +89,13 @@ describe("AgentProposalReview", () => {
     expect(
       screen.getByRole("region", { name: "Proposal review" }),
     ).toBeDefined();
+    expect(screen.getByText("1 operation to change")).toBeDefined();
+    expect(
+      screen.getByText(/Dependent operation calls will be synchronized/),
+    ).toBeDefined();
     expect(screen.getByText("formatMessage")).toBeDefined();
-    expect(screen.getAllByText("undefined to string")).toHaveLength(2);
+    expect(screen.queryByText("renderMessage")).toBeNull();
+    expect(screen.queryByText("undefined to string")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(actions.onApply).toHaveBeenCalledOnce();
   });
@@ -153,12 +158,17 @@ describe("AgentProposalReview", () => {
     });
 
     expect(
-      screen.getByRole("heading", { name: "Propagated caller changes" }),
+      screen.getByRole("heading", { name: "Operations" }),
     ).toBeDefined();
-    expect(screen.getByText("update newFormatter")).toBeDefined();
-    expect(screen.getByText("formatMessage")).toBeDefined();
-    expect(screen.getByText("update oldFormatter")).toBeDefined();
-    expect(screen.getByText("wretch")).toBeDefined();
+    expect(screen.getByText("1 operation to change")).toBeDefined();
+    expect(
+      screen.getByText(/Dependent operation calls will be synchronized/),
+    ).toBeDefined();
+    expect(screen.getByText("1 package enabled")).toBeDefined();
+    expect(screen.getAllByText("formatMessage")).toHaveLength(1);
+    expect(screen.queryByText("newFormatter")).toBeNull();
+    expect(screen.queryByText("oldFormatter")).toBeNull();
+    expect(screen.getByText("Enable wretch")).toBeDefined();
     expect(screen.getByText(/Operation formatMessage:/)).toBeDefined();
     expect(screen.getByText(/Package wretch:/)).toBeDefined();
     expect(screen.getAllByText(/warning:/i)).toHaveLength(2);
@@ -278,6 +288,9 @@ describe("AgentProposalReview", () => {
       proposal: { ...proposal, applicationId: "application-1" },
     });
 
+    expect(
+      screen.getByRole("region", { name: "Update summary" }),
+    ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(appliedActions.onUndo).toHaveBeenCalledOnce();
 

@@ -158,6 +158,64 @@ describe("native agent proposals", () => {
     ).toBe(true);
   });
 
+  it("rejects a parameter-only update when the request requires computation", async () => {
+    const file = createOperationFile("bmi");
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "Take height and weight as operation parameters",
+      requestContext:
+        "[1] user:\nAdd the logic to calculate body mass index.\n\n[2] user:\nTake height and weight as operation parameters.",
+      update: {
+        explanation: "Added the inputs",
+        enablePackages: [],
+        changes: ["height", "weight"].map((name) => ({
+          kind: "insert_statement" as const,
+          container: "parameters" as const,
+          beforeStatementId: null,
+          statement: createStatement({
+            name,
+            data: createData({ type: { kind: "number" }, value: 0 }),
+          }),
+        })),
+      },
+    });
+
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "incomplete_request" })
+    );
+    expect(proposal.proposedFile!.content.value.statements).toEqual([]);
+  });
+
+  it("removes an explicit return marker from a newly inserted final statement", async () => {
+    const file = createOperationFile("main");
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "add the result",
+      update: {
+        explanation: "Add result",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: createStatement({
+              data: createData({ value: 42 }),
+              controlFlow: "return",
+            }),
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).toEqual([]);
+    expect(
+      proposal.proposedFile!.content.value.statements[0]
+    ).not.toHaveProperty("controlFlow");
+  });
+
   it("canonicalizes stale reference IDs in an empty-operation BMI update", async () => {
     const file = createOperationFile("main");
     const proposal = await createAgentProposal({
@@ -1130,6 +1188,52 @@ describe("native agent proposals", () => {
     });
   });
 
+  it("does not report unrelated operation calls as proposal changes", async () => {
+    const selected = createOperationFile("selected");
+    const helper = createOperationFile("helper");
+    const unrelated = createOperationFile("unrelated");
+    unrelated.content.value.statements = [
+      createStatement({
+        data: testReference(helper.name, helper.id),
+        operations: [
+          createData<OperationType>({
+            type: {
+              kind: "operation",
+              parameters: [{ type: helper.content.type }],
+              result: helper.content.type.result,
+            },
+            value: { name: "call", parameters: [], statements: [] },
+          }),
+        ],
+      }),
+    ];
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [selected, helper, unrelated] }),
+      fileId: selected.id,
+      sourcePrompt: "add a value",
+      update: {
+        explanation: "add a value",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: createStatement({ data: createData({ value: 1 }) }),
+          },
+        ],
+      },
+    });
+
+    expect(proposal.review?.files).toEqual([]);
+    expect(
+      proposal.proposedState?.operationFiles.find(
+        ({ file }) => file.id === unrelated.id
+      )?.file
+    ).toEqual(unrelated);
+  });
+
   it("canonicalizes built-in result metadata and validates project-call arity", async () => {
     const callee = createOperationFile("callee");
     callee.content.value.parameters = [
@@ -1500,6 +1604,10 @@ describe("native agent proposals", () => {
       },
     });
     const files = proposal.proposedState!.operationFiles;
+    expect(proposal.review?.files.map(({ operationName }) => operationName)).toEqual([
+      "direct",
+      "transitive",
+    ]);
     const directResult = files.find(({ file }) => file.id === direct.id)!.file
       .content.type.result;
     const proposedTransitive = files.find(

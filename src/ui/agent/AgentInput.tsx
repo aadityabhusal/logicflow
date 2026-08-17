@@ -69,9 +69,7 @@ export function AgentInput({
         ? "Select a model to send messages."
         : !modelHasApiKey
           ? `Add an API key for ${LLM_PROVIDERS[selectedModelConfig.provider].name} to send messages.`
-          : smallScreen
-            ? "Ctrl/Cmd + Enter to send"
-            : "Enter to send | Shift + Enter for a new line";
+          : "";
 
   useEffect(() => {
     if (wasLoading.current && !isLoading) {
@@ -106,7 +104,11 @@ export function AgentInput({
           onChange={(e) =>
             activeThreadId && setDraft(activeThreadId, e.target.value)
           }
-          placeholder="Ask anything..."
+          placeholder={
+            smallScreen
+              ? "Ask anything... (Ctrl/Cmd + Enter to send)"
+              : "Ask anything... (Enter to send; Shift + Enter for a new line)"
+          }
           autosize
           minRows={3}
           maxRows={smallScreen ? 6 : 10}

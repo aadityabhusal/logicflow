@@ -81,21 +81,30 @@ describe("agent store", () => {
     });
   });
 
-  it("keeps active request traces transient and marks previous steps complete", () => {
+  it("keeps asynchronous request traces transient and marks previous steps complete", () => {
     const thread = useAgentStore.getState().createThread("project-a");
 
     useAgentStore.getState().startRun(thread.id);
+    expect(useAgentStore.getState().activeRun?.traces).toEqual([]);
     useAgentStore.getState().setRunTrace("Reading project context");
 
     expect(useAgentStore.getState().activeRun?.traces).toEqual([
       {
         id: expect.any(String),
-        label: "Preparing request",
+        label: "Reading project context",
+        status: "active",
+      },
+    ]);
+    useAgentStore.getState().setRunTrace("Preparing an implementation");
+    expect(useAgentStore.getState().activeRun?.traces).toEqual([
+      {
+        id: expect.any(String),
+        label: "Reading project context",
         status: "complete",
       },
       {
         id: expect.any(String),
-        label: "Reading project context",
+        label: "Preparing an implementation",
         status: "active",
       },
     ]);

@@ -13,6 +13,7 @@
 - Finish necessary post-feature tasks such as creating tests, updating docs, or noting follow-ups.
 - Never compromise on test quality. If a high-quality test is difficult or impractical, discuss the tradeoff with the user.
 - When asked for suggestions or feasibility, analyze the pros and cons thoroughly and present a detailed report so the user can decide.
+- After implementation, take a bird’s-eye view of the solution to identify any edge cases, missing pieces, or unintended gaps.
 
 ## Updating This Guide
 

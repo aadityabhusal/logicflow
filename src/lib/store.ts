@@ -659,13 +659,7 @@ export const useAgentStore = createWithEqualityFn(
             activeRun: {
               threadId,
               streamingContent: "",
-              traces: [
-                {
-                  id: nanoid(),
-                  label: "Preparing request",
-                  status: "active",
-                },
-              ],
+              traces: [],
             },
           }),
         setRunTrace: (label) =>

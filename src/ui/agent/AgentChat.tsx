@@ -267,7 +267,8 @@ export function AgentChat({
                   msg.proposal.applicationId
                     ? getAgentApplicationStatus(
                         agentProject,
-                        msg.proposal.applicationId
+                        msg.proposal.applicationId,
+                        currentProject
                       )
                     : undefined
                 }

@@ -1,6 +1,21 @@
 import { Button } from "@mantine/core";
 import type { AgentMessage } from "@/lib/agent/types";
 import type { AgentApplicationStatus } from "@/lib/agent/history";
+import type { AgentProposalReviewAction } from "@/lib/agent/proposal";
+
+function describeAction(action: AgentProposalReviewAction) {
+  const verb =
+    action.kind === "insert_statement"
+      ? "Insert"
+      : action.kind === "replace_statement"
+        ? "Replace"
+        : action.kind === "delete_statement"
+          ? "Delete"
+          : "Move";
+  return `${verb} ${action.statementName ?? "statement"} in ${
+    action.container === "parameters" ? "Parameters" : "Body"
+  }`;
+}
 
 export function AgentProposalReview({
   proposal,
@@ -44,57 +59,34 @@ export function AgentProposalReview({
       ? "Apply is unavailable until proposal errors are resolved."
       : undefined;
 
-  const renderChanges = (changes: {
-    parameters: { before: number; after: number };
-    statements: { before: number; after: number };
-    operationCalls: { before: number; after: number };
-    returnType: { before: string; after: string };
-    generatedSyntax?: "valid" | "invalid";
-  }) => (
-    <dl className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-xs">
-      <dt>Parameters</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        {changes.parameters.before} to {changes.parameters.after}
-      </dd>
-      <dt>Statements</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        {changes.statements.before} to {changes.statements.after}
-      </dd>
-      <dt>Operation calls</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        {changes.operationCalls.before} to {changes.operationCalls.after}
-      </dd>
-      <dt>Return type</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        {changes.returnType.before} to {changes.returnType.after}
-      </dd>
-      <dt>Generated syntax</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        {changes.generatedSyntax ?? "not applicable"}
-      </dd>
-    </dl>
-  );
-
   return (
     <section
       aria-labelledby={titleId}
       className="mt-2 min-w-0 rounded-xs border p-2 text-sm wrap-anywhere"
     >
       <h2 id={titleId} className="font-medium">
-        Proposal review
+        {active ? "Proposal review" : "Update summary"}
       </h2>
+      {review ? (
+        <div className="mt-2 flex flex-wrap gap-1 text-xs">
+          <span className="rounded-full border border-border px-2 py-0.5">
+            {active ? "1 operation to change" : "1 operation changed"}
+          </span>
+          {review.packages.enabled.length > 0 ? (
+            <span className="rounded-full border border-border px-2 py-0.5">
+              {review.packages.enabled.length} package
+              {review.packages.enabled.length === 1 ? "" : "s"} enabled
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {review?.actions.length ? (
         <section className="mt-2">
           <h3 className="text-xs font-medium">Requested changes</h3>
-          <ul className="mt-1 text-xs">
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs">
             {review.actions.map((action, index) => (
               <li key={`${action.kind}-${action.statementId ?? index}`}>
-                {action.kind === "insert_statement" && "Insert"}
-                {action.kind === "replace_statement" && "Replace"}
-                {action.kind === "delete_statement" && "Delete"}
-                {action.kind === "move_statement" && "Move"}{" "}
-                {action.statementName ?? "statement"} in{" "}
-                {action.container === "parameters" ? "Parameters" : "Body"}
+                {describeAction(action)}
               </li>
             ))}
           </ul>
@@ -102,23 +94,18 @@ export function AgentProposalReview({
       ) : null}
       {review ? (
         <section className="mt-2">
-          <h3 className="text-xs font-medium">Selected operation</h3>
-          <div className="text-xs">{review.operationName}</div>
-          {renderChanges(review)}
-        </section>
-      ) : null}
-      {review?.files.length ? (
-        <section className="mt-2">
-          <h3 className="text-xs font-medium">Propagated caller changes</h3>
-          <ul className="mt-1 space-y-2">
-            {review.files.map((file, index) => (
-              <li key={`${file.change}-${file.operationName}-${index}`}>
-                <div className="text-xs font-medium capitalize">
-                  {file.change} {file.operationName}
-                </div>
-                {renderChanges(file)}
-              </li>
-            ))}
+          <h3 className="text-xs font-medium">Operations</h3>
+          {review.files.length > 0 ? (
+            <p className="mt-1 text-xs text-dimmed">
+              Dependent operation calls {active ? "will be" : "were"}{" "}
+              synchronized automatically to stay compatible with this change.
+            </p>
+          ) : null}
+          <ul className="mt-1 space-y-1 text-xs">
+            <li className="flex flex-wrap items-baseline justify-between gap-x-2">
+              <span className="font-medium">{review.operationName}</span>
+              <span className="text-dimmed">Direct change</span>
+            </li>
           </ul>
         </section>
       ) : null}
@@ -127,24 +114,18 @@ export function AgentProposalReview({
         review.packages.disabled.length > 0) ? (
         <section className="mt-2">
           <h3 className="text-xs font-medium">Packages</h3>
-          <dl className="mt-1 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-2 text-xs">
-            {review.packages.enabled.length > 0 ? (
-              <>
-                <dt>Enabled</dt>
-                <dd className="min-w-0 wrap-anywhere">
-                  {review.packages.enabled.join(", ")}
-                </dd>
-              </>
-            ) : null}
-            {review.packages.disabled.length > 0 ? (
-              <>
-                <dt>Disabled</dt>
-                <dd className="min-w-0 wrap-anywhere">
-                  {review.packages.disabled.join(", ")}
-                </dd>
-              </>
-            ) : null}
-          </dl>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs">
+            {review.packages.enabled.length > 0
+              ? review.packages.enabled.map((packageName) => (
+                  <li key={`enabled-${packageName}`}>Enable {packageName}</li>
+                ))
+              : null}
+            {review.packages.disabled.length > 0
+              ? review.packages.disabled.map((packageName) => (
+                  <li key={`disabled-${packageName}`}>Disable {packageName}</li>
+                ))
+              : null}
+          </ul>
         </section>
       ) : null}
       {diagnostics.length > 0 ? (

@@ -208,6 +208,7 @@ export type AgentProposal = {
   fileId: string;
   baseFingerprint: string;
   sourcePrompt: string;
+  requestContext?: string;
   update: AgentOperationUpdate;
   proposedFile?: Extract<ProjectFile, { type: "operation" }>;
   proposedState?: AgentHistoryState;
@@ -546,6 +547,49 @@ function applyActions(file: OperationFile, update: AgentOperationUpdate) {
   return { candidate, review };
 }
 
+function normalizeAgentFinalReturn(
+  file: OperationFile,
+  actions: AgentProposalReviewAction[]
+) {
+  const finalStatement = file.content.value.statements.at(-1);
+  if (
+    finalStatement?.controlFlow === "return" &&
+    actions.some(({ statementId }) => statementId === finalStatement.id)
+  )
+    delete finalStatement.controlFlow;
+}
+
+function requestRequiresBody(requestContext: string) {
+  const userRequests = [...requestContext.matchAll(
+    /\[\d+\] user:\n([\s\S]*?)(?=\n\n\[\d+\] (?:user|assistant):|$)/g
+  )].map(([, content]) => content);
+  const requestText = userRequests.length
+    ? userRequests.join("\n")
+    : requestContext;
+  return /\b(?:logic|calculate|calculation|compute|computation|formula|algorithm|implementation|implement|behavior|behaviour|result|output|return|body|transform|derive|sum|average|multiply|divide|condition|conditional|filter|map)\b/i.test(
+    requestText
+  );
+}
+
+function validateRequestedBody(
+  selected: OperationFile,
+  candidate: OperationFile,
+  requestContext: string,
+  diagnostics: AgentDiagnostic[]
+) {
+  if (
+    !requestRequiresBody(requestContext) ||
+    selected.content.value.statements.length > 0 ||
+    candidate.content.value.statements.length > 0
+  )
+    return;
+  addDiagnostic(
+    diagnostics,
+    "incomplete_request",
+    `Request asks for operation behavior, but ${selected.name} still has no body statements. Add the complete computation in the same update; parameters alone are incomplete.`
+  );
+}
+
 function referencesId(file: OperationFile, id: string) {
   let referenced = false;
   for (const statement of [
@@ -563,7 +607,23 @@ function referencesId(file: OperationFile, id: string) {
   return referenced;
 }
 
-function callsOperation(file: OperationFile, operationId: string) {
+function referencesOperation(
+  data: IData,
+  operationId: string,
+  operationName?: string
+) {
+  return (
+    isDataOfType(data, "reference") &&
+    (data.value.id === operationId ||
+      (operationName !== undefined && data.value.name === operationName))
+  );
+}
+
+function callsOperation(
+  file: OperationFile,
+  operationId: string,
+  operationName?: string
+) {
   let found = false;
   for (const root of [
     ...file.content.value.parameters,
@@ -576,9 +636,12 @@ function callsOperation(file: OperationFile, operationId: string) {
           let current = statement.data;
           for (const call of statement.operations) {
             if (
-              call.value.name === "call" &&
-              isDataOfType(current, "reference") &&
-              current.value.id === operationId
+              (call.value.name === "call" &&
+                referencesOperation(current, operationId, operationName)) ||
+              (operationName !== undefined &&
+                call.value.name !== "call" &&
+                !call.value.source &&
+                call.value.name === operationName)
             )
               found = true;
             current = createData({ id: call.id, type: call.type.result });
@@ -589,6 +652,27 @@ function callsOperation(file: OperationFile, operationId: string) {
     );
   }
   return found;
+}
+
+function getAffectedOperationIds(
+  project: Project,
+  selected: OperationFile
+) {
+  const operationFiles = project.files.filter(
+    (file): file is OperationFile => file.type === "operation"
+  );
+  const affected = new Set([selected.id]);
+  let frontier = [selected];
+  while (frontier.length > 0) {
+    const next = operationFiles.filter(
+      (file) =>
+        !affected.has(file.id) &&
+        frontier.some((target) => callsOperation(file, target.id, target.name))
+    );
+    for (const file of next) affected.add(file.id);
+    frontier = next;
+  }
+  return affected;
 }
 
 function migrateCallerArguments(
@@ -605,7 +689,7 @@ function migrateCallerArguments(
     (file): file is OperationFile =>
       file.type === "operation" &&
       file.id !== base.id &&
-      callsOperation(file, base.id)
+      callsOperation(file, base.id, base.name)
   );
   for (const parameter of newParameters) {
     if (
@@ -636,8 +720,7 @@ function migrateCallerArguments(
             for (const call of nested.operations) {
               if (
                 call.value.name === "call" &&
-                isDataOfType(current, "reference") &&
-                current.value.id === base.id
+                referencesOperation(current, base.id, base.name)
               ) {
                 const oldArgs = call.value.parameters;
                 call.value.parameters = newParameters.flatMap((parameter) => {
@@ -751,7 +834,7 @@ function canonicalizeProjectCalls(file: OperationFile, project: Project) {
                   : structuredClone(target.content.type.parameters),
                 result: structuredClone(target.content.type.result),
               };
-              call.value.source = undefined;
+              delete call.value.source;
             }
             current = createData({ id: call.id, type: call.type.result });
           }
@@ -1635,11 +1718,13 @@ export async function createAgentProposal({
   project,
   fileId,
   sourcePrompt,
+  requestContext,
   update: input,
 }: {
   project: Project;
   fileId: string;
   sourcePrompt: string;
+  requestContext?: string;
   update: unknown;
 }): Promise<AgentProposal> {
   const base = {
@@ -1648,6 +1733,7 @@ export async function createAgentProposal({
     fileId,
     baseFingerprint: getAgentEditableFingerprint(project),
     sourcePrompt,
+    ...(requestContext ? { requestContext } : {}),
   };
   const parsed = AgentOperationUpdateSchema.safeParse(input);
   if (!parsed.success) {
@@ -1693,6 +1779,13 @@ export async function createAgentProposal({
   const { candidate: changedCandidate, review: actions } = applyActions(
     selected,
     update
+  );
+  normalizeAgentFinalReturn(changedCandidate, actions);
+  validateRequestedBody(
+    selected,
+    changedCandidate,
+    requestContext ?? sourcePrompt,
+    diagnostics
   );
   const changed = canonicalizeProjectCalls(changedCandidate, project);
   normalizeEmbeddedOperationCalls(changed, project, {
@@ -1759,8 +1852,9 @@ export async function createAgentProposal({
   );
   files = files.map((file) => (file.id === selected.id ? normalized : file));
   const canonicalProject = { ...packageProject, files };
+  const affectedOperationIds = getAffectedOperationIds(project, selected);
   files = files.map((file) =>
-    file.type === "operation"
+    file.type === "operation" && affectedOperationIds.has(file.id)
       ? canonicalizeProjectCalls(structuredClone(file), canonicalProject)
       : file
   );
@@ -1782,7 +1876,15 @@ export async function createAgentProposal({
       if (pass === 0 && file.id === selected.id) return file;
       const before = propagated[index];
       return before.type === "operation" &&
-        [...frontier].some((operationId) => callsOperation(before, operationId))
+        [...frontier].some((operationId) => {
+          const target = propagated.find(
+            (candidate): candidate is OperationFile =>
+              candidate.type === "operation" && candidate.id === operationId
+          );
+          return (
+            target !== undefined && callsOperation(before, target.id, target.name)
+          );
+        })
         ? file
         : before;
     });

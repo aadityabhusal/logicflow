@@ -211,6 +211,7 @@ function renderPanel() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.agentState.agentProjects["project-a"].activeThreadId = "thread-a";
+  mocks.agentState.agentProjects["project-a"].threads[0].messages = [];
   mocks.agentState.getApiKey.mockReturnValue("key");
   mocks.agentState.pendingProposals = {};
   mocks.persistenceState.error = undefined;
@@ -268,6 +269,23 @@ describe("AgentPanel thread header", () => {
       "thread-a",
       "message-a"
     );
+  });
+
+  it("does not show a top-level error for a stale inline history action", async () => {
+    mocks.undoAgentApplication.mockRejectedValueOnce(
+      new Error("Cannot undo because the project changed after this agent edit")
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo turn" }));
+
+    await waitFor(() =>
+      expect(mocks.undoAgentApplication).toHaveBeenCalledWith(
+        "project-a",
+        "application-a"
+      )
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("renames the active chat inline", () => {
@@ -354,6 +372,38 @@ describe("AgentPanel thread header", () => {
   });
 });
 
+describe("AgentPanel requests", () => {
+  it("passes prior thread messages when continuing a request", async () => {
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      { id: "message-a", role: "user", content: "Calculate BMI", createdAt: 1 },
+      {
+        id: "message-b",
+        role: "assistant",
+        content: "Which units should I use?",
+        createdAt: 2,
+      },
+    ] as never[];
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Update ready" },
+    });
+    mocks.submitPrompt = "Use kilograms and centimetres";
+
+    renderPanel();
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversation: [
+            { role: "user", content: "Calculate BMI" },
+            { role: "assistant", content: "Which units should I use?" },
+          ],
+        })
+      )
+    );
+  });
+});
+
 describe("AgentPanel proposal lifecycle", () => {
   it("reports a missing operation without clearing the draft", () => {
     mocks.projectState.getCurrentFile.mockReturnValue(undefined);
@@ -425,7 +475,7 @@ describe("AgentPanel proposal lifecycle", () => {
     expect(mocks.setActiveTab).toHaveBeenCalledWith("deployment");
   });
 
-  it("defers the Deployment panel action for combined edit-and-deploy requests", async () => {
+  it("automatically applies combined edit-and-deploy requests", async () => {
     mocks.submitPrompt = "Fix the handler and deploy to Supabase";
     mocks.getExplicitDeploymentIntent.mockReturnValue({ afterChanges: true });
     mocks.generateOperationProposal.mockResolvedValue({
@@ -451,9 +501,18 @@ describe("AgentPanel proposal lifecycle", () => {
         })
       )
     );
+    await waitFor(() =>
+      expect(mocks.applyAgentProposal).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
+      )
+    );
     expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
       "thread-a",
       expect.not.objectContaining({ manualDeploymentAfterApply: true })
+    );
+    expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+      "thread-a",
+      expect.objectContaining({ deploymentAction: "open-deployment-panel" })
     );
   });
 
@@ -481,7 +540,7 @@ describe("AgentPanel proposal lifecycle", () => {
     );
   });
 
-  it("stores generated proposals without mutating the project", async () => {
+  it("automatically applies generated proposals through Agent history", async () => {
     mocks.generateOperationProposal.mockImplementation(
       async ({ onProgress }) => {
         onProgress?.("Preparing an implementation");
@@ -516,10 +575,81 @@ describe("AgentPanel proposal lifecycle", () => {
         })
       )
     );
+    expect(mocks.applyAgentProposal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
+    );
     expect(mocks.projectState.updateFile).not.toHaveBeenCalled();
     expect(mocks.agentState.setDraft).toHaveBeenCalledWith("thread-a", "");
     expect(mocks.agentState.setRunTrace).toHaveBeenCalledWith(
       "Preparing an implementation"
+    );
+  });
+
+  it("keeps invalid proposals pending for manual recovery", async () => {
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "This needs review" },
+      proposal: {
+        id: "proposal-a",
+        projectId: "project-a",
+        fileId: "operation-a",
+        baseFingerprint: "fingerprint",
+        sourcePrompt: "Update it",
+        update: { explanation: "Update it", enablePackages: [], changes: [] },
+        diagnostics: [
+          {
+            code: "invalid_operation",
+            severity: "error",
+            message: "The operation is invalid",
+            repairable: true,
+          },
+        ],
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
+      )
+    );
+    expect(mocks.applyAgentProposal).not.toHaveBeenCalled();
+  });
+
+  it("keeps a generated proposal pending when automatic apply fails", async () => {
+    mocks.applyAgentProposal.mockRejectedValue(new Error("The project changed"));
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Update prepared" },
+      proposal: {
+        id: "proposal-a",
+        projectId: "project-a",
+        fileId: "operation-a",
+        baseFingerprint: "fingerprint",
+        sourcePrompt: "Update it",
+        update: { explanation: "Update it", enablePackages: [], changes: [] },
+        diagnostics: [],
+      },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Submit prompt"));
+
+    await waitFor(() =>
+      expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({
+          content: expect.stringContaining(
+            "could not be applied automatically: The project changed"
+          ),
+          error: {},
+        })
+      )
+    );
+    expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
+      "thread-a",
+      expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
     );
   });
 
@@ -578,9 +708,15 @@ describe("AgentPanel proposal lifecycle", () => {
     expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
   });
 
-  it("offers deployment immediately after applying a combined request", async () => {
+  it("offers deployment after manually recovering an automatic apply failure", async () => {
     mocks.submitPrompt = "Fix it and deploy";
     mocks.getExplicitDeploymentIntent.mockReturnValue({ afterChanges: true });
+    mocks.applyAgentProposal
+      .mockRejectedValueOnce(new Error("The project changed"))
+      .mockResolvedValue({
+        id: "application-a",
+        afterSelectedFileId: "operation-a",
+      });
     const proposal = {
       id: "proposal-a",
       projectId: "project-a",
@@ -603,7 +739,12 @@ describe("AgentPanel proposal lifecycle", () => {
 
     fireEvent.click(screen.getByText("Submit prompt"));
     await waitFor(() =>
-      expect(mocks.agentState.setPendingProposal).toHaveBeenCalled()
+      expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
+        "thread-a",
+        expect.objectContaining({
+          content: expect.stringContaining("could not be applied automatically"),
+        })
+      )
     );
     mocks.agentState.pendingProposals = { "thread-a": proposal };
     view.rerender(
@@ -619,7 +760,7 @@ describe("AgentPanel proposal lifecycle", () => {
         expect.objectContaining({ deploymentAction: "open-deployment-panel" })
       )
     );
-    expect(mocks.applyAgentProposal).toHaveBeenCalledWith(proposal);
+    expect(mocks.applyAgentProposal).toHaveBeenNthCalledWith(2, proposal);
   });
 
   it("revises against the proposal anchor after navigation", async () => {

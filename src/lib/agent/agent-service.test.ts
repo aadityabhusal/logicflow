@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createProviderModel: vi.fn(() => ({ model: true })),
   toAgentTransportError: vi.fn(() => new Error("Normalized provider error")),
   buildContextPrompt: vi.fn(() => "prompt"),
+  buildRequestContext: vi.fn(() => "request context"),
   discovery: {
     buildContextSnapshot: vi.fn(() => ({ selectedOperation: true })),
     lookupOperations: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("./transport", () => ({
 vi.mock("./prompts", () => ({
   LOGICFLOW_SYSTEM_PROMPT: "system",
   buildContextPrompt: mocks.buildContextPrompt,
+  buildRequestContext: mocks.buildRequestContext,
 }));
 
 import { AgentDiscoveryError } from "./discovery";
@@ -149,12 +151,40 @@ describe("generateOperationProposal", () => {
     expect(onPartialExplanation).toHaveBeenNthCalledWith(2, "Updated");
     expect(onProgress.mock.calls.map(([label]) => label)).toEqual([
       "Reading project context",
-      "Planning the requested change",
       "Preparing an implementation",
-      "Validating proposed changes",
-      "Preparing changes for review",
     ]);
     expect(result).toEqual({ response: update, proposal });
+  });
+
+  it("includes prior conversation when continuing an unfinished request", async () => {
+    mockStream();
+    const conversation = [
+      { role: "user" as const, content: "Calculate BMI" },
+      { role: "assistant" as const, content: "What units should I use?" },
+    ];
+
+    await generateOperationProposal({
+      operation,
+      project,
+      userPrompt: "Use kilograms and centimetres",
+      conversation,
+      model: "openai/gpt-5.6-sol",
+      apiKey: "session-key",
+    });
+
+    expect(mocks.buildContextPrompt).toHaveBeenCalledWith(
+      "Use kilograms and centimetres",
+      { selectedOperation: true },
+      undefined,
+      conversation
+    );
+    expect(mocks.buildRequestContext).toHaveBeenCalledWith(
+      "Use kilograms and centimetres",
+      conversation
+    );
+    expect(mocks.createAgentProposal).toHaveBeenCalledWith(
+      expect.objectContaining({ requestContext: "request context" })
+    );
   });
 
   it("returns an explanation without proposal review for an empty update", async () => {
@@ -266,6 +296,43 @@ describe("generateOperationProposal", () => {
     expect(mocks.streamText.mock.calls[1][0].prompt).toContain("nested-id");
     expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
       "statementTargets"
+    );
+    expect(mocks.createAgentProposal).toHaveBeenCalledTimes(2);
+  });
+
+  it("repairs a parameter-only response for a request that requires logic", async () => {
+    const incompleteProposal = {
+      ...proposal,
+      diagnostics: [
+        {
+          code: "incomplete_request",
+          severity: "error" as const,
+          message: "The requested body is missing",
+          repairable: true,
+        },
+      ],
+    };
+    mocks.createAgentProposal
+      .mockResolvedValueOnce(incompleteProposal)
+      .mockResolvedValueOnce(proposal);
+    mockStream();
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Add the BMI calculation",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).resolves.toEqual({ response: update, proposal });
+
+    expect(mocks.streamText).toHaveBeenCalledTimes(2);
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
+      "previous update was incomplete"
+    );
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
+      "complete body implementation"
     );
     expect(mocks.createAgentProposal).toHaveBeenCalledTimes(2);
   });

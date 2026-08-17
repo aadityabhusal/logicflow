@@ -432,9 +432,14 @@ describe("agent edit history", () => {
     await undoAgentApplication("project-a", first.id);
 
     let agentProject = mocks.agentState.agentProjects["project-a"];
+    const currentProject = mocks.projectState.projects["project-a"];
     expect(agentProject.history?.cursor).toBe(0);
-    expect(getAgentApplicationStatus(agentProject, first.id)).toBe("undone");
-    expect(getAgentApplicationStatus(agentProject, second.id)).toBe("undone");
+    expect(
+      getAgentApplicationStatus(agentProject, first.id, currentProject),
+    ).toBe("undone");
+    expect(
+      getAgentApplicationStatus(agentProject, second.id, currentProject),
+    ).toBe("undone");
     expect(
       (
         mocks.projectState.projects["project-a"].files[1] as ReturnType<
@@ -447,8 +452,20 @@ describe("agent edit history", () => {
 
     agentProject = mocks.agentState.agentProjects["project-a"];
     expect(agentProject.history?.cursor).toBe(2);
-    expect(getAgentApplicationStatus(agentProject, first.id)).toBe("applied");
-    expect(getAgentApplicationStatus(agentProject, second.id)).toBe("applied");
+    expect(
+      getAgentApplicationStatus(
+        agentProject,
+        first.id,
+        mocks.projectState.projects["project-a"],
+      ),
+    ).toBe("applied");
+    expect(
+      getAgentApplicationStatus(
+        agentProject,
+        second.id,
+        mocks.projectState.projects["project-a"],
+      ),
+    ).toBe("applied");
     expect(
       (
         mocks.projectState.projects["project-a"].files[1] as ReturnType<
@@ -471,6 +488,13 @@ describe("agent edit history", () => {
         file.id === "operation-a" ? operationFile("manual") : file,
       ),
     };
+    expect(
+      getAgentApplicationStatus(
+        mocks.agentState.agentProjects["project-a"],
+        entry.id,
+        mocks.projectState.projects["project-a"],
+      ),
+    ).toBe("unavailable");
     await expect(undoAgentApplication("project-a", entry.id)).rejects.toThrow(
       "project changed",
     );

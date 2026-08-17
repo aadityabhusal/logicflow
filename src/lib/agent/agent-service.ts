@@ -11,14 +11,19 @@ import {
   isAgentProposalStale,
   type AgentProposal,
 } from "./proposal";
-import { LOGICFLOW_SYSTEM_PROMPT, buildContextPrompt } from "./prompts";
+import {
+  buildContextPrompt,
+  buildRequestContext,
+  LOGICFLOW_SYSTEM_PROMPT,
+  type AgentConversationMessage,
+} from "./prompts";
 import { createProviderModel, toAgentTransportError } from "./transport";
 import type { AgentProvider, AgentThinkingLevel } from "./types";
 
 const AGENT_STEP_TIMEOUT = 60_000;
 const MAX_GENERATION_STEPS = 2;
 const STRUCTURED_OUTPUT_SHAPE_FEEDBACK =
-  "- Every new or replaced statement must include id, data, and operations; use operations: [] when there are no chained calls. Every IData must include its own id, type, and value unless its type is undefined. Put chained calls in statement.operations, not inside statement.data; use the first argument's data as statement.data and only the remaining arguments in the call's value.parameters. Reference value.id must be the referenced statement ID, not the nested IData ID.";
+  "- Every new or replaced statement must include id, data, and operations; use operations: [] when there are no chained calls. Every IData must include its own id, type, and value unless its type is undefined. Put chained calls in statement.operations, not inside statement.data; use the first argument's data as statement.data and only the remaining arguments in the call's value.parameters. Reference value.id must be the referenced statement ID, not the nested IData ID. The final body statement is implicitly returned; omit controlFlow on it and use controlFlow: \"return\" only for an early exit.";
 
 function isInvalidStructuredOutput(error: unknown) {
   if (
@@ -85,6 +90,10 @@ function needsTargetRepair(proposal: AgentProposal) {
   );
 }
 
+function needsCompletionRepair(proposal: AgentProposal) {
+  return proposal.diagnostics.some(({ code }) => code === "incomplete_request");
+}
+
 function getTargetRepairFeedback(proposal: AgentProposal) {
   const diagnostics = proposal.diagnostics
     .filter(({ code }) =>
@@ -93,6 +102,20 @@ function getTargetRepairFeedback(proposal: AgentProposal) {
     .map(({ message }) => `- ${message}`)
     .join("\n");
   return `The previous update matched the schema but used an invalid statement target or anchor. Repair it by returning a complete fresh update. Existing action targets and anchors must use only IDs from statementTargets. Nested callback, data, operation-call, operation-type, and inserted-payload IDs are not valid targets.\n${diagnostics}`;
+}
+
+function getProposalRepairFeedback(proposal: AgentProposal) {
+  const feedback: string[] = [];
+  if (needsTargetRepair(proposal))
+    feedback.push(getTargetRepairFeedback(proposal));
+  if (needsCompletionRepair(proposal))
+    feedback.push(
+      `The previous update was incomplete: it changed operation parameters but did not implement the requested behavior. Return a complete fresh update containing every required parameter and a complete body implementation with all computation/result statements in this one response. Do not mark the final body statement with controlFlow: "return".\n${proposal.diagnostics
+        .filter(({ code }) => code === "incomplete_request")
+        .map(({ message }) => `- ${message}`)
+        .join("\n")}`
+    );
+  return feedback.join("\n\n");
 }
 
 export function getExplicitDeploymentIntent(prompt: string) {
@@ -163,6 +186,7 @@ export async function generateOperationProposal({
   userPrompt,
   initialProposal,
   thinkingLevel = "medium",
+  conversation,
   abortSignal,
   onProgress,
   onPartialExplanation,
@@ -173,6 +197,7 @@ export async function generateOperationProposal({
   model: string;
   apiKey: string;
   thinkingLevel?: AgentThinkingLevel;
+  conversation?: readonly AgentConversationMessage[];
   initialProposal?: AgentProposal;
   abortSignal?: AbortSignal;
   onProgress?: (label: string) => void;
@@ -195,7 +220,6 @@ export async function generateOperationProposal({
   onProgress?.("Reading project context");
   const discovery = await createAgentDiscovery(project, operation.id);
   const contextSnapshot = discovery.buildContextSnapshot();
-  onProgress?.("Planning the requested change");
   let lookupUsed = false;
   const tools = {
     lookup_operations: tool({
@@ -226,11 +250,21 @@ export async function generateOperationProposal({
   };
   try {
     const provider = model.split("/")[0] as AgentProvider;
-    const prompt = buildContextPrompt(
-      userPrompt,
-      contextSnapshot,
-      initialProposal?.update
-    );
+    const prompt = conversation?.length
+      ? buildContextPrompt(
+          userPrompt,
+          contextSnapshot,
+          initialProposal?.update,
+          conversation
+        )
+      : buildContextPrompt(
+          userPrompt,
+          contextSnapshot,
+          initialProposal?.update
+        );
+    const requestContext = conversation?.length
+      ? buildRequestContext(userPrompt, conversation)
+      : undefined;
     const generate = async (feedback?: string) => {
       let streamError: unknown;
       lookupUsed = false;
@@ -284,7 +318,6 @@ export async function generateOperationProposal({
       }
     };
     let response = await generateWithSchemaRetry();
-    onProgress?.("Validating proposed changes");
     if (!response.changes.length && !response.enablePackages.length)
       return { response, proposal: undefined };
     let proposal = await createAgentProposal({
@@ -292,11 +325,16 @@ export async function generateOperationProposal({
       fileId: operation.id,
       sourcePrompt: userPrompt,
       update: response,
+      ...(requestContext ? { requestContext } : {}),
     });
-    if (needsTargetRepair(proposal)) {
-      onProgress?.("Refining statement targets");
+    if (needsTargetRepair(proposal) || needsCompletionRepair(proposal)) {
+      onProgress?.(
+        needsTargetRepair(proposal)
+          ? "Refining statement targets"
+          : "Completing requested logic"
+      );
       response = await generateWithSchemaRetry(
-        getTargetRepairFeedback(proposal)
+        getProposalRepairFeedback(proposal)
       );
       if (!response.changes.length && !response.enablePackages.length)
         return { response, proposal: undefined };
@@ -305,9 +343,9 @@ export async function generateOperationProposal({
         fileId: operation.id,
         sourcePrompt: userPrompt,
         update: response,
+        ...(requestContext ? { requestContext } : {}),
       });
     }
-    onProgress?.("Preparing changes for review");
     return { response, proposal };
   } catch (error) {
     throw toAgentTransportError(error);

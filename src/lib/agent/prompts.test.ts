@@ -7,7 +7,7 @@ import {
 
 describe("agent prompts", () => {
   it("defines the bounded native update flow", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("18");
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("19");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("AgentOperationUpdate");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("lookup_operations at most once");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("one batch");
@@ -29,6 +29,11 @@ describe("agent prompts", () => {
       "Operation calls are never statement.data"
     );
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("only the remaining arguments");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
+      "parameter-only update is incomplete"
+    );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("user-specified units");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("final reachable statement");
     for (const action of [
       "insert_statement",
       "replace_statement",
@@ -51,14 +56,18 @@ describe("agent prompts", () => {
     const prompt = buildContextPrompt(
       "Revise it",
       { selectedOperation: { id: "selected" } },
-      priorUpdate
+      priorUpdate,
+      [{ role: "user", content: "Build the complete calculation first" }]
     );
 
     expect(prompt).toContain("Authoritative Current Context");
     expect(prompt).toContain('"id":"selected"');
     expect(prompt).toContain("Prior Native Update For Revision");
     expect(prompt).toContain('"explanation":"First draft"');
+    expect(prompt).toContain("Prior Conversation");
+    expect(prompt).toContain("Build the complete calculation first");
     expect(prompt).toContain("one complete AgentOperationUpdate");
+    expect(prompt).toContain("final body statement is implicitly returned");
   });
 
   it("does not embed operation or package catalogs", () => {

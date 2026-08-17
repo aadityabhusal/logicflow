@@ -129,6 +129,20 @@ describe("AgentInput accessibility", () => {
     ).toBe(false);
   });
 
+  it("keeps keyboard guidance in the input placeholder instead of the footer", () => {
+    mocks.apiKey = "key";
+    renderInput();
+
+    expect(
+      screen.getByPlaceholderText(
+        "Ask anything... (Enter to send; Shift + Enter for a new line)"
+      )
+    ).toBeDefined();
+    expect(
+      screen.queryByText("Enter to send | Shift + Enter for a new line")
+    ).toBeNull();
+  });
+
   it("offers current models and thinking levels", async () => {
     mocks.apiKey = "key";
     renderInput();

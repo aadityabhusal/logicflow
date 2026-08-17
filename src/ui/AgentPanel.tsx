@@ -19,6 +19,7 @@ import { MdVpnKey } from "react-icons/md";
 import { type FocusEvent, useEffect, useRef, useState } from "react";
 import { AgentTransportError } from "@/lib/agent/transport";
 import type { AgentRetry } from "@/lib/agent/types";
+import type { AgentProposal } from "@/lib/agent/proposal";
 import {
   applyAgentProposal,
   redoAgentApplication,
@@ -109,6 +110,17 @@ export function AgentPanel() {
     setSubmissionError(undefined);
   }, [activeThreadId, currentProjectId]);
 
+  const handleDeploymentAfterApply = (proposal: AgentProposal) => {
+    if (proposal.threadId && deploymentAfterApply.current.has(proposal.id)) {
+      deploymentAfterApply.current.delete(proposal.id);
+      addMessage(proposal.threadId, {
+        role: "assistant",
+        content: "The update was applied successfully.",
+        deploymentAction: "open-deployment-panel",
+      });
+    }
+  };
+
   const handleSubmit = async (
     prompt: string,
     options?: {
@@ -185,6 +197,9 @@ export function AgentPanel() {
     const requestPrompt = revisedProposal
       ? `Original request:\n${revisedProposal.sourcePrompt}\n\nCurrent proposal update:\n${JSON.stringify(revisedProposal.update)}\n\nRequested revision:\n${prompt}`
       : prompt;
+    const conversation =
+      activeThread?.messages.map(({ role, content }) => ({ role, content })) ??
+      [];
     const controller = new AbortController();
     abortController.current = controller;
     startRun(activeThreadId);
@@ -197,6 +212,7 @@ export function AgentPanel() {
         model: `${modelConfig.provider}/${modelConfig.id}`,
         apiKey,
         thinkingLevel,
+        ...(conversation.length ? { conversation } : {}),
         initialProposal: revisedProposal,
         abortSignal: controller.signal,
         onProgress: setRunTrace,
@@ -204,20 +220,31 @@ export function AgentPanel() {
       });
 
       if (controller.signal.aborted) return;
+      const storedProposal = proposal
+        ? {
+            ...proposal,
+            threadId: activeThreadId,
+            sourcePrompt: options?.regenerate
+              ? prompt
+              : revisedProposal
+                ? revisedProposal.sourcePrompt
+                : prompt,
+          }
+        : undefined;
       addMessage(activeThreadId, {
         role: "assistant",
         content:
           response.explanation ||
-          (proposal ? "Proposal ready for review." : "No changes proposed."),
-        proposal: proposal
+          (proposal ? "Update ready." : "No changes proposed."),
+        proposal: storedProposal
           ? {
-              id: proposal.id,
-              review: proposal.review,
-              diagnostics: proposal.diagnostics,
+              id: storedProposal.id,
+              review: storedProposal.review,
+              diagnostics: storedProposal.diagnostics,
             }
           : undefined,
       });
-      if (proposal) {
+      if (storedProposal) {
         if (
           deploymentIntent?.afterChanges ||
           (revisedProposal &&
@@ -226,17 +253,27 @@ export function AgentPanel() {
             pendingProposal &&
             deploymentAfterApply.current.has(pendingProposal.id))
         ) {
-          deploymentAfterApply.current.add(proposal.id);
+          deploymentAfterApply.current.add(storedProposal.id);
         }
-        setPendingProposal(activeThreadId, {
-          ...proposal,
-          threadId: activeThreadId,
-          sourcePrompt: options?.regenerate
-            ? prompt
-            : revisedProposal
-              ? revisedProposal.sourcePrompt
-              : prompt,
-        });
+        setPendingProposal(activeThreadId, storedProposal);
+        if (
+          !storedProposal.diagnostics.some(
+            (diagnostic) => diagnostic.severity === "error"
+          )
+        ) {
+          try {
+            await applyAgentProposal(storedProposal);
+            handleDeploymentAfterApply(storedProposal);
+          } catch (error) {
+            addMessage(activeThreadId, {
+              role: "assistant",
+              content: `The update was generated but could not be applied automatically: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`,
+              error: {},
+            });
+          }
+        }
       }
       setRevisionProposalId(undefined);
     } catch (error) {
@@ -270,7 +307,12 @@ export function AgentPanel() {
   };
 
   const handleRejectProposal = () => {
-    if (activeThreadId) setPendingProposal(activeThreadId, undefined);
+    if (activeThreadId) {
+      if (pendingProposal) {
+        deploymentAfterApply.current.delete(pendingProposal.id);
+      }
+      setPendingProposal(activeThreadId, undefined);
+    }
     setRevisionProposalId(undefined);
     document.getElementById("agent-prompt-input")?.focus();
   };
@@ -282,6 +324,13 @@ export function AgentPanel() {
     try {
       await action();
     } catch (error) {
+      if (
+        error instanceof Error &&
+        /^Cannot (undo|redo) because the project changed after this agent edit$/.test(
+          error.message,
+        )
+      )
+        return;
       setHistoryError(
         error instanceof Error ? error.message : "Agent edit failed"
       );
@@ -295,14 +344,7 @@ export function AgentPanel() {
     const proposal = pendingProposal;
     void handleHistoryAction(async () => {
       await applyAgentProposal(proposal);
-      if (proposal.threadId && deploymentAfterApply.current.has(proposal.id)) {
-        deploymentAfterApply.current.delete(proposal.id);
-        addMessage(proposal.threadId, {
-          role: "assistant",
-          content: "The proposal was applied successfully.",
-          deploymentAction: "open-deployment-panel",
-        });
-      }
+      handleDeploymentAfterApply(proposal);
     });
   };
 

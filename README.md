@@ -8,7 +8,7 @@ Watch the [demo video](https://youtu.be/qzS_zw1iwS0) for an overview.
 
 See [documentation](https://logicflow.dev/docs) for more details.
 
-The optional Agent panel uses `VITE_APP_ENABLE_AGENT_PANEL=true`. It proposes reviewed native statement updates for the selected operation.
+The optional Agent panel uses `VITE_APP_ENABLE_AGENT_PANEL=true`. It applies validated native statement updates for the selected operation and keeps each update undoable from its chat message.
 
 ## Key Features
 

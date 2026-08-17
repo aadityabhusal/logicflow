@@ -83,6 +83,8 @@ describe("agent operation discovery", () => {
     expect(context.statementTargets).toEqual({ parameters: [], body: [] });
     expect(context.instruction).toContain("no parameters or body statements");
     expect(context.instruction).toContain("beforeStatementId null");
+    expect(context.instruction).toContain("complete body logic");
+    expect(context.instruction).toContain("returned implicitly");
     expect(context.instruction).toContain("Do not use replace_statement");
   });
 
