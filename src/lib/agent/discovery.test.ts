@@ -216,6 +216,51 @@ describe("agent operation discovery", () => {
     expect(loadedPackageOperations.has("wretch")).toBe(false);
   });
 
+  it("treats unknown receiver types as unconstrained during package lookup", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const [factory, get, json, incompatible] = await discovery.lookupOperations(
+      {
+        requests: [
+          {
+            query: "Create a wretch client for a URL",
+            package: "wretch",
+            inputType: { kind: "undefined" },
+          },
+          {
+            query: "GET request on a wretch client",
+            package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "Parse a wretch response as JSON",
+            package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "get",
+            package: "wretch",
+            inputType: { kind: "string" },
+          },
+        ],
+      }
+    );
+
+    expect(factory).toContainEqual(
+      expect.objectContaining({ name: "wretch", package: "wretch" })
+    );
+    expect(get).toContainEqual(
+      expect.objectContaining({ name: "wretch.get", package: "wretch" })
+    );
+    expect(json).toContainEqual(
+      expect.objectContaining({
+        name: "wretch.json",
+        package: "wretch",
+        operationSource: { name: "wretchResponseChain" },
+      })
+    );
+    expect(incompatible).toEqual([]);
+  });
+
   it("strictly bounds lookup requests and rejects unsupported packages", async () => {
     expect(
       AgentOperationLookupSchema.safeParse({

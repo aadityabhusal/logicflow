@@ -107,29 +107,49 @@ function createTypeContext(project: Project): Context {
 
 function tokens(value: string) {
   return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 }
 
-function matches(name: string, query: string) {
+function matchScore(
+  name: string,
+  query: string,
+  additionalNames: string[] = []
+) {
   const normalized = name.trim().toLowerCase();
-  const nameTokens = tokens(
-    [name, ...(OPERATION_SEARCH_ALIASES.get(name) ?? [])].join(" ")
-  );
-  const queryTokens = tokens(query);
-  return (
-    normalized === query.trim().toLowerCase() ||
-    queryTokens.some((queryToken) =>
-      nameTokens.some(
-        (nameToken) =>
-          nameToken === queryToken ||
-          (nameToken.length >= 3 &&
-            (queryToken.startsWith(nameToken) ||
-              nameToken.startsWith(queryToken)))
-      )
+  const trimmedQuery = query.trim();
+  const exactNames = [
+    name,
+    ...additionalNames,
+    ...(OPERATION_SEARCH_ALIASES.get(name) ?? []),
+  ];
+  if (
+    /[a-z][A-Z]/.test(trimmedQuery) &&
+    !exactNames.some(
+      (candidate) =>
+        candidate.trim().toLowerCase() === trimmedQuery.toLowerCase()
     )
-  );
+  )
+    return undefined;
+  const nameTokens = tokens(exactNames.join(" "));
+  const queryTokens = tokens(query);
+  if (normalized === trimmedQuery.toLowerCase()) return 1000;
+
+  let score = 0;
+  for (const queryToken of queryTokens) {
+    const exact = nameTokens.includes(queryToken);
+    const partial = nameTokens.some(
+      (nameToken) =>
+        nameToken.length >= 4 &&
+        queryToken.length >= 4 &&
+        (queryToken.startsWith(nameToken) || nameToken.startsWith(queryToken))
+    );
+    if (exact) score += 10;
+    else if (partial) score += 1;
+  }
+  return score || undefined;
 }
 
 function resolveDescriptor(
@@ -275,23 +295,47 @@ export async function createAgentDiscovery(
               ? descriptor.source === "builtin"
               : descriptor.package === request.package)
         )
-        .filter((descriptor) => matches(descriptor.name, request.query))
-        .map((descriptor) => resolveDescriptor(descriptor, inputType, context))
-        .filter((descriptor) => {
+        .map((descriptor) => ({
+          descriptor,
+          score: matchScore(
+            descriptor.name,
+            request.query,
+            descriptor.operation?.source?.name
+              ? [descriptor.operation.source.name]
+              : []
+          ),
+        }))
+        .filter(({ score }) => score !== undefined)
+        .sort(
+          (a, b) =>
+            b.score! - a.score! ||
+            a.descriptor.name.localeCompare(b.descriptor.name)
+        )
+        .map(({ descriptor, score }) => ({
+          descriptor: resolveDescriptor(descriptor, inputType, context),
+          score: score!,
+        }))
+        .filter(({ descriptor }) => {
           const expected = descriptor.parameters[0]?.type;
           return (
             !request.inputType ||
+            inputType.kind === "unknown" ||
+            inputType.kind === "undefined" ||
             !expected ||
             isTypeCompatible(inputType, expected, context)
           );
         })
         .sort(
           (a, b) =>
-            a.name.localeCompare(b.name) ||
-            a.source.localeCompare(b.source) ||
-            (a.package ?? "").localeCompare(b.package ?? "")
+            b.score - a.score ||
+            a.descriptor.name.localeCompare(b.descriptor.name) ||
+            a.descriptor.source.localeCompare(b.descriptor.source) ||
+            (a.descriptor.package ?? "").localeCompare(
+              b.descriptor.package ?? ""
+            )
         )
-        .slice(0, MAX_RESULTS_PER_REQUEST);
+        .slice(0, MAX_RESULTS_PER_REQUEST)
+        .map(({ descriptor }) => descriptor);
     });
   };
 
