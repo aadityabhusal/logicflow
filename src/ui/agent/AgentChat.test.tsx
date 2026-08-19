@@ -86,10 +86,10 @@ vi.mock("@/lib/agent/proposal", () => ({
 vi.mock("@/lib/agent/history", () => ({
   getAgentApplicationStatus: (
     agentProject: (typeof mocks.agentState.agentProjects)["project-a"],
-    applicationId: string
+    applicationId: string,
   ) => {
     const index = agentProject.history.entries.findIndex(
-      ({ id }) => id === applicationId
+      ({ id }) => id === applicationId,
     );
     if (index < 0) return "unavailable";
     return index < agentProject.history.cursor ? "applied" : "undone";
@@ -110,7 +110,7 @@ beforeAll(() => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })),
   );
 });
 
@@ -193,7 +193,7 @@ describe("AgentChat request progress", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     const progress = screen.getByRole("status", { name: "Agent progress" });
@@ -224,11 +224,11 @@ describe("AgentChat navigation and recovery", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     expect(screen.getByRole("status").textContent).toContain(
-      "Loading agent chats"
+      "Loading agent chats",
     );
   });
 
@@ -248,7 +248,7 @@ describe("AgentChat navigation and recovery", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
     const conversation = screen.getByRole("log", {
       name: "Agent conversation",
@@ -280,7 +280,7 @@ describe("AgentChat navigation and recovery", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     expect(conversation.scrollTop).toBe(1000);
@@ -302,7 +302,7 @@ describe("AgentChat navigation and recovery", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
     const conversation = screen.getByRole("log", {
       name: "Agent conversation",
@@ -315,7 +315,7 @@ describe("AgentChat navigation and recovery", () => {
     fireEvent.scroll(conversation);
 
     expect(
-      screen.getByRole("button", { name: "Jump to latest" })
+      screen.getByRole("button", { name: "Jump to latest" }),
     ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
 
@@ -353,7 +353,7 @@ describe("AgentChat navigation and recovery", () => {
           onRetry={onRetry}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Add API key" }));
@@ -384,17 +384,17 @@ describe("AgentChat proposal navigation", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     expect(mocks.isAgentProposalStale).toHaveBeenCalled();
     expect(
-      screen.getByRole("log", { name: "Agent conversation" })
+      screen.getByRole("log", { name: "Agent conversation" }),
     ).toBeDefined();
     expect(screen.getAllByRole("article").length).toBeGreaterThan(0);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
     ).toBe(false);
   });
 
@@ -415,11 +415,11 @@ describe("AgentChat proposal navigation", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Deployment panel" })
+      screen.getByRole("button", { name: "Open Deployment panel" }),
     );
     expect(onOpenDeploymentPanel).toHaveBeenCalledOnce();
   });
@@ -429,6 +429,14 @@ describe("AgentChat proposal navigation", () => {
     const message =
       mocks.agentState.agentProjects["project-a"].threads[0].messages[0];
     message.proposal.applicationId = "application-a";
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      {
+        id: "user-a",
+        role: "user",
+        content: "Update the operation",
+      },
+      message,
+    ] as never;
     mocks.agentState.agentProjects["project-a"].history = {
       entries: [{ id: "application-a" }],
       cursor: 1,
@@ -451,10 +459,11 @@ describe("AgentChat proposal navigation", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("button", { name: "Delete turn" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Undo agent edit" }));
     expect(onUndoApplication).toHaveBeenCalledWith("application-a");
   });
 
@@ -483,15 +492,17 @@ describe("AgentChat proposal navigation", () => {
           onRetry={vi.fn()}
           historyBusy={false}
         />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Delete turn" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Yes, delete." })).toBeDefined()
+      expect(
+        screen.getByRole("button", { name: "Yes, delete." }),
+      ).toBeDefined(),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Yes, delete.", hidden: true })
+      screen.getByRole("button", { name: "Yes, delete.", hidden: true }),
     );
 
     expect(onDeleteTurn).toHaveBeenCalledWith("user-a");

@@ -62,8 +62,6 @@ function renderReview(overrides?: {
     onReject: vi.fn(),
     onRevise: vi.fn(),
     onRegenerate: vi.fn(),
-    onUndo: vi.fn(),
-    onRedo: vi.fn(),
   };
   render(
     <MantineProvider>
@@ -89,9 +87,9 @@ describe("AgentProposalReview", () => {
     expect(
       screen.getByRole("region", { name: "Proposal review" }),
     ).toBeDefined();
-    expect(screen.getByText("1 operation to change")).toBeDefined();
+    expect(screen.getByText("Will be updated")).toBeDefined();
     expect(
-      screen.getByText(/Dependent operation calls will be synchronized/),
+      screen.getByText(/Dependent operation calls will stay compatible/),
     ).toBeDefined();
     expect(screen.getByText("formatMessage")).toBeDefined();
     expect(screen.queryByText("renderMessage")).toBeNull();
@@ -157,18 +155,14 @@ describe("AgentProposalReview", () => {
       diagnosticFileNames: ["formatMessage", undefined],
     });
 
+    expect(screen.getByRole("heading", { name: "Operation" })).toBeDefined();
     expect(
-      screen.getByRole("heading", { name: "Operations" }),
+      screen.getByText(/Dependent operation calls will stay compatible/),
     ).toBeDefined();
-    expect(screen.getByText("1 operation to change")).toBeDefined();
-    expect(
-      screen.getByText(/Dependent operation calls will be synchronized/),
-    ).toBeDefined();
-    expect(screen.getByText("1 package enabled")).toBeDefined();
     expect(screen.getAllByText("formatMessage")).toHaveLength(1);
     expect(screen.queryByText("newFormatter")).toBeNull();
     expect(screen.queryByText("oldFormatter")).toBeNull();
-    expect(screen.getByText("Enable wretch")).toBeDefined();
+    expect(screen.getByText("+ wretch")).toBeDefined();
     expect(screen.getByText(/Operation formatMessage:/)).toBeDefined();
     expect(screen.getByText(/Package wretch:/)).toBeDefined();
     expect(screen.getAllByText(/warning:/i)).toHaveLength(2);
@@ -281,8 +275,8 @@ describe("AgentProposalReview", () => {
     expect(screen.getByText(/source operation no longer exists/)).toBeDefined();
   });
 
-  it("shows inline undo and redo for applied proposal turns", () => {
-    const appliedActions = renderReview({
+  it("shows application status without history controls", () => {
+    renderReview({
       active: false,
       applicationStatus: "applied",
       proposal: { ...proposal, applicationId: "application-1" },
@@ -291,16 +285,15 @@ describe("AgentProposalReview", () => {
     expect(
       screen.getByRole("region", { name: "Update summary" }),
     ).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-    expect(appliedActions.onUndo).toHaveBeenCalledOnce();
+    expect(screen.getByText("Applied")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Undo|Redo/ })).toBeNull();
 
-    const undoneActions = renderReview({
+    renderReview({
       active: false,
       applicationStatus: "undone",
       proposal: { ...proposal, applicationId: "application-2" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
-    expect(undoneActions.onRedo).toHaveBeenCalledOnce();
+    expect(screen.getByText("Undone")).toBeDefined();
   });
 
   it("does not offer an action when application history is unavailable", () => {

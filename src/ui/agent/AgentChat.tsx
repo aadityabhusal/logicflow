@@ -1,8 +1,14 @@
 import { Button, Popover } from "@mantine/core";
-import { FaCheck, FaSpinner, FaTrash } from "react-icons/fa6";
+import {
+  FaArrowRotateLeft,
+  FaArrowRotateRight,
+  FaCheck,
+  FaSpinner,
+  FaTrash,
+} from "react-icons/fa6";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useAgentStore, useProjectStore } from "@/lib/store";
-import type { AgentRetry } from "@/lib/agent/types";
+import type { AgentMessage, AgentRetry } from "@/lib/agent/types";
 import { IconButton } from "../IconButton";
 import { NoteText } from "../NoteText";
 import { isAgentProposalStale } from "@/lib/agent/proposal";
@@ -11,9 +17,17 @@ import { getAgentApplicationStatus } from "@/lib/agent/history";
 
 const CHAT_BOTTOM_THRESHOLD = 80;
 
+function getTurnApplication(messages: AgentMessage[], userIndex: number) {
+  for (let index = userIndex + 1; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.role === "user") return;
+    if (message.proposal?.applicationId) return message.proposal.applicationId;
+  }
+}
+
 function scrollToLatest(
   element: HTMLDivElement,
-  bottom: HTMLDivElement | null
+  bottom: HTMLDivElement | null,
 ) {
   bottom?.scrollIntoView?.({ block: "end" });
   element.scrollTop = element.scrollHeight;
@@ -53,7 +67,7 @@ export function AgentChat({
     ? agentProjects[currentProjectId]
     : undefined;
   const activeThread = agentProject?.threads.find(
-    (thread) => thread.id === agentProject.activeThreadId
+    (thread) => thread.id === agentProject.activeThreadId,
   );
   const activeThreadId = activeThread?.id;
   const pendingProposal = activeThreadId
@@ -62,7 +76,7 @@ export function AgentChat({
   const recoverable = !!(
     pendingProposal &&
     currentProject?.files.some(
-      (file) => file.id === pendingProposal.fileId && file.type === "operation"
+      (file) => file.id === pendingProposal.fileId && file.type === "operation",
     )
   );
   const threadMessages = activeThread?.messages ?? [];
@@ -86,7 +100,7 @@ export function AgentChat({
     shouldFollowLatest.current = nearBottom;
     setJumpThreadId(activeThreadId);
     setShowJumpToLatest(
-      !nearBottom && element.scrollHeight > element.clientHeight
+      !nearBottom && element.scrollHeight > element.clientHeight,
     );
   };
 
@@ -147,161 +161,196 @@ export function AgentChat({
             </p>
           </div>
         ) : null}
-        {threadMessages.map((msg) => (
-          <article
-            key={msg.id}
-            aria-label={msg.role === "user" ? "You" : "Agent"}
-            className={[
-              "min-w-0 mb-2 wrap-anywhere text-sm leading-5",
-              msg.role === "user"
-                ? "ml-auto w-fit max-w-[92%] rounded-xs border border-border bg-dropdown-default px-3 py-2"
-                : "px-2 py-1",
-            ].join(" ")}
-          >
-            <div className="flex min-w-0 items-start gap-2">
-              <div className="min-w-0 flex-1 whitespace-pre-wrap">
-                {msg.error ? (
-                  <div
-                    role="alert"
-                    className="rounded-xs border border-red-400/40 bg-red-400/10 p-2 text-red-100"
-                  >
-                    <div>{msg.content}</div>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {msg.error.requiresApiKey ? (
-                        <Button
-                          size="compact-xs"
-                          className="min-h-9"
-                          onClick={onOpenApiKeys}
-                          disabled={!!activeRun || historyBusy}
-                        >
-                          Add API key
-                        </Button>
-                      ) : null}
-                      {msg.error.retry ? (
-                        <Button
-                          size="compact-xs"
-                          className="min-h-9"
-                          onClick={() => {
-                            if (msg.error?.retry) onRetry(msg.error.retry);
-                          }}
-                          disabled={!!activeRun || historyBusy}
-                        >
-                          Retry request
-                        </Button>
-                      ) : null}
+        {threadMessages.map((msg, messageIndex) => {
+          const turnApplicationId =
+            msg.role === "user"
+              ? getTurnApplication(threadMessages, messageIndex)
+              : undefined;
+          const turnApplicationStatus = turnApplicationId
+            ? getAgentApplicationStatus(
+                agentProject,
+                turnApplicationId,
+                currentProject,
+              )
+            : undefined;
+
+          return (
+            <article
+              key={msg.id}
+              aria-label={msg.role === "user" ? "You" : "Agent"}
+              className={[
+                "min-w-0 mb-2 wrap-anywhere text-sm leading-5",
+                msg.role === "user"
+                  ? "ml-auto w-fit max-w-[92%] rounded-xs border border-border bg-dropdown-default px-3 py-2"
+                  : "px-2 py-1",
+              ].join(" ")}
+            >
+              <div className="flex min-w-0 items-start gap-2">
+                <div className="min-w-0 flex-1 whitespace-pre-wrap">
+                  {msg.error ? (
+                    <div
+                      role="alert"
+                      className="rounded-xs border border-red-400/40 bg-red-400/10 p-2 text-red-100"
+                    >
+                      <div>{msg.content}</div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {msg.error.requiresApiKey ? (
+                          <Button
+                            size="compact-xs"
+                            className="min-h-9"
+                            onClick={onOpenApiKeys}
+                            disabled={!!activeRun || historyBusy}
+                          >
+                            Add API key
+                          </Button>
+                        ) : null}
+                        {msg.error.retry ? (
+                          <Button
+                            size="compact-xs"
+                            className="min-h-9"
+                            onClick={() => {
+                              if (msg.error?.retry) onRetry(msg.error.retry);
+                            }}
+                            disabled={!!activeRun || historyBusy}
+                          >
+                            Retry request
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  msg.content
-                )}
-              </div>
-              {msg.role === "user" ? (
-                <Popover
-                  opened={deleteMessageId === msg.id}
-                  onChange={(opened) =>
-                    setDeleteMessageId(opened ? msg.id : undefined)
-                  }
-                  position="bottom-end"
-                  offset={1}
-                  trapFocus
-                  returnFocus
-                >
-                  <Popover.Target>
-                    <IconButton
-                      icon={FaTrash}
-                      title="Delete turn"
-                      size={16}
-                      className="shrink-0 p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
-                      onClick={() => setDeleteMessageId(msg.id)}
-                      disabled={!!activeRun || historyBusy}
-                    />
-                  </Popover.Target>
-                  <Popover.Dropdown
-                    aria-labelledby={`delete-turn-${msg.id}`}
-                    classNames={{ dropdown: "border" }}
-                  >
-                    <div className="flex max-w-64 flex-col gap-2 p-1">
-                      <span id={`delete-turn-${msg.id}`} className="text-sm">
-                        Delete this request and its response?
-                      </span>
-                      <span className="text-xs text-dimmed">
-                        Applied project changes will remain unchanged.
-                      </span>
-                      <Button
-                        size="compact-xs"
-                        leftSection={<FaTrash className="text-red-400" />}
-                        className="self-end"
-                        onClick={() => {
-                          setDeleteMessageId(undefined);
-                          onDeleteTurn(msg.id);
-                        }}
+                  ) : (
+                    msg.content
+                  )}
+                </div>
+                {msg.role === "user" ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {turnApplicationId &&
+                    (turnApplicationStatus === "applied" ||
+                      turnApplicationStatus === "undone") ? (
+                      <IconButton
+                        icon={
+                          turnApplicationStatus === "applied"
+                            ? FaArrowRotateLeft
+                            : FaArrowRotateRight
+                        }
+                        title={
+                          turnApplicationStatus === "applied"
+                            ? "Undo agent edit"
+                            : "Redo agent edit"
+                        }
+                        size={16}
+                        className="p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
+                        onClick={() =>
+                          turnApplicationStatus === "applied"
+                            ? onUndoApplication(turnApplicationId)
+                            : onRedoApplication(turnApplicationId)
+                        }
+                        disabled={!!activeRun || historyBusy}
+                      />
+                    ) : null}
+                    <Popover
+                      opened={deleteMessageId === msg.id}
+                      onChange={(opened) =>
+                        setDeleteMessageId(opened ? msg.id : undefined)
+                      }
+                      position="bottom-end"
+                      offset={1}
+                      trapFocus
+                      returnFocus
+                    >
+                      <Popover.Target>
+                        <IconButton
+                          icon={FaTrash}
+                          title="Delete turn"
+                          size={16}
+                          className="shrink-0 p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
+                          onClick={() => setDeleteMessageId(msg.id)}
+                          disabled={!!activeRun || historyBusy}
+                        />
+                      </Popover.Target>
+                      <Popover.Dropdown
+                        aria-labelledby={`delete-turn-${msg.id}`}
+                        classNames={{ dropdown: "border" }}
                       >
-                        Yes, delete.
-                      </Button>
-                    </div>
-                  </Popover.Dropdown>
-                </Popover>
+                        <div className="flex max-w-64 flex-col gap-2 p-1">
+                          <span
+                            id={`delete-turn-${msg.id}`}
+                            className="text-sm"
+                          >
+                            Delete this request and its response?
+                          </span>
+                          <span className="text-xs text-dimmed">
+                            Applied project changes will remain unchanged.
+                          </span>
+                          <Button
+                            size="compact-xs"
+                            leftSection={<FaTrash className="text-red-400" />}
+                            className="self-end"
+                            onClick={() => {
+                              setDeleteMessageId(undefined);
+                              onDeleteTurn(msg.id);
+                            }}
+                          >
+                            Yes, delete.
+                          </Button>
+                        </div>
+                      </Popover.Dropdown>
+                    </Popover>
+                  </div>
+                ) : null}
+              </div>
+              {msg.deploymentAction === "open-deployment-panel" ? (
+                <button
+                  type="button"
+                  className="mt-2 min-h-9 rounded-xs border px-2 py-1 text-sm underline"
+                  onClick={onOpenDeploymentPanel}
+                  disabled={!!activeRun || historyBusy}
+                >
+                  Open Deployment panel
+                </button>
               ) : null}
-            </div>
-            {msg.deploymentAction === "open-deployment-panel" ? (
-              <button
-                type="button"
-                className="mt-2 min-h-9 rounded-xs border px-2 py-1 text-sm underline"
-                onClick={onOpenDeploymentPanel}
-                disabled={!!activeRun || historyBusy}
-              >
-                Open Deployment panel
-              </button>
-            ) : null}
-            {msg.proposal ? (
-              <AgentProposalReview
-                proposal={msg.proposal}
-                active={pendingProposal?.id === msg.proposal.id}
-                stale={
-                  pendingProposal?.id === msg.proposal.id &&
-                  isAgentProposalStale(pendingProposal, currentProject)
-                }
-                busy={!!activeRun || historyBusy}
-                recoverable={recoverable}
-                applicationStatus={
-                  msg.proposal.applicationId
-                    ? getAgentApplicationStatus(
-                        agentProject,
-                        msg.proposal.applicationId,
-                        currentProject
-                      )
-                    : undefined
-                }
-                diagnosticFileNames={msg.proposal.diagnostics.map(
-                  (diagnostic) =>
-                    diagnostic.fileId
-                      ? ((pendingProposal &&
-                        pendingProposal.id === msg.proposal?.id
-                          ? pendingProposal.proposedState?.operationFiles.find(
-                              ({ file }) => file.id === diagnostic.fileId
-                            )?.file.name
-                          : undefined) ??
-                        currentProject?.files.find(
-                          (file) => file.id === diagnostic.fileId
-                        )?.name)
+              {msg.proposal ? (
+                <AgentProposalReview
+                  proposal={msg.proposal}
+                  active={pendingProposal?.id === msg.proposal.id}
+                  stale={
+                    pendingProposal?.id === msg.proposal.id &&
+                    isAgentProposalStale(pendingProposal, currentProject)
+                  }
+                  busy={!!activeRun || historyBusy}
+                  recoverable={recoverable}
+                  applicationStatus={
+                    msg.proposal.applicationId
+                      ? getAgentApplicationStatus(
+                          agentProject,
+                          msg.proposal.applicationId,
+                          currentProject,
+                        )
                       : undefined
-                )}
-                onApply={onApplyProposal}
-                onReject={onRejectProposal}
-                onRevise={onReviseProposal}
-                onRegenerate={onRegenerateProposal}
-                onUndo={() =>
-                  msg.proposal?.applicationId &&
-                  onUndoApplication(msg.proposal.applicationId)
-                }
-                onRedo={() =>
-                  msg.proposal?.applicationId &&
-                  onRedoApplication(msg.proposal.applicationId)
-                }
-              />
-            ) : null}
-          </article>
-        ))}
+                  }
+                  diagnosticFileNames={msg.proposal.diagnostics.map(
+                    (diagnostic) =>
+                      diagnostic.fileId
+                        ? ((pendingProposal &&
+                          pendingProposal.id === msg.proposal?.id
+                            ? pendingProposal.proposedState?.operationFiles.find(
+                                ({ file }) => file.id === diagnostic.fileId,
+                              )?.file.name
+                            : undefined) ??
+                          currentProject?.files.find(
+                            (file) => file.id === diagnostic.fileId,
+                          )?.name)
+                        : undefined,
+                  )}
+                  onApply={onApplyProposal}
+                  onReject={onRejectProposal}
+                  onRevise={onReviseProposal}
+                  onRegenerate={onRegenerateProposal}
+                />
+              ) : null}
+            </article>
+          );
+        })}
         {isLoading ? (
           <div
             role="status"
