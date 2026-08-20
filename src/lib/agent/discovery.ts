@@ -19,6 +19,10 @@ const MAX_QUERY_LENGTH = 200;
 const MAX_CONTEXT_BYTES = 200_000;
 
 const OPERATION_SEARCH_ALIASES = new Map<string, string[]>([
+  [
+    "get",
+    ["read property", "property access", "object property", "lookup by key"],
+  ],
   ["isDeepEqual", ["equal", "equals", "equality", "even", "odd"]],
   ["mod", ["modulo", "remainder", "even", "odd"]],
 ]);
@@ -150,6 +154,29 @@ function matchScore(
     else if (partial) score += 1;
   }
   return score || undefined;
+}
+
+function isLookupTypeCompatible(
+  inputType: DataType,
+  expected: DataType,
+  packageName: string | undefined,
+  context: Context
+) {
+  if (isTypeCompatible(inputType, expected, context)) return true;
+  if (
+    !packageName ||
+    inputType.kind !== "instance" ||
+    expected.kind !== "instance" ||
+    inputType.className.includes(".") ||
+    expected.className !== `${packageName}.${inputType.className}`
+  )
+    return false;
+
+  return isTypeCompatible(
+    { ...inputType, className: expected.className },
+    expected,
+    context
+  );
 }
 
 function resolveDescriptor(
@@ -322,7 +349,12 @@ export async function createAgentDiscovery(
             inputType.kind === "unknown" ||
             inputType.kind === "undefined" ||
             !expected ||
-            isTypeCompatible(inputType, expected, context)
+            isLookupTypeCompatible(
+              inputType,
+              expected,
+              request.package === "builtin" ? undefined : request.package,
+              context
+            )
           );
         })
         .sort(

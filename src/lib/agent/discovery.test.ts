@@ -173,6 +173,23 @@ describe("agent operation discovery", () => {
     );
   });
 
+  it("finds property access from a descriptive lookup", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const [propertyAccess] = await discovery.lookupOperations({
+      requests: [
+        {
+          query: "read object property by key title",
+          package: "builtin",
+          inputType: { kind: "unknown" },
+        },
+      ],
+    });
+
+    expect(propertyAccess[0]).toEqual(
+      expect.objectContaining({ name: "get", source: "builtin" })
+    );
+  });
+
   it("loads a disabled package only when its exact catalog key is requested and does not mutate the registry", async () => {
     vi.spyOn(PACKAGE_CATALOG.wretch, "load").mockResolvedValue({
       operations: [
@@ -259,6 +276,32 @@ describe("agent operation discovery", () => {
       })
     );
     expect(incompatible).toEqual([]);
+  });
+
+  it("qualifies an unqualified package instance receiver during lookup", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const [get] = await discovery.lookupOperations({
+      requests: [
+        {
+          query: "Perform a GET request on a wretch request",
+          package: "wretch",
+          inputType: {
+            kind: "instance",
+            className: "Wretch",
+            constructorArgs: [],
+            result: { kind: "unknown" },
+          },
+        },
+      ],
+    });
+
+    expect(get).toContainEqual(
+      expect.objectContaining({
+        name: "wretch.get",
+        package: "wretch",
+        operationSource: { name: "wretch" },
+      })
+    );
   });
 
   it("strictly bounds lookup requests and rejects unsupported packages", async () => {
