@@ -7,10 +7,10 @@ import {
 
 describe("agent prompts", () => {
   it("defines the bounded native update flow", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("19");
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("21");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("AgentOperationUpdate");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("lookup_operations at most once");
-    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("one batch");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("no more than two bounded rounds");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("second refinement round");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("read-only");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("selected operation");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain('package "builtin"');
@@ -18,10 +18,13 @@ describe("agent prompts", () => {
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
       "operations needed inside callbacks or predicates"
     );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("use builtin get");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("builtin await");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
       "Every new or replaced statement"
     );
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("operations: []");
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain('{ "entries": [] }');
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
       "referenced declaration's statement id"
     );

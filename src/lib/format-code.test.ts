@@ -25,7 +25,11 @@ import {
   booleanStatement,
 } from "@/tests/helpers";
 import { syncPackageRegistry } from "@/lib/operations/built-in";
-import { operations as wretchOperations } from "@/lib/operations/wretch";
+import {
+  operations as wretchOperations,
+  WretchResponseChainClass,
+} from "@/lib/operations/wretch";
+import { customInstances } from "@/lib/packages/registry";
 import type { DataType, OperationType } from "@/lib/types";
 
 describe("formatCode", () => {
@@ -783,6 +787,51 @@ describe("wretch code generation", () => {
     }
 
     expect(result.value.constructorArgs[0].data).toBe(url);
+  });
+
+  it("describes JSON response parsing as a Promise result", async () => {
+    const ctx = createTestContext();
+    const chain = {
+      res: () =>
+        Promise.resolve({ clone: () => ({ json: () => Promise.resolve([]) }) }),
+    };
+    customInstances.set(chain, WretchResponseChainClass);
+    const data = createData({
+      type: {
+        kind: "instance",
+        className: "wretch.WretchResponseChain",
+        constructorArgs: [],
+      },
+    });
+    ctx.setInstance(data.value.instanceId, {
+      instance: chain as never,
+      type: data.type,
+    });
+    const json = wretchOperations.find(
+      (operation) =>
+        operation.name === "json" &&
+        operation.source?.name === "wretchResponseChain"
+    );
+    if (!json || !("handler" in json))
+      throw new Error("Wretch JSON operation missing");
+
+    const result = await json.handler(ctx, data);
+
+    expect(result).toMatchObject({
+      type: {
+        kind: "instance",
+        className: "Promise",
+        result: { kind: "unknown" },
+      },
+    });
+    if (!isDataOfType(result, "instance")) return;
+    const executor = result.type.constructorArgs[0]?.type;
+    if (executor?.kind !== "operation")
+      throw new Error("Promise executor type missing");
+    const resolve = executor.parameters[0]?.type;
+    if (resolve?.kind !== "operation")
+      throw new Error("Promise resolve callback type missing");
+    expect(resolve.parameters[0]?.type).toEqual({ kind: "unknown" });
   });
 
   it("generates instance method call for wretch source operations", () => {

@@ -51,14 +51,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeNestedOperationValues(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeNestedOperationValues);
+function normalizeNestedOperationValues(
+  value: unknown,
+  parentKey?: string
+): unknown {
+  if (Array.isArray(value))
+    return value.map((entry) =>
+      normalizeNestedOperationValues(entry, parentKey)
+    );
   if (!isRecord(value)) return value;
 
   let normalized = Object.fromEntries(
     Object.entries(value).map(([key, entry]) => [
       key,
-      normalizeNestedOperationValues(entry),
+      normalizeNestedOperationValues(entry, key),
     ])
   );
   const type = normalized.type;
@@ -77,6 +83,30 @@ function normalizeNestedOperationValues(value: unknown): unknown {
     if (!("operations" in normalized)) normalized.operations = [];
   }
   const normalizedType = normalized.type;
+  if (
+    parentKey === "data" &&
+    isRecord(normalizedType) &&
+    normalizedType.kind === "operation" &&
+    isRecord(normalized.value) &&
+    Array.isArray(normalized.value.parameters)
+  ) {
+    normalized.value.parameters = normalized.value.parameters.map(
+      (parameter) => {
+        if (!isRecord(parameter) || !isRecord(parameter.data)) return parameter;
+        const parameterType = parameter.data.type;
+        if (
+          parameter.data.value !== null ||
+          !isRecord(parameterType) ||
+          !["object", "dictionary"].includes(String(parameterType.kind))
+        )
+          return parameter;
+        return {
+          ...parameter,
+          data: { ...parameter.data, value: { entries: [] } },
+        };
+      }
+    );
+  }
   if (
     !("id" in normalized) &&
     isRecord(normalizedType) &&
@@ -153,7 +183,7 @@ const AgentOperationUpdateObjectSchema = z
   });
 
 export const AgentOperationUpdateSchema = z.preprocess(
-  normalizeNestedOperationValues,
+  (value) => normalizeNestedOperationValues(value),
   AgentOperationUpdateObjectSchema
 );
 

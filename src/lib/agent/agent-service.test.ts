@@ -128,9 +128,13 @@ describe("generateOperationProposal", () => {
     expect(mocks.streamText).toHaveBeenCalledWith(
       expect.objectContaining({
         abortSignal: abortController.signal,
-        timeout: { stepMs: 60_000 },
+        timeout: {
+          totalMs: 180_000,
+          firstChunkMs: 60_000,
+          chunkMs: 60_000,
+        },
         maxRetries: 0,
-        stopWhen: { count: 2 },
+        stopWhen: { count: 3 },
         providerOptions: {
           anthropic: { thinking: { type: "adaptive" }, effort: "max" },
         },
@@ -262,6 +266,41 @@ describe("generateOperationProposal", () => {
     expect(mocks.createAgentProposal).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves completed lookup descriptors across a schema retry", async () => {
+    const malformed = {
+      name: "AI_NoObjectGeneratedError",
+      cause: { name: "AI_TypeValidationError" },
+    };
+    const lookup = [[{ name: "map", source: "builtin" }]];
+    const input = { requests: [{ query: "map" }] };
+    mocks.discovery.lookupOperations.mockResolvedValue(lookup);
+    mocks.streamText
+      .mockImplementationOnce((options) => ({
+        partialOutputStream: (async function* () {
+          await options.tools.lookup_operations.execute(input);
+          yield {};
+        })(),
+        output: Promise.reject(malformed),
+      }))
+      .mockReturnValueOnce({
+        partialOutputStream: (async function* () {})(),
+        output: Promise.resolve(update),
+      });
+
+    await generateOperationProposal({
+      operation,
+      project,
+      userPrompt: "Map values",
+      model: "openai/gpt-5.6-sol",
+      apiKey: "session-key",
+    });
+
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain(
+      "Completed operation lookups from this request"
+    );
+    expect(mocks.streamText.mock.calls[1][0].prompt).toContain('"name":"map"');
+  });
+
   it("repairs invalid statement targets with one fresh generation", async () => {
     const invalidProposal = {
       ...proposal,
@@ -370,7 +409,37 @@ describe("generateOperationProposal", () => {
     expect(mocks.toAgentTransportError).toHaveBeenCalledWith(second);
   });
 
-  it("allows one batched read-only lookup and then disables all tools", async () => {
+  it("preserves an active-stream timeout instead of retrying it as invalid output", async () => {
+    const parseError = {
+      name: "AI_NoObjectGeneratedError",
+      finishReason: "tool-calls",
+      cause: { name: "AI_JSONParseError" },
+    };
+    mocks.streamText.mockImplementation((options) => ({
+      partialOutputStream: (async function* () {
+        options.onAbort({ steps: [] });
+        yield {};
+      })(),
+      output: Promise.reject(parseError),
+    }));
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Create a wretch request",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).rejects.toThrow("Normalized provider error");
+
+    expect(mocks.streamText).toHaveBeenCalledOnce();
+    expect(mocks.toAgentTransportError).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "TimeoutError" })
+    );
+  });
+
+  it("allows two bounded read-only lookups and then disables all tools", async () => {
     const lookup = [[{ name: "map", source: "builtin" }]];
     mocks.discovery.lookupOperations.mockResolvedValue(lookup);
     mockStream();
@@ -391,6 +460,14 @@ describe("generateOperationProposal", () => {
     );
     expect(onProgress).toHaveBeenCalledWith("Checking operation details");
     expect(mocks.discovery.lookupOperations).toHaveBeenCalledWith(input);
+    expect(options.prepareStep({ instructions: "system" })).toEqual({
+      instructions: expect.stringContaining("One bounded refinement lookup"),
+    });
+
+    const refinement = { requests: [{ query: "property access" }] };
+    await expect(
+      options.tools.lookup_operations.execute(refinement)
+    ).resolves.toBe(lookup);
     expect(options.prepareStep({ instructions: "system" })).toMatchObject({
       activeTools: [],
       toolChoice: "none",
@@ -423,7 +500,7 @@ describe("generateOperationProposal", () => {
     );
   });
 
-  it("prevents every repeated lookup regardless of input", async () => {
+  it("prevents a third distinct lookup", async () => {
     mocks.discovery.lookupOperations.mockResolvedValue([]);
     mockStream();
     await generateOperationProposal({
@@ -436,16 +513,42 @@ describe("generateOperationProposal", () => {
     const execute =
       mocks.streamText.mock.calls[0][0].tools.lookup_operations.execute;
     await execute({ requests: [{ query: "map" }] });
+    await execute({ requests: [{ query: "filter" }] });
 
     await expect(
       execute({ requests: [{ query: "entirely different" }] })
     ).resolves.toEqual({
       error: {
         code: "lookup_limit_reached",
-        message: "Only one batched operation lookup is allowed",
+        message: "Only two batched operation lookups are allowed",
       },
     });
+    expect(mocks.discovery.lookupOperations).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses concurrent identical lookups without consuming another round", async () => {
+    const lookup = [[{ name: "map", source: "builtin" }]];
+    mocks.discovery.lookupOperations.mockResolvedValue(lookup);
+    mockStream();
+    await generateOperationProposal({
+      operation,
+      project,
+      userPrompt: "Update it",
+      model: "openai/gpt-5.6-sol",
+      apiKey: "session-key",
+    });
+    const options = mocks.streamText.mock.calls[0][0];
+    const input = { requests: [{ query: "map" }] };
+
+    const results = await Promise.all([
+      options.tools.lookup_operations.execute(input),
+      options.tools.lookup_operations.execute(input),
+    ]);
+    expect(results).toEqual([lookup, lookup]);
     expect(mocks.discovery.lookupOperations).toHaveBeenCalledOnce();
+    expect(options.prepareStep({ instructions: "system" })).toEqual({
+      instructions: expect.stringContaining("One bounded refinement lookup"),
+    });
   });
 
   it("returns bounded discovery errors without exposing another tool", async () => {

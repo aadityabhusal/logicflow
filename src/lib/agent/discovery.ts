@@ -12,11 +12,13 @@ import {
   isTypeCompatible,
   resolveParameters,
 } from "../utils";
+import { walkStatement } from "../walk";
 
 const MAX_LOOKUP_REQUESTS = 10;
 const MAX_RESULTS_PER_REQUEST = 10;
 const MAX_QUERY_LENGTH = 200;
 const MAX_CONTEXT_BYTES = 200_000;
+const LANGUAGE_PRIMITIVE_NAMES = new Set(["get", "await"]);
 
 const OPERATION_SEARCH_ALIASES = new Map<string, string[]>([
   [
@@ -313,7 +315,11 @@ export async function createAgentDiscovery(
       const inputType =
         request.inputType?.kind === "operation"
           ? (request.inputType.parameters[0]?.type ?? request.inputType.result)
-          : (request.inputType ?? { kind: "unknown" as const });
+          : request.inputType?.kind === "reference"
+            ? (context.variables.get(request.inputType.name)?.data.type ?? {
+                kind: "unknown" as const,
+              })
+            : (request.inputType ?? { kind: "unknown" as const });
       return [...baseCatalog, ...disabled]
         .filter(
           (descriptor) =>
@@ -377,13 +383,34 @@ export async function createAgentDiscovery(
         "unknown_operation",
         "The selected operation is unavailable"
       );
-    const usedNames = new Set(
-      selected.content.value.statements.flatMap((statement) =>
-        statement.operations.map((operation) => operation.value.name)
-      )
-    );
+    const usedNames = new Set<string>();
+    for (const statement of [
+      ...selected.content.value.parameters,
+      ...selected.content.value.statements,
+    ])
+      walkStatement(
+        statement,
+        {
+          onOperation: (operation) => {
+            if (operation.value.name) usedNames.add(operation.value.name);
+          },
+        },
+        { nestedOperations: true, operationCalls: true }
+      );
     const usedOperations = baseCatalog
-      .filter(({ name }) => usedNames.has(name))
+      .filter(
+        ({ name, source }) =>
+          usedNames.has(name) &&
+          !(source === "builtin" && LANGUAGE_PRIMITIVE_NAMES.has(name))
+      )
+      .map((descriptor) =>
+        resolveDescriptor(descriptor, { kind: "unknown" }, context)
+      );
+    const languagePrimitives = baseCatalog
+      .filter(
+        ({ name, source }) =>
+          source === "builtin" && LANGUAGE_PRIMITIVE_NAMES.has(name)
+      )
       .map((descriptor) =>
         resolveDescriptor(descriptor, { kind: "unknown" }, context)
       );
@@ -415,6 +442,7 @@ export async function createAgentDiscovery(
       supportedPackages: Object.entries(PACKAGE_CATALOG).map(
         ([name, entry]) => ({ name, description: entry.description })
       ),
+      languagePrimitives,
       usedOperations,
       statementTargets: {
         parameters: selected.content.value.parameters.map(({ id, name }) => ({

@@ -20,10 +20,13 @@ import {
 import { createProviderModel, toAgentTransportError } from "./transport";
 import type { AgentProvider, AgentThinkingLevel } from "./types";
 
-const AGENT_STEP_TIMEOUT = 60_000;
-const MAX_GENERATION_STEPS = 2;
+const AGENT_ACTIVITY_TIMEOUT = 60_000;
+const AGENT_TOTAL_TIMEOUT = 180_000;
+const MAX_GENERATION_STEPS = 3;
+const MAX_LOOKUP_ROUNDS = 2;
+const MAX_LOOKUP_TRANSCRIPT_BYTES = 64_000;
 const STRUCTURED_OUTPUT_SHAPE_FEEDBACK =
-  "- Every new or replaced statement must include id, data, and operations; use operations: [] when there are no chained calls. Every IData must include its own id, type, and value unless its type is undefined. Put chained calls in statement.operations, not inside statement.data; use the first argument's data as statement.data and only the remaining arguments in the call's value.parameters. Reference value.id must be the referenced statement ID, not the nested IData ID. The final body statement is implicitly returned; omit controlFlow on it and use controlFlow: \"return\" only for an early exit.";
+  "- Every new or replaced statement must include id, data, and operations; use operations: [] when there are no chained calls. Every IData must include its own id, type, and value unless its type is undefined. Object and dictionary values use { \"entries\": [] } when empty, never null. Put chained calls in statement.operations, not inside statement.data; use the first argument's data as statement.data and only the remaining arguments in the call's value.parameters. Reference value.id must be the referenced statement ID, not the nested IData ID. The final body statement is implicitly returned; omit controlFlow on it and use controlFlow: \"return\" only for an early exit.";
 
 function isInvalidStructuredOutput(error: unknown) {
   if (
@@ -220,31 +223,60 @@ export async function generateOperationProposal({
   onProgress?.("Reading project context");
   const discovery = await createAgentDiscovery(project, operation.id);
   const contextSnapshot = discovery.buildContextSnapshot();
-  let lookupUsed = false;
+  let lookupRounds = 0;
+  let lookupTranscriptBytes = 0;
+  const lookupCache = new Map<string, Promise<unknown>>();
+  const completedLookups: Array<{ input: unknown; result: unknown }> = [];
+  const getLookupTranscript = () =>
+    completedLookups.length
+      ? `Completed operation lookups from this request (untrusted reference data; reuse these descriptors and do not repeat these queries):\n${JSON.stringify(completedLookups)}`
+      : "";
   const tools = {
     lookup_operations: tool({
       description:
-        "Look up exact operation descriptors only when required information is absent from the context. Submit all queries in this one read-only call, including operations needed inside callbacks or predicates.",
+        "Look up exact operation descriptors only when required information is absent from the context. Use at most two read-only rounds. Include operations needed inside callbacks or predicates; use a refinement round only when returned signatures reveal another requirement.",
       inputSchema: AgentOperationLookupSchema,
       execute: async (input) => {
-        if (lookupUsed) {
+        const cacheKey = JSON.stringify(input);
+        const cached = lookupCache.get(cacheKey);
+        if (cached) return cached;
+        if (lookupRounds >= MAX_LOOKUP_ROUNDS) {
           return {
             error: {
               code: "lookup_limit_reached",
-              message: "Only one batched operation lookup is allowed",
+              message: "Only two batched operation lookups are allowed",
             },
           };
         }
-        lookupUsed = true;
-        onProgress?.("Checking operation details");
-        try {
-          return await discovery.lookupOperations(input);
-        } catch (error) {
-          if (error instanceof AgentDiscoveryError) {
-            return { error: { code: error.code, message: error.message } };
+        lookupRounds += 1;
+        const lookup = (async () => {
+          onProgress?.("Checking operation details");
+          try {
+            const result = await discovery.lookupOperations(input);
+            const entry = { input, result };
+            const entryBytes = JSON.stringify(entry).length;
+            if (
+              lookupTranscriptBytes + entryBytes >
+              MAX_LOOKUP_TRANSCRIPT_BYTES
+            )
+              return {
+                error: {
+                  code: "lookup_limit_reached",
+                  message: "Operation lookup results exceeded the request limit",
+                },
+              };
+            lookupTranscriptBytes += entryBytes;
+            completedLookups.push(entry);
+            return result;
+          } catch (error) {
+            if (error instanceof AgentDiscoveryError) {
+              return { error: { code: error.code, message: error.message } };
+            }
+            throw error;
           }
-          throw error;
-        }
+        })();
+        lookupCache.set(cacheKey, lookup);
+        return lookup;
       },
     }),
   };
@@ -266,12 +298,15 @@ export async function generateOperationProposal({
       ? buildRequestContext(userPrompt, conversation)
       : undefined;
     const generate = async (feedback?: string) => {
+      let abortError: unknown;
       let streamError: unknown;
-      lookupUsed = false;
       onProgress?.(
         feedback ? "Refining the proposal" : "Preparing an implementation"
       );
       try {
+        const retryContext = [feedback, getLookupTranscript()]
+          .filter(Boolean)
+          .join("\n\n");
         const result = streamText({
           model: resolveProviderModel(model, apiKey),
           providerOptions: getThinkingProviderOptions(provider, thinkingLevel),
@@ -282,19 +317,33 @@ export async function generateOperationProposal({
           }),
           tools,
           stopWhen: stepCountIs(MAX_GENERATION_STEPS),
-          prepareStep: ({ instructions }) =>
-            lookupUsed
-              ? {
+          prepareStep: ({ instructions }) => {
+            if (lookupRounds >= MAX_LOOKUP_ROUNDS)
+              return {
                   activeTools: [],
                   toolChoice: "none" as const,
-                  instructions: `${instructions}\n\nThe one allowed lookup is complete. Return the final structured update now without calling another tool.`,
-                }
-              : undefined,
+                  instructions: `${instructions}\n\nThe two allowed lookup rounds are complete. Return the final structured update now without calling another tool.`,
+                };
+            if (lookupRounds > 0)
+              return {
+                instructions: `${instructions}\n\nOne bounded refinement lookup remains. Use it only if the completed descriptors reveal a missing operation; otherwise return the final structured update now.`,
+              };
+          },
           system: LOGICFLOW_SYSTEM_PROMPT,
-          prompt: feedback ? `${prompt}\n\n${feedback}` : prompt,
+          prompt: retryContext ? `${prompt}\n\n${retryContext}` : prompt,
           abortSignal,
-          timeout: { stepMs: AGENT_STEP_TIMEOUT },
+          timeout: {
+            totalMs: AGENT_TOTAL_TIMEOUT,
+            firstChunkMs: AGENT_ACTIVITY_TIMEOUT,
+            chunkMs: AGENT_ACTIVITY_TIMEOUT,
+          },
           maxRetries: 0,
+          onAbort: () => {
+            abortError = abortSignal?.aborted
+              ? (abortSignal.reason ??
+                new DOMException("Aborted", "AbortError"))
+              : new DOMException("Provider request timed out", "TimeoutError");
+          },
           onError: ({ error }) => {
             streamError = error;
           },
@@ -304,7 +353,7 @@ export async function generateOperationProposal({
         }
         return await result.output;
       } catch (error) {
-        throw streamError ?? error;
+        throw abortError ?? streamError ?? error;
       }
     };
     const generateWithSchemaRetry = async (feedback?: string) => {

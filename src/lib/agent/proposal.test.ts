@@ -10,7 +10,7 @@ import {
   testReference,
 } from "../../tests/helpers";
 import type { IStatement, OperationType } from "../types";
-import { createData, createStatement } from "../utils";
+import { createData, createStatement, isDataOfType } from "../utils";
 import {
   AgentOperationUpdateSchema,
   createAgentProposal,
@@ -106,6 +106,136 @@ describe("native agent proposals", () => {
       type: { kind: "operation", parameters: [], result: { kind: "string" } },
       value: { name: "callback", statements: [], parameters: [] },
     });
+  });
+
+  it("normalizes null object callback parameters from provider output", () => {
+    const providerUpdate = (value: unknown) => ({
+      explanation: "Map todo titles",
+      enablePackages: ["wretch"],
+      changes: [
+        {
+          kind: "insert_statement",
+          container: "body",
+          beforeStatementId: null,
+          statement: {
+            id: "request",
+            data: {
+              id: "request-data",
+              type: { kind: "unknown" },
+              value: null,
+            },
+            operations: [
+              {
+                id: "map",
+                type: {
+                  kind: "operation",
+                  parameters: [
+                    {
+                      type: { kind: "array", elementType: { kind: "unknown" } },
+                    },
+                    {
+                      type: {
+                        kind: "operation",
+                        parameters: [
+                          { name: "item", type: { kind: "unknown" } },
+                        ],
+                        result: { kind: "unknown" },
+                      },
+                    },
+                  ],
+                  result: { kind: "array", elementType: { kind: "unknown" } },
+                },
+                value: {
+                  name: "map",
+                  parameters: [
+                    {
+                      id: "callback",
+                      data: {
+                        id: "callback-data",
+                        type: {
+                          kind: "operation",
+                          parameters: [
+                            {
+                              name: "item",
+                              type: {
+                                kind: "object",
+                                properties: [
+                                  { key: "title", value: { kind: "string" } },
+                                ],
+                              },
+                            },
+                          ],
+                          result: { kind: "string" },
+                        },
+                        value: {
+                          parameters: [
+                            {
+                              id: "item",
+                              name: "item",
+                              data: {
+                                id: "item-data",
+                                type: {
+                                  kind: "object",
+                                  properties: [
+                                    { key: "title", value: { kind: "string" } },
+                                  ],
+                                },
+                                value,
+                              },
+                              operations: [],
+                            },
+                          ],
+                          statements: [],
+                        },
+                      },
+                      operations: [],
+                    },
+                  ],
+                  statements: [],
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const parsed = AgentOperationUpdateSchema.safeParse(providerUpdate(null));
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const change = parsed.data.changes[0];
+    expect(change.kind).toBe("insert_statement");
+    if (change.kind !== "insert_statement") return;
+    const callback = change.statement.operations[0].value.parameters[0].data;
+    expect(isDataOfType(callback, "operation")).toBe(true);
+    if (!isDataOfType(callback, "operation")) return;
+    expect(callback.value.parameters[0].data.value).toEqual({ entries: [] });
+    expect(
+      AgentOperationUpdateSchema.safeParse(providerUpdate("invalid")).success
+    ).toBe(false);
+    expect(
+      AgentOperationUpdateSchema.safeParse({
+        explanation: "Do not repair top-level data",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement: {
+              id: "object",
+              data: {
+                id: "object-data",
+                type: { kind: "object", properties: [] },
+                value: null,
+              },
+              operations: [],
+            },
+          },
+        ],
+      }).success
+    ).toBe(false);
   });
 
   it("fills host-owned IDs and empty operation arrays for an empty-operation update", () => {

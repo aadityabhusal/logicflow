@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createOperationFile, createTestProject } from "../../tests/helpers";
+import {
+  createOperationFile,
+  createTestProject,
+  testOperation,
+} from "../../tests/helpers";
 import { PACKAGE_CATALOG } from "../packages/catalog";
 import { loadedPackageOperations } from "../packages/registry";
-import { createData } from "../utils";
+import type { OperationType } from "../types";
+import { createData, createStatement } from "../utils";
 import { AgentOperationLookupSchema, createAgentDiscovery } from "./discovery";
 
 afterEach(() => vi.restoreAllMocks());
@@ -46,7 +51,45 @@ describe("agent operation discovery", () => {
       parameters: [{ id: "parameter-statement", name: "input" }],
       body: [{ id: "body-statement", name: "result" }],
     });
+    expect(context.languagePrimitives).toEqual([
+      expect.objectContaining({ name: "get", source: "builtin" }),
+      expect.objectContaining({ name: "await", source: "builtin" }),
+    ]);
     expect(JSON.stringify(context)).not.toContain("secret-value");
+  });
+
+  it("includes descriptors for operations used inside nested callbacks", async () => {
+    const nested = createStatement({
+      data: createData({ value: "value" }),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [{ type: { kind: "string" } }],
+            result: { kind: "number" },
+          },
+          value: { name: "length", parameters: [], statements: [] },
+        }),
+      ],
+    });
+    const selected = createOperationFile("main");
+    selected.content.value.statements = [
+      createStatement({ data: testOperation([], [nested]) }),
+    ];
+    const discovery = await createAgentDiscovery(
+      createTestProject({ files: [selected] }),
+      selected.id
+    );
+
+    const context = discovery.buildContextSnapshot();
+
+    expect(context.usedOperations).toContainEqual(
+      expect.objectContaining({ name: "length", source: "builtin" })
+    );
+    expect(context.languagePrimitives).toHaveLength(2);
+    expect(context.languagePrimitives).not.toContainEqual(
+      expect.objectContaining({ name: "map" })
+    );
   });
 
   it("does not include operation test values in provider context", async () => {
@@ -235,8 +278,8 @@ describe("agent operation discovery", () => {
 
   it("treats unknown receiver types as unconstrained during package lookup", async () => {
     const discovery = await createAgentDiscovery(createTestProject());
-    const [factory, get, json, incompatible] = await discovery.lookupOperations(
-      {
+    const [factory, wretchGet, fetch, json, propertyAccess, incompatible] =
+      await discovery.lookupOperations({
         requests: [
           {
             query: "Create a wretch client for a URL",
@@ -249,8 +292,18 @@ describe("agent operation discovery", () => {
             inputType: { kind: "unknown" },
           },
           {
+            query: "fetch",
+            package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
             query: "Parse a wretch response as JSON",
             package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "read object property by key title",
+            package: "builtin",
             inputType: { kind: "unknown" },
           },
           {
@@ -259,23 +312,113 @@ describe("agent operation discovery", () => {
             inputType: { kind: "string" },
           },
         ],
-      }
-    );
+      });
 
     expect(factory).toContainEqual(
-      expect.objectContaining({ name: "wretch", package: "wretch" })
+      expect.objectContaining({
+        name: "wretch",
+        package: "wretch",
+        result: expect.objectContaining({
+          kind: "instance",
+          className: "wretch.Wretch",
+        }),
+      })
     );
-    expect(get).toContainEqual(
-      expect.objectContaining({ name: "wretch.get", package: "wretch" })
+    expect(wretchGet).toContainEqual(
+      expect.objectContaining({
+        name: "wretch.get",
+        package: "wretch",
+        result: expect.objectContaining({
+          kind: "instance",
+          className: "wretch.WretchResponseChain",
+        }),
+      })
+    );
+    expect(fetch).toContainEqual(
+      expect.objectContaining({
+        name: "wretch.fetch",
+        result: expect.objectContaining({
+          kind: "instance",
+          className: "wretch.WretchResponseChain",
+        }),
+      })
     );
     expect(json).toContainEqual(
       expect.objectContaining({
         name: "wretch.json",
         package: "wretch",
         operationSource: { name: "wretchResponseChain" },
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+          result: { kind: "unknown" },
+        },
+      })
+    );
+    expect(propertyAccess).toContainEqual(
+      expect.objectContaining({
+        name: "get",
+        source: "builtin",
       })
     );
     expect(incompatible).toEqual([]);
+  });
+
+  it("handles the unresolved reference receiver from the captured lookup", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const [operations] = await discovery.lookupOperations({
+      requests: [
+        {
+          query: "fetch a URL and create a wretch request",
+          package: "wretch",
+          inputType: { kind: "reference", name: "wretch", isEnv: false },
+        },
+      ],
+    });
+
+    expect(operations).toContainEqual(
+      expect.objectContaining({
+        name: "wretch",
+        result: expect.objectContaining({
+          kind: "instance",
+          className: "wretch.Wretch",
+        }),
+      })
+    );
+    expect(operations).toContainEqual(
+      expect.objectContaining({
+        name: "wretch.fetch",
+        result: expect.objectContaining({
+          kind: "instance",
+          className: "wretch.WretchResponseChain",
+        }),
+      })
+    );
+  });
+
+  it("resolves known reference receiver types from project context", async () => {
+    const helper = createOperationFile("helper");
+    helper.content.type.result = { kind: "string" };
+    const discovery = await createAgentDiscovery(
+      createTestProject({ files: [helper] })
+    );
+    const [call] = await discovery.lookupOperations({
+      requests: [
+        {
+          query: "call",
+          package: "builtin",
+          inputType: { kind: "reference", name: "helper" },
+        },
+      ],
+    });
+
+    expect(call).toContainEqual(
+      expect.objectContaining({
+        name: "call",
+        result: { kind: "string" },
+      })
+    );
   });
 
   it("qualifies an unqualified package instance receiver during lookup", async () => {
