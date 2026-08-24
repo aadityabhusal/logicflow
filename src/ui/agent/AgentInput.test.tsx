@@ -26,22 +26,33 @@ vi.mock("@mantine/hooks", async () => ({
 
 vi.mock("@/lib/store", () => ({
   useProjectStore: (
-    selector: (state: { currentProjectId: string }) => unknown
+    selector: (state: { currentProjectId: string }) => unknown,
   ) => selector({ currentProjectId: "project-a" }),
-  useAgentStore: () => ({
-    selectedModel: "gpt-5.6-sol",
-    thinkingLevel: "medium",
-    getApiKey: () => mocks.apiKey,
-    setSelectedModel: mocks.setSelectedModel,
-    setThinkingLevel: mocks.setThinkingLevel,
-    setDraft: mocks.setDraft,
-    agentProjects: {
-      "project-a": {
-        activeThreadId: "thread-a",
-        threads: [{ id: "thread-a", draft: mocks.draft }],
+  useAgentStore: (
+    selector: (state: {
+      selectedModel: string;
+      thinkingLevel: "medium";
+      getApiKey: () => string;
+      setSelectedModel: typeof mocks.setSelectedModel;
+      setThinkingLevel: typeof mocks.setThinkingLevel;
+      setDraft: typeof mocks.setDraft;
+      agentProjects: Record<string, unknown>;
+    }) => unknown,
+  ) =>
+    selector({
+      selectedModel: "gpt-5.6-sol",
+      thinkingLevel: "medium",
+      getApiKey: () => mocks.apiKey,
+      setSelectedModel: mocks.setSelectedModel,
+      setThinkingLevel: mocks.setThinkingLevel,
+      setDraft: mocks.setDraft,
+      agentProjects: {
+        "project-a": {
+          activeThreadId: "thread-a",
+          threads: [{ id: "thread-a", draft: mocks.draft }],
+        },
       },
-    },
-  }),
+    }),
 }));
 
 import { AgentInput } from "./AgentInput";
@@ -58,7 +69,7 @@ beforeAll(() => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })),
   );
 });
 
@@ -83,7 +94,7 @@ function renderInput({
           isLoading={isLoading}
           historyBusy={historyBusy}
         />
-      </MantineProvider>
+      </MantineProvider>,
     ),
   };
 }
@@ -106,10 +117,10 @@ describe("AgentInput accessibility", () => {
     expect(mocks.setDraft).not.toHaveBeenCalledWith("thread-a", "");
     expect(input).toHaveProperty("value", "Keep this draft");
     expect(
-      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
     ).toBe(true);
     expect(
-      screen.getByText(/Add an API key for .* to send messages/)
+      screen.getByText(/Add an API key for .* to send messages/),
     ).toBeDefined();
   });
 
@@ -119,13 +130,13 @@ describe("AgentInput accessibility", () => {
 
     fireEvent.keyDown(
       screen.getByRole("textbox", { name: "Message the agent" }),
-      { key: "Enter" }
+      { key: "Enter" },
     );
 
     expect(onSubmit).toHaveBeenCalledWith("Keep this draft");
     expect(mocks.setDraft).not.toHaveBeenCalledWith("thread-a", "");
     expect(
-      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
     ).toBe(false);
   });
 
@@ -135,11 +146,11 @@ describe("AgentInput accessibility", () => {
 
     expect(
       screen.getByPlaceholderText(
-        "Ask anything... (Enter to send; Shift + Enter for a new line)"
-      )
+        "Ask anything... (Enter to send; Shift + Enter for a new line)",
+      ),
     ).toBeDefined();
     expect(
-      screen.queryByText("Enter to send | Shift + Enter for a new line")
+      screen.queryByText("Enter to send | Shift + Enter for a new line"),
     ).toBeNull();
   });
 
@@ -176,7 +187,7 @@ describe("AgentInput accessibility", () => {
 
     fireEvent.keyDown(
       screen.getByRole("textbox", { name: "Message the agent" }),
-      { key: "Enter", isComposing: true }
+      { key: "Enter", isComposing: true },
     );
 
     expect(onSubmit).not.toHaveBeenCalled();
@@ -197,23 +208,23 @@ describe("AgentInput accessibility", () => {
 
     fireEvent.keyDown(
       screen.getByRole("textbox", { name: "Message the agent" }),
-      { key: "Enter" }
+      { key: "Enter" },
     );
 
     rerender(
       <MantineProvider>
         <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     rerender(
       <MantineProvider>
         <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading={false} />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     expect(document.activeElement).toBe(
-      screen.getByRole("textbox", { name: "Message the agent" })
+      screen.getByRole("textbox", { name: "Message the agent" }),
     );
   });
 
@@ -223,12 +234,12 @@ describe("AgentInput accessibility", () => {
     const { rerender } = renderInput({ onSubmit });
     fireEvent.keyDown(
       screen.getByRole("textbox", { name: "Message the agent" }),
-      { key: "Enter" }
+      { key: "Enter" },
     );
     rerender(
       <MantineProvider>
         <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading />
-      </MantineProvider>
+      </MantineProvider>,
     );
     const outside = document.createElement("button");
     document.body.append(outside);
@@ -237,7 +248,7 @@ describe("AgentInput accessibility", () => {
     rerender(
       <MantineProvider>
         <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading={false} />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     expect(document.activeElement).toBe(outside);
@@ -250,12 +261,12 @@ describe("AgentInput accessibility", () => {
     const { rerender } = renderInput({ onSubmit });
     fireEvent.keyDown(
       screen.getByRole("textbox", { name: "Message the agent" }),
-      { key: "Enter" }
+      { key: "Enter" },
     );
     rerender(
       <MantineProvider>
         <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading />
-      </MantineProvider>
+      </MantineProvider>,
     );
     const modelSelector = screen.getByRole("button", {
       name: "Model: GPT-5.6 Sol",
@@ -265,7 +276,7 @@ describe("AgentInput accessibility", () => {
     rerender(
       <MantineProvider>
         <AgentInput onSubmit={onSubmit} onCancel={vi.fn()} isLoading={false} />
-      </MantineProvider>
+      </MantineProvider>,
     );
 
     expect(document.activeElement).toBe(modelSelector);

@@ -74,7 +74,7 @@ export const fileHistoryActions = {
 interface IProjectsStore {
   projects: Record<string, Project>;
   createProject: (
-    init: Partial<Omit<Project, "id" | "createdAt" | "updatedAt">>
+    init: Partial<Omit<Project, "id" | "createdAt" | "updatedAt">>,
   ) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
@@ -97,7 +97,7 @@ interface ICurrentProjectStore {
   updateStatementByPath: (
     fileId: string,
     path: EntityPath,
-    newStatement: IStatement
+    newStatement: IStatement,
   ) => void;
   restoreProjectFromCheckpoint: (checkpoint: ProjectCheckpoint) => void;
 }
@@ -273,7 +273,7 @@ const createCurrentProjectSlice: StateCreator<
       produce((state: ProjectStore) => {
         const project = state.projects[currentProject.id];
         const fileIndex = project.files.findIndex(
-          (f: ProjectFile) => f.id === fileId
+          (f: ProjectFile) => f.id === fileId,
         );
         if (fileIndex === -1) return;
 
@@ -289,7 +289,7 @@ const createCurrentProjectSlice: StateCreator<
         const updatedAt = Date.now();
         (file as ProjectFile & { type: "operation" }).updatedAt = updatedAt;
         project.updatedAt = updatedAt;
-      })
+      }),
     );
   },
 
@@ -318,9 +318,9 @@ export const useProjectStore = createWithEqualityFn(
       name: "projects",
       storage: createIDbStorage("projects"),
       partialize: (state) => ({ projects: state.projects }) as ProjectStore,
-    }
+    },
   ),
-  shallow
+  shallow,
 );
 
 export const waitForHydration = () => {
@@ -351,7 +351,7 @@ type UiConfigStore = {
   examplesCollapsed?: boolean;
   foldedEntities?: Record<string, boolean>;
   setUiConfig: (
-    change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>
+    change: SetStateAction<Partial<Omit<UiConfigStore, "setUiConfig">>>,
   ) => void;
 };
 export const useUiConfigStore = createWithEqualityFn(
@@ -365,9 +365,9 @@ export const useUiConfigStore = createWithEqualityFn(
       setUiConfig: (change) =>
         set((state) => (typeof change === "function" ? change(state) : change)),
     }),
-    { name: "uiConfig", storage: createIDbStorage("uiConfig") }
+    { name: "uiConfig", storage: createIDbStorage("uiConfig") },
   ),
-  shallow
+  shallow,
 );
 
 function replaceTabSearchParam(tab?: string) {
@@ -390,7 +390,7 @@ export const useSidebarTabStore = createWithEqualityFn<{
         return { activeTab: newActive };
       }),
   }),
-  shallow
+  shallow,
 );
 
 type NavigationStore = {
@@ -401,7 +401,7 @@ type NavigationStore = {
   result?: IData;
   operation?: IData<OperationType>;
   setNavigation: (
-    change: SetStateAction<Partial<Omit<NavigationStore, "setNavigation">>>
+    change: SetStateAction<Partial<Omit<NavigationStore, "setNavigation">>>,
   ) => void;
 };
 export const useNavigationStore = createWithEqualityFn<NavigationStore>(
@@ -409,7 +409,7 @@ export const useNavigationStore = createWithEqualityFn<NavigationStore>(
     setNavigation: (change) =>
       set((state) => (typeof change === "function" ? change(state) : change)),
   }),
-  shallow
+  shallow,
 );
 
 /* Agent store */
@@ -425,11 +425,6 @@ interface AgentStore {
   thinkingLevel: import("./agent/types").AgentThinkingLevel;
   agentProjects: Record<string, AgentProject>;
   agentReady: boolean;
-  activeRun?: {
-    threadId: string;
-    streamingContent: string;
-    traces: AgentRunTrace[];
-  };
   pendingProposals: Record<string, AgentProposal>;
 
   setApiKey: (provider: keyof ApiKeys, key: string) => void;
@@ -443,13 +438,9 @@ interface AgentStore {
   deleteThreadTurn: (threadId: string, messageId: string) => void;
   addMessage: (
     threadId: string,
-    message: Omit<AgentMessage, "id" | "createdAt">
+    message: Omit<AgentMessage, "id" | "createdAt">,
   ) => AgentMessage | undefined;
   setDraft: (threadId: string, content: string) => void;
-  startRun: (threadId: string) => void;
-  setRunTrace: (label: string) => void;
-  setStreamingContent: (content: string) => void;
-  finishRun: (threadId: string) => void;
   setPendingProposal: (threadId: string, proposal?: AgentProposal) => void;
   deleteAgentProject: (projectId: string) => void;
 }
@@ -457,6 +448,64 @@ interface AgentStore {
 export const useAgentPersistenceErrorStore = createWithEqualityFn<{
   error?: string;
 }>(() => ({}), shallow);
+
+interface AgentRunStore {
+  activeRun?: {
+    threadId: string;
+    streamingContent: string;
+    traces: AgentRunTrace[];
+  };
+  startRun: (threadId: string) => void;
+  setRunTrace: (label: string) => void;
+  setStreamingContent: (content: string) => void;
+  finishRun: (threadId: string) => void;
+}
+
+export const useAgentRunStore = createWithEqualityFn<AgentRunStore>(
+  (set) => ({
+    startRun: (threadId) =>
+      set({
+        activeRun: {
+          threadId,
+          streamingContent: "",
+          traces: [],
+        },
+      }),
+    setRunTrace: (label) =>
+      set((state) => {
+        if (!state.activeRun) return state;
+        const current = state.activeRun.traces.at(-1);
+        if (current?.label === label) return state;
+        return {
+          activeRun: {
+            ...state.activeRun,
+            traces: [
+              ...state.activeRun.traces.map((trace) => ({
+                ...trace,
+                status: "complete" as const,
+              })),
+              { id: nanoid(), label, status: "active" as const },
+            ],
+          },
+        };
+      }),
+    setStreamingContent: (content) =>
+      set((state) => {
+        if (!state.activeRun || state.activeRun.streamingContent === content)
+          return state;
+        return {
+          activeRun: { ...state.activeRun, streamingContent: content },
+        };
+      }),
+    finishRun: (threadId) =>
+      set((state) =>
+        state.activeRun?.threadId === threadId
+          ? { activeRun: undefined }
+          : state,
+      ),
+  }),
+  shallow,
+);
 
 function createAgentThread(title = "New chat"): AgentThread {
   const now = Date.now();
@@ -477,13 +526,13 @@ function redactAgentSecrets<T>(value: T, apiKeys: ApiKeys): T {
     if (typeof item === "string") {
       return keys.reduce(
         (content, key) => content.replaceAll(key, "[REDACTED]"),
-        item
+        item,
       );
     }
     if (Array.isArray(item)) return item.map(redact);
     if (item && typeof item === "object") {
       return Object.fromEntries(
-        Object.entries(item).map(([key, child]) => [key, redact(child)])
+        Object.entries(item).map(([key, child]) => [key, redact(child)]),
       );
     }
     return item;
@@ -503,7 +552,7 @@ export const useAgentStore = createWithEqualityFn(
         }));
       const findProjectByThread = (threadId: string) =>
         Object.values(get().agentProjects).find((project) =>
-          project.threads.some((thread) => thread.id === threadId)
+          project.threads.some((thread) => thread.id === threadId),
         );
 
       return {
@@ -539,7 +588,7 @@ export const useAgentStore = createWithEqualityFn(
             threads: project.threads.map((thread) =>
               thread.id === threadId
                 ? { ...thread, title: trimmedTitle, updatedAt: Date.now() }
-                : thread
+                : thread,
             ),
           });
         },
@@ -553,7 +602,7 @@ export const useAgentStore = createWithEqualityFn(
           const project = findProjectByThread(threadId);
           if (!project) return;
           const remaining = project.threads.filter(
-            (thread) => thread.id !== threadId
+            (thread) => thread.id !== threadId,
           );
           if (remaining.length === 0) remaining.push(createAgentThread());
           saveProject({
@@ -572,7 +621,7 @@ export const useAgentStore = createWithEqualityFn(
           const thread = project?.threads.find(({ id }) => id === threadId);
           if (!project || !thread) return;
           const messageIndex = thread.messages.findIndex(
-            ({ id }) => id === messageId
+            ({ id }) => id === messageId,
           );
           if (
             messageIndex < 0 ||
@@ -580,7 +629,7 @@ export const useAgentStore = createWithEqualityFn(
           )
             return;
           const nextUserIndex = thread.messages.findIndex(
-            (message, index) => index > messageIndex && message.role === "user"
+            (message, index) => index > messageIndex && message.role === "user",
           );
           const endIndex =
             nextUserIndex < 0 ? thread.messages.length : nextUserIndex;
@@ -596,7 +645,7 @@ export const useAgentStore = createWithEqualityFn(
                       ...currentThread.messages.slice(0, messageIndex),
                       ...currentThread.messages.slice(endIndex),
                     ],
-                  }
+                  },
             ),
           };
           set((state) => {
@@ -604,7 +653,7 @@ export const useAgentStore = createWithEqualityFn(
             const removesPendingProposal =
               !!pendingProposal &&
               removedMessages.some(
-                (message) => message.proposal?.id === pendingProposal.id
+                (message) => message.proposal?.id === pendingProposal.id,
               );
             if (!removesPendingProposal) {
               return {
@@ -638,7 +687,7 @@ export const useAgentStore = createWithEqualityFn(
             threads: project.threads.map((thread) =>
               thread.id === threadId
                 ? { ...thread, messages: [...thread.messages, created] }
-                : thread
+                : thread,
             ),
           });
           return created;
@@ -650,48 +699,10 @@ export const useAgentStore = createWithEqualityFn(
           saveProject({
             ...project,
             threads: project.threads.map((thread) =>
-              thread.id === threadId ? { ...thread, draft } : thread
+              thread.id === threadId ? { ...thread, draft } : thread,
             ),
           });
         },
-        startRun: (threadId) =>
-          set({
-            activeRun: {
-              threadId,
-              streamingContent: "",
-              traces: [],
-            },
-          }),
-        setRunTrace: (label) =>
-          set((state) => {
-            if (!state.activeRun) return state;
-            const current = state.activeRun.traces.at(-1);
-            if (current?.label === label) return state;
-            return {
-              activeRun: {
-                ...state.activeRun,
-                traces: [
-                  ...state.activeRun.traces.map((trace) => ({
-                    ...trace,
-                    status: "complete" as const,
-                  })),
-                  { id: nanoid(), label, status: "active" as const },
-                ],
-              },
-            };
-          }),
-        setStreamingContent: (content) =>
-          set((state) =>
-            state.activeRun
-              ? { activeRun: { ...state.activeRun, streamingContent: content } }
-              : state
-          ),
-        finishRun: (threadId) =>
-          set((state) =>
-            state.activeRun?.threadId === threadId
-              ? { activeRun: undefined }
-              : state
-          ),
         setPendingProposal: (threadId, proposal) =>
           set((state) => {
             if (proposal) {
@@ -714,8 +725,8 @@ export const useAgentStore = createWithEqualityFn(
                 agentProjects,
                 pendingProposals: Object.fromEntries(
                   Object.entries(state.pendingProposals).filter(
-                    ([, proposal]) => proposal.projectId !== projectId
-                  )
+                    ([, proposal]) => proposal.projectId !== projectId,
+                  ),
                 ),
               };
             });
@@ -735,7 +746,7 @@ export const useAgentStore = createWithEqualityFn(
         useAgentPersistenceErrorStore.setState({
           error:
             "Agent chats could not be saved. Recent changes may be lost on reload.",
-        })
+        }),
       ),
       partialize: (state) =>
         ({
@@ -746,9 +757,9 @@ export const useAgentStore = createWithEqualityFn(
         }) as AgentStore,
       onRehydrateStorage: () => () =>
         useAgentStore.setState({ agentReady: true }),
-    }
+    },
   ),
-  shallow
+  shallow,
 );
 
 /* Checkpoint store */
@@ -793,16 +804,16 @@ export const useCheckpointStore = createWithEqualityFn(
         });
       },
     }),
-    { name: "checkpoints", storage: createIDbStorage("checkpoints") }
+    { name: "checkpoints", storage: createIDbStorage("checkpoints") },
   ),
-  shallow
+  shallow,
 );
 
 type ContextMenuStore = {
   menu?: { items: ContextMenuItem[]; position: { x: number; y: number } };
   highlightedEntityId?: string;
   openMenu: (
-    payload: ContextMenuStore["menu"] & { highlightedEntityId?: string }
+    payload: ContextMenuStore["menu"] & { highlightedEntityId?: string },
   ) => void;
   closeMenu: () => void;
 };
@@ -816,5 +827,5 @@ export const useContextMenuStore = createWithEqualityFn<ContextMenuStore>(
       }),
     closeMenu: () => set({ menu: undefined, highlightedEntityId: undefined }),
   }),
-  shallow
+  shallow,
 );

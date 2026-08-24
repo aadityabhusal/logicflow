@@ -233,6 +233,30 @@ describe("agent operation discovery", () => {
     );
   });
 
+  it("resolves await results from the input Promise type", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const [awaitOperations] = await discovery.lookupOperations({
+      requests: [
+        {
+          query: "await",
+          package: "builtin",
+          inputType: {
+            kind: "instance",
+            className: "Promise",
+            constructorArgs: [],
+            result: { kind: "array", elementType: { kind: "string" } },
+          },
+        },
+      ],
+    });
+
+    expect(awaitOperations[0]).toMatchObject({
+      name: "await",
+      source: "builtin",
+      result: { kind: "array", elementType: { kind: "string" } },
+    });
+  });
+
   it("loads a disabled package only when its exact catalog key is requested and does not mutate the registry", async () => {
     vi.spyOn(PACKAGE_CATALOG.wretch, "load").mockResolvedValue({
       operations: [
@@ -394,6 +418,97 @@ describe("agent operation discovery", () => {
           className: "wretch.WretchResponseChain",
         }),
       })
+    );
+  });
+
+  it("ranks chained package and builtin lookups by descriptive intent", async () => {
+    const discovery = await createAgentDiscovery(createTestProject());
+    const [factory, wretchGet, fetch, json, map, get] =
+      await discovery.lookupOperations({
+        requests: [
+          {
+            query: "create a wretch client for a URL",
+            package: "wretch",
+            inputType: { kind: "string" },
+          },
+          {
+            query: "GET request on a wretch client",
+            package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "fetch a URL and create a wretch request operation",
+            package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "parse the wretch response as JSON",
+            package: "wretch",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "map each array item with an operation",
+            package: "builtin",
+            inputType: { kind: "unknown" },
+          },
+          {
+            query: "read object property by key",
+            package: "builtin",
+            inputType: { kind: "unknown" },
+          },
+        ],
+      });
+
+    expect(factory).toContainEqual(
+      expect.objectContaining({ name: "wretch", package: "wretch" })
+    );
+    expect(wretchGet[0]).toEqual(
+      expect.objectContaining({
+        name: "wretch.get",
+        operationSource: { name: "wretch" },
+        result: expect.objectContaining({
+          kind: "instance",
+          className: "wretch.WretchResponseChain",
+        }),
+      })
+    );
+    expect(fetch[0]).toEqual(
+      expect.objectContaining({ name: "wretch.fetch", package: "wretch" })
+    );
+    expect(
+      fetch.findIndex(({ name }) => name === "wretch.fetchError")
+    ).toBeGreaterThan(0);
+    expect(json[0]).toEqual(
+      expect.objectContaining({
+        name: "wretch.json",
+        operationSource: { name: "wretchResponseChain" },
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+          result: { kind: "unknown" },
+        },
+      })
+    );
+    expect(map[0]).toEqual(
+      expect.objectContaining({ name: "map", source: "builtin" })
+    );
+    expect(get[0]).toEqual(
+      expect.objectContaining({ name: "get", source: "builtin" })
+    );
+  });
+
+  it("preserves valid operation names that are generic in descriptive queries", async () => {
+    const request = createOperationFile("request");
+    const discovery = await createAgentDiscovery(
+      createTestProject({ files: [request] })
+    );
+    const [operations] = await discovery.lookupOperations({
+      requests: [{ query: "call the request operation" }],
+    });
+
+    expect(operations).toContainEqual(
+      expect.objectContaining({ name: "request", source: "project" })
     );
   });
 

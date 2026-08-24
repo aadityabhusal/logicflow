@@ -162,6 +162,21 @@ describe("agent provider transport", () => {
     );
   });
 
+  it("reports output that reaches the safe token limit", () => {
+    expect(
+      toAgentTransportError({
+        name: "AI_NoObjectGeneratedError",
+        finishReason: "length",
+        cause: { name: "AI_TypeValidationError" },
+      })
+    ).toEqual(
+      new AgentTransportError(
+        "Provider response exceeded the safe output limit. Please shorten the request",
+        "request_failed"
+      )
+    );
+  });
+
   it("reports invalid structured output instead of a provider failure", () => {
     expect(
       toAgentTransportError({

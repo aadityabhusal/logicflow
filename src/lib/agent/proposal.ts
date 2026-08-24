@@ -957,11 +957,14 @@ function resolveCatalogOperation(
   input: IData,
   context: Context
 ) {
-  return operations.filter((operation) => {
-    if (operation.name !== name) return false;
+  const named = operations.filter((operation) => operation.name === name);
+  const compatible = named.filter((operation) => {
     const parameter = resolveParameters(operation, input, context)[0];
     return !!parameter && isTypeCompatible(input.type, parameter.type, context);
   });
+  return compatible.length || input.type.kind !== "unknown"
+    ? compatible
+    : named;
 }
 
 function resolveCatalogResult(
@@ -1441,10 +1444,11 @@ async function validateOperationSemantics(
             context
           );
           if (matches.length !== 1) {
+            const ambiguous = matches.length > 1;
             addDiagnostic(
               diagnostics,
-              matches.length ? "ambiguous_operation" : "unknown_operation",
-              `Operation ${call.value.name} is not uniquely available for ${current.type.kind}`,
+              ambiguous ? "ambiguous_operation" : "unknown_operation",
+              `Operation ${call.value.name} is ${ambiguous ? "ambiguous" : "unavailable"} for ${current.type.kind}`,
               { fileId: file.id, packageName: packageKey }
             );
           } else {

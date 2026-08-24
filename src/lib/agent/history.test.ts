@@ -288,6 +288,18 @@ describe("agent edit history", () => {
     expect(mocks.resetWorker).not.toHaveBeenCalled();
   });
 
+  it("does not commit an automatically applied proposal after cancellation", async () => {
+    const proposal = setup();
+    const controller = new AbortController();
+
+    const application = applyAgentProposal(proposal, controller.signal);
+    controller.abort();
+
+    await expect(application).rejects.toMatchObject({ name: "AbortError" });
+    expect(mocks.commitAgentEdit).not.toHaveBeenCalled();
+    expect(mocks.agentState.pendingProposals["thread-a"]).toBe(proposal);
+  });
+
   it("compensates instead of overwriting an edit made while saving", async () => {
     const proposal = setup();
     let finishCommit!: () => void;

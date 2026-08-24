@@ -129,10 +129,11 @@ describe("generateOperationProposal", () => {
       expect.objectContaining({
         abortSignal: abortController.signal,
         timeout: {
-          totalMs: 180_000,
+          totalMs: expect.any(Number),
           firstChunkMs: 60_000,
           chunkMs: 60_000,
         },
+        maxOutputTokens: 32_768,
         maxRetries: 0,
         stopWhen: { count: 3 },
         providerOptions: {
@@ -140,9 +141,15 @@ describe("generateOperationProposal", () => {
         },
       })
     );
+    expect(mocks.streamText.mock.calls[0][0].timeout.totalMs).toBeGreaterThan(
+      179_000
+    );
     expect(Object.keys(mocks.streamText.mock.calls[0][0].tools)).toEqual([
       "lookup_operations",
     ]);
+    expect(
+      mocks.streamText.mock.calls[0][0].tools.lookup_operations.description
+    ).toContain("Batched requests are independent");
     expect(mocks.discovery.lookupOperations).not.toHaveBeenCalled();
     expect(mocks.createAgentProposal).toHaveBeenCalledOnce();
     expect(mocks.createAgentProposal).toHaveBeenCalledWith({
@@ -264,6 +271,222 @@ describe("generateOperationProposal", () => {
       "only the remaining arguments"
     );
     expect(mocks.createAgentProposal).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry structured output truncated by the safe token limit", async () => {
+    const truncated = {
+      name: "AI_NoObjectGeneratedError",
+      finishReason: "length",
+      cause: { name: "AI_TypeValidationError" },
+    };
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {})(),
+      output: Promise.reject(truncated),
+    });
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Build a large operation",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).rejects.toThrow("Normalized provider error");
+
+    expect(mocks.streamText).toHaveBeenCalledOnce();
+    expect(mocks.toAgentTransportError).toHaveBeenCalledWith(truncated);
+  });
+
+  it.each(["tool-calls", "content-filter", "error"])(
+    "does not schema-retry a %s finish reason",
+    async (finishReason) => {
+      const failed = {
+        name: "AI_NoObjectGeneratedError",
+        finishReason,
+        cause: { name: "AI_JSONParseError" },
+      };
+      mocks.streamText.mockReturnValue({
+        partialOutputStream: (async function* () {})(),
+        output: Promise.reject(failed),
+      });
+
+      await expect(
+        generateOperationProposal({
+          operation,
+          project,
+          userPrompt: "Update it",
+          model: "openai/gpt-5.6-sol",
+          apiKey: "session-key",
+        })
+      ).rejects.toThrow("Normalized provider error");
+
+      expect(mocks.streamText).toHaveBeenCalledOnce();
+      expect(mocks.toAgentTransportError).toHaveBeenCalledWith(failed);
+    }
+  );
+
+  it("shares one total deadline across schema and proposal repairs", async () => {
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const malformed = {
+      name: "AI_NoObjectGeneratedError",
+      cause: { name: "AI_TypeValidationError" },
+    };
+    const invalidProposal = {
+      ...proposal,
+      diagnostics: [
+        {
+          code: "invalid_statement_target",
+          message: "Invalid target",
+        },
+      ],
+    };
+    mocks.createAgentProposal.mockResolvedValueOnce(invalidProposal);
+    mocks.streamText.mockImplementation(() => {
+      const call = mocks.streamText.mock.calls.length;
+      now += 60_000;
+      return {
+        partialOutputStream: (async function* () {})(),
+        output:
+          call === 1 ? Promise.reject(malformed) : Promise.resolve(update),
+      };
+    });
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Update it",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).rejects.toThrow("Normalized provider error");
+
+    expect(
+      mocks.streamText.mock.calls.map(([options]) => options.timeout.totalMs)
+    ).toEqual([180_000, 120_000, 60_000]);
+    nowSpy.mockRestore();
+  });
+
+  it("checks the request deadline after proposal validation", async () => {
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    mocks.createAgentProposal.mockImplementationOnce(async () => {
+      now = 180_000;
+      return proposal;
+    });
+    mockStream();
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Update it",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).rejects.toThrow("Normalized provider error");
+
+    expect(mocks.toAgentTransportError).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "TimeoutError" })
+    );
+    nowSpy.mockRestore();
+  });
+
+  it("checks cancellation before a schema retry", async () => {
+    const abortController = new AbortController();
+    const abortError = new DOMException("Aborted", "AbortError");
+    const malformed = {
+      name: "AI_NoObjectGeneratedError",
+      cause: { name: "AI_TypeValidationError" },
+    };
+    mocks.streamText.mockImplementation(() => {
+      abortController.abort(abortError);
+      return {
+        partialOutputStream: (async function* () {})(),
+        output: Promise.reject(malformed),
+      };
+    });
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Update it",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+        abortSignal: abortController.signal,
+      })
+    ).rejects.toThrow("Normalized provider error");
+
+    expect(mocks.streamText).toHaveBeenCalledOnce();
+    expect(mocks.toAgentTransportError).toHaveBeenCalledWith(abortError);
+  });
+
+  it("checks the total deadline before a schema retry", async () => {
+    let now = 0;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const malformed = {
+      name: "AI_NoObjectGeneratedError",
+      cause: { name: "AI_TypeValidationError" },
+    };
+    mocks.streamText.mockImplementation(() => {
+      now = 180_000;
+      return {
+        partialOutputStream: (async function* () {})(),
+        output: Promise.reject(malformed),
+      };
+    });
+
+    await expect(
+      generateOperationProposal({
+        operation,
+        project,
+        userPrompt: "Update it",
+        model: "openai/gpt-5.6-sol",
+        apiKey: "session-key",
+      })
+    ).rejects.toThrow("Normalized provider error");
+
+    expect(mocks.streamText).toHaveBeenCalledOnce();
+    expect(mocks.toAgentTransportError).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "TimeoutError" })
+    );
+    nowSpy.mockRestore();
+  });
+
+  it("deduplicates and event-throttles many partial explanations with a final flush", async () => {
+    const now = 0;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    mocks.streamText.mockReturnValue({
+      partialOutputStream: (async function* () {
+        for (let index = 0; index < 16_000; index += 1) {
+          yield { explanation: `Step ${Math.floor(index / 2)}` };
+        }
+      })(),
+      output: Promise.resolve(update),
+    });
+    const emissions: Array<{ explanation: string; at: number }> = [];
+
+    await generateOperationProposal({
+      operation,
+      project,
+      userPrompt: "Update it",
+      model: "openai/gpt-5.6-sol",
+      apiKey: "session-key",
+      onPartialExplanation: (explanation) =>
+        emissions.push({ explanation, at: now }),
+    });
+
+    expect(emissions).toEqual([
+      { explanation: "Step 0", at: 0 },
+      { explanation: "Step 7999", at: 0 },
+    ]);
+    expect(new Set(emissions.map(({ explanation }) => explanation)).size).toBe(
+      emissions.length
+    );
+    nowSpy.mockRestore();
   });
 
   it("preserves completed lookup descriptors across a schema retry", async () => {

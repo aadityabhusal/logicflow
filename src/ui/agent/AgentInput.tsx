@@ -36,19 +36,25 @@ export function AgentInput({
     setSelectedModel,
     thinkingLevel,
     setThinkingLevel,
-    agentProjects,
     setDraft,
-  } = useAgentStore();
-  const agentProject = currentProjectId
-    ? agentProjects[currentProjectId]
-    : undefined;
+  } = useAgentStore((state) => ({
+    selectedModel: state.selectedModel,
+    getApiKey: state.getApiKey,
+    setSelectedModel: state.setSelectedModel,
+    thinkingLevel: state.thinkingLevel,
+    setThinkingLevel: state.setThinkingLevel,
+    setDraft: state.setDraft,
+  }));
+  const agentProject = useAgentStore((state) =>
+    currentProjectId ? state.agentProjects[currentProjectId] : undefined,
+  );
   const activeThread = agentProject?.threads.find(
-    (thread) => thread.id === agentProject.activeThreadId
+    (thread) => thread.id === agentProject.activeThreadId,
   );
   const activeThreadId = activeThread?.id;
   const value = activeThread?.draft ?? "";
   const selectedModelConfig = AVAILABLE_MODELS.find(
-    (m) => m.id === selectedModel
+    (m) => m.id === selectedModel,
   );
   const modelHasApiKey = selectedModelConfig
     ? getApiKey(selectedModelConfig.provider)

@@ -40,10 +40,6 @@ const mocks = vi.hoisted(() => {
     selectThread: vi.fn(),
     removeThread: vi.fn(),
     deleteThreadTurn: vi.fn(),
-    startRun: vi.fn(),
-    setRunTrace: vi.fn(),
-    setStreamingContent: vi.fn(),
-    finishRun: vi.fn(),
     setPendingProposal: vi.fn(),
     setDraft: vi.fn(),
     pendingProposals: {} as Record<
@@ -58,7 +54,15 @@ const mocks = vi.hoisted(() => {
         proposedState?: unknown;
       }
     >,
-    activeRun: undefined,
+  };
+  const runState = {
+    activeRun: undefined as
+      | { threadId: string; streamingContent: string; traces: [] }
+      | undefined,
+    startRun: vi.fn(),
+    setRunTrace: vi.fn(),
+    setStreamingContent: vi.fn(),
+    finishRun: vi.fn(),
   };
   const projectState = {
     currentProjectId: "project-a",
@@ -79,25 +83,26 @@ const mocks = vi.hoisted(() => {
   };
   const useProjectStore = Object.assign(
     vi.fn((selector: (state: typeof projectState) => unknown) =>
-      selector(projectState)
+      selector(projectState),
     ),
-    { getState: () => projectState }
+    { getState: () => projectState },
   );
   const persistenceState = { error: undefined as string | undefined };
   const useAgentPersistenceErrorStore = Object.assign(
     vi.fn((selector: (state: typeof persistenceState) => unknown) =>
-      selector(persistenceState)
+      selector(persistenceState),
     ),
-    { setState: vi.fn() }
+    { setState: vi.fn() },
   );
   return {
     agentState,
+    runState,
     projectState,
     persistenceState,
     useAgentPersistenceErrorStore,
     useProjectStore,
     createOperationFromFile: vi.fn((file?: { id: string }) =>
-      file ? { id: file.id } : undefined
+      file ? { id: file.id } : undefined,
     ),
     generateOperationProposal: vi.fn(),
     getExplicitDeploymentIntent: vi.fn(),
@@ -112,9 +117,18 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("@/lib/store", () => ({
   fileHistoryActions: { pushState: vi.fn() },
-  useAgentStore: Object.assign(() => mocks.agentState, {
-    getState: () => mocks.agentState,
-  }),
+  useAgentStore: Object.assign(
+    (selector: (state: typeof mocks.agentState) => unknown) =>
+      selector(mocks.agentState),
+    {
+      getState: () => mocks.agentState,
+    },
+  ),
+  useAgentRunStore: Object.assign(
+    (selector: (state: typeof mocks.runState) => unknown) =>
+      selector(mocks.runState),
+    { getState: () => mocks.runState },
+  ),
   useAgentPersistenceErrorStore: mocks.useAgentPersistenceErrorStore,
   useProjectStore: mocks.useProjectStore,
   useSidebarTabStore: {
@@ -194,7 +208,7 @@ beforeAll(() => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    }))
+    })),
   );
 });
 
@@ -204,7 +218,7 @@ function renderPanel() {
   return render(
     <MantineProvider>
       <AgentPanel />
-    </MantineProvider>
+    </MantineProvider>,
   );
 }
 
@@ -214,6 +228,7 @@ beforeEach(() => {
   mocks.agentState.agentProjects["project-a"].threads[0].messages = [];
   mocks.agentState.getApiKey.mockReturnValue("key");
   mocks.agentState.pendingProposals = {};
+  mocks.runState.activeRun = undefined;
   mocks.persistenceState.error = undefined;
   mocks.applyAgentProposal.mockResolvedValue({
     id: "application-a",
@@ -226,7 +241,7 @@ beforeEach(() => {
     type: "operation",
   });
   mocks.createOperationFromFile.mockImplementation((file?: { id: string }) =>
-    file ? { id: file.id } : undefined
+    file ? { id: file.id } : undefined,
   );
   const project = {
     id: "project-a",
@@ -242,7 +257,7 @@ describe("AgentPanel thread header", () => {
 
     expect(screen.queryByText(/may be sent to/)).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Undo agent edit" })
+      screen.queryByRole("button", { name: "Undo agent edit" }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: "Add API keys" })).toBeDefined();
   });
@@ -254,26 +269,28 @@ describe("AgentPanel thread header", () => {
     await waitFor(() =>
       expect(mocks.undoAgentApplication).toHaveBeenCalledWith(
         "project-a",
-        "application-a"
-      )
+        "application-a",
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Redo turn" }));
     await waitFor(() =>
       expect(mocks.redoAgentApplication).toHaveBeenCalledWith(
         "project-a",
-        "application-a"
-      )
+        "application-a",
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete turn" }));
     expect(mocks.agentState.deleteThreadTurn).toHaveBeenCalledWith(
       "thread-a",
-      "message-a"
+      "message-a",
     );
   });
 
   it("does not show a top-level error for a stale inline history action", async () => {
     mocks.undoAgentApplication.mockRejectedValueOnce(
-      new Error("Cannot undo because the project changed after this agent edit")
+      new Error(
+        "Cannot undo because the project changed after this agent edit",
+      ),
     );
     renderPanel();
 
@@ -282,8 +299,8 @@ describe("AgentPanel thread header", () => {
     await waitFor(() =>
       expect(mocks.undoAgentApplication).toHaveBeenCalledWith(
         "project-a",
-        "application-a"
-      )
+        "application-a",
+      ),
     );
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -300,7 +317,7 @@ describe("AgentPanel thread header", () => {
 
     expect(mocks.agentState.renameThread).toHaveBeenCalledWith(
       "thread-a",
-      "Renamed chat"
+      "Renamed chat",
     );
   });
 
@@ -315,7 +332,7 @@ describe("AgentPanel thread header", () => {
     expect(screen.queryByRole("textbox", { name: "Chat name" })).toBeNull();
     expect(mocks.agentState.renameThread).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Rename chat" })
+      screen.getByRole("button", { name: "Rename chat" }),
     );
   });
 
@@ -328,7 +345,7 @@ describe("AgentPanel thread header", () => {
     expect(
       screen
         .getByRole("dialog", { hidden: true })
-        .getAttribute("aria-labelledby")
+        .getAttribute("aria-labelledby"),
     ).toBe("delete-chat-title");
     fireEvent.click(screen.getByText("Yes, delete."));
 
@@ -353,7 +370,7 @@ describe("AgentPanel thread header", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add API keys" }));
 
     expect(
-      (await screen.findByLabelText("OpenAI API key")).getAttribute("value")
+      (await screen.findByLabelText("OpenAI API key")).getAttribute("value"),
     ).toBe("");
   });
 
@@ -362,7 +379,7 @@ describe("AgentPanel thread header", () => {
 
     renderPanel();
     expect(screen.getByRole("alert").textContent).toContain(
-      "Agent chats could not be saved."
+      "Agent chats could not be saved.",
     );
     fireEvent.click(screen.getByText("Dismiss"));
 
@@ -398,8 +415,8 @@ describe("AgentPanel requests", () => {
             { role: "user", content: "Calculate BMI" },
             { role: "assistant", content: "Which units should I use?" },
           ],
-        })
-      )
+        }),
+      ),
     );
   });
 });
@@ -413,7 +430,7 @@ describe("AgentPanel proposal lifecycle", () => {
     fireEvent.click(screen.getByText("Submit prompt"));
 
     expect(screen.getByRole("alert").textContent).toContain(
-      "Select an operation before sending a request."
+      "Select an operation before sending a request.",
     );
     expect(mocks.agentState.setDraft).not.toHaveBeenCalledWith("thread-a", "");
   });
@@ -425,7 +442,7 @@ describe("AgentPanel proposal lifecycle", () => {
     fireEvent.click(screen.getByText("Submit prompt"));
 
     expect(screen.getByRole("alert").textContent).toContain(
-      "Add an API key for OpenAI"
+      "Add an API key for OpenAI",
     );
     expect(screen.getByRole("button", { name: "Add API key" })).toBeDefined();
     expect(mocks.agentState.setDraft).not.toHaveBeenCalledWith("thread-a", "");
@@ -433,7 +450,7 @@ describe("AgentPanel proposal lifecycle", () => {
 
   it("stores a retryable request error with the original operation anchor", async () => {
     mocks.generateOperationProposal.mockRejectedValue(
-      new AgentTransportError("Provider request failed", "request_failed")
+      new AgentTransportError("Provider request failed", "request_failed"),
     );
     renderPanel();
 
@@ -451,8 +468,8 @@ describe("AgentPanel proposal lifecycle", () => {
             },
             requiresApiKey: false,
           },
-        })
-      )
+        }),
+      ),
     );
   });
 
@@ -468,7 +485,7 @@ describe("AgentPanel proposal lifecycle", () => {
       "thread-a",
       expect.objectContaining({
         deploymentAction: "open-deployment-panel",
-      })
+      }),
     );
     expect(mocks.setActiveTab).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Open Deployment panel"));
@@ -498,21 +515,22 @@ describe("AgentPanel proposal lifecycle", () => {
       expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
         expect.objectContaining({
           userPrompt: "Fix the handler and deploy to Supabase",
-        })
-      )
+        }),
+      ),
     );
     await waitFor(() =>
       expect(mocks.applyAgentProposal).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
-      )
+        expect.objectContaining({ id: "proposal-a", threadId: "thread-a" }),
+        expect.any(AbortSignal),
+      ),
     );
     expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
       "thread-a",
-      expect.not.objectContaining({ manualDeploymentAfterApply: true })
+      expect.not.objectContaining({ manualDeploymentAfterApply: true }),
     );
     expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
       "thread-a",
-      expect.objectContaining({ deploymentAction: "open-deployment-panel" })
+      expect.objectContaining({ deploymentAction: "open-deployment-panel" }),
     );
   });
 
@@ -529,14 +547,14 @@ describe("AgentPanel proposal lifecycle", () => {
     await waitFor(() =>
       expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
         "thread-a",
-        expect.objectContaining({ content: "No changes proposed" })
-      )
+        expect.objectContaining({ content: "No changes proposed" }),
+      ),
     );
     expect(mocks.agentState.addMessage).not.toHaveBeenCalledWith(
       "thread-a",
       expect.objectContaining({
         deploymentAction: "open-deployment-panel",
-      })
+      }),
     );
   });
 
@@ -560,7 +578,7 @@ describe("AgentPanel proposal lifecycle", () => {
             diagnostics: [],
           },
         };
-      }
+      },
     );
     renderPanel();
 
@@ -572,16 +590,17 @@ describe("AgentPanel proposal lifecycle", () => {
         expect.objectContaining({
           id: "proposal-a",
           threadId: "thread-a",
-        })
-      )
+        }),
+      ),
     );
     expect(mocks.applyAgentProposal).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
+      expect.objectContaining({ id: "proposal-a", threadId: "thread-a" }),
+      expect.any(AbortSignal),
     );
     expect(mocks.projectState.updateFile).not.toHaveBeenCalled();
     expect(mocks.agentState.setDraft).toHaveBeenCalledWith("thread-a", "");
-    expect(mocks.agentState.setRunTrace).toHaveBeenCalledWith(
-      "Preparing an implementation"
+    expect(mocks.runState.setRunTrace).toHaveBeenCalledWith(
+      "Preparing an implementation",
     );
   });
 
@@ -612,14 +631,16 @@ describe("AgentPanel proposal lifecycle", () => {
     await waitFor(() =>
       expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
         "thread-a",
-        expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
-      )
+        expect.objectContaining({ id: "proposal-a", threadId: "thread-a" }),
+      ),
     );
     expect(mocks.applyAgentProposal).not.toHaveBeenCalled();
   });
 
   it("keeps a generated proposal pending when automatic apply fails", async () => {
-    mocks.applyAgentProposal.mockRejectedValue(new Error("The project changed"));
+    mocks.applyAgentProposal.mockRejectedValue(
+      new Error("The project changed"),
+    );
     mocks.generateOperationProposal.mockResolvedValue({
       response: { explanation: "Update prepared" },
       proposal: {
@@ -641,15 +662,15 @@ describe("AgentPanel proposal lifecycle", () => {
         "thread-a",
         expect.objectContaining({
           content: expect.stringContaining(
-            "could not be applied automatically: The project changed"
+            "could not be applied automatically: The project changed",
           ),
           error: {},
-        })
-      )
+        }),
+      ),
     );
     expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
       "thread-a",
-      expect.objectContaining({ id: "proposal-a", threadId: "thread-a" })
+      expect.objectContaining({ id: "proposal-a", threadId: "thread-a" }),
     );
   });
 
@@ -703,7 +724,7 @@ describe("AgentPanel proposal lifecycle", () => {
     fireEvent.click(screen.getByText("Apply proposal"));
 
     await waitFor(() =>
-      expect(mocks.applyAgentProposal).toHaveBeenCalledWith(proposal)
+      expect(mocks.applyAgentProposal).toHaveBeenCalledWith(proposal),
     );
     expect(mocks.generateOperationProposal).not.toHaveBeenCalled();
   });
@@ -742,23 +763,25 @@ describe("AgentPanel proposal lifecycle", () => {
       expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
         "thread-a",
         expect.objectContaining({
-          content: expect.stringContaining("could not be applied automatically"),
-        })
-      )
+          content: expect.stringContaining(
+            "could not be applied automatically",
+          ),
+        }),
+      ),
     );
     mocks.agentState.pendingProposals = { "thread-a": proposal };
     view.rerender(
       <MantineProvider>
         <AgentPanel />
-      </MantineProvider>
+      </MantineProvider>,
     );
     fireEvent.click(screen.getByText("Apply proposal"));
 
     await waitFor(() =>
       expect(mocks.agentState.addMessage).toHaveBeenCalledWith(
         "thread-a",
-        expect.objectContaining({ deploymentAction: "open-deployment-panel" })
-      )
+        expect.objectContaining({ deploymentAction: "open-deployment-panel" }),
+      ),
     );
     expect(mocks.applyAgentProposal).toHaveBeenNthCalledWith(2, proposal);
   });
@@ -818,15 +841,15 @@ describe("AgentPanel proposal lifecycle", () => {
           operation: { id: "operation-a" },
           userPrompt: expect.stringContaining("Current proposal update"),
           initialProposal: pendingProposal,
-        })
-      )
+        }),
+      ),
     );
     expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
       "thread-a",
       expect.objectContaining({
         sourcePrompt: "Original request",
         update: expect.objectContaining({ explanation: "Revised" }),
-      })
+      }),
     );
   });
 
@@ -864,8 +887,8 @@ describe("AgentPanel proposal lifecycle", () => {
         expect.objectContaining({
           operation: { id: "operation-a" },
           userPrompt: "Original request",
-        })
-      )
+        }),
+      ),
     );
   });
 });

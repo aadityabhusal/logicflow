@@ -1478,6 +1478,155 @@ describe("native agent proposals", () => {
     });
   });
 
+  it("maps titles from an awaited wretch GET JSON result", async () => {
+    const operation = (
+      name: string,
+      result: OperationType["result"],
+      source?: string,
+      parameters: IStatement[] = []
+    ) =>
+      createData<OperationType>({
+        type: { kind: "operation", parameters: [], result },
+        value: {
+          name,
+          source: source ? { name: source } : undefined,
+          parameters,
+          statements: [],
+        },
+      });
+    const fetchTodos = createStatement({
+      name: "fetchTodos",
+      data: createData({
+        value: "https://jsonplaceholder.typicode.com/todos",
+      }),
+      operations: [
+        operation("wretch", { kind: "unknown" }, "wretch"),
+        operation("wretch.get", { kind: "unknown" }, "wretch"),
+        operation("wretch.json", { kind: "unknown" }, "wretchResponseChain"),
+        operation("await", { kind: "unknown" }),
+      ],
+    });
+    const item = createStatement({
+      name: "item",
+      data: testObject([
+        {
+          key: "title",
+          value: createStatement({ data: createData({ value: "" }) }),
+        },
+      ]),
+    });
+    const title = createStatement({
+      data: testReference("item", item.id),
+      operations: [
+        operation("get", { kind: "string" }, undefined, [
+          createStatement({ data: createData({ value: "title" }) }),
+        ]),
+      ],
+    });
+    const todoTitles = createStatement({
+      name: "todoTitles",
+      data: testReference("fetchTodos", fetchTodos.id),
+      operations: [
+        operation("map", { kind: "unknown" }, undefined, [
+          createStatement({ data: testOperation([item], [title]) }),
+        ]),
+      ],
+    });
+    const file = createOperationFile("main");
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "Fetch todos with wretch and map their titles",
+      update: {
+        explanation: "Fetch and map todos",
+        enablePackages: ["wretch"],
+        changes: [fetchTodos, todoTitles].map((statement) => ({
+          kind: "insert_statement" as const,
+          container: "body" as const,
+          beforeStatementId: null,
+          statement,
+        })),
+      },
+    });
+
+    expect(proposal.diagnostics).toEqual([]);
+    const statements = proposal.proposedFile!.content.value.statements;
+    const requestOperations = statements[0].operations;
+    expect(requestOperations[0].type.result).toEqual({
+      kind: "instance",
+      className: "wretch.Wretch",
+      constructorArgs: [],
+    });
+    expect(requestOperations[1].type.result).toEqual({
+      kind: "instance",
+      className: "wretch.WretchResponseChain",
+      constructorArgs: [],
+    });
+    expect(requestOperations[2]).toMatchObject({
+      type: {
+        result: {
+          kind: "instance",
+          className: "Promise",
+          constructorArgs: [],
+          result: { kind: "unknown" },
+        },
+      },
+      value: { source: { name: "wretchResponseChain" } },
+    });
+    expect(requestOperations[3].type.result).toEqual({ kind: "unknown" });
+    expect(statements[1].operations[0]).toMatchObject({
+      type: { result: { kind: "unknown" } },
+      value: { name: "map" },
+    });
+  });
+
+  it("rejects an exact array operation on a known non-array receiver", async () => {
+    const file = createOperationFile("main");
+    const statement = createStatement({
+      data: createData({ value: "not an array" }),
+      operations: [
+        createData<OperationType>({
+          type: {
+            kind: "operation",
+            parameters: [],
+            result: { kind: "unknown" },
+          },
+          value: {
+            name: "map",
+            parameters: [createStatement({ data: testOperation([], []) })],
+            statements: [],
+          },
+        }),
+      ],
+    });
+
+    const proposal = await createAgentProposal({
+      project: createTestProject({ files: [file] }),
+      fileId: file.id,
+      sourcePrompt: "Map a string",
+      update: {
+        explanation: "Map a string",
+        enablePackages: [],
+        changes: [
+          {
+            kind: "insert_statement",
+            container: "body",
+            beforeStatementId: null,
+            statement,
+          },
+        ],
+      },
+    });
+
+    expect(proposal.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "unknown_operation",
+        message: "Operation map is unavailable for string",
+      })
+    );
+  });
+
   it("canonicalizes direct-name project calls without degrading results", async () => {
     const arrayType = {
       kind: "array" as const,

@@ -64,7 +64,6 @@ const mocks = vi.hoisted(() => ({
         ],
       },
     },
-    activeRun: undefined,
     agentReady: true,
     pendingProposals: {
       "thread-a": {
@@ -73,12 +72,24 @@ const mocks = vi.hoisted(() => ({
       },
     } as Record<string, { id: string; fileId: string }>,
   },
+  runState: {
+    activeRun: undefined as
+      | {
+          threadId: string;
+          streamingContent: string;
+          traces: { id: string; label: string; status: string }[];
+        }
+      | undefined,
+  },
 }));
 
 vi.mock("@/lib/store", () => ({
   useProjectStore: (selector: (state: typeof mocks.projectState) => unknown) =>
     selector(mocks.projectState),
-  useAgentStore: () => mocks.agentState,
+  useAgentStore: (selector: (state: typeof mocks.agentState) => unknown) =>
+    selector(mocks.agentState),
+  useAgentRunStore: (selector: (state: typeof mocks.runState) => unknown) =>
+    selector(mocks.runState),
 }));
 vi.mock("@/lib/agent/proposal", () => ({
   isAgentProposalStale: mocks.isAgentProposalStale,
@@ -112,17 +123,25 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   );
+  vi.stubGlobal(
+    "requestAnimationFrame",
+    vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }),
+  );
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
 });
 
 afterAll(() => vi.unstubAllGlobals());
 
 afterEach(() => {
-  Object.assign(mocks.agentState, { activeRun: undefined });
+  mocks.runState.activeRun = undefined;
 });
 
 beforeEach(() => {
   mocks.agentState.agentReady = true;
-  mocks.agentState.activeRun = undefined;
+  mocks.runState.activeRun = undefined;
   mocks.agentState.agentProjects["project-a"].history = {
     entries: [],
     cursor: 0,
@@ -159,7 +178,7 @@ beforeEach(() => {
 
 describe("AgentChat request progress", () => {
   it("shows asynchronous work and streamed explanation", () => {
-    Object.assign(mocks.agentState, {
+    Object.assign(mocks.runState, {
       activeRun: {
         threadId: "thread-a",
         streamingContent: "I found the relevant operation.",

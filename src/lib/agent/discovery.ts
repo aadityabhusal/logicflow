@@ -19,6 +19,7 @@ const MAX_RESULTS_PER_REQUEST = 10;
 const MAX_QUERY_LENGTH = 200;
 const MAX_CONTEXT_BYTES = 200_000;
 const LANGUAGE_PRIMITIVE_NAMES = new Set(["get", "await"]);
+const GENERIC_SEARCH_TERMS = new Set(["operation", "request"]);
 
 const OPERATION_SEARCH_ALIASES = new Map<string, string[]>([
   [
@@ -63,7 +64,7 @@ export const AgentOperationLookupSchema = z
                 'Supported package key, "builtin", or omitted for all active sources'
               ),
             inputType: DataTypeSchema.optional().describe(
-              "Receiver data type before the operation call, not an operation signature"
+              "Receiver data type before the operation call, not an operation signature. Batched requests are independent; use unknown when this receiver depends on another request in the same batch"
             ),
           })
           .strict()
@@ -126,11 +127,8 @@ function matchScore(
 ) {
   const normalized = name.trim().toLowerCase();
   const trimmedQuery = query.trim();
-  const exactNames = [
-    name,
-    ...additionalNames,
-    ...(OPERATION_SEARCH_ALIASES.get(name) ?? []),
-  ];
+  const aliases = OPERATION_SEARCH_ALIASES.get(name) ?? [];
+  const exactNames = [name, ...additionalNames, ...aliases];
   if (
     /[a-z][A-Z]/.test(trimmedQuery) &&
     !exactNames.some(
@@ -139,9 +137,28 @@ function matchScore(
     )
   )
     return undefined;
-  const nameTokens = tokens(exactNames.join(" "));
-  const queryTokens = tokens(query);
+  const operationName = name.split(".").at(-1)?.toLowerCase();
+  const nameTokens = tokens(operationName ?? name);
+  const aliasTokens = tokens(aliases.join(" "));
+  const additionalTokens = tokens(additionalNames.join(" "));
+  const operationNameIsSource = operationName
+    ? additionalTokens.includes(operationName)
+    : false;
+  const rawQueryTokens = tokens(query);
+  const queryTokens =
+    rawQueryTokens.length === 1
+      ? rawQueryTokens
+      : rawQueryTokens.filter(
+          (token) =>
+            !GENERIC_SEARCH_TERMS.has(token) || nameTokens.includes(token)
+        );
   if (normalized === trimmedQuery.toLowerCase()) return 1000;
+  if (
+    aliases.some(
+      (alias) => alias.trim().toLowerCase() === trimmedQuery.toLowerCase()
+    )
+  )
+    return 900;
 
   let score = 0;
   for (const queryToken of queryTokens) {
@@ -152,9 +169,17 @@ function matchScore(
         queryToken.length >= 4 &&
         (queryToken.startsWith(nameToken) || nameToken.startsWith(queryToken))
     );
-    if (exact) score += 10;
-    else if (partial) score += 1;
+    if (exact) score += 20;
+    else if (partial) score += 2;
+    if (aliasTokens.includes(queryToken)) score += 10;
+    if (additionalTokens.includes(queryToken)) score += 1;
   }
+  if (
+    operationName &&
+    !operationNameIsSource &&
+    queryTokens.includes(operationName)
+  )
+    score += 50;
   return score || undefined;
 }
 
@@ -333,9 +358,9 @@ export async function createAgentDiscovery(
           score: matchScore(
             descriptor.name,
             request.query,
-            descriptor.operation?.source?.name
-              ? [descriptor.operation.source.name]
-              : []
+            [descriptor.operation?.source?.name, descriptor.package].filter(
+              (name): name is string => !!name
+            )
           ),
         }))
         .filter(({ score }) => score !== undefined)

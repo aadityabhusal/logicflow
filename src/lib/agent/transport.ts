@@ -94,6 +94,19 @@ export function toAgentTransportError(error: unknown) {
     "name" in error &&
     error.name === "AI_NoObjectGeneratedError" &&
     "finishReason" in error &&
+    error.finishReason === "length"
+  ) {
+    return new AgentTransportError(
+      "Provider response exceeded the safe output limit. Please shorten the request",
+      "request_failed"
+    );
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "name" in error &&
+    error.name === "AI_NoObjectGeneratedError" &&
+    "finishReason" in error &&
     error.finishReason === "tool-calls"
   ) {
     return new AgentTransportError(

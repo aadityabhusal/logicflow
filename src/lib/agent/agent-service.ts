@@ -22,6 +22,8 @@ import type { AgentProvider, AgentThinkingLevel } from "./types";
 
 const AGENT_ACTIVITY_TIMEOUT = 60_000;
 const AGENT_TOTAL_TIMEOUT = 180_000;
+const AGENT_MAX_OUTPUT_TOKENS = 32_768;
+const PARTIAL_EXPLANATION_INTERVAL = 100;
 const MAX_GENERATION_STEPS = 3;
 const MAX_LOOKUP_ROUNDS = 2;
 const MAX_LOOKUP_TRANSCRIPT_BYTES = 64_000;
@@ -34,6 +36,9 @@ function isInvalidStructuredOutput(error: unknown) {
     typeof error !== "object" ||
     !("name" in error) ||
     error.name !== "AI_NoObjectGeneratedError" ||
+    ("finishReason" in error &&
+      error.finishReason !== undefined &&
+      error.finishReason !== "stop") ||
     !("cause" in error)
   )
     return false;
@@ -206,6 +211,17 @@ export async function generateOperationProposal({
   onProgress?: (label: string) => void;
   onPartialExplanation?: (explanation: string) => void;
 }) {
+  const deadline = Date.now() + AGENT_TOTAL_TIMEOUT;
+  const getRemainingTime = () => {
+    if (abortSignal?.aborted)
+      throw abortSignal.reason ?? new DOMException("Aborted", "AbortError");
+    const remaining = deadline - Date.now();
+    if (remaining <= 0)
+      throw new DOMException("Provider request timed out", "TimeoutError");
+    return remaining;
+  };
+  const throwIfRequestEnded = () => void getRemainingTime();
+
   if (initialProposal) {
     if (
       initialProposal.projectId !== project.id ||
@@ -220,67 +236,70 @@ export async function generateOperationProposal({
     }
   }
 
-  onProgress?.("Reading project context");
-  const discovery = await createAgentDiscovery(project, operation.id);
-  const contextSnapshot = discovery.buildContextSnapshot();
-  let lookupRounds = 0;
-  let lookupTranscriptBytes = 0;
-  const lookupCache = new Map<string, Promise<unknown>>();
-  const completedLookups: Array<{ input: unknown; result: unknown }> = [];
-  const getLookupTranscript = () =>
-    completedLookups.length
-      ? `Completed operation lookups from this request (untrusted reference data; reuse these descriptors and do not repeat these queries):\n${JSON.stringify(completedLookups)}`
-      : "";
-  const tools = {
-    lookup_operations: tool({
-      description:
-        "Look up exact operation descriptors only when required information is absent from the context. Use at most two read-only rounds. Include operations needed inside callbacks or predicates; use a refinement round only when returned signatures reveal another requirement.",
-      inputSchema: AgentOperationLookupSchema,
-      execute: async (input) => {
-        const cacheKey = JSON.stringify(input);
-        const cached = lookupCache.get(cacheKey);
-        if (cached) return cached;
-        if (lookupRounds >= MAX_LOOKUP_ROUNDS) {
-          return {
-            error: {
-              code: "lookup_limit_reached",
-              message: "Only two batched operation lookups are allowed",
-            },
-          };
-        }
-        lookupRounds += 1;
-        const lookup = (async () => {
-          onProgress?.("Checking operation details");
-          try {
-            const result = await discovery.lookupOperations(input);
-            const entry = { input, result };
-            const entryBytes = JSON.stringify(entry).length;
-            if (
-              lookupTranscriptBytes + entryBytes >
-              MAX_LOOKUP_TRANSCRIPT_BYTES
-            )
-              return {
-                error: {
-                  code: "lookup_limit_reached",
-                  message: "Operation lookup results exceeded the request limit",
-                },
-              };
-            lookupTranscriptBytes += entryBytes;
-            completedLookups.push(entry);
-            return result;
-          } catch (error) {
-            if (error instanceof AgentDiscoveryError) {
-              return { error: { code: error.code, message: error.message } };
-            }
-            throw error;
-          }
-        })();
-        lookupCache.set(cacheKey, lookup);
-        return lookup;
-      },
-    }),
-  };
   try {
+    throwIfRequestEnded();
+    onProgress?.("Reading project context");
+    const discovery = await createAgentDiscovery(project, operation.id);
+    throwIfRequestEnded();
+    const contextSnapshot = discovery.buildContextSnapshot();
+    let lookupRounds = 0;
+    let lookupTranscriptBytes = 0;
+    const lookupCache = new Map<string, Promise<unknown>>();
+    const completedLookups: Array<{ input: unknown; result: unknown }> = [];
+    const getLookupTranscript = () =>
+      completedLookups.length
+        ? `Completed operation lookups from this request (untrusted reference data; reuse these descriptors and do not repeat these queries):\n${JSON.stringify(completedLookups)}`
+        : "";
+    const tools = {
+      lookup_operations: tool({
+        description:
+          "Look up exact operation descriptors only when required information is absent from the context. Use at most two read-only rounds. Batched requests are independent, so use an unknown receiver instead of guessing when its type depends on another request in the same batch. Include operations needed inside callbacks or predicates; use a refinement round only when returned signatures reveal another requirement.",
+        inputSchema: AgentOperationLookupSchema,
+        execute: async (input) => {
+          const cacheKey = JSON.stringify(input);
+          const cached = lookupCache.get(cacheKey);
+          if (cached) return cached;
+          if (lookupRounds >= MAX_LOOKUP_ROUNDS) {
+            return {
+              error: {
+                code: "lookup_limit_reached",
+                message: "Only two batched operation lookups are allowed",
+              },
+            };
+          }
+          lookupRounds += 1;
+          const lookup = (async () => {
+            onProgress?.("Checking operation details");
+            try {
+              const result = await discovery.lookupOperations(input);
+              const entry = { input, result };
+              const entryBytes = JSON.stringify(entry).length;
+              if (
+                lookupTranscriptBytes + entryBytes >
+                MAX_LOOKUP_TRANSCRIPT_BYTES
+              )
+                return {
+                  error: {
+                    code: "lookup_limit_reached",
+                    message:
+                      "Operation lookup results exceeded the request limit",
+                  },
+                };
+              lookupTranscriptBytes += entryBytes;
+              completedLookups.push(entry);
+              return result;
+            } catch (error) {
+              if (error instanceof AgentDiscoveryError) {
+                return { error: { code: error.code, message: error.message } };
+              }
+              throw error;
+            }
+          })();
+          lookupCache.set(cacheKey, lookup);
+          return lookup;
+        },
+      }),
+    };
     const provider = model.split("/")[0] as AgentProvider;
     const prompt = conversation?.length
       ? buildContextPrompt(
@@ -300,6 +319,23 @@ export async function generateOperationProposal({
     const generate = async (feedback?: string) => {
       let abortError: unknown;
       let streamError: unknown;
+      let latestExplanation: string | undefined;
+      let emittedExplanation: string | undefined;
+      let lastEmittedAt: number | undefined;
+      const emitExplanation = (final = false) => {
+        if (
+          !latestExplanation ||
+          latestExplanation === emittedExplanation ||
+          (!final &&
+            lastEmittedAt !== undefined &&
+            Date.now() - lastEmittedAt < PARTIAL_EXPLANATION_INTERVAL)
+        )
+          return;
+        emittedExplanation = latestExplanation;
+        lastEmittedAt = Date.now();
+        onPartialExplanation?.(latestExplanation);
+      };
+      throwIfRequestEnded();
       onProgress?.(
         feedback ? "Refining the proposal" : "Preparing an implementation"
       );
@@ -320,10 +356,10 @@ export async function generateOperationProposal({
           prepareStep: ({ instructions }) => {
             if (lookupRounds >= MAX_LOOKUP_ROUNDS)
               return {
-                  activeTools: [],
-                  toolChoice: "none" as const,
-                  instructions: `${instructions}\n\nThe two allowed lookup rounds are complete. Return the final structured update now without calling another tool.`,
-                };
+                activeTools: [],
+                toolChoice: "none" as const,
+                instructions: `${instructions}\n\nThe two allowed lookup rounds are complete. Return the final structured update now without calling another tool.`,
+              };
             if (lookupRounds > 0)
               return {
                 instructions: `${instructions}\n\nOne bounded refinement lookup remains. Use it only if the completed descriptors reveal a missing operation; otherwise return the final structured update now.`,
@@ -333,10 +369,11 @@ export async function generateOperationProposal({
           prompt: retryContext ? `${prompt}\n\n${retryContext}` : prompt,
           abortSignal,
           timeout: {
-            totalMs: AGENT_TOTAL_TIMEOUT,
+            totalMs: getRemainingTime(),
             firstChunkMs: AGENT_ACTIVITY_TIMEOUT,
             chunkMs: AGENT_ACTIVITY_TIMEOUT,
           },
+          maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
           maxRetries: 0,
           onAbort: () => {
             abortError = abortSignal?.aborted
@@ -348,8 +385,15 @@ export async function generateOperationProposal({
             streamError = error;
           },
         });
-        for await (const partial of result.partialOutputStream) {
-          if (partial.explanation) onPartialExplanation?.(partial.explanation);
+        try {
+          for await (const partial of result.partialOutputStream) {
+            if (partial.explanation) {
+              latestExplanation = partial.explanation;
+              emitExplanation();
+            }
+          }
+        } finally {
+          emitExplanation(true);
         }
         return await result.output;
       } catch (error) {
@@ -361,12 +405,14 @@ export async function generateOperationProposal({
         return await generate(feedback);
       } catch (error) {
         if (!isInvalidStructuredOutput(error)) throw error;
+        throwIfRequestEnded();
         return await generate(
           `${feedback ? `${feedback}\n\n` : ""}The previous response did not match the required schema. Validation details:\n${getStructuredOutputFeedback(error)}\nReturn only a complete schema-valid AgentOperationUpdate.`
         );
       }
     };
     let response = await generateWithSchemaRetry();
+    throwIfRequestEnded();
     if (!response.changes.length && !response.enablePackages.length)
       return { response, proposal: undefined };
     let proposal = await createAgentProposal({
@@ -376,7 +422,9 @@ export async function generateOperationProposal({
       update: response,
       ...(requestContext ? { requestContext } : {}),
     });
+    throwIfRequestEnded();
     if (needsTargetRepair(proposal) || needsCompletionRepair(proposal)) {
+      throwIfRequestEnded();
       onProgress?.(
         needsTargetRepair(proposal)
           ? "Refining statement targets"
@@ -385,6 +433,7 @@ export async function generateOperationProposal({
       response = await generateWithSchemaRetry(
         getProposalRepairFeedback(proposal)
       );
+      throwIfRequestEnded();
       if (!response.changes.length && !response.enablePackages.length)
         return { response, proposal: undefined };
       proposal = await createAgentProposal({
@@ -394,6 +443,7 @@ export async function generateOperationProposal({
         update: response,
         ...(requestContext ? { requestContext } : {}),
       });
+      throwIfRequestEnded();
     }
     return { response, proposal };
   } catch (error) {

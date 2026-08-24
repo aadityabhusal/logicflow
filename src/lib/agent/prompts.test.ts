@@ -7,7 +7,7 @@ import {
 
 describe("agent prompts", () => {
   it("defines the bounded native update flow", () => {
-    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("21");
+    expect(AGENT_SYSTEM_PROMPT_VERSION).toBe("22");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("AgentOperationUpdate");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("no more than two bounded rounds");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("second refinement round");
@@ -18,6 +18,10 @@ describe("agent prompts", () => {
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
       "operations needed inside callbacks or predicates"
     );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain(
+      "Each batched lookup request is independent"
+    );
+    expect(LOGICFLOW_SYSTEM_PROMPT).toContain("use inputType unknown");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("use builtin get");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain("builtin await");
     expect(LOGICFLOW_SYSTEM_PROMPT).toContain(

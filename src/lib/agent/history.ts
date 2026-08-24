@@ -27,6 +27,11 @@ import type {
 } from "./types";
 
 const MAX_AGENT_HISTORY = 50;
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted)
+    throw signal.reason ?? new DOMException("Aborted", "AbortError");
+}
 let agentEditPending = false;
 
 async function runAgentEdit<T>(action: () => Promise<T>) {
@@ -184,8 +189,10 @@ async function commit(
   previousAgentProject: AgentProject,
   selectedFileId?: string,
   proposal?: AgentProposal,
+  abortSignal?: AbortSignal,
 ) {
   await withSyncedPackageRegistry(getEnabledPackages(project), async () => {
+    throwIfAborted(abortSignal);
     const currentProjectState = useProjectStore.getState();
     const currentAgentState = useAgentStore.getState();
     if (
@@ -206,6 +213,7 @@ async function commit(
       selectedModel: currentAgentState.selectedModel,
       thinkingLevel: currentAgentState.thinkingLevel,
     };
+    throwIfAborted(abortSignal);
     await commitAgentEdit(
       { ...currentProjects, [project.id]: project },
       { ...currentAgentProjects, [project.id]: agentProject },
@@ -237,6 +245,7 @@ async function commit(
         "The project or chat changed while the edit was being saved",
       );
     }
+    throwIfAborted(abortSignal);
     installProject(previousProject, project, selectedFileId);
     useAgentStore.setState((state) => {
       const nextAgentProjects = {
@@ -254,7 +263,11 @@ async function commit(
   });
 }
 
-async function applyProposal(proposal: AgentProposal) {
+async function applyProposal(
+  proposal: AgentProposal,
+  abortSignal?: AbortSignal,
+) {
+  throwIfAborted(abortSignal);
   const projectState = useProjectStore.getState();
   const project = projectState.projects[proposal.projectId];
   const agentState = useAgentStore.getState();
@@ -289,6 +302,7 @@ async function applyProposal(proposal: AgentProposal) {
     requestContext: proposal.requestContext,
     update: proposal.update,
   });
+  throwIfAborted(abortSignal);
   if (
     !candidate.proposedState ||
     candidate.diagnostics.some((diagnostic) => diagnostic.severity === "error")
@@ -299,6 +313,7 @@ async function applyProposal(proposal: AgentProposal) {
     project,
     candidate.proposedState,
   );
+  throwIfAborted(abortSignal);
   if (validationDiagnostics.length > 0)
     throw new Error("This proposal's snapshot failed final validation");
   const before = getAgentHistoryState(project);
@@ -347,12 +362,16 @@ async function applyProposal(proposal: AgentProposal) {
     agentProject,
     afterSelectedFileId,
     proposal,
+    abortSignal,
   );
   return entry;
 }
 
-export function applyAgentProposal(proposal: AgentProposal) {
-  return runAgentEdit(() => applyProposal(proposal));
+export function applyAgentProposal(
+  proposal: AgentProposal,
+  abortSignal?: AbortSignal,
+) {
+  return runAgentEdit(() => applyProposal(proposal, abortSignal));
 }
 
 async function restoreAgentEdit(projectId: string, direction: "undo" | "redo") {

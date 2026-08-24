@@ -9,13 +9,15 @@ vi.mock("idb", () => ({
     }),
 }));
 
-import { useAgentStore } from "../store";
+import { useAgentRunStore, useAgentStore } from "../store";
 
 const initialState = useAgentStore.getInitialState();
+const initialRunState = useAgentRunStore.getInitialState();
 
 beforeEach(() => {
   vi.restoreAllMocks();
   useAgentStore.setState(initialState, true);
+  useAgentRunStore.setState(initialRunState, true);
 });
 
 describe("agent store", () => {
@@ -49,13 +51,13 @@ describe("agent store", () => {
     useAgentStore.getState().selectThread("project-a", first.id);
 
     expect(useAgentStore.getState().agentProjects["project-a"].history).toBe(
-      history
+      history,
     );
     expect(
-      useAgentStore.getState().agentProjects["project-a"].threads
+      useAgentStore.getState().agentProjects["project-a"].threads,
     ).toHaveLength(2);
     expect(
-      useAgentStore.getState().agentProjects["project-a"].activeThreadId
+      useAgentStore.getState().agentProjects["project-a"].activeThreadId,
     ).toBe(first.id);
     expect(second.id).not.toBe(first.id);
   });
@@ -65,7 +67,6 @@ describe("agent store", () => {
     useAgentStore.getState().setApiKey("openai", "session-secret");
     useAgentStore.getState().setSelectedModel("claude-opus-5");
     useAgentStore.getState().setThinkingLevel("high");
-    useAgentStore.getState().startRun(thread.id);
     useAgentStore.getState().setPendingProposal(thread.id, {
       id: "proposal-a",
       projectId: "project-a",
@@ -81,22 +82,28 @@ describe("agent store", () => {
     });
   });
 
-  it("keeps asynchronous request traces transient and marks previous steps complete", () => {
+  it("keeps run updates out of the persisted agent store and dedupes streamed content", () => {
     const thread = useAgentStore.getState().createThread("project-a");
+    const persistedChange = vi.fn();
+    const runChange = vi.fn();
+    const unsubscribeAgent = useAgentStore.subscribe(persistedChange);
+    const unsubscribeRun = useAgentRunStore.subscribe(runChange);
+    const storage = useAgentStore.persist.getOptions().storage!;
+    const write = vi.spyOn(storage, "setItem");
 
-    useAgentStore.getState().startRun(thread.id);
-    expect(useAgentStore.getState().activeRun?.traces).toEqual([]);
-    useAgentStore.getState().setRunTrace("Reading project context");
+    useAgentRunStore.getState().startRun(thread.id);
+    expect(useAgentRunStore.getState().activeRun?.traces).toEqual([]);
+    useAgentRunStore.getState().setRunTrace("Reading project context");
 
-    expect(useAgentStore.getState().activeRun?.traces).toEqual([
+    expect(useAgentRunStore.getState().activeRun?.traces).toEqual([
       {
         id: expect.any(String),
         label: "Reading project context",
         status: "active",
       },
     ]);
-    useAgentStore.getState().setRunTrace("Preparing an implementation");
-    expect(useAgentStore.getState().activeRun?.traces).toEqual([
+    useAgentRunStore.getState().setRunTrace("Preparing an implementation");
+    expect(useAgentRunStore.getState().activeRun?.traces).toEqual([
       {
         id: expect.any(String),
         label: "Reading project context",
@@ -108,9 +115,15 @@ describe("agent store", () => {
         status: "active",
       },
     ]);
-    expect(
-      useAgentStore.persist.getOptions().partialize!(useAgentStore.getState())
-    ).not.toHaveProperty("activeRun");
+    useAgentRunStore.getState().setStreamingContent("Partial response");
+    const updatesBeforeDuplicate = runChange.mock.calls.length;
+    useAgentRunStore.getState().setStreamingContent("Partial response");
+
+    expect(runChange).toHaveBeenCalledTimes(updatesBeforeDuplicate);
+    expect(persistedChange).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    unsubscribeAgent();
+    unsubscribeRun();
   });
 
   it("keeps proposals transient and clears them with their thread", () => {
@@ -130,10 +143,10 @@ describe("agent store", () => {
     useAgentStore.getState().removeThread(thread.id);
 
     expect(
-      useAgentStore.getState().pendingProposals[thread.id]
+      useAgentStore.getState().pendingProposals[thread.id],
     ).toBeUndefined();
     expect(useAgentStore.getState().pendingProposals[second.id]?.id).toBe(
-      "proposal-b"
+      "proposal-b",
     );
   });
 
@@ -175,7 +188,7 @@ describe("agent store", () => {
       "Later response",
     ]);
     expect(
-      useAgentStore.getState().pendingProposals[thread.id]
+      useAgentStore.getState().pendingProposals[thread.id],
     ).toBeUndefined();
   });
 
@@ -226,7 +239,7 @@ describe("agent store", () => {
       (listener) => {
         finishHydration = listener;
         return unsubscribe;
-      }
+      },
     );
 
     useAgentStore.getState().deleteAgentProject("project-a");

@@ -8,6 +8,7 @@ import {
 } from "@/lib/agent/agent-service";
 import {
   useProjectStore,
+  useAgentRunStore,
   useAgentStore,
   useAgentPersistenceErrorStore,
   useSidebarTabStore,
@@ -27,31 +28,45 @@ import {
 } from "@/lib/agent/history";
 
 export function AgentPanel() {
+  const currentProjectId = useProjectStore((s) => s.currentProjectId);
+  const currentFile = useProjectStore((s) => s.getCurrentFile());
   const {
     selectedModel,
     thinkingLevel,
     addMessage,
     getApiKey,
     setApiKey,
-    agentProjects,
     agentReady,
     createThread,
     renameThread,
     selectThread,
     removeThread,
     deleteThreadTurn,
-    startRun,
-    setRunTrace,
-    setStreamingContent,
-    finishRun,
-    activeRun,
-    pendingProposals,
     setPendingProposal,
     setDraft,
-  } = useAgentStore();
-
-  const currentProjectId = useProjectStore((s) => s.currentProjectId);
-  const currentFile = useProjectStore((s) => s.getCurrentFile());
+  } = useAgentStore((state) => ({
+    selectedModel: state.selectedModel,
+    thinkingLevel: state.thinkingLevel,
+    addMessage: state.addMessage,
+    getApiKey: state.getApiKey,
+    setApiKey: state.setApiKey,
+    agentReady: state.agentReady,
+    createThread: state.createThread,
+    renameThread: state.renameThread,
+    selectThread: state.selectThread,
+    removeThread: state.removeThread,
+    deleteThreadTurn: state.deleteThreadTurn,
+    setPendingProposal: state.setPendingProposal,
+    setDraft: state.setDraft,
+  }));
+  const { startRun, setRunTrace, setStreamingContent, finishRun } =
+    useAgentRunStore((state) => ({
+      startRun: state.startRun,
+      setRunTrace: state.setRunTrace,
+      setStreamingContent: state.setStreamingContent,
+      finishRun: state.finishRun,
+    }));
+  const isRunning = useAgentRunStore((state) => !!state.activeRun);
   const abortController = useRef<AbortController>();
   const deploymentAfterApply = useRef(new Set<string>());
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -65,17 +80,17 @@ export function AgentPanel() {
   const [submissionError, setSubmissionError] = useState<string>();
   const [apiKeysOpen, setApiKeysOpen] = useState(false);
   const persistenceError = useAgentPersistenceErrorStore((s) => s.error);
-  const agentProject = currentProjectId
-    ? agentProjects[currentProjectId]
-    : undefined;
+  const agentProject = useAgentStore((state) =>
+    currentProjectId ? state.agentProjects[currentProjectId] : undefined,
+  );
   const projectThreads = agentProject?.threads ?? [];
   const activeThread = projectThreads.find(
-    (thread) => thread.id === agentProject?.activeThreadId
+    (thread) => thread.id === agentProject?.activeThreadId,
   );
   const activeThreadId = activeThread?.id;
-  const pendingProposal = activeThreadId
-    ? pendingProposals[activeThreadId]
-    : undefined;
+  const pendingProposal = useAgentStore((state) =>
+    activeThreadId ? state.pendingProposals[activeThreadId] : undefined,
+  );
 
   useEffect(() => {
     abortController.current?.abort();
@@ -91,7 +106,7 @@ export function AgentPanel() {
     () => () => {
       abortController.current?.abort();
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -126,9 +141,9 @@ export function AgentPanel() {
     options?: {
       regenerate?: boolean;
       sourceFileId?: string;
-    }
+    },
   ) => {
-    if (useAgentStore.getState().activeRun) return;
+    if (useAgentRunStore.getState().activeRun) return;
     const submittedProject = useProjectStore.getState().getCurrentProject();
     const deploymentIntent = !options?.regenerate
       ? getExplicitDeploymentIntent(prompt)
@@ -153,7 +168,7 @@ export function AgentPanel() {
     }
     const sourceFileId = options?.sourceFileId ?? currentFile?.id;
     const sourceFile = submittedProject.files.find(
-      (file) => file.id === sourceFileId && file.type === "operation"
+      (file) => file.id === sourceFileId && file.type === "operation",
     );
     const currentOperation = createOperationFromFile(sourceFile);
     if (!sourceFile) {
@@ -162,7 +177,7 @@ export function AgentPanel() {
     }
     if (!currentOperation) {
       setSubmissionError(
-        "The selected operation could not be loaded. Select another operation and try again."
+        "The selected operation could not be loaded. Select another operation and try again.",
       );
       return;
     }
@@ -175,7 +190,7 @@ export function AgentPanel() {
     const apiKey = getApiKey(modelConfig.provider);
     if (!apiKey) {
       setSubmissionError(
-        `Add an API key for ${LLM_PROVIDERS[modelConfig.provider].name} before sending a request.`
+        `Add an API key for ${LLM_PROVIDERS[modelConfig.provider].name} before sending a request.`,
       );
       return;
     }
@@ -258,14 +273,15 @@ export function AgentPanel() {
         setPendingProposal(activeThreadId, storedProposal);
         if (
           !storedProposal.diagnostics.some(
-            (diagnostic) => diagnostic.severity === "error"
+            (diagnostic) => diagnostic.severity === "error",
           )
-        ) {
-          try {
-            await applyAgentProposal(storedProposal);
-            handleDeploymentAfterApply(storedProposal);
-          } catch (error) {
-            addMessage(activeThreadId, {
+          ) {
+            try {
+              await applyAgentProposal(storedProposal, controller.signal);
+              handleDeploymentAfterApply(storedProposal);
+            } catch (error) {
+              if (controller.signal.aborted) return;
+              addMessage(activeThreadId, {
               role: "assistant",
               content: `The update was generated but could not be applied automatically: ${
                 error instanceof Error ? error.message : "Unknown error"
@@ -318,7 +334,7 @@ export function AgentPanel() {
   };
 
   const handleHistoryAction = async (action: () => Promise<unknown>) => {
-    if (historyBusy || activeRun) return;
+    if (historyBusy || isRunning) return;
     setHistoryBusy(true);
     setHistoryError(undefined);
     try {
@@ -332,7 +348,7 @@ export function AgentPanel() {
       )
         return;
       setHistoryError(
-        error instanceof Error ? error.message : "Agent edit failed"
+        error instanceof Error ? error.message : "Agent edit failed",
       );
     } finally {
       setHistoryBusy(false);
@@ -350,13 +366,13 @@ export function AgentPanel() {
 
   const handleRestoreApplication = (
     applicationId: string,
-    direction: "undo" | "redo"
+    direction: "undo" | "redo",
   ) => {
     if (!currentProjectId) return;
     void handleHistoryAction(() =>
       direction === "undo"
         ? undoAgentApplication(currentProjectId, applicationId)
-        : redoAgentApplication(currentProjectId, applicationId)
+        : redoAgentApplication(currentProjectId, applicationId),
     );
   };
 
@@ -369,7 +385,7 @@ export function AgentPanel() {
       pendingProposal.threadId !== activeThreadId ||
       !project?.files.some(
         (file) =>
-          file.id === pendingProposal.fileId && file.type === "operation"
+          file.id === pendingProposal.fileId && file.type === "operation",
       )
     )
       return;
@@ -383,7 +399,7 @@ export function AgentPanel() {
       !pendingProposal ||
       pendingProposal.projectId !== currentProjectId ||
       pendingProposal.threadId !== activeThreadId ||
-      useAgentStore.getState().activeRun
+      useAgentRunStore.getState().activeRun
     )
       return;
     void handleSubmit(pendingProposal.sourcePrompt, {
@@ -408,7 +424,7 @@ export function AgentPanel() {
               icon={FaListUl}
               title="Chat list"
               aria-label="Chat list"
-              disabled={!!activeRun || historyBusy || !currentProjectId}
+              disabled={isRunning || historyBusy || !currentProjectId}
             />
           </Menu.Target>
           <Menu.Dropdown>
@@ -467,7 +483,7 @@ export function AgentPanel() {
               title="Rename chat"
               aria-label="Rename chat"
               className="px-0.5 hover:outline hover:outline-border"
-              disabled={!activeThread || !!activeRun || historyBusy}
+              disabled={!activeThread || isRunning || historyBusy}
             />
           ) : null}
         </div>
@@ -486,7 +502,7 @@ export function AgentPanel() {
                 title="Delete chat"
                 aria-label="Delete chat"
                 className="p-0.5 hover:outline hover:outline-border"
-                disabled={!activeThread || !!activeRun || historyBusy}
+                disabled={!activeThread || isRunning || historyBusy}
                 onClick={() => setDeleteConfirmationOpen((opened) => !opened)}
               />
             </Popover.Target>
@@ -517,7 +533,7 @@ export function AgentPanel() {
             onClick={() => currentProjectId && createThread(currentProjectId)}
             title="New chat"
             disabled={
-              !!activeRun || historyBusy || !currentProjectId || !agentProject
+              isRunning || historyBusy || !currentProjectId || !agentProject
             }
           />
           <Popover
@@ -557,7 +573,7 @@ export function AgentPanel() {
                     onChange={(e) =>
                       setApiKey(
                         id as keyof typeof LLM_PROVIDERS,
-                        e.target.value
+                        e.target.value,
                       )
                     }
                   />
@@ -620,7 +636,7 @@ export function AgentPanel() {
         onOpenDeploymentPanel={() => {
           useSidebarTabStore.getState().setActiveTab("deployment");
           requestAnimationFrame(() =>
-            document.getElementById("sidebar-tab-deployment")?.focus()
+            document.getElementById("sidebar-tab-deployment")?.focus(),
           );
         }}
         onOpenApiKeys={() => setApiKeysOpen(true)}
@@ -644,7 +660,7 @@ export function AgentPanel() {
           })
         }
         onCancel={() => abortController.current?.abort()}
-        isLoading={!!activeRun}
+        isLoading={isRunning}
         historyBusy={historyBusy}
       />
     </div>

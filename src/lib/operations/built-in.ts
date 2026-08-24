@@ -604,6 +604,10 @@ const promiseOperations: OperationListItem[] = [
     parameters: [
       { type: { kind: "instance", className: "Promise", constructorArgs: [] } },
     ],
+    expectedType: (data) =>
+      data.type.kind === "instance" && data.type.className === "Promise"
+        ? (data.type.result ?? { kind: "unknown" })
+        : { kind: "unknown" },
     handler: async (context, promiseData) => {
       try {
         const promiseValue = getRawValueFromData(

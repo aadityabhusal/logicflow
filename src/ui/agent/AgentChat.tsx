@@ -7,7 +7,7 @@ import {
   FaTrash,
 } from "react-icons/fa6";
 import { useLayoutEffect, useRef, useState } from "react";
-import { useAgentStore, useProjectStore } from "@/lib/store";
+import { useAgentRunStore, useAgentStore, useProjectStore } from "@/lib/store";
 import type { AgentMessage, AgentRetry } from "@/lib/agent/types";
 import { IconButton } from "../IconButton";
 import { NoteText } from "../NoteText";
@@ -25,12 +25,114 @@ function getTurnApplication(messages: AgentMessage[], userIndex: number) {
   }
 }
 
-function scrollToLatest(
-  element: HTMLDivElement,
-  bottom: HTMLDivElement | null,
-) {
-  bottom?.scrollIntoView?.({ block: "end" });
+function scrollToLatest(element: HTMLDivElement) {
   element.scrollTop = element.scrollHeight;
+}
+
+function AgentStreamingContent({ threadId }: { threadId: string }) {
+  const content = useAgentRunStore((state) =>
+    state.activeRun?.threadId === threadId
+      ? state.activeRun.streamingContent
+      : "",
+  );
+  return content ? (
+    <NoteText className="mt-2 border-t border-border/60 px-1 pt-2">
+      {content}
+    </NoteText>
+  ) : null;
+}
+
+function AgentRunProgress({ threadId }: { threadId: string }) {
+  const traces = useAgentRunStore((state) =>
+    state.activeRun?.threadId === threadId ? state.activeRun.traces : [],
+  );
+  return (
+    <div
+      role="status"
+      aria-label="Agent progress"
+      className="mx-2 mb-2 rounded-xs border border-border bg-dropdown-default px-2 py-2"
+    >
+      <div className="px-1 text-xs text-dimmed">
+        Working through your request
+      </div>
+      <ol className="mt-2 space-y-1 text-sm">
+        {traces.map((trace) => {
+          const active = trace.status === "active";
+          return (
+            <li
+              key={trace.id}
+              aria-current={active ? "step" : undefined}
+              className={[
+                "flex items-center gap-2 px-1",
+                active ? "text-white" : "text-disabled",
+              ].join(" ")}
+            >
+              {active ? (
+                <FaSpinner
+                  aria-hidden="true"
+                  className="shrink-0 animate-spin"
+                  size={12}
+                />
+              ) : (
+                <FaCheck aria-hidden="true" className="shrink-0" size={12} />
+              )}
+              <span>{trace.label}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <AgentStreamingContent threadId={threadId} />
+    </div>
+  );
+}
+
+function AgentAutoScroll({
+  activeThreadId,
+  agentReady,
+  messageCount,
+  pendingProposalId,
+  previousThreadId: previousThreadIdRef,
+  scrollRef,
+  shouldFollowLatest: shouldFollowLatestRef,
+}: {
+  activeThreadId?: string;
+  agentReady: boolean;
+  messageCount: number;
+  pendingProposalId?: string;
+  previousThreadId: React.MutableRefObject<string | undefined>;
+  scrollRef: React.RefObject<HTMLDivElement>;
+  shouldFollowLatest: React.MutableRefObject<boolean>;
+}) {
+  const runUpdate = useAgentRunStore((state) => {
+    const run = state.activeRun;
+    if (!run || run.threadId !== activeThreadId) return [0, ""];
+    return [run.traces.length, run.streamingContent];
+  });
+
+  useLayoutEffect(() => {
+    if (previousThreadIdRef.current !== activeThreadId) {
+      previousThreadIdRef.current = activeThreadId;
+      shouldFollowLatestRef.current = true;
+    }
+    if (!shouldFollowLatestRef.current || !scrollRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (shouldFollowLatestRef.current && scrollRef.current) {
+        scrollToLatest(scrollRef.current);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    activeThreadId,
+    agentReady,
+    messageCount,
+    pendingProposalId,
+    previousThreadIdRef,
+    runUpdate,
+    scrollRef,
+    shouldFollowLatestRef,
+  ]);
+
+  return null;
 }
 
 export function AgentChat({
@@ -61,18 +163,17 @@ export function AgentChat({
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
   const currentProject = useProjectStore((s) => s.getCurrentProject());
   const currentFile = useProjectStore((s) => s.getCurrentFile());
-  const { agentProjects, activeRun, pendingProposals, agentReady } =
-    useAgentStore();
-  const agentProject = currentProjectId
-    ? agentProjects[currentProjectId]
-    : undefined;
+  const agentProject = useAgentStore((state) =>
+    currentProjectId ? state.agentProjects[currentProjectId] : undefined,
+  );
+  const agentReady = useAgentStore((state) => state.agentReady);
   const activeThread = agentProject?.threads.find(
     (thread) => thread.id === agentProject.activeThreadId,
   );
   const activeThreadId = activeThread?.id;
-  const pendingProposal = activeThreadId
-    ? pendingProposals[activeThreadId]
-    : undefined;
+  const pendingProposal = useAgentStore((state) =>
+    activeThreadId ? state.pendingProposals[activeThreadId] : undefined,
+  );
   const recoverable = !!(
     pendingProposal &&
     currentProject?.files.some(
@@ -80,12 +181,14 @@ export function AgentChat({
     )
   );
   const threadMessages = activeThread?.messages ?? [];
-  const isLoading = activeRun?.threadId === activeThreadId;
+  const isLoading = useAgentRunStore(
+    (state) => state.activeRun?.threadId === activeThreadId,
+  );
+  const isRunning = useAgentRunStore((state) => !!state.activeRun);
   const [deleteMessageId, setDeleteMessageId] = useState<string>();
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [jumpThreadId, setJumpThreadId] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const shouldFollowLatest = useRef(true);
   const previousThreadId = useRef(activeThreadId);
 
@@ -107,30 +210,22 @@ export function AgentChat({
   const handleJumpToLatest = () => {
     const element = scrollRef.current;
     if (!element) return;
-    scrollToLatest(element, bottomRef.current);
+    scrollToLatest(element);
     shouldFollowLatest.current = true;
     setShowJumpToLatest(false);
   };
 
-  useLayoutEffect(() => {
-    if (previousThreadId.current !== activeThreadId) {
-      previousThreadId.current = activeThreadId;
-      shouldFollowLatest.current = true;
-    }
-    if (shouldFollowLatest.current && scrollRef.current) {
-      scrollToLatest(scrollRef.current, bottomRef.current);
-    }
-  }, [
-    activeRun?.streamingContent,
-    activeRun?.traces.length,
-    activeThreadId,
-    agentReady,
-    pendingProposal?.id,
-    threadMessages.length,
-  ]);
-
   return (
     <div className="relative flex-1 min-h-0 min-w-0">
+      <AgentAutoScroll
+        activeThreadId={activeThreadId}
+        agentReady={agentReady}
+        messageCount={threadMessages.length}
+        pendingProposalId={pendingProposal?.id}
+        previousThreadId={previousThreadId}
+        scrollRef={scrollRef}
+        shouldFollowLatest={shouldFollowLatest}
+      />
       <div
         ref={scrollRef}
         role="log"
@@ -199,7 +294,7 @@ export function AgentChat({
                             size="compact-xs"
                             className="min-h-9"
                             onClick={onOpenApiKeys}
-                            disabled={!!activeRun || historyBusy}
+                            disabled={isRunning || historyBusy}
                           >
                             Add API key
                           </Button>
@@ -211,7 +306,7 @@ export function AgentChat({
                             onClick={() => {
                               if (msg.error?.retry) onRetry(msg.error.retry);
                             }}
-                            disabled={!!activeRun || historyBusy}
+                            disabled={isRunning || historyBusy}
                           >
                             Retry request
                           </Button>
@@ -245,7 +340,7 @@ export function AgentChat({
                             ? onUndoApplication(turnApplicationId)
                             : onRedoApplication(turnApplicationId)
                         }
-                        disabled={!!activeRun || historyBusy}
+                        disabled={isRunning || historyBusy}
                       />
                     ) : null}
                     <Popover
@@ -265,7 +360,7 @@ export function AgentChat({
                           size={16}
                           className="shrink-0 p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
                           onClick={() => setDeleteMessageId(msg.id)}
-                          disabled={!!activeRun || historyBusy}
+                          disabled={isRunning || historyBusy}
                         />
                       </Popover.Target>
                       <Popover.Dropdown
@@ -304,7 +399,7 @@ export function AgentChat({
                   type="button"
                   className="mt-2 min-h-9 rounded-xs border px-2 py-1 text-sm underline"
                   onClick={onOpenDeploymentPanel}
-                  disabled={!!activeRun || historyBusy}
+                  disabled={isRunning || historyBusy}
                 >
                   Open Deployment panel
                 </button>
@@ -317,7 +412,7 @@ export function AgentChat({
                     pendingProposal?.id === msg.proposal.id &&
                     isAgentProposalStale(pendingProposal, currentProject)
                   }
-                  busy={!!activeRun || historyBusy}
+                  busy={isRunning || historyBusy}
                   recoverable={recoverable}
                   applicationStatus={
                     msg.proposal.applicationId
@@ -351,53 +446,10 @@ export function AgentChat({
             </article>
           );
         })}
-        {isLoading ? (
-          <div
-            role="status"
-            aria-label="Agent progress"
-            className="mx-2 mb-2 rounded-xs border border-border bg-dropdown-default px-2 py-2"
-          >
-            <div className="px-1 text-xs text-dimmed">
-              Working through your request
-            </div>
-            <ol className="mt-2 space-y-1 text-sm">
-              {(activeRun?.traces ?? []).map((trace) => {
-                const active = trace.status === "active";
-                return (
-                  <li
-                    key={trace.id}
-                    aria-current={active ? "step" : undefined}
-                    className={[
-                      "flex items-center gap-2 px-1",
-                      active ? "text-white" : "text-disabled",
-                    ].join(" ")}
-                  >
-                    {active ? (
-                      <FaSpinner
-                        aria-hidden="true"
-                        className="shrink-0 animate-spin"
-                        size={12}
-                      />
-                    ) : (
-                      <FaCheck
-                        aria-hidden="true"
-                        className="shrink-0"
-                        size={12}
-                      />
-                    )}
-                    <span>{trace.label}</span>
-                  </li>
-                );
-              })}
-            </ol>
-            {activeRun?.streamingContent ? (
-              <NoteText className="mt-2 border-t border-border/60 px-1 pt-2">
-                {activeRun.streamingContent}
-              </NoteText>
-            ) : null}
-          </div>
+        {isLoading && activeThreadId ? (
+          <AgentRunProgress threadId={activeThreadId} />
         ) : null}
-        <div ref={bottomRef} aria-hidden="true" className="h-px" />
+        <div aria-hidden="true" className="h-px" />
       </div>
       {showJumpToLatest && jumpThreadId === activeThreadId ? (
         <Button
