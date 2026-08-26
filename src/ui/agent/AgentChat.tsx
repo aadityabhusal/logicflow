@@ -157,7 +157,7 @@ export function AgentChat({
   onDeleteTurn: (messageId: string) => void;
   onOpenDeploymentPanel: () => void;
   onOpenApiKeys: () => void;
-  onRetry: (retry: AgentRetry) => void;
+  onRetry: (messageId: string, retry: AgentRetry) => void;
   historyBusy: boolean;
 }) {
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
@@ -181,6 +181,15 @@ export function AgentChat({
     )
   );
   const threadMessages = activeThread?.messages ?? [];
+  const replacingMessageId = useAgentRunStore((state) => {
+    const run = state.activeRun;
+    return run && run.threadId === activeThreadId
+      ? run.replacingMessageId
+      : undefined;
+  });
+  const visibleThreadMessages = replacingMessageId
+    ? threadMessages.filter(({ id }) => id !== replacingMessageId)
+    : threadMessages;
   const isLoading = useAgentRunStore(
     (state) => state.activeRun?.threadId === activeThreadId,
   );
@@ -220,7 +229,7 @@ export function AgentChat({
       <AgentAutoScroll
         activeThreadId={activeThreadId}
         agentReady={agentReady}
-        messageCount={threadMessages.length}
+        messageCount={visibleThreadMessages.length}
         pendingProposalId={pendingProposal?.id}
         previousThreadId={previousThreadId}
         scrollRef={scrollRef}
@@ -244,7 +253,7 @@ export function AgentChat({
           <div role="status" className="p-3 text-sm text-dimmed">
             Preparing a new conversation...
           </div>
-        ) : threadMessages.length === 0 && !isLoading ? (
+        ) : visibleThreadMessages.length === 0 && !isLoading ? (
           <div className="mx-auto flex max-w-sm flex-col gap-1 p-4 text-center">
             <p className="text-sm">
               Ask the agent to inspect or change your project.
@@ -256,10 +265,10 @@ export function AgentChat({
             </p>
           </div>
         ) : null}
-        {threadMessages.map((msg, messageIndex) => {
+        {visibleThreadMessages.map((msg, messageIndex) => {
           const turnApplicationId =
             msg.role === "user"
-              ? getTurnApplication(threadMessages, messageIndex)
+              ? getTurnApplication(visibleThreadMessages, messageIndex)
               : undefined;
           const turnApplicationStatus = turnApplicationId
             ? getAgentApplicationStatus(
@@ -304,7 +313,8 @@ export function AgentChat({
                             size="compact-xs"
                             className="min-h-9"
                             onClick={() => {
-                              if (msg.error?.retry) onRetry(msg.error.retry);
+                              if (msg.error?.retry)
+                                onRetry(msg.id, msg.error.retry);
                             }}
                             disabled={isRunning || historyBusy}
                           >

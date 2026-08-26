@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
     selectedModel: "model-a",
     thinkingLevel: "medium",
     addMessage: vi.fn(),
+    replaceMessage: vi.fn(),
     getApiKey: vi.fn((): string | undefined => "key"),
     setApiKey: vi.fn(),
     agentProjects: {
@@ -163,6 +164,7 @@ vi.mock("./agent/AgentChat", () => ({
     onRedoApplication,
     onDeleteTurn,
     onOpenDeploymentPanel,
+    onRetry,
   }: {
     onApplyProposal: () => void;
     onReviseProposal: () => void;
@@ -171,6 +173,10 @@ vi.mock("./agent/AgentChat", () => ({
     onRedoApplication: (applicationId: string) => void;
     onDeleteTurn: (messageId: string) => void;
     onOpenDeploymentPanel: () => void;
+    onRetry: (
+      messageId: string,
+      retry: { prompt: string; sourceFileId?: string; regenerate?: boolean },
+    ) => void;
   }) => (
     <>
       <button onClick={onApplyProposal}>Apply proposal</button>
@@ -184,6 +190,16 @@ vi.mock("./agent/AgentChat", () => ({
       </button>
       <button onClick={() => onDeleteTurn("message-a")}>Delete turn</button>
       <button onClick={onOpenDeploymentPanel}>Open Deployment panel</button>
+      <button
+        onClick={() =>
+          onRetry("error-a", {
+            prompt: "Update it",
+            sourceFileId: "operation-a",
+          })
+        }
+      >
+        Retry request
+      </button>
     </>
   ),
 }));
@@ -470,6 +486,48 @@ describe("AgentPanel proposal lifecycle", () => {
           },
         }),
       ),
+    );
+  });
+
+  it("retries a failed response in place without duplicating its request", async () => {
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      { id: "user-prior", role: "user", content: "Earlier", createdAt: 1 },
+      {
+        id: "response-prior",
+        role: "assistant",
+        content: "Earlier response",
+        createdAt: 2,
+      },
+      { id: "user-a", role: "user", content: "Update it", createdAt: 1 },
+      {
+        id: "error-a",
+        role: "assistant",
+        content: "Error: Provider request failed",
+        createdAt: 2,
+      },
+    ] as never[];
+    mocks.generateOperationProposal.mockResolvedValue({
+      response: { explanation: "Recovered" },
+    });
+    renderPanel();
+
+    fireEvent.click(screen.getByText("Retry request"));
+
+    await waitFor(() =>
+      expect(mocks.generateOperationProposal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversation: [
+            { role: "user", content: "Earlier" },
+            { role: "assistant", content: "Earlier response" },
+          ],
+        }),
+      ),
+    );
+    expect(mocks.agentState.addMessage).not.toHaveBeenCalled();
+    expect(mocks.agentState.replaceMessage).toHaveBeenCalledWith(
+      "thread-a",
+      "error-a",
+      expect.objectContaining({ content: "Recovered" }),
     );
   });
 
@@ -864,6 +922,21 @@ describe("AgentPanel proposal lifecycle", () => {
         update: { explanation: "Original", enablePackages: [], changes: [] },
       },
     };
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      {
+        id: "user-a",
+        role: "user",
+        content: "Original request",
+        createdAt: 1,
+      },
+      {
+        id: "response-a",
+        role: "assistant",
+        content: "Original",
+        proposal: { id: "proposal-a", diagnostics: [] },
+        createdAt: 2,
+      },
+    ] as never[];
     mocks.projectState.getCurrentFile.mockReturnValue({
       id: "operation-b",
       type: "operation",
@@ -889,6 +962,16 @@ describe("AgentPanel proposal lifecycle", () => {
           userPrompt: "Original request",
         }),
       ),
+    );
+    expect(mocks.agentState.addMessage).not.toHaveBeenCalled();
+    expect(mocks.agentState.replaceMessage).toHaveBeenCalledWith(
+      "thread-a",
+      "response-a",
+      expect.objectContaining({ content: "Regenerated" }),
+    );
+    expect(mocks.agentState.setPendingProposal).toHaveBeenCalledWith(
+      "thread-a",
+      undefined,
     );
   });
 });

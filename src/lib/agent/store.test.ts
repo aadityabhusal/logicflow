@@ -91,7 +91,10 @@ describe("agent store", () => {
     const storage = useAgentStore.persist.getOptions().storage!;
     const write = vi.spyOn(storage, "setItem");
 
-    useAgentRunStore.getState().startRun(thread.id);
+    useAgentRunStore.getState().startRun(thread.id, "response-a");
+    expect(useAgentRunStore.getState().activeRun?.replacingMessageId).toBe(
+      "response-a",
+    );
     expect(useAgentRunStore.getState().activeRun?.traces).toEqual([]);
     useAgentRunStore.getState().setRunTrace("Reading project context");
 
@@ -190,6 +193,37 @@ describe("agent store", () => {
     expect(
       useAgentStore.getState().pendingProposals[thread.id],
     ).toBeUndefined();
+  });
+
+  it("replaces a response without changing its identity or position", () => {
+    const thread = useAgentStore.getState().createThread("project-a");
+    useAgentStore.getState().addMessage(thread.id, {
+      role: "user",
+      content: "Request",
+    });
+    const response = useAgentStore.getState().addMessage(thread.id, {
+      role: "assistant",
+      content: "Error",
+      error: { retry: { prompt: "Request" } },
+    });
+
+    const replacement = useAgentStore
+      .getState()
+      .replaceMessage(thread.id, response!.id, {
+        role: "assistant",
+        content: "Recovered",
+      });
+
+    const messages =
+      useAgentStore.getState().agentProjects["project-a"].threads[0].messages;
+    expect(messages).toHaveLength(2);
+    expect(replacement).toEqual({
+      id: response!.id,
+      createdAt: response!.createdAt,
+      role: "assistant",
+      content: "Recovered",
+    });
+    expect(messages[1]).toEqual(replacement);
   });
 
   it("redacts known API keys from messages and drafts", () => {

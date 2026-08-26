@@ -440,6 +440,11 @@ interface AgentStore {
     threadId: string,
     message: Omit<AgentMessage, "id" | "createdAt">,
   ) => AgentMessage | undefined;
+  replaceMessage: (
+    threadId: string,
+    messageId: string,
+    message: Omit<AgentMessage, "id" | "createdAt">,
+  ) => AgentMessage | undefined;
   setDraft: (threadId: string, content: string) => void;
   setPendingProposal: (threadId: string, proposal?: AgentProposal) => void;
   deleteAgentProject: (projectId: string) => void;
@@ -452,10 +457,11 @@ export const useAgentPersistenceErrorStore = createWithEqualityFn<{
 interface AgentRunStore {
   activeRun?: {
     threadId: string;
+    replacingMessageId?: string;
     streamingContent: string;
     traces: AgentRunTrace[];
   };
-  startRun: (threadId: string) => void;
+  startRun: (threadId: string, replacingMessageId?: string) => void;
   setRunTrace: (label: string) => void;
   setStreamingContent: (content: string) => void;
   finishRun: (threadId: string) => void;
@@ -463,10 +469,11 @@ interface AgentRunStore {
 
 export const useAgentRunStore = createWithEqualityFn<AgentRunStore>(
   (set) => ({
-    startRun: (threadId) =>
+    startRun: (threadId, replacingMessageId) =>
       set({
         activeRun: {
           threadId,
+          replacingMessageId,
           streamingContent: "",
           traces: [],
         },
@@ -691,6 +698,33 @@ export const useAgentStore = createWithEqualityFn(
             ),
           });
           return created;
+        },
+        replaceMessage: (threadId, messageId, message) => {
+          const project = findProjectByThread(threadId);
+          const thread = project?.threads.find(({ id }) => id === threadId);
+          const existing = thread?.messages.find(({ id }) => id === messageId);
+          if (!project || !thread || !existing) return;
+          const replacement: AgentMessage = {
+            ...redactAgentSecrets(message, get().apiKeys),
+            id: existing.id,
+            createdAt: existing.createdAt,
+          };
+          saveProject({
+            ...project,
+            threads: project.threads.map((currentThread) =>
+              currentThread.id === threadId
+                ? {
+                    ...currentThread,
+                    messages: currentThread.messages.map((currentMessage) =>
+                      currentMessage.id === messageId
+                        ? replacement
+                        : currentMessage,
+                    ),
+                  }
+                : currentThread,
+            ),
+          });
+          return replacement;
         },
         setDraft: (threadId, content) => {
           const project = findProjectByThread(threadId);

@@ -34,6 +34,7 @@ export function AgentPanel() {
     selectedModel,
     thinkingLevel,
     addMessage,
+    replaceMessage,
     getApiKey,
     setApiKey,
     agentReady,
@@ -48,6 +49,7 @@ export function AgentPanel() {
     selectedModel: state.selectedModel,
     thinkingLevel: state.thinkingLevel,
     addMessage: state.addMessage,
+    replaceMessage: state.replaceMessage,
     getApiKey: state.getApiKey,
     setApiKey: state.setApiKey,
     agentReady: state.agentReady,
@@ -141,6 +143,7 @@ export function AgentPanel() {
     options?: {
       regenerate?: boolean;
       sourceFileId?: string;
+      replaceResponseId?: string;
     },
   ) => {
     if (useAgentRunStore.getState().activeRun) return;
@@ -153,17 +156,22 @@ export function AgentPanel() {
       return;
     }
     if (deploymentIntent && !deploymentIntent.afterChanges) {
-      if (!options?.regenerate) {
+      if (!options?.regenerate && !options?.replaceResponseId) {
         addMessage(activeThreadId, { role: "user", content: prompt });
         setDraft(activeThreadId, "");
       }
       setSubmissionError(undefined);
-      addMessage(activeThreadId, {
+      const response = {
         role: "assistant",
         content:
           "Open the Deployment panel to configure and deploy this project.",
         deploymentAction: "open-deployment-panel",
-      });
+      } as const;
+      if (options?.replaceResponseId) {
+        replaceMessage(activeThreadId, options.replaceResponseId, response);
+      } else {
+        addMessage(activeThreadId, response);
+      }
       return;
     }
     const sourceFileId = options?.sourceFileId ?? currentFile?.id;
@@ -196,7 +204,7 @@ export function AgentPanel() {
     }
 
     setSubmissionError(undefined);
-    if (!options?.regenerate) {
+    if (!options?.regenerate && !options?.replaceResponseId) {
       addMessage(activeThreadId, { role: "user", content: prompt });
       setDraft(activeThreadId, "");
     }
@@ -212,12 +220,33 @@ export function AgentPanel() {
     const requestPrompt = revisedProposal
       ? `Original request:\n${revisedProposal.sourcePrompt}\n\nCurrent proposal update:\n${JSON.stringify(revisedProposal.update)}\n\nRequested revision:\n${prompt}`
       : prompt;
-    const conversation =
-      activeThread?.messages.map(({ role, content }) => ({ role, content })) ??
-      [];
+    let conversationMessages = activeThread?.messages ?? [];
+    if (options?.replaceResponseId) {
+      const responseIndex = conversationMessages.findIndex(
+        ({ id }) => id === options.replaceResponseId,
+      );
+      if (responseIndex >= 0) {
+        const requestIndex = conversationMessages
+          .slice(0, responseIndex)
+          .map(({ role }) => role)
+          .lastIndexOf("user");
+        conversationMessages = conversationMessages.slice(
+          0,
+          requestIndex >= 0 ? requestIndex : responseIndex,
+        );
+      }
+    }
+    const conversation = conversationMessages.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+    const storeResponse = (message: Parameters<typeof addMessage>[1]) =>
+      options?.replaceResponseId
+        ? replaceMessage(activeThreadId, options.replaceResponseId, message)
+        : addMessage(activeThreadId, message);
     const controller = new AbortController();
     abortController.current = controller;
-    startRun(activeThreadId);
+    startRun(activeThreadId, options?.replaceResponseId);
 
     try {
       const { response, proposal } = await generateOperationProposal({
@@ -246,7 +275,7 @@ export function AgentPanel() {
                 : prompt,
           }
         : undefined;
-      addMessage(activeThreadId, {
+      storeResponse({
         role: "assistant",
         content:
           response.explanation ||
@@ -275,13 +304,13 @@ export function AgentPanel() {
           !storedProposal.diagnostics.some(
             (diagnostic) => diagnostic.severity === "error",
           )
-          ) {
-            try {
-              await applyAgentProposal(storedProposal, controller.signal);
-              handleDeploymentAfterApply(storedProposal);
-            } catch (error) {
-              if (controller.signal.aborted) return;
-              addMessage(activeThreadId, {
+        ) {
+          try {
+            await applyAgentProposal(storedProposal, controller.signal);
+            handleDeploymentAfterApply(storedProposal);
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            addMessage(activeThreadId, {
               role: "assistant",
               content: `The update was generated but could not be applied automatically: ${
                 error instanceof Error ? error.message : "Unknown error"
@@ -290,6 +319,11 @@ export function AgentPanel() {
             });
           }
         }
+      } else if (options?.regenerate) {
+        if (pendingProposal) {
+          deploymentAfterApply.current.delete(pendingProposal.id);
+        }
+        setPendingProposal(activeThreadId, undefined);
       }
       setRevisionProposalId(undefined);
     } catch (error) {
@@ -306,7 +340,7 @@ export function AgentPanel() {
           : `Error: ${
               error instanceof Error ? error.message : "Unknown error"
             }`;
-      addMessage(activeThreadId, {
+      storeResponse({
         role: "assistant",
         content: errorMessage,
         error: {
@@ -402,9 +436,14 @@ export function AgentPanel() {
       useAgentRunStore.getState().activeRun
     )
       return;
+    const response = activeThread?.messages.find(
+      (message) => message.proposal?.id === pendingProposal.id,
+    );
+    if (!response) return;
     void handleSubmit(pendingProposal.sourcePrompt, {
       regenerate: true,
       sourceFileId: pendingProposal.fileId,
+      replaceResponseId: response.id,
     });
   };
 
@@ -640,10 +679,11 @@ export function AgentPanel() {
           );
         }}
         onOpenApiKeys={() => setApiKeysOpen(true)}
-        onRetry={(retry: AgentRetry) =>
+        onRetry={(messageId: string, retry: AgentRetry) =>
           void handleSubmit(retry.prompt, {
             regenerate: retry.regenerate,
             sourceFileId: retry.sourceFileId,
+            replaceResponseId: messageId,
           })
         }
         historyBusy={historyBusy}

@@ -76,6 +76,7 @@ const mocks = vi.hoisted(() => ({
     activeRun: undefined as
       | {
           threadId: string;
+          replacingMessageId?: string;
           streamingContent: string;
           traces: { id: string; label: string; status: string }[];
         }
@@ -221,6 +222,47 @@ describe("AgentChat request progress", () => {
     expect(progress.textContent).not.toContain("Planning the requested change");
     expect(progress.textContent).toContain("I found the relevant operation.");
     expect(progress.textContent).not.toContain("Loading...");
+  });
+
+  it("hides the response being retried while showing progress", () => {
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      { id: "request-a", role: "user", content: "Try this" },
+      {
+        id: "error-a",
+        role: "assistant",
+        content: "Error: Request failed",
+        error: { retry: { prompt: "Try this" } },
+      },
+    ] as never;
+    mocks.runState.activeRun = {
+      threadId: "thread-a",
+      replacingMessageId: "error-a",
+      streamingContent: "",
+      traces: [],
+    };
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.queryByText("Error: Request failed")).toBeNull();
+    expect(
+      screen.getByRole("status", { name: "Agent progress" }),
+    ).toBeDefined();
   });
 });
 
@@ -379,7 +421,7 @@ describe("AgentChat navigation and recovery", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry request" }));
 
     expect(onOpenApiKeys).toHaveBeenCalledOnce();
-    expect(onRetry).toHaveBeenCalledWith({
+    expect(onRetry).toHaveBeenCalledWith("error-a", {
       prompt: "Try again",
       sourceFileId: "anchor-file",
     });
