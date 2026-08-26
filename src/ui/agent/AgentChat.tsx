@@ -3,10 +3,12 @@ import {
   FaArrowRotateLeft,
   FaArrowRotateRight,
   FaCheck,
+  FaRegCopy,
   FaSpinner,
   FaTrash,
 } from "react-icons/fa6";
 import { useLayoutEffect, useRef, useState } from "react";
+import { useClipboard } from "@mantine/hooks";
 import { useAgentRunStore, useAgentStore, useProjectStore } from "@/lib/store";
 import type { AgentMessage, AgentRetry } from "@/lib/agent/types";
 import { IconButton } from "../IconButton";
@@ -195,6 +197,8 @@ export function AgentChat({
   );
   const isRunning = useAgentRunStore((state) => !!state.activeRun);
   const [deleteMessageId, setDeleteMessageId] = useState<string>();
+  const [copiedMessageId, setCopiedMessageId] = useState<string>();
+  const clipboard = useClipboard({ timeout: 1500 });
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [jumpThreadId, setJumpThreadId] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -283,52 +287,75 @@ export function AgentChat({
               key={msg.id}
               aria-label={msg.role === "user" ? "You" : "Agent"}
               className={[
-                "min-w-0 mb-2 wrap-anywhere text-sm leading-5",
+                "group relative mb-10 min-w-0 wrap-anywhere text-sm leading-5",
                 msg.role === "user"
                   ? "ml-auto w-fit max-w-[92%] rounded-xs border border-border bg-dropdown-default px-3 py-2"
                   : "px-2 py-1",
               ].join(" ")}
             >
-              <div className="flex min-w-0 items-start gap-2">
-                <div className="min-w-0 flex-1 whitespace-pre-wrap">
-                  {msg.error ? (
-                    <div
-                      role="alert"
-                      className="rounded-xs border border-red-400/40 bg-red-400/10 p-2 text-red-100"
-                    >
-                      <div>{msg.content}</div>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {msg.error.requiresApiKey ? (
-                          <Button
-                            size="compact-xs"
-                            className="min-h-9"
-                            onClick={onOpenApiKeys}
-                            disabled={isRunning || historyBusy}
-                          >
-                            Add API key
-                          </Button>
-                        ) : null}
-                        {msg.error.retry ? (
-                          <Button
-                            size="compact-xs"
-                            className="min-h-9"
-                            onClick={() => {
-                              if (msg.error?.retry)
-                                onRetry(msg.id, msg.error.retry);
-                            }}
-                            disabled={isRunning || historyBusy}
-                          >
-                            Retry request
-                          </Button>
-                        ) : null}
-                      </div>
+              <div className="min-w-0 whitespace-pre-wrap">
+                {msg.error ? (
+                  <div
+                    role="alert"
+                    className="rounded-xs border border-red-400/40 bg-red-400/10 p-2 text-red-100"
+                  >
+                    <div>{msg.content}</div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {msg.error.requiresApiKey ? (
+                        <Button
+                          size="compact-xs"
+                          className="min-h-9"
+                          onClick={onOpenApiKeys}
+                          disabled={isRunning || historyBusy}
+                        >
+                          Add API key
+                        </Button>
+                      ) : null}
+                      {msg.error.retry ? (
+                        <Button
+                          size="compact-xs"
+                          className="min-h-9"
+                          onClick={() => {
+                            if (msg.error?.retry)
+                              onRetry(msg.id, msg.error.retry);
+                          }}
+                          disabled={isRunning || historyBusy}
+                        >
+                          Retry request
+                        </Button>
+                      ) : null}
                     </div>
-                  ) : (
-                    msg.content
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  msg.content
+                )}
+              </div>
+              <div
+                className={[
+                  "pointer-events-none absolute top-full z-10 flex items-center gap-0.5 rounded-xs border border-border bg-dropdown-default opacity-0 shadow-md transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100",
+                  msg.role === "user" ? "right-0" : "left-2",
+                ].join(" ")}
+              >
+                <IconButton
+                  icon={
+                    clipboard.copied && copiedMessageId === msg.id
+                      ? FaCheck
+                      : FaRegCopy
+                  }
+                  title={
+                    clipboard.copied && copiedMessageId === msg.id
+                      ? "Copied!"
+                      : "Copy message"
+                  }
+                  size={16}
+                  className="rounded-xs p-1 text-dimmed hover:bg-dropdown-selected hover:text-white"
+                  onClick={() => {
+                    setCopiedMessageId(msg.id);
+                    clipboard.copy(msg.content);
+                  }}
+                />
                 {msg.role === "user" ? (
-                  <div className="flex shrink-0 items-center gap-1">
+                  <>
                     {turnApplicationId &&
                     (turnApplicationStatus === "applied" ||
                       turnApplicationStatus === "undone") ? (
@@ -344,7 +371,7 @@ export function AgentChat({
                             : "Redo agent edit"
                         }
                         size={16}
-                        className="p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
+                        className="rounded-xs p-1 text-dimmed hover:bg-dropdown-selected hover:text-white"
                         onClick={() =>
                           turnApplicationStatus === "applied"
                             ? onUndoApplication(turnApplicationId)
@@ -368,7 +395,7 @@ export function AgentChat({
                           icon={FaTrash}
                           title="Delete turn"
                           size={16}
-                          className="shrink-0 p-0.5 text-dimmed hover:text-white hover:outline hover:outline-border"
+                          className="shrink-0 rounded-xs p-1 text-dimmed hover:bg-dropdown-selected hover:text-white"
                           onClick={() => setDeleteMessageId(msg.id)}
                           disabled={isRunning || historyBusy}
                         />
@@ -401,7 +428,7 @@ export function AgentChat({
                         </div>
                       </Popover.Dropdown>
                     </Popover>
-                  </div>
+                  </>
                 ) : null}
               </div>
               {msg.deploymentAction === "open-deployment-panel" ? (

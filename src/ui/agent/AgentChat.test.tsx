@@ -568,4 +568,46 @@ describe("AgentChat proposal navigation", () => {
 
     expect(onDeleteTurn).toHaveBeenCalledWith("user-a");
   });
+
+  it("copies messages from the hover action bar", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.agentState.agentProjects["project-a"].threads[0].messages = [
+      {
+        id: "assistant-a",
+        role: "assistant",
+        content: "Copy this response",
+      },
+    ] as never;
+
+    render(
+      <MantineProvider>
+        <AgentChat
+          onApplyProposal={vi.fn()}
+          onRejectProposal={vi.fn()}
+          onReviseProposal={vi.fn()}
+          onRegenerateProposal={vi.fn()}
+          onUndoApplication={vi.fn()}
+          onRedoApplication={vi.fn()}
+          onDeleteTurn={vi.fn()}
+          onOpenDeploymentPanel={vi.fn()}
+          onOpenApiKeys={vi.fn()}
+          onRetry={vi.fn()}
+          historyBusy={false}
+        />
+      </MantineProvider>,
+    );
+
+    const copy = screen.getByRole("button", { name: "Copy message" });
+    expect(copy.parentElement?.className).toContain("group-hover:opacity-100");
+    fireEvent.click(copy);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Copy this response"),
+    );
+    expect(screen.getByRole("button", { name: "Copied!" })).toBeDefined();
+  });
 });
